@@ -5,10 +5,45 @@
 ## 当前状态
 
 - 阶段 0：项目文档基线已完成，文件与内部链接已检查，已核对文档中的范围和状态描述。
-- 阶段 1：进行中；工程准备已完成并验证，当前交由用户 review，尚未完成阶段验收。
-- 已有 TypeScript 工程、CLI 帮助、本地配置校验及配置测试；模型接入、任务输入、工具执行和 Agent Loop 尚未实现。
-- 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 计划使用 openai 兼容客户端，尚未安装或调用。
+- 阶段 1：最小 Agent Loop 已实现，并通过离线测试和真实 DeepSeek 验收；当前交由用户 review。
+- 已有 CLI 任务输入、单模型接入、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
+- 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+## 2026-09-18：实现最小 Agent Loop 并统一文件语言
+
+### 范围与实际结果
+
+- 按 review 反馈，将 docs/ 之外的仓库文本统一为英文：源码提示、错误、注释、测试、README.md 和 AGENTS.md 均遵守新规则；中文文档保留在 docs/ 中。运行时输入和模型响应不受限制。
+- 保留用户已修改的 fatcat 包名以及独立项目约定，没有恢复用户删除的 AGENTS 内容。
+- 实现 DeepSeek Chat Completions 接入、每次运行独立的内存历史、纯 sum 工具和多轮工具结果回传；支持一个回合多个工具调用，并按 ID 关联结果。
+- 工具参数错误、未知工具和算术溢出作为结构化结果回传模型；模型服务错误、协议错误、截断、超时和迭代上限明确终止。
+- 增加每次请求默认 60 秒的 deadline，禁用 SDK 自动重试；加入 Ctrl+C 取消处理和不包含凭据、提示词或工具参数的基本事件日志。
+- 增加显式 verify:live 命令，离线自动化测试使用虚构凭据和注入传输，不调用外部模型。
+- pnpm 安装 SDK 时生成了仅针对 openai@7.18.0 的发布时间例外配置；没有引入多包工作区或放宽所有依赖策略。
+
+### 验证结果
+
+- `pnpm run typecheck` 通过；首轮 `pnpm test` 28 项全部通过，覆盖完整 SDK / Loop / 工具离线闭环及主要失败路径。
+- 用户在本机配置 Key 后，`pnpm run verify:live` 成功：直接回答 1 轮返回 READY；sum(17,25) 经工具执行及结果回传，共 2 轮返回 42。
+- 完整 CLI 验证 `pnpm start --prompt 'Use the sum tool to add 8 and 13. Reply with the total.'` 成功：2 轮请求、1 次 sum 调用，最终回答 21，退出码 0。
+- 真实验证共发出 5 次固定测试请求，未在工具输出中展示 Key 内容，也没有将 Key 写入任何验证记录。
+- 最终 `pnpm install --frozen-lockfile`、类型检查和构建通过；加入超时配置边界用例后，29 项离线测试全部通过。
+- docs/ 之外的仓库文本中文扫描通过；7 份文档的 27 个本地链接全部有效；git diff --check 通过，.env 仍被 Git 忽略。
+- 收尾差异检查发现 PowerShell 写入 JSON 时引入了 CRLF，已按现有 EditorConfig 约定统一为 LF，随后复查通过。
+
+### 阻塞与已知限制
+
+- 当前没有未解决的开发或真实模型验收阻塞。
+- 仅接入 DeepSeek，使用非流式、非思考模式，输出上限固定为 2048 tokens；截断视为失败，不自动续写。
+- 只有一个无副作用的 sum 工具，采用 JavaScript 浮点数语义，不保证任意精度。
+- 历史不持久化；没有 Session、Subagent、Channel、长期记忆、检查点恢复、Graph、UI 或复杂调度。
+- 超时和取消通过离线传输 / Loop 测试验证；没有在真实服务故障期间人为制造超时，也没有自动化模拟 Windows 控制台的 Ctrl+C 按键。
+- 真实验收覆盖固定的简单任务，不代表广泛任务成功率评估。
+
+### 下一步
+
+用户 review 当前实现和架构文档；先修正反馈，再决定下一阶段的最小范围，不自动扩展后续子系统。
 
 ## 2026-09-18：迁移 pnpm，保留 Node 运行时
 

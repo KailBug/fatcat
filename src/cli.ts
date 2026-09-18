@@ -1,36 +1,80 @@
+import { parseArgs } from "node:util";
 import { loadConfig } from "./config.js";
+import { HarnessError } from "./errors.js";
+import { runAgent } from "./loop.js";
+import { createDeepSeekModel } from "./model.js";
 
-const help = `Agent Harness — 工程准备阶段
+const help = `Fatcat - minimal Agent Harness
 
-用法：
-  pnpm start --help          显示帮助（不需要 API Key）
-  pnpm start --check-config  检查本地配置（不发送模型请求）
+Usage:
+  pnpm start --help
+  pnpm start --check-config
+  pnpm start "Use the sum tool to add 17 and 25."
+  pnpm start --prompt "Explain what an agent loop does."
 
-当前尚未接入模型请求、工具执行和 Agent Loop，暂不接受任务输入。
-配置检查只确认字段有效，不代表密钥、模型权限或网络连接可用。`;
+One invocation runs one task. History stays in memory.
+Configuration checks are local and do not validate credentials or connectivity.
+Logs go to stderr; the final answer goes to stdout. Press Ctrl+C to cancel.`;
 
-function main(args: string[]): number {
-  if (args.length === 0 || (args.length === 1 && ["--help", "-h"].includes(args[0]!))) {
-    console.log(help);
-    return 0;
-  }
-
-  if (args.length !== 1 || args[0] !== "--check-config") {
-    console.error("暂不支持该参数或任务输入。请运行 pnpm start --help 查看当前能力。");
-    return 2;
-  }
-
+async function main(args: string[]): Promise<number> {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
   try {
+    let parsed;
+    try {
+      parsed = parseArgs({
+        args,
+        options: {
+          help: { type: "boolean", short: "h" },
+          "check-config": { type: "boolean" },
+          prompt: { type: "string" },
+        },
+        allowPositionals: true,
+        strict: true,
+      });
+    } catch {
+      throw new HarnessError("USAGE", "Invalid arguments. Run pnpm start --help.");
+    }
+    const { values, positionals } = parsed;
+    const modes = Number(Boolean(values.help)) + Number(Boolean(values["check-config"]))
+      + Number(values.prompt !== undefined || positionals.length > 0);
+    if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
+      throw new HarnessError("USAGE", "Choose one mode: help, config check, or one prompt.");
+    }
+    if (values.help || args.length === 0) {
+      console.log(help);
+      return 0;
+    }
+    if (values["check-config"]) {
+      const config = loadConfig();
+      console.log("Local configuration is valid (DeepSeek was not contacted).");
+      console.log(`Model: ${config.model}`);
+      console.log(`Maximum model iterations: ${config.maxIterations}`);
+      console.log(`Request timeout: ${config.requestTimeoutMs} ms`);
+      console.log("API key: configured (hidden)");
+      return 0;
+    }
+    const prompt = values.prompt ?? positionals.join(" ");
+    if (!prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
     const config = loadConfig();
-    console.log("本地配置检查通过（未连接 DeepSeek）。");
-    console.log(`模型：${config.model}`);
-    console.log(`最大迭代次数：${config.maxIterations}（Loop 尚未实现）`);
-    console.log("API Key：已配置（不显示内容）");
+    process.on("SIGINT", cancel);
+    const answer = await runAgent(prompt, {
+      model: createDeepSeekModel(config),
+      maxIterations: config.maxIterations,
+      signal: controller.signal,
+      onEvent: (event) => console.error(JSON.stringify(event)),
+    });
+    console.log(answer);
     return 0;
   } catch (error) {
-    console.error(error instanceof Error ? error.message : "配置检查失败。");
+    const known = error instanceof HarnessError;
+    console.error(known ? `Error [${error.code}]: ${error.message}` : "Error [INTERNAL]: An unexpected failure occurred.");
+    if (known && error.code === "USAGE") return 2;
+    if (known && error.code === "CANCELLED") return 130;
     return 1;
+  } finally {
+    process.off("SIGINT", cancel);
   }
 }
 
-process.exitCode = main(process.argv.slice(2));
+process.exitCode = await main(process.argv.slice(2));

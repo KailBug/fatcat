@@ -1,26 +1,35 @@
+import { HarnessError } from "./errors.js";
+
 export type Config = {
   apiKey: string;
   model: string;
   maxIterations: number;
+  requestTimeoutMs: number;
 };
 
-/** Read only the settings used by the first phase; never log this object. */
+function positiveInteger(value: string, name: string, maximum: number): number {
+  const text = value.trim();
+  const result = Number(text);
+  if (!/^[1-9]\d*$/.test(text) || !Number.isSafeInteger(result) || result > maximum) {
+    throw new HarnessError("CONFIG", `${name} must be a decimal positive integer no greater than ${maximum}.`);
+  }
+  return result;
+}
+
+/** Configuration contains credentials. Never log this object. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const apiKey = env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) {
-    throw new Error("缺少 DEEPSEEK_API_KEY，请在 .env 或环境变量中配置。");
+    throw new HarnessError("CONFIG", "DEEPSEEK_API_KEY is required. Set it in .env or the environment.");
   }
-
   const model = (env.DEEPSEEK_MODEL ?? "deepseek-flash").trim();
   if (!model) {
-    throw new Error("DEEPSEEK_MODEL 不能为空。");
+    throw new HarnessError("CONFIG", "DEEPSEEK_MODEL must not be empty.");
   }
-
-  const rawMaxIterations = (env.HARNESS_MAX_ITERATIONS ?? "8").trim();
-  const maxIterations = Number(rawMaxIterations);
-  if (!/^[1-9]\d*$/.test(rawMaxIterations) || !Number.isSafeInteger(maxIterations)) {
-    throw new Error("HARNESS_MAX_ITERATIONS 必须是十进制正整数，且不能超过 JavaScript 安全整数上限。");
-  }
-
-  return { apiKey, model, maxIterations };
+  return {
+    apiKey,
+    model,
+    maxIterations: positiveInteger(env.HARNESS_MAX_ITERATIONS ?? "8", "HARNESS_MAX_ITERATIONS", Number.MAX_SAFE_INTEGER),
+    requestTimeoutMs: positiveInteger(env.HARNESS_REQUEST_TIMEOUT_MS ?? "60000", "HARNESS_REQUEST_TIMEOUT_MS", 2_147_483_647),
+  };
 }

@@ -13,10 +13,14 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "start": "pnpm run build && node --env-file-if-exists=.env dist/src/cli.js",
-    "test": "pnpm run build && node --test dist/tests/config.test.js"
+    "test": "pnpm run build && node --test dist/tests/*.test.js",
+    "verify:live": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-live.js"
   },
   "devDependencies": {
     "@types/node": "24.13.5",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "openai": "7.18.0"
   }
 }

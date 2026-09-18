@@ -8,6 +8,7 @@ test("uses defaults without consulting the host environment", () => {
   const config = loadConfig({ DEEPSEEK_API_KEY: fakeKey });
   assert.equal(config.model, "deepseek-flash");
   assert.equal(config.maxIterations, 8);
+  assert.equal(config.requestTimeoutMs, 60000);
 });
 
 test("accepts explicit settings and trims surrounding whitespace", () => {
@@ -15,7 +16,7 @@ test("accepts explicit settings and trims surrounding whitespace", () => {
     DEEPSEEK_API_KEY: ` ${fakeKey} `,
     DEEPSEEK_MODEL: " custom-model ",
     HARNESS_MAX_ITERATIONS: " 3 ",
-  }), { apiKey: fakeKey, model: "custom-model", maxIterations: 3 });
+  }), { apiKey: fakeKey, model: "custom-model", maxIterations: 3, requestTimeoutMs: 60000 });
 });
 
 test("rejects missing or blank credentials", () => {
@@ -54,4 +55,14 @@ test("configuration errors do not echo values or credentials", () => {
     DEEPSEEK_API_KEY: fakeKey,
     HARNESS_MAX_ITERATIONS: fakeKey,
   }), (error: unknown) => error instanceof Error && !error.message.includes(fakeKey));
+});
+
+test("request deadlines reject empty, invalid, and overflowing timer values", () => {
+  for (const value of ["", "0", "-1", "1.5", "Infinity", "2147483648"]) {
+    assert.throws(() => loadConfig({
+      DEEPSEEK_API_KEY: fakeKey,
+      HARNESS_REQUEST_TIMEOUT_MS: value,
+    }), /HARNESS_REQUEST_TIMEOUT_MS/);
+  }
+  assert.equal(loadConfig({ DEEPSEEK_API_KEY: fakeKey, HARNESS_REQUEST_TIMEOUT_MS: "1500" }).requestTimeoutMs, 1500);
 });

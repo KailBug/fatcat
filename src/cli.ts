@@ -36,8 +36,11 @@ async function main(args: string[]): Promise<number> {
       throw new HarnessError("USAGE", "Invalid arguments. Run pnpm start --help.");
     }
     const { values, positionals } = parsed;
-    const modes = Number(Boolean(values.help)) + Number(Boolean(values["check-config"]))
+    const modes = Number(Boolean(values.help))
+      + Number(Boolean(values["check-config"]))
       + Number(values.prompt !== undefined || positionals.length > 0);
+
+    //start parsing if
     if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
       throw new HarnessError("USAGE", "Choose one mode: help, config check, or one prompt.");
     }
@@ -56,6 +59,8 @@ async function main(args: string[]): Promise<number> {
     }
     const prompt = values.prompt ?? positionals.join(" ");
     if (!prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
+
+    //start config
     const config = loadConfig();
     process.on("SIGINT", cancel);
     const answer = await runAgent(prompt, {

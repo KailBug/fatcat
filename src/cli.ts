@@ -1,6 +1,8 @@
 import { parseArgs } from "node:util";
+import { runChat } from "./chat.js";
+import { Session } from "./session.js";
 import { loadConfig } from "./config.js";
-import { HarnessError } from "./errors.js";
+import { HarnessError, formatError } from "./errors.js";
 import { runAgent } from "./loop.js";
 import { createDeepSeekModel } from "./model.js";
 
@@ -8,17 +10,20 @@ const help = `Fatcat - minimal Agent Harness
 
 Usage:
   pnpm start --help
-  pnpm start --check-config
+  pnpm start --checkConfig
+  pnpm start --chat
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
 
-One invocation runs one task. History stays in memory.
+Use --chat for a continuous conversation with /help, /reset, and /exit.
+A prompt runs one task. History stays in memory.
 Configuration checks are local and do not validate credentials or connectivity.
 Logs go to stderr; the final answer goes to stdout. Press Ctrl+C to cancel.`;
 
 async function main(args: string[]): Promise<number> {
   const controller = new AbortController();
   const cancel = () => controller.abort();
+
   try {
     let parsed;
     try {
@@ -26,8 +31,9 @@ async function main(args: string[]): Promise<number> {
         args,
         options: {
           help: { type: "boolean", short: "h" },
-          "check-config": { type: "boolean" },
+          checkConfig: { type: "boolean" },
           prompt: { type: "string" },
+          chat: { type: "boolean" },
         },
         allowPositionals: true,
         strict: true,
@@ -37,18 +43,19 @@ async function main(args: string[]): Promise<number> {
     }
     const { values, positionals } = parsed;
     const modes = Number(Boolean(values.help))
-      + Number(Boolean(values["check-config"]))
+      + Number(Boolean(values.checkConfig))
+      + Number(Boolean(values.chat))
       + Number(values.prompt !== undefined || positionals.length > 0);
 
     //start parsing if
     if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
-      throw new HarnessError("USAGE", "Choose one mode: help, config check, or one prompt.");
+      throw new HarnessError("USAGE", "Choose one mode: help, config check, chat, or one prompt.");
     }
     if (values.help || args.length === 0) {
       console.log(help);
       return 0;
     }
-    if (values["check-config"]) {
+    if (values.checkConfig) {
       const config = loadConfig();
       console.log("Local configuration is valid (DeepSeek was not contacted).");
       console.log(`Model: ${config.model}`);
@@ -58,13 +65,19 @@ async function main(args: string[]): Promise<number> {
       return 0;
     }
     const prompt = values.prompt ?? positionals.join(" ");
-    if (!prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
+    if (!values.chat && !prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
 
     //start config
     const config = loadConfig();
     process.on("SIGINT", cancel);
+    const model = createDeepSeekModel(config);
+    if (values.chat) {
+      return await runChat(new Session({ model, maxIterations: config.maxIterations }), {
+        input: process.stdin, output: process.stdout, error: process.stderr, signal: controller.signal,
+      });
+    }
     const answer = await runAgent(prompt, {
-      model: createDeepSeekModel(config),
+      model,
       maxIterations: config.maxIterations,
       signal: controller.signal,
       onEvent: (event) => console.error(JSON.stringify(event)),
@@ -73,7 +86,7 @@ async function main(args: string[]): Promise<number> {
     return 0;
   } catch (error) {
     const known = error instanceof HarnessError;
-    console.error(known ? `Error [${error.code}]: ${error.message}` : "Error [INTERNAL]: An unexpected failure occurred.");
+    console.error(formatError(error));
     if (known && error.code === "USAGE") return 2;
     if (known && error.code === "CANCELLED") return 130;
     return 1;

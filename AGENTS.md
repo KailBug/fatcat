@@ -46,7 +46,8 @@
 - Build: pnpm run build
 - Test: pnpm test
 - Help: pnpm start --help
-- Local configuration check: pnpm start --check-config
+- Continuous chat: pnpm start --chat
+- Local configuration check: pnpm start --checkConfig
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
 - DeepSeek is the only model service. Keep real keys in local environment variables or the ignored .env file.
 - Automated tests must use fake credentials and injected transports. Live verification is a separate, explicit command.

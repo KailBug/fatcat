@@ -2,16 +2,16 @@
 
 ## 状态与本轮范围
 
-阶段 2A 已实现，通过离线测试、真实 DeepSeek 追问与 Windows 终端检查，当前交由用户 review；具体结果以 PROGRESS.md 为准。只解决同一进程内继续追问的问题，沿用 Node.js、pnpm、现有模型与工具，不增加依赖。
+阶段 2A 已实现，通过离线测试、真实 DeepSeek 追问与 Windows 终端检查，已通过用户 review；具体结果以 PROGRESS.md 为准。只解决同一进程内继续追问的问题，沿用 Node.js、pnpm、现有模型与工具，不增加依赖。
 
 ## 已实现的职责边界
 
-- `src/session.ts`：一个 Session 拥有独立消息历史；顺序执行用户回合，完成时保存完整历史，失败时保留此前成功历史；空闲时可重置。
+- `src/session.ts`：一个 Session 拥有独立消息历史；顺序执行用户回合，完成时保存完整历史，失败时保留此前成功历史；空闲时可重置。阶段 2B 的 tools 由创建方传入并固定，重置只清空历史，不改变工作目录或工具权限。
 - `src/loop.ts`：在历史副本上执行一个用户回合，返回答案与完整消息；原 `runAgent` 入口保持单次任务语义。
 - `src/chat.ts`：用 Node readline 读取一行一个任务，处理本地命令、终端提示、日志和取消；复用 Session。
 - `src/cli.ts`：增加与原有模式互斥的 `--chat`，保留单次任务、帮助、配置检查及用户已有注释。
 
-`new Session({ model, maxIterations })` 创建独立会话；`run(prompt, { signal?, onEvent? }?)` 返回 `Promise<string>`，`reset()` 清空历史。Loop 提供 `runAgentTurn(prompt, history, options)`，返回 `{ answer, messages }`，由 Session 保存成功结果；`runAgent(prompt, options)` 则包装空历史单次调用。
+`new Session({ model, maxIterations, tools? })` 创建独立会话；`run(prompt, { signal?, onEvent? }?)` 返回 `Promise<string>`，`reset()` 清空历史。Loop 提供 `runAgentTurn(prompt, history, options)`，返回 `{ answer, messages }`，由 Session 保存成功结果；`runAgent(prompt, options)` 则包装空历史单次调用。
 
 历史在 Loop 入口及成功结果出口复制，避免临时请求数组或模型保留的引用修改已保存历史。`runAgentTurn` 只接收进程内已完成历史，不是外部历史导入或校验接口。
 
@@ -21,7 +21,7 @@ Session 的接口保持上述最小范围；不提供存储适配器、注册表
 
 成功历史 → 副本加上新 user 消息 → Loop 请求模型和执行工具 → 获得最终答案 → Session 保存本轮完整历史。
 
-异常、取消或迭代耗尽都不保存本轮 user、assistant 与 tool 消息，避免留下没有关联结果的工具调用。此前成功回合保持可用。这里的历史丢弃不能撤销已经发生的外部副作用；当前只有纯 sum 工具。
+异常、取消或迭代耗尽都不保存本轮 user、assistant 与 tool 消息，避免留下没有关联结果的工具调用。此前成功回合保持可用。这里的历史丢弃不能撤销已经发生的外部副作用；当前工具为纯 sum 及显式开启的只读文件工具；已发送给模型的文件内容和已产生的请求费用不会因历史丢弃而撤销。
 
 每个用户回合从第 1 次模型请求重新计数；工具调用 ID 在本轮内检查重复，跨成功用户回合按各自的调用与结果关联，允许供应商重复使用 ID。
 
@@ -37,7 +37,7 @@ Session 的接口保持上述最小范围；不提供存储适配器、注册表
 
 1. 已实现可复用 Loop 回合与独立 Session，离线验证历史、工具关联、失败隔离和忙碌保护。
 2. 已接入连续对话 CLI，离线验证命令、EOF、取消、错误后继续及原命令回归；CLI 测试通过 Node `--import` 加载仅测试使用的虚构传输，不改变生产地址。
-3. 已通过真实模型跨回合追问，以及 Windows 原生伪终端连续输入、重置、帮助和 Ctrl+C 检查。待用户 review 后再决定下一增量。
+3. 已通过真实模型跨回合追问，以及 Windows 原生伪终端连续输入、重置、帮助和 Ctrl+C 检查。阶段 2A 已通过用户 review；当前阶段 2B 的工具增量见 TOOLS.md。
 
 ## 后续方向（未实现）
 

@@ -4,9 +4,9 @@ A minimal TypeScript Agent Harness that runs natively on Windows.
 
 ## Current capabilities
 
-The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly or call the pure `sum` tool; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
+The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, or inspect text files in an explicitly selected workspace; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. It has no persistent sessions, plugins, subagents, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
+The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, optional read-only workspace tools, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. It has no persistent sessions, plugins, subagents, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
 
 ## Windows setup
 
@@ -77,7 +77,7 @@ node --env-file-if-exists=.env dist/src/cli.js --prompt "Use the sum tool to add
 
 Press Ctrl+C to cancel. A single-task invocation starts fresh history. No arguments displays help; use `--chat` for a continuous conversation.
 
-The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. No shell, filesystem, or network tools are exposed.
+The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. Filesystem tools require an explicit `--workspace` selection. No file-writing, shell, or network tools are exposed.
 
 Each model request counts as one iteration; each new user turn receives a fresh iteration budget. If the last allowed request still asks for tools, the harness stops without executing those calls. Timeouts and transport failures stop the run; automatic SDK retries are disabled.
 
@@ -87,6 +87,28 @@ Each model request counts as one iteration; each new user turn receives a fresh 
 | 1 | Configuration, model, protocol, or iteration-limit failure; chat also returns 1 if any turn failed |
 | 2 | Invalid CLI usage or empty prompt |
 | 130 | User cancellation |
+
+## Read a workspace
+
+Select the directory whose text files you want the model to use:
+
+```powershell
+pnpm start --workspace examples/workspace --prompt "Read project-notes.txt and report its verification phrase."
+pnpm start --chat --workspace examples/workspace
+```
+
+`--workspace` works with a single prompt or `--chat`; it cannot be used alone or with help/configuration checks. Without it, only `sum` is available. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
+
+| Tool | Behavior |
+| --- | --- |
+| list_directory | List allowed text files and directories at a relative path; `.` means the workspace root. Non-recursive; at most 100 entries, with a `truncated` flag for partial listings. |
+| read_file | Read a regular UTF-8 text file by relative path, up to 65536 bytes. Oversized or binary files return an error instead of partial content. |
+
+Both `/` and Windows `\` path separators are supported. Absolute paths, parent traversal, Windows device/data-stream paths, dot-prefixed names (including `.env` and `.git`), `node_modules`, symbolic links, junctions, and file hard links are rejected. Listings omit unsupported files and stop after scanning at most 1000 entries; there is no pagination yet. Supported text extensions are listed in [Tools architecture](docs/ARCHITECTURE/TOOLS.md).
+
+When the model reads a file, its contents enter the conversation and are sent to DeepSeek. Choose a directory appropriate for that use; path and extension checks do not redact secrets stored in ordinary text files. This is a read-only scope check, not an operating-system sandbox against another process changing files concurrently.
+
+File errors return structured tool results that the model can correct or explain. Logs omit file contents and path arguments. Local files are treated as data and cannot change the enabled tools. File access does not write or execute workspace content.
 
 ## Continuous chat
 
@@ -125,7 +147,7 @@ With a real local key, explicitly run:
 pnpm run verify:live
 ```
 
-This sends three fixed prompts to DeepSeek and checks a direct answer, a sum-tool round trip, and a follow-up that reuses the previous total. It uses at most three model requests per prompt and can consume API credits. The current Windows implementation has passed offline tests and live DeepSeek checks; detailed results and limitations are in [PROGRESS.md](docs/PROGRESS.md).
+This checks a direct answer, a sum-tool round trip, a contextual follow-up, and directory listing/file reading against `examples/workspace`. The first three scenarios each allow at most three model requests; the workspace scenario allows four, for at most 13 total. These explicit live checks can consume API credits. They only read the committed sample directory, not arbitrary local files. The current Windows implementation has passed offline tests and live DeepSeek checks; detailed results and limitations are in [PROGRESS.md](docs/PROGRESS.md).
 
 The provider protocol follows the [DeepSeek API documentation](https://api-docs.deepseek.com/) using openai 7.18.0 as a compatibility client. Thinking and streaming are explicitly disabled for this first loop. SDK client usage was checked against [official OpenAI documentation](https://developers.openai.com/api/docs/libraries) and the installed SDK.
 
@@ -137,6 +159,7 @@ The provider protocol follows the [DeepSeek API documentation](https://api-docs.
 - [Architecture overview](docs/ARCHITECTURE/README.md)
 - [Agent Loop architecture](docs/ARCHITECTURE/AGENT_LOOP.md)
 - [Session architecture](docs/ARCHITECTURE/SESSION.md)
+- [Tools architecture](docs/ARCHITECTURE/TOOLS.md)
 - [Development guidelines](AGENTS.md)
 
 All repository text outside docs/ must be English. Chinese is allowed only under docs/. Runtime user input and model output may use any language.

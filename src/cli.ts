@@ -6,6 +6,7 @@ import { HarnessError, formatError } from "./errors.js";
 import { runAgent } from "./loop.js";
 import { createDeepSeekModel } from "./model.js";
 import { createTools } from "./tools.js";
+import { createSubagentTools } from "./subagent.js";
 
 const help = `Fatcat - minimal Agent Harness
 
@@ -14,11 +15,14 @@ Usage:
   pnpm start --checkConfig
   pnpm start --chat
   pnpm start --chat --workspace examples/workspace
+  pnpm start --chat --subagent --workspace examples/workspace
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
 
 Use --chat for a continuous conversation with /help, /reset, and /exit.
 A prompt runs one task. History stays in memory.
+Use --subagent to allow up to two isolated child tasks per user turn.
+Each child uses at most three additional model requests and cannot delegate.
 Use --workspace <directory> to enable read-only text tools in that directory.
 Selected file contents are sent to DeepSeek when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
@@ -39,6 +43,7 @@ async function main(args: string[]): Promise<number> {
           prompt: { type: "string" },
           chat: { type: "boolean" },
           workspace: { type: "string" },
+          subagent: { type: "boolean" },
         },
         allowPositionals: true,
         strict: true,
@@ -60,6 +65,10 @@ async function main(args: string[]): Promise<number> {
       || (!values.chat && values.prompt === undefined && positionals.length === 0))) {
       throw new HarnessError("USAGE", "Use --workspace with a prompt or --chat and a non-empty directory.");
     }
+    if (values.subagent && (values.help || values.checkConfig
+      || (!values.chat && values.prompt === undefined && positionals.length === 0))) {
+      throw new HarnessError("USAGE", "Use --subagent with a prompt or --chat.");
+    }
     if (values.help || args.length === 0) {
       console.log(help);
       return 0;
@@ -79,7 +88,10 @@ async function main(args: string[]): Promise<number> {
     //start config
     const config = loadConfig();
     process.on("SIGINT", cancel);
-    const tools = await createTools(values.workspace);
+    const baseTools = await createTools(values.workspace);
+    const tools = values.subagent
+      ? createSubagentTools(baseTools, createDeepSeekModel(config, undefined, baseTools), config.maxIterations)
+      : baseTools;
     const model = createDeepSeekModel(config, undefined, tools);
     if (values.chat) {
       return await runChat(new Session({ model, tools, maxIterations: config.maxIterations }), {

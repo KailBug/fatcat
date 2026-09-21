@@ -48,6 +48,7 @@
 - Help: pnpm start --help
 - Continuous chat: pnpm start --chat
 - Read-only workspace chat: pnpm start --chat --workspace examples/workspace
+- Opt-in delegation: pnpm start --chat --subagent --workspace examples/workspace
 - Local configuration check: pnpm start --checkConfig
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
 - DeepSeek is the only model service. Keep real keys in local environment variables or the ignored .env file.

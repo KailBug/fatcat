@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-阶段 2B 已实现，通过离线测试和真实 DeepSeek 工作目录读取验证，待用户 review。进度事实见 [PROGRESS.md](../PROGRESS.md)。沿用现有运行时、SDK、Loop 和 Session，没有新增依赖。
+阶段 2B 已实现、验证并通过用户 review。阶段 2C 通过独立包装器增加可选委派能力，见 [SUBAGENT.md](SUBAGENT.md)。进度事实见 [PROGRESS.md](../PROGRESS.md)。沿用现有运行时、SDK、Loop 和 Session，没有新增依赖。
 
 ## 模块与接口
 
@@ -14,7 +14,7 @@
 | `src/tools/workspace.ts` | 将显式目录解析为固定根目录，提供 list_directory 和 read_file 的校验与执行 |
 | `src/cli.ts` | 解析 --workspace，只允许与单次任务或 --chat 组合；在请求模型前初始化工具集合 |
 
-Tools 包含 `definitions` 和 `execute(name, argumentsJson, signal?): Promise<ToolResult>`。模型客户端使用同一实例的定义，Loop 顺序等待执行并关联 tool_call_id。Session 创建时固定 tools，后续回合及 /reset 保留该集合。
+Tools 包含 `definitions` 和 `execute(name, argumentsJson, signal?, callId?): Promise<ToolResult>`。阶段 2C 增加可选 `forTurn(onEvent?)` 工厂，Loop 每回合调用一次，供委派包装器隔离次数预算及事件回调；基础 collectTools 不需要该工厂，继续使用用户 review 后的内部命名 execute 函数。模型客户端使用同一实例的定义，Loop 顺序等待执行并关联 tool_call_id。Session 创建时固定 tools，后续回合及 /reset 保留该集合。
 
 不指定工作目录时使用 `defaultTools`，仅含 sum。`toolDefinitions` 和异步 `executeTool` 是默认集合的入口；executeTool 已由同步函数变成 Promise 返回值。程序化调用者自定义 tools 时，应把同一实例传给 createDeepSeekModel 的第三个参数和 Loop/Session。
 
@@ -62,7 +62,7 @@ read_file 最多接受 65536 字节；先检查文件大小，再以 65537 字�
 
 1. 工具集合及异步执行已实现，默认 sum 与原有 Loop/Session 回归通过。
 2. 工作目录工具和 CLI 已实现；离线验证 Windows 路径、junction/硬链接、隐藏名称、编码、大小、返回条数、取消、错误纠正及会话工作目录隔离。
-3. 真实模型仅使用 `examples/workspace/project-notes.txt` 虚构样例，验证列目录、读取和回答；pnpm 的单次任务入口也已验证。等待用户 review。
+3. 真实模型仅使用 `examples/workspace/project-notes.txt` 虚构样例，验证列目录、读取和回答；pnpm 的单次任务入口也已验证。阶段 2B 已通过用户 review。
 
 实现依据：Node 24 [文件系统 API](https://nodejs.org/docs/latest-v24.x/api/fs.html)，结合本机 Windows 测试确认实际行为。
 

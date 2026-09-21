@@ -6,7 +6,7 @@ A minimal TypeScript Agent Harness that runs natively on Windows.
 
 The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, or inspect text files in an explicitly selected workspace; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, optional read-only workspace tools, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. It has no persistent sessions, plugins, subagents, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
+The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, optional read-only workspace tools, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. An optional bounded subagent can handle isolated tasks. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
 
 ## Windows setup
 
@@ -132,6 +132,23 @@ Successful turns keep the full user, assistant, and tool messages in memory. Fai
 
 History is lost on exit and is not automatically trimmed or summarized. Long conversations can reach provider context limits; use `/reset` to start fresh. There is no session storage or recovery in this increment.
 
+## Delegate a task
+
+```powershell
+pnpm start --subagent --prompt "Delegate adding 8 and 13 to a child using sum, then report its result."
+pnpm start --chat --subagent --workspace examples/workspace
+```
+
+`--subagent` enables `delegate_task`; it does not force every request to use delegation. It works with a prompt or `--chat`, optionally with a workspace. It cannot be used alone or with help/configuration checks.
+
+The parent supplies a self-contained `task` string of 1 to 4000 characters. A child starts with fresh history and the same DeepSeek configuration and basic tools, including the selected read-only workspace. It cannot see the parent conversation or delegate further. Its final answer returns as tool data; its internal messages stay out of the parent history. Answers longer than 12000 characters return an error rather than a successful partial answer.
+
+Each user turn may start at most two child tasks, including failed attempts. Each child gets at most three model requests, further capped by HARNESS_MAX_ITERATIONS. The parent's own request limit is unchanged: with the default limit of 8, the total upper bound is 14 requests per user turn. Tasks run sequentially. A new user turn gets a fresh allowance.
+
+Child failures become safe tool errors so the parent can continue or explain the limitation. Ctrl+C cancels both parent and child. Nested `subagent_event` logs include the parent tool-call ID; chat also supplies the user-turn number. Logs omit task text, answers, file contents, and credentials.
+
+This is an in-process child loop, with no parallel scheduler, background task, persistence, or recovery. Delegation can add latency and API cost; this increment makes no claim of better task success or lower token usage.
+
 ## Verification
 
 ```powershell
@@ -147,7 +164,7 @@ With a real local key, explicitly run:
 pnpm run verify:live
 ```
 
-This checks a direct answer, a sum-tool round trip, a contextual follow-up, and directory listing/file reading against `examples/workspace`. The first three scenarios each allow at most three model requests; the workspace scenario allows four, for at most 13 total. These explicit live checks can consume API credits. They only read the committed sample directory, not arbitrary local files. The current Windows implementation has passed offline tests and live DeepSeek checks; detailed results and limitations are in [PROGRESS.md](docs/PROGRESS.md).
+This checks a direct answer, a sum-tool round trip, a contextual follow-up, and directory listing/file reading against `examples/workspace`. It also checks child delegation with a file-tool result returned to the parent. The first three scenarios each allow at most three model requests; the workspace scenario allows four; the delegation scenario allows three parent requests plus up to six child requests, for at most 22 total. These explicit live checks can consume API credits. They only read the committed sample directory, not arbitrary local files. The current Windows implementation has passed offline tests and live DeepSeek checks; detailed results and limitations are in [PROGRESS.md](docs/PROGRESS.md).
 
 The provider protocol follows the [DeepSeek API documentation](https://api-docs.deepseek.com/) using openai 7.18.0 as a compatibility client. Thinking and streaming are explicitly disabled for this first loop. SDK client usage was checked against [official OpenAI documentation](https://developers.openai.com/api/docs/libraries) and the installed SDK.
 
@@ -160,6 +177,7 @@ The provider protocol follows the [DeepSeek API documentation](https://api-docs.
 - [Agent Loop architecture](docs/ARCHITECTURE/AGENT_LOOP.md)
 - [Session architecture](docs/ARCHITECTURE/SESSION.md)
 - [Tools architecture](docs/ARCHITECTURE/TOOLS.md)
+- [Subagent architecture](docs/ARCHITECTURE/SUBAGENT.md)
 - [Development guidelines](AGENTS.md)
 
 All repository text outside docs/ must be English. Chinese is allowed only under docs/. Runtime user input and model output may use any language.

@@ -4,7 +4,7 @@
 
 架构文档统一放在 `docs/ARCHITECTURE/` 下，本文件作为总览和索引，记录整体边界、跨系统关系及共享决策。
 
-- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md` 和 `TOOLS.md`；其他系统文档在需要时建立。
+- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md` 和 `SUBAGENT.md`；其他系统文档在需要时建立。
 - 系统文档记录该系统的职责、设计决策、接口与数据流，以及分步实现安排和验收方式；按当前需要展开，不要求提前填满所有内容。
 - 每份文档明确区分当前已实现内容和计划设计，具体实现安排也标注状态；验证与完成事实以 [PROGRESS.md](../PROGRESS.md) 为准，避免重复维护进度记录。
 - 新增系统文档时更新本文件的索引。项目阶段目标仍放在 [ROADMAP.md](../ROADMAP.md)，系统内部的实现安排放在对应架构文档中。
@@ -17,11 +17,12 @@
 | [README.md](README.md) | 架构总览、共享决策与文档组织约定 | 已建立 |
 | [AGENT_LOOP.md](AGENT_LOOP.md) | CLI、配置与最小 Loop 的设计和实现安排 | 最小 Loop 已实现、验证并通过 review |
 | [SESSION.md](SESSION.md) | 内存 Session 与连续对话的边界及实现安排 | 已实现、验证并通过用户 review |
-| [TOOLS.md](TOOLS.md) | 工具集合与只读工作目录的边界及实现安排 | 已实现并验证，待用户 review |
+| [TOOLS.md](TOOLS.md) | 工具集合与只读工作目录的边界及实现安排 | 已实现、验证并通过用户 review |
+| [SUBAGENT.md](SUBAGENT.md) | 有界子任务委派、历史隔离及取消 | 已实现并验证，待用户 review |
 
 ## 当前实现
 
-当前工程已实现 CLI、配置校验、DeepSeek 模型客户端、内存消息循环、纯计算工具及统一错误处理；阶段 2A 已有独立内存 Session 和终端连续对话；阶段 2B 新增统一异步工具集合与显式开启的工作目录读取。真实运行可从 CLI 输入任务，经历模型调用与工具结果回传，再输出最终结果。Loop 接口、错误行为与数据流见 [AGENT_LOOP.md](AGENT_LOOP.md)，跨用户回合的历史所有权与连续输入见 [SESSION.md](SESSION.md)，内置工具与文件边界见 [TOOLS.md](TOOLS.md)。
+当前工程已实现 CLI、配置校验、DeepSeek 模型客户端、内存消息循环、纯计算工具及统一错误处理；阶段 2A 已有独立内存 Session 和终端连续对话；阶段 2B 已有统一异步工具集合与显式开启的工作目录读取；阶段 2C 增加显式开启的最小子任务委派。真实运行可从 CLI 输入任务，经历模型调用与工具结果回传，再输出最终结果。Loop 接口、错误行为与数据流见 [AGENT_LOOP.md](AGENT_LOOP.md)，跨用户回合的历史所有权与连续输入见 [SESSION.md](SESSION.md)，内置工具与文件边界见 [TOOLS.md](TOOLS.md)，委派与请求上限见 [SUBAGENT.md](SUBAGENT.md)。
 
 `tsconfig.json` 使用严格模式与 NodeNext 模块规则，将 `src/`、`tests/`、`scripts/` 编译到 `dist/` 下对应目录。CLI 入口为 `dist/src/cli.js`；测试使用 Node 内置运行器。唯一生产依赖为 `openai@7.18.0`，用于 DeepSeek 兼容接口。`pnpm run verify:live` 提供显式真实服务验证；自动化测试保持离线。
 
@@ -79,4 +80,4 @@ docs/ 之外的仓库文本只使用英文；中文仅用于 docs/ 内。模型�
 
 ## 后续方向（未实现）
 
-Session 持久化、Subagent、Channel、任务与上下文管理、恢复和成本优化均为计划，见 [ROADMAP.md](../ROADMAP.md)。本文件不将这些方向视为已有架构。
+Session 持久化、并行或递归 Subagent、Channel、任务与上下文管理、恢复和成本优化均为计划，见 [ROADMAP.md](../ROADMAP.md)。本文件不将这些方向视为已有架构。

@@ -104,3 +104,23 @@ test("single tasks and chat share workspace definitions, results, and safe error
   assert.ok(!chat.stderr.includes("fixture-only-text"));
   assert.ok(!chat.stderr.includes(folder));
 });
+
+
+test("subagent mode is explicit and completes child tool work through the actual CLI", async (t) => {
+  for (const args of [["--subagent"], ["--subagent", "--help"], ["--subagent", "--checkConfig"]]) {
+    assert.equal(run(args).status, 2);
+  }
+  const env = { DEEPSEEK_API_KEY: "offline-only" };
+  const sum = run(["--subagent", "--prompt", "delegate"], env, "");
+  assert.equal(sum.status, 0, sum.stderr);
+  assert.equal(sum.stdout.trim(), "42");
+  assert.match(sum.stderr, /"type":"subagent_event","callId":"delegated"/);
+  const { workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "notes.txt"), "child-workspace-result");
+  const chat = run(["--chat", "--subagent", "--workspace", workspace], env, "delegate\n/reset\ndelegate\n/exit\n");
+  assert.equal(chat.status, 0, chat.stderr);
+  const answers = chat.stdout.trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(answers[0], { ok: true, result: { path: "notes.txt", content: "child-workspace-result" } });
+  assert.deepEqual(answers[1], answers[0]);
+  assert.ok(!chat.stderr.includes("child-workspace-result"));
+});

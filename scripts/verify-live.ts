@@ -6,6 +6,7 @@ import { HarnessError } from "../src/errors.js";
 import { runAgent } from "../src/loop.js";
 import { createDeepSeekModel } from "../src/model.js";
 import { Session } from "../src/session.js";
+import { createSubagentTools } from "../src/subagent.js";
 import type { LoopEvent } from "../src/loop.js";
 
 try {
@@ -39,6 +40,17 @@ try {
   }
   assert.match(answer, /AMBER-MEADOW-42/);
   console.log(JSON.stringify({ scenario: "workspace_read", passed: true, answer }));
+  const delegatedTools = createSubagentTools(tools, createDeepSeekModel(config, undefined, tools), config.maxIterations);
+  const delegatedEvents: LoopEvent[] = [];
+  const delegatedAnswer = await runAgent("Use delegate_task to ask a child assistant to read project-notes.txt with read_file and return its verification phrase. Then report the child's phrase only.", {
+    model: createDeepSeekModel(config, undefined, delegatedTools), tools: delegatedTools, maxIterations,
+    onEvent: (event) => { delegatedEvents.push(event); console.error(JSON.stringify({ scenario: "subagent_read", ...event })); },
+  });
+  assert.ok(delegatedEvents.some((event) => event.type === "tool_result" && event.tool === "delegate_task" && event.ok));
+  assert.ok(delegatedEvents.some((event) => event.type === "subagent_event"
+    && event.event.type === "tool_result" && event.event.tool === "read_file" && event.event.ok));
+  assert.match(delegatedAnswer, /AMBER-MEADOW-42/);
+  console.log(JSON.stringify({ scenario: "subagent_read", passed: true, answer: delegatedAnswer }));
 } catch (error) {
   console.error(error instanceof HarnessError ? `Error [${error.code}]: ${error.message}` : "Live verification failed its assertions.");
   process.exitCode = 1;

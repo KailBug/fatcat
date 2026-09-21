@@ -8,7 +8,7 @@ export class Session {
   private history: Message[] = [];
   private running = false;
 
-  constructor(private readonly options: Pick<LoopOptions, "model" | "maxIterations">) {}
+  constructor(private readonly options: Pick<LoopOptions, "model" | "maxIterations" | "tools">) {}
 
   async run(prompt: string, options: Pick<LoopOptions, "signal" | "onEvent"> = {}): Promise<string> {
     this.requireIdle();

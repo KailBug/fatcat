@@ -117,3 +117,38 @@ test("blank prompts and invalid loop limits are rejected before model calls", as
   await assert.rejects(runAgent(" ", { model, maxIterations: 1 }), /prompt/);
   await assert.rejects(runAgent("Hello", { model, maxIterations: 0 }), /maxIterations/);
 });
+
+
+test("asynchronous tools finish in order and cancellation discards late results", async () => {
+  const controller = new AbortController();
+  const events: LoopEvent[] = [];
+  let finish!: () => void;
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => { started = resolve; });
+  let executions = 0;
+  let requests = 0;
+  const pending = runAgent("Use the tools", {
+    maxIterations: 2, signal: controller.signal, onEvent: (event) => events.push(event),
+    model: async () => {
+      requests++;
+      return requestTools({ id: "a", name: "slow", args: "{}" }, { id: "b", name: "next", args: "{}" });
+    },
+    tools: {
+      definitions: [],
+      execute: async () => {
+        executions++;
+        started();
+        await new Promise<void>((resolve) => { finish = resolve; });
+        return { ok: true, result: 1 };
+      },
+    },
+  });
+  await ready;
+  assert.equal(executions, 1);
+  controller.abort();
+  finish();
+  await assert.rejects(pending, /cancelled/);
+  assert.equal(executions, 1);
+  assert.equal(requests, 1);
+  assert.ok(!events.some((event) => event.type === "tool_result"));
+});

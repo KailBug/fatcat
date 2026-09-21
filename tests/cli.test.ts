@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { temporaryWorkspace } from "./fixtures/workspace.js";
 
 const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const transport = new URL("./fixtures/chat-transport.js", import.meta.url).href;
@@ -68,4 +71,36 @@ test("chat continues after provider errors, preserves earlier turns, and exits n
 test("chat exits cleanly with empty input and still requires valid configuration", () => {
   assert.equal(run(["--chat"], { DEEPSEEK_API_KEY: "offline-credential-only" }, "").status, 0);
   assert.equal(run(["--chat"], {}, "/exit\n").status, 1);
+});
+
+
+test("workspace CLI options require a task and an existing directory", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  for (const args of [["--workspace"], ["--workspace", workspace], ["--workspace", workspace, "--help"],
+    ["--workspace", workspace, "--checkConfig"], ["--workspace", " ", "--chat"]]) {
+    assert.equal(run(args).status, 2, JSON.stringify(args));
+  }
+  const missing = run(["--workspace", join(workspace, "missing"), "--chat"], { DEEPSEEK_API_KEY: "offline-only" }, "");
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /Workspace must/);
+});
+
+test("single tasks and chat share workspace definitions, results, and safe error handling", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  const folder = join(workspace, "text samples");
+  await mkdir(folder);
+  await writeFile(join(folder, "notes.txt"), "fixture-only-text");
+  await writeFile(join(folder, ".env"), "fixture-secret-not-for-model");
+  const env = { DEEPSEEK_API_KEY: "offline-credential-only" };
+  const single = run(["--workspace", folder, "--prompt", "workspace"], env, "");
+  assert.equal(single.status, 0, single.stderr);
+  assert.deepEqual(JSON.parse(single.stdout), { ok: true, result: { path: "notes.txt", content: "fixture-only-text" } });
+  const chat = run(["--chat", "--workspace", folder], env, "workspace\n/reset\nworkspace\nworkspace blocked\n/exit\n");
+  assert.equal(chat.status, 0, chat.stderr);
+  const answers = chat.stdout.trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(answers[0], answers[1]);
+  assert.equal(answers[2].error.code, "PATH_NOT_ALLOWED");
+  assert.ok(!chat.stdout.includes("fixture-secret-not-for-model"));
+  assert.ok(!chat.stderr.includes("fixture-only-text"));
+  assert.ok(!chat.stderr.includes(folder));
 });

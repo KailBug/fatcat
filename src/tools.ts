@@ -1,3 +1,4 @@
+import type { LoopEvent } from "./loop.js";
 import { HarnessError, checkCancellation } from "./errors.js";
 import { sumTool } from "./tools/sum.js";
 import { createWorkspaceTools } from "./tools/workspace.js";
@@ -5,7 +6,11 @@ import { failure } from "./tools/types.js";
 import type { Tool, ToolResult } from "./tools/types.js";
 
 export type { ToolResult } from "./tools/types.js";
-export type Tools = ReturnType<typeof collectTools>;
+export type Tools = {
+  definitions: Tool["definition"][];
+  execute: (name: string, argumentsJson: string, signal?: AbortSignal, callId?: string) => Promise<ToolResult>;
+  forTurn?: (onEvent?: (event: LoopEvent) => void) => Tools;
+};
 
 function collectTools(tools: Tool[]) {
   const byName = new Map(tools.map((tool) => [tool.definition.function.name, tool]));
@@ -42,7 +47,7 @@ function collectTools(tools: Tool[]) {
   };
 }
 
-export const defaultTools = collectTools([sumTool]);
+export const defaultTools: Tools = collectTools([sumTool]);
 
 /** Filesystem access is enabled only by an explicit workspace selection. */
 export async function createTools(workspace?: string): Promise<Tools> {

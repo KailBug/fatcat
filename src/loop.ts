@@ -7,7 +7,8 @@ export type LoopEvent =
   | { type: "model_request"; iteration: number }
   | { type: "tool_result"; iteration: number; callId: string; tool: string; ok: boolean }
   | { type: "completed"; iterations: number }
-  | { type: "stopped"; code: string };
+  | { type: "stopped"; code: string }
+  | { type: "subagent_event"; callId: string; event: LoopEvent };
 
 export type LoopOptions = {
   model: Model;
@@ -37,6 +38,7 @@ export async function runAgentTurn(
   ];
   messages.push({ role: "user", content: prompt });
   const seenCallIds = new Set<string>();
+  const turnTools = tools.forTurn?.(onEvent) ?? tools;
   try {
     if (!prompt.trim()) throw new HarnessError("INPUT", "The prompt must not be empty.");
     if (!Number.isSafeInteger(maxIterations) || maxIterations < 1) {
@@ -66,7 +68,7 @@ export async function runAgentTurn(
       }
       for (const call of turn.toolCalls) {
         checkCancellation(signal);
-        const result = await tools.execute(call.function.name, call.function.arguments, signal);
+        const result = await turnTools.execute(call.function.name, call.function.arguments, signal, call.id);
         checkCancellation(signal);
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
         onEvent?.({ type: "tool_result", iteration, callId: call.id, tool: call.function.name, ok: result.ok });

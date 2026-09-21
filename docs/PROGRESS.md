@@ -12,6 +12,12 @@
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+## 2026-09-21：简化 collectTools 的返回对象
+
+- 按用户要求，将对象内的 execute 方法提取为 collectTools 内部的 async function execute，末尾只返回 definitions 与 execute 引用；参数、闭包查找、错误和取消行为保持不变。
+- 验证：pnpm run build 通过；现有工具、工作目录及 SDK/Session 工具集成测试共 13 项全部通过；未调用真实模型。
+- 本次仅调整函数组织，无新增功能或阶段状态变化；无阻塞，继续用户 review。保留工作区中其他已有修改。
+
 ## 2026-09-20：阶段 2B，最小 Tools 与只读工作目录
 
 ### 范围与实际结果

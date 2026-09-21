@@ -7,7 +7,8 @@ import type {
 } from "openai/resources/chat/completions";
 import type { Config } from "./config.js";
 import { HarnessError, checkCancellation } from "./errors.js";
-import { toolDefinitions } from "./tools.js";
+import { defaultTools } from "./tools.js";
+import type { Tools } from "./tools.js";
 
 export type Message = ChatCompletionMessageParam;
 export type ModelTurn = {
@@ -62,7 +63,7 @@ function parseResponse(response: unknown): ModelTurn {
 }
 
 /** The optional transport keeps SDK-level tests offline without adding another provider. */
-export function createDeepSeekModel(config: Config, transport?: typeof fetch): Model {
+export function createDeepSeekModel(config: Config, transport?: typeof fetch, tools: Tools = defaultTools): Model {
   const client = new OpenAI({
     apiKey: config.apiKey,
     baseURL: "https://api.deepseek.com",
@@ -81,7 +82,7 @@ export function createDeepSeekModel(config: Config, transport?: typeof fetch): M
     const body: ChatCompletionCreateParamsNonStreaming & { thinking: { type: "disabled" } } = {
       model: config.model,
       messages,
-      tools: toolDefinitions,
+      tools: tools.definitions,
       tool_choice: "auto",
       thinking: { type: "disabled" },
       stream: false,

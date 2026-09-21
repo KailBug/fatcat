@@ -1,12 +1,14 @@
 # Fatcat
 
-A minimal TypeScript Agent Harness that runs natively on Windows.
+A TypeScript Agent Harness that runs natively on Windows.
+
+The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI. Writing files, executing commands, and task-driven delegation without an opt-in flag are planned, not current capabilities. TUI, Web UI, app, and channel work is deferred. See the [architecture overview](docs/ARCHITECTURE/README.md) and [roadmap](docs/ROADMAP.md).
 
 ## Current capabilities
 
 The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, or inspect text files in an explicitly selected workspace; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, optional read-only workspace tools, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. An optional bounded subagent can handle isolated tasks. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
+The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, an optional paged workspace read tool, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. An optional bounded subagent can handle isolated tasks. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
 
 ## Windows setup
 
@@ -99,12 +101,23 @@ pnpm start --chat --workspace examples/workspace
 
 `--workspace` works with a single prompt or `--chat`; it cannot be used alone or with help/configuration checks. Without it, only `sum` is available. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
 
-| Tool | Behavior |
-| --- | --- |
-| list_directory | List allowed text files and directories at a relative path; `.` means the workspace root. Non-recursive; at most 100 entries, with a `truncated` flag for partial listings. |
-| read_file | Read a regular UTF-8 text file by relative path, up to 65536 bytes. Oversized or binary files return an error instead of partial content. |
+The workspace exposes one general-purpose `read` tool. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
 
-Both `/` and Windows `\` path separators are supported. Absolute paths, parent traversal, Windows device/data-stream paths, dot-prefixed names (including `.env` and `.git`), `node_modules`, symbolic links, junctions, and file hard links are rejected. Listings omit unsupported files and stop after scanning at most 1000 entries; there is no pagination yet. Supported text extensions are listed in [Tools architecture](docs/ARCHITECTURE/TOOLS.md).
+| Input | Behavior |
+| --- | --- |
+| path | Required relative file or directory path; `.` lists the root. |
+| offset | Optional zero-based line or sorted-entry offset; defaults to 0. |
+| limit | Optional integer from 1 to 200; defaults to 100 lines or entries. |
+
+File results include content, totalLines, and one-based startLine/endLine. Directory results include filtered entries and totalEntries. Both include truncated and nextOffset: continue with the same path and nextOffset until it is null. Empty or past-end pages have no continuation. For example, asking to read lines 21 through 40 should use offset 20 and limit 20.
+
+```powershell
+pnpm start --workspace examples/workspace --prompt "Read project-notes.txt one line at a time using read with limit 1. Follow nextOffset until the end and report the verification phrase."
+```
+
+Files must be supported UTF-8 text, at most 1 MiB. Each content page has a 16 KiB UTF-8 budget and preserves whole lines and original line endings; a line exceeding the budget returns OUTPUT_LIMIT. This budget excludes metadata and JSON escaping. Listings are non-recursive and sorted before pagination; more than 1000 raw directory entries returns DIRECTORY_TOO_LARGE. A known child path can still be read directly. Directory entry payloads also have a 16 KiB budget.
+
+Each page is a fresh read, not a snapshot; changes between calls can shift offsets. There is no recursive search or streaming access to larger files yet. Both `/` and Windows `\` separators are supported. Absolute paths, parent traversal, Windows device/data-stream paths, dot-prefixed names (including `.env` and `.git`), `node_modules`, symbolic links, junctions, and file hard links are rejected. Listings omit unsupported files. Supported text extensions are listed in [Tools architecture](docs/ARCHITECTURE/TOOLS.md).
 
 When the model reads a file, its contents enter the conversation and are sent to DeepSeek. Choose a directory appropriate for that use; path and extension checks do not redact secrets stored in ordinary text files. This is a read-only scope check, not an operating-system sandbox against another process changing files concurrently.
 
@@ -164,7 +177,7 @@ With a real local key, explicitly run:
 pnpm run verify:live
 ```
 
-This checks a direct answer, a sum-tool round trip, a contextual follow-up, and directory listing/file reading against `examples/workspace`. It also checks child delegation with a file-tool result returned to the parent. The first three scenarios each allow at most three model requests; the workspace scenario allows four; the delegation scenario allows three parent requests plus up to six child requests, for at most 22 total. These explicit live checks can consume API credits. They only read the committed sample directory, not arbitrary local files. The current Windows implementation has passed offline tests and live DeepSeek checks; detailed results and limitations are in [PROGRESS.md](docs/PROGRESS.md).
+This checks a direct answer, a sum-tool round trip, a contextual follow-up, and directory listing and three one-line read pages against `examples/workspace`. It also checks child delegation with a file-tool result returned to the parent. The first three scenarios each allow at most three model requests; the workspace scenario allows five; the delegation scenario allows three parent requests plus up to six child requests, for at most 23 total. These explicit live checks can consume API credits. They only read the synthetic sample directory, not arbitrary local files. The current Windows implementation has passed offline tests and live DeepSeek checks; detailed results and limitations are in [PROGRESS.md](docs/PROGRESS.md).
 
 The provider protocol follows the [DeepSeek API documentation](https://api-docs.deepseek.com/) using openai 7.18.0 as a compatibility client. Thinking and streaming are explicitly disabled for this first loop. SDK client usage was checked against [official OpenAI documentation](https://developers.openai.com/api/docs/libraries) and the installed SDK.
 

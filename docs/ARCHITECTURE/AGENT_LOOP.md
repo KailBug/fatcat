@@ -12,7 +12,7 @@
 | `src/chat.ts`、`src/session.ts` | 连续输入和跨回合历史管理，详见 Session 文档 |
 | `src/config.ts` | `loadConfig(env = process.env): Config` 校验 Key、模型、迭代上限和单次请求超时 |
 | `src/model.ts` | `createDeepSeekModel(config, transport?, tools?): Model` 创建唯一模型客户端；提交请求、校验响应、转换服务错误 |
-| `src/tools.ts`、`src/tools/` | 创建内置工具集合，提供定义和异步执行；默认 sum，显式工作目录额外启用 list_directory/read_file，详见 TOOLS.md |
+| `src/tools.ts`、`src/tools/` | 创建内置工具集合，提供定义和异步执行；默认 sum，显式工作目录额外启用支持目录与文本分页的 read，详见 TOOLS.md |
 | `src/loop.ts` | `runAgentTurn(prompt, history, options)` 在副本上执行一轮用户任务，返回答案及完整历史；`runAgent(prompt, options): Promise<string>` 保持单次任务入口 |
 | `src/subagent.ts` | 显式开启的单层委派包装器，复用空历史 Loop，限制子任务次数及轮次 |
 | `src/errors.ts` | `HarnessError` 携带稳定错误码与可展示的英文提示；共享取消检查 |

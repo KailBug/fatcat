@@ -8,10 +8,59 @@
 - 阶段 1：最小 Agent Loop 已完成离线与真实 DeepSeek 验收，用户 review 通过。
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
-- 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；当前交由用户 review。
+- 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
+- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已实现并验证、待 review，完整代码修改闭环仍未完成；Channel 与其他 UI 后移。
 - 已有 CLI 任务输入、单模型接入、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+## 2026-09-21：阶段 2D-1，通用 read 工具
+
+### 实际结果
+
+- 本轮将 list_directory / read_file 合并为一个 read 工具；默认仍只有 sum，显式 --workspace 后增加 read，原名称移除。
+- 输入 path、可选 offset / limit：目录先过滤和排序再分页，文件按行分页；结果提供类型、总量、行号及 nextOffset，空页和末页明确结束。
+- 文件输入上限 1 MiB，页内容预算 16 KiB；单行超限返回 OUTPUT_LIMIT，目录原始条目超过 1000 返回 DIRECTORY_TOO_LARGE，不误报完整或静默丢弃内容。
+- workspace.ts 仅负责根目录及路径边界；read.ts 负责具体读取协议、校验、分页与资源关闭。沿用 collectTools 内部命名 execute 函数、CLI 用户注释与现有依赖。
+- 已迁移 SDK/Session、CLI、子任务的离线传输与真实验证脚本，同步 README、PROJECT、ROADMAP、系统文档及可编辑架构图。没有改变 Subagent 开关、写入能力或命令执行权限。
+- 保留本轮起始已 review 的文档调整、架构图、examples/ 及用户修改；没有创建提交。
+
+### 验证结果
+
+- 开发前 64 项离线基线通过；最终 pnpm test（含构建）71 项全部通过，pnpm run typecheck 通过，pnpm start --help 正常。
+- 新增验证覆盖：CRLF/LF/CR、Unicode、空文件与末页、精确行号及继续位置、UTF-8 页字节预算、超长行错误、1 MiB 输入限制、稳定目录跨页覆盖、1000 条扫描边界及非法参数。
+- 原有 Windows 路径、隐藏文件、junction、硬链接、取消和工具错误边界回归通过；SDK/Session 验证关联分页与后续追问，实际 CLI 离线进程完成三页读取；子任务使用新 read 协议的 CLI 回归通过。
+- pnpm run verify:live 全部通过：直接回答 1 次、求和 2 次、历史追问 2 次、目录及三页读取 5 次、委派父 2 次与子 2 次，共 14 次真实 DeepSeek 模型请求。
+- 三页真实读取依次返回 offset 0/1/2、nextOffset 1/2/null，最终回答 AMBER-MEADOW-42；子任务也成功读取并由父任务报告同一结果。只读取已检查的 examples/workspace 虚构样例，没有读取或展示密钥。
+- 最终检查通过：45 个仓库文本文件的语言与换行规则、46 个 Markdown 本地链接、架构图 35 个元素的 ID/引用及 git diff --check；.env 仍被 Git 忽略。
+
+### 已知限制与下一步
+
+- 本轮无开发或真实模型验证阻塞，交由用户 review。阶段 2D 整体尚未完成。
+- 每页重新读取，不保证文件变化期间的快照一致性；文件仍整份有界读取和解码，没有流式大文件、递归搜索或内容搜索。
+- 单行超出页预算时不能读取该行；超出 1000 个原始条目的目录不能分页列出全部内容，但可读取已知子路径。页预算不含元数据和 JSON 转义开销，不代表 token 上限。
+- 工作目录检查不是操作系统沙箱，历史仍在内存中增长。write、shell、权限交互、执行事实持久化及 Subagent 默认可用仍未实现。
+- 下一步根据本轮 review 反馈确定受控修改增量，同时落实已发生副作用的记录边界；不直接跳到 Channel 或新 UI。
+
+## 2026-09-21：确定本地开发 Agent 方向与架构图
+
+- 用户确定近期定位：实际修改代码并运行验证的本地开发 Agent。LoopX 与 OpenViking 对应能力水平作为长期目标，先完成，再逐步完善。
+- 工具采用少量通用能力入口；read、write 和命令执行表达职责，不为每项开发操作新增专用工具。Windows 默认 PowerShell / shell 命名作为实现建议，尚未冻结；不引入 Bash 必装要求。
+- 用户确定 Subagent 等内部能力应由任务驱动选择，日常 CLI 不要求逐项开启；Harness 仍约束权限、预算和取消。当前 --subagent 开关尚未迁移。
+- Channel、TUI、Web UI、App 后移，继续 CLI。维护模块职责、可扩展性、可阅读性、可维护性及同步文档。
+- 已同步 PROJECT、ROADMAP、README、AGENTS 和相关系统文档，阶段 2D 标为计划；原有 2A–2C 的验收事实保留。
+- 已使用 Excalidraw MCP 绘制当前架构与演进方向，保存 docs/ARCHITECTURE/fatcat-architecture.excalidraw 可编辑源文件，并在架构总览解释图例与维护方式。图中的计划能力不代表已实现。
+- 本轮没有修改运行时代码、依赖或凭据，没有运行代码测试或调用真实模型。已检查 Markdown 本地链接、根目录文档英文规则、Excalidraw JSON 与 35 个元素的唯一 ID 和引用关系；MCP 已成功展示图。
+- 下一步：围绕本地开发闭环细化首个通用工具增量，确认读取/定位与结果边界，再逐步加入受控修改和命令验证。没有技术阻塞；保留用户原有修改和 examples/。
+
+## 2026-09-21：review 完成与后续方向讨论
+
+- 用户确认已有实现全部 review 完成，没有问题；阶段 2C 的最小增量验收结束。这不代表 Session、Tools 或 Subagent 已达到完整子系统的成熟度。
+- 用户提出重新讨论开发方向：考虑后移 Channel，优先丰富 tool use、完善基础能力，再逐步对标 LoopX 与 OpenViking 的相关能力。本轮不启动新功能。
+- 已核对当前实现和路线图，并查阅 LoopX 的 Loop Engineering 原则与 OpenViking 的上下文分层文档。当前 Session 仍只保存内存历史，工作目录工具只读，其他待讨论能力不能视为已有实现。
+- 待讨论建议：以实际任务闭环组织增量，结合工具执行完善必要权限、上下文和任务状态；通过明确能力与验收场景界定对标范围。建议尚未成为确定的实现计划。
+- 验证：本轮仅同步 review 状态与讨论记录，检查文档差异；没有修改代码、运行测试或调用真实模型。历史测试结果仍对应前次实现。
+- 阻塞与下一步：没有技术阻塞；先讨论目标使用场景与成熟度验收标准，再调整粗粒度路线图和下一增量范围。保留未跟踪的 examples/ 用户文件。
 
 ## 2026-09-21：阶段 2C，最小 Subagent
 

@@ -1,0 +1,3 @@
+Project: Fatcat
+Target platform: Native Windows
+Verification phrase: AMBER-MEADOW-42

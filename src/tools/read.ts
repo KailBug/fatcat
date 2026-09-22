@@ -1,19 +1,14 @@
-import { open, opendir } from "node:fs/promises";
+import { opendir } from "node:fs/promises";
 import { extname } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
 import type { Tool, ToolResult } from "./types.js";
 import type { Workspace } from "./workspace.js";
+import { readTextFile, textExtensions } from "./text-file.js";
 
-const maxFileBytes = 1024 * 1024;
 const maxPageBytes = 16 * 1024;
 const maxScannedEntries = 1000;
 const defaultLimit = 100;
 const maxLimit = 200;
-const textExtensions = new Set([
-  ".txt", ".md", ".json", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-  ".yaml", ".yml", ".toml", ".csv", ".html", ".css", ".xml", ".sql", ".py",
-]);
-
 type ReadArguments = { path: string; offset: number; limit: number };
 type Entry = { name: string; type: "file" | "directory" };
 type Target = Awaited<ReturnType<Workspace["resolvePath"]>>;
@@ -52,40 +47,6 @@ function page<T>(items: T[], offset: number, limit: number, sizeOf: (item: T) =>
   return { selected, truncated: end < items.length, nextOffset: end < items.length ? end : null };
 }
 
-async function readText(target: Target, signal?: AbortSignal): Promise<string> {
-  if (!textExtensions.has(extname(target.absolute).toLowerCase())) {
-    throw new HarnessError("UNSUPPORTED_FILE", "Only supported text file extensions can be read.");
-  }
-  const file = await open(target.absolute, "r");
-  try {
-    const opened = await file.stat();
-    if (!opened.isFile() || opened.nlink > 1 || opened.dev !== target.stat.dev || opened.ino !== target.stat.ino) {
-      throw new HarnessError("PATH_NOT_ALLOWED", "The workspace file changed during path validation.");
-    }
-    if (opened.size > maxFileBytes) throw new HarnessError("FILE_TOO_LARGE", "Text files must not exceed 1048576 bytes.");
-    // One extra byte detects growth while keeping memory use bounded.
-    const buffer = Buffer.alloc(maxFileBytes + 1);
-    let size = 0;
-    while (size < buffer.length) {
-      checkCancellation(signal);
-      const { bytesRead } = await file.read(buffer, size, buffer.length - size, null);
-      if (!bytesRead) break;
-      size += bytesRead;
-    }
-    checkCancellation(signal);
-    if (size > maxFileBytes) throw new HarnessError("FILE_TOO_LARGE", "Text files must not exceed 1048576 bytes.");
-    try {
-      const content = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, size));
-      if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(content)) throw new Error();
-      return content;
-    } catch {
-      throw new HarnessError("UNSUPPORTED_FILE", "The file must contain UTF-8 text without binary control bytes.");
-    }
-  } finally {
-    await file.close();
-  }
-}
-
 async function listEntries(workspace: Workspace, target: Target, signal?: AbortSignal): Promise<Entry[]> {
   const entries: Entry[] = [];
   let scanned = 0;
@@ -122,7 +83,7 @@ export function createReadTool(workspace: Workspace): Tool {
         entries: result.selected, truncated: result.truncated, nextOffset: result.nextOffset,
       } };
     }
-    const content = await readText(target, signal);
+    const { content } = await readTextFile(target, signal);
     // Keep original line endings without counting a trailing newline as an extra line.
     const lines = content.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g) ?? [];
     if (lines.at(-1) === "") lines.pop();

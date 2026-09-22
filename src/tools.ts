@@ -3,12 +3,15 @@ import { HarnessError, checkCancellation } from "./errors.js";
 import { sumTool } from "./tools/sum.js";
 import { createWorkspace } from "./tools/workspace.js";
 import { createReadTool } from "./tools/read.js";
+import { createWriteTool } from "./tools/write.js";
+import type { WorkspacePermission, WriteRecord } from "./tools/write.js";
 import { failure } from "./tools/types.js";
 import type { Tool, ToolResult } from "./tools/types.js";
 
 export type { ToolResult } from "./tools/types.js";
 export type Tools = {
   definitions: Tool["definition"][];
+  getWrites?: () => WriteRecord[];
   execute: (name: string, argumentsJson: string, signal?: AbortSignal, callId?: string) => Promise<ToolResult>;
   forTurn?: (onEvent?: (event: LoopEvent) => void) => Tools;
 };
@@ -51,8 +54,17 @@ function collectTools(tools: Tool[]) {
 export const defaultTools: Tools = collectTools([sumTool]);
 
 /** Filesystem access is enabled only by an explicit workspace selection. */
-export async function createTools(workspace?: string): Promise<Tools> {
-  return workspace === undefined ? defaultTools : collectTools([sumTool, createReadTool(await createWorkspace(workspace))]);
+export async function createTools(workspace?: string, permission: WorkspacePermission = "read-only"): Promise<Tools> {
+  if (permission !== "read-only" && permission !== "workspace-write") {
+    throw new HarnessError("CONFIG", "Workspace permission must be read-only or workspace-write.");
+  }
+  if (workspace === undefined) {
+    if (permission === "workspace-write") throw new HarnessError("CONFIG", "Writing requires an explicit workspace.");
+    return defaultTools;
+  }
+  const scope = await createWorkspace(workspace);
+  const writer = createWriteTool(scope, permission);
+  return { ...collectTools([sumTool, createReadTool(scope), writer.tool]), getWrites: writer.getWrites };
 }
 
 export const toolDefinitions = defaultTools.definitions;

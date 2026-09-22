@@ -23,7 +23,9 @@ Use --chat for a continuous conversation with /help, /reset, and /exit.
 A prompt runs one task. History stays in memory.
 Use --subagent to allow up to two isolated child tasks per user turn.
 Each child uses at most three additional model requests and cannot delegate.
-Use --workspace <directory> to enable the read tool for paged text and directory access.
+Use --workspace <directory> to expose read and write; access defaults to read-only.
+Use --permission workspace-write to authorize file creation and exact edits in that workspace.
+Write records are logged even if the model fails or the run is cancelled.
 Selected file contents are sent to DeepSeek when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
 Logs go to stderr; the final answer goes to stdout. Press Ctrl+C to cancel.`;
@@ -43,6 +45,7 @@ async function main(args: string[]): Promise<number> {
           prompt: { type: "string" },
           chat: { type: "boolean" },
           workspace: { type: "string" },
+          permission: { type: "string" },
           subagent: { type: "boolean" },
         },
         allowPositionals: true,
@@ -64,6 +67,10 @@ async function main(args: string[]): Promise<number> {
     if (values.workspace !== undefined && (!values.workspace.trim() || values.help || values.checkConfig
       || (!values.chat && values.prompt === undefined && positionals.length === 0))) {
       throw new HarnessError("USAGE", "Use --workspace with a prompt or --chat and a non-empty directory.");
+    }
+    if (values.permission !== undefined && (values.workspace === undefined
+      || !["read-only", "workspace-write"].includes(values.permission))) {
+      throw new HarnessError("USAGE", "Use --permission read-only or workspace-write with --workspace and a task.");
     }
     if (values.subagent && (values.help || values.checkConfig
       || (!values.chat && values.prompt === undefined && positionals.length === 0))) {
@@ -88,7 +95,8 @@ async function main(args: string[]): Promise<number> {
     //start config
     const config = loadConfig();
     process.on("SIGINT", cancel);
-    const baseTools = await createTools(values.workspace);
+    const permission = values.permission === "workspace-write" ? "workspace-write" : "read-only";
+    const baseTools = await createTools(values.workspace, permission);
     const tools = values.subagent
       ? createSubagentTools(baseTools, createDeepSeekModel(config, undefined, baseTools), config.maxIterations)
       : baseTools;

@@ -43,7 +43,26 @@ export async function createWorkspace(workspace: string) {
     return { absolute: canonical, relative: parts.join("/") || ".", stat: await lstat(canonical) };
   }
 
-  return { resolvePath };
+  async function resolveNewFile(path: string, signal?: AbortSignal) {
+    if (isAbsolute(path) || win32.isAbsolute(path)) denied();
+    const parts = path.replaceAll("\\", "/").split("/").filter((part) => part !== "" && part !== ".");
+    if (!parts.length || parts.some((part) => !allowedName(part))) denied();
+    const name = parts.pop()!;
+    const parent = await resolvePath(parts.join("/") || ".", signal);
+    if (!parent.stat.isDirectory()) denied();
+    const absolute = join(parent.absolute, name);
+    try {
+      await lstat(absolute);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return { absolute, relative: [...parts, name].join("/"), parent };
+      }
+      throw error;
+    }
+    throw new HarnessError("WRITE_CONFLICT", "The new file already exists; read it and use an exact edit instead.");
+  }
+
+  return { resolvePath, resolveNewFile };
 }
 
 export type Workspace = Awaited<ReturnType<typeof createWorkspace>>;

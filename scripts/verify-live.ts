@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import { createTools } from "../src/tools.js";
 import type { Tools, ToolResult } from "../src/tools.js";
 import { loadConfig } from "../src/config.js";
@@ -9,6 +12,30 @@ import { createDeepSeekModel } from "../src/model.js";
 import { Session } from "../src/session.js";
 import { createSubagentTools } from "../src/subagent.js";
 import type { LoopEvent } from "../src/loop.js";
+
+async function verifyWorkspaceWrite(config: ReturnType<typeof loadConfig>): Promise<void> {
+  const workspace = await mkdtemp(join(tmpdir(), "fatcat-live-write-"));
+  try {
+    const tools = await createTools(workspace, "workspace-write");
+    const events: LoopEvent[] = [];
+    const answer = await runAgent(
+      'Use write to create calculation.ts containing exactly "export const total = 1;" followed by a newline. Read it with read. Then use write with oldText "total = 1" and newText "total = 2". Read it again to verify the change. Reply with WRITE_READY only after verification.', {
+        model: createDeepSeekModel(config, undefined, tools), tools, maxIterations: Math.min(config.maxIterations, 6),
+        onEvent: (event) => { events.push(event); console.error(JSON.stringify({ scenario: "workspace_write", ...event })); },
+      });
+    assert.equal(await readFile(join(workspace, "calculation.ts"), "utf8"), "export const total = 2;\n");
+    assert.deepEqual(tools.getWrites!().map((record) => [record.operation, record.status]), [["create", "committed"], ["edit", "committed"]]);
+    assert.ok(events.filter((event) => event.type === "tool_result" && event.tool === "read" && event.ok).length >= 2);
+    assert.match(answer, /WRITE_READY/);
+    console.log(JSON.stringify({ scenario: "workspace_write", passed: true, answer }));
+  } finally {
+    const target = resolve(workspace);
+    if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("fatcat-live-write-")) {
+      throw new Error("Refusing to remove an unexpected verification directory.");
+    }
+    await rm(target, { recursive: true, force: true });
+  }
+}
 
 try {
   const config = loadConfig();
@@ -64,6 +91,7 @@ try {
     && event.event.type === "tool_result" && event.event.tool === "read" && event.event.ok));
   assert.match(delegatedAnswer, /AMBER-MEADOW-42/);
   console.log(JSON.stringify({ scenario: "subagent_read", passed: true, answer: delegatedAnswer }));
+  await verifyWorkspaceWrite(config);
 } catch (error) {
   console.error(error instanceof HarnessError ? `Error [${error.code}]: ${error.message}` : "Live verification failed its assertions.");
   process.exitCode = 1;

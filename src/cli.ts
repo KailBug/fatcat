@@ -23,7 +23,7 @@ Use --chat for a continuous conversation with /help, /reset, and /exit.
 A prompt runs one task. History stays in memory.
 Use --subagent to allow up to two isolated child tasks per user turn.
 Each child uses at most three additional model requests and cannot delegate.
-Use --workspace <directory> to enable read-only text tools in that directory.
+Use --workspace <directory> to enable the read tool for paged text and directory access.
 Selected file contents are sent to DeepSeek when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
 Logs go to stderr; the final answer goes to stdout. Press Ctrl+C to cancel.`;

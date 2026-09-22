@@ -6,7 +6,15 @@ import { maxFileBytes, readTextFile, textExtensions } from "./text-file.js";
 import type { Tool, ToolResult } from "./types.js";
 import type { Workspace } from "./workspace.js";
 
-export type WorkspacePermission = "read-only" | "workspace-write";
+export type WorkspacePermission = "ask" | "read-only" | "workspace-write";
+export type WriteApprovalRequest = {
+  path: string;
+  operation: "create" | "edit";
+  oldText?: string;
+  newText: string;
+  bytes: number;
+};
+export type ApproveWrite = (request: WriteApprovalRequest, signal?: AbortSignal) => Promise<boolean>;
 export type WriteRecord = {
   id: string;
   path: string;
@@ -51,14 +59,15 @@ export function createWriteTool(
   workspace: Workspace,
   permission: WorkspacePermission,
   fileSystem = { open, link, rename, unlink },
+  approveWrite?: ApproveWrite,
 ) {
   const records: WriteRecord[] = [];
   let busy = false;
 
   async function execute(args: unknown, signal?: AbortSignal): Promise<ToolResult> {
     checkCancellation(signal);
-    if (permission !== "workspace-write") {
-      throw new HarnessError("PERMISSION_DENIED", "This workspace is read-only. Writing requires user authorization via --permission workspace-write.");
+    if (permission === "read-only" || (permission === "ask" && !approveWrite)) {
+      throw new HarnessError("PERMISSION_DENIED", "Writing is unavailable under this workspace policy. Do not retry without user authorization.");
     }
     const input = parseArguments(args);
     if (busy) throw new HarnessError("WRITE_BUSY", "Another write is already in progress for these workspace tools.");
@@ -103,6 +112,32 @@ export function createWriteTool(
       const bom = before.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])) ? "\ufeff" : "";
       bytes = encodeText(bom + updated);
     }
+    async function verifyTarget(): Promise<void> {
+      // Approval can take time; validate again both before staging and before publication.
+      const currentParent = await workspace.resolvePath(parentPath, signal);
+      if (currentParent.absolute !== parent.absolute || currentParent.stat.dev !== parent.stat.dev || currentParent.stat.ino !== parent.stat.ino) {
+        throw new HarnessError("WRITE_CONFLICT", "The parent directory changed during the write.");
+      }
+      if (before) {
+        const current = await workspace.resolvePath(input.path, signal);
+        const snapshot = await readTextFile(current, signal);
+        if (current.absolute !== target.absolute || current.stat.dev !== beforeIdentity?.dev
+          || current.stat.ino !== beforeIdentity.ino || !snapshot.bytes.equals(before)) {
+          throw new HarnessError("WRITE_CONFLICT", "The file changed during the write. Read it again before editing.");
+        }
+      } else {
+        await workspace.resolveNewFile(input.path, signal);
+      }
+    }
+    if (permission === "ask") {
+      const approved = await approveWrite!({
+        path: target.relative, operation: creating ? "create" : "edit", bytes: bytes.length,
+        ...(creating ? { newText: input.content } : { oldText: input.oldText, newText: input.newText }),
+      }, signal);
+      checkCancellation(signal);
+      if (!approved) throw new HarnessError("PERMISSION_DENIED", "The user did not approve this write. Do not retry it unless the user asks again.");
+      await verifyTarget();
+    }
     checkCancellation(signal);
     const record: WriteRecord = {
       id: randomUUID(), path: target.relative, operation: creating ? "create" : "edit", status: "started",
@@ -122,21 +157,7 @@ export function createWriteTool(
       } finally {
         await file.close();
       }
-      // Check the parent and current bytes again after staging, before publication.
-      const currentParent = await workspace.resolvePath(parentPath, signal);
-      if (currentParent.absolute !== parent.absolute || currentParent.stat.dev !== parent.stat.dev || currentParent.stat.ino !== parent.stat.ino) {
-        throw new HarnessError("WRITE_CONFLICT", "The parent directory changed during the write.");
-      }
-      if (before) {
-        const current = await workspace.resolvePath(input.path, signal);
-        const snapshot = await readTextFile(current, signal);
-        if (current.absolute !== target.absolute || current.stat.dev !== beforeIdentity?.dev
-          || current.stat.ino !== beforeIdentity.ino || !snapshot.bytes.equals(before)) {
-          throw new HarnessError("WRITE_CONFLICT", "The file changed during the write. Read it again before editing.");
-        }
-      } else {
-        await workspace.resolveNewFile(input.path, signal);
-      }
+      await verifyTarget();
       checkCancellation(signal);
       // No cancellation check between publication and recording its outcome.
       record.status = "uncertain";
@@ -175,7 +196,7 @@ export function createWriteTool(
   const tool: Tool = {
     definition: { type: "function", function: {
       name: "write",
-      description: "Create a new UTF-8 workspace file with path and content (never overwrites), or edit an existing file with path, oldText and newText. Read first; oldText must match exactly once, including whitespace and line endings. Existing content outside the fragment and the UTF-8 BOM are preserved. Parent directories must exist. Maximum file size is 1 MiB. Requires workspace-write permission. Errors do not imply rollback; inspect write records and read current content before retrying.",
+      description: "Create a new UTF-8 workspace file with path and content (never overwrites), or edit an existing file with path, oldText and newText. Read first; oldText must match exactly once, including whitespace and line endings. Existing content outside the fragment and the UTF-8 BOM are preserved. Parent directories must exist. Maximum file size is 1 MiB. Requires user approval or preauthorized workspace-write permission. Errors do not imply rollback; inspect write records and read current content before retrying.",
       parameters: {
         type: "object", properties: {
           path: { type: "string", minLength: 1, maxLength: 1024 },

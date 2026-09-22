@@ -2,13 +2,13 @@
 
 A TypeScript Agent Harness that runs natively on Windows.
 
-The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI. Writing files, executing commands, and task-driven delegation without an opt-in flag are planned, not current capabilities. TUI, Web UI, app, and channel work is deferred. See the [architecture overview](docs/ARCHITECTURE/README.md) and [roadmap](docs/ROADMAP.md).
+The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI. Controlled text-file creation and editing are available. Command execution and task-driven delegation without an opt-in flag remain planned. TUI, Web UI, app, and channel work is deferred. See the [architecture overview](docs/ARCHITECTURE/README.md) and [roadmap](docs/ROADMAP.md).
 
 ## Current capabilities
 
-The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, or inspect text files in an explicitly selected workspace; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
+The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, inspect text files in an explicitly selected workspace, or write them with explicit workspace-write permission; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, an optional paged workspace read tool, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. An optional bounded subagent can handle isolated tasks. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
+The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading and guarded writing, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. An optional bounded subagent can handle isolated tasks. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
 
 ## Windows setup
 
@@ -70,7 +70,7 @@ pnpm start "Explain what an agent loop does in one sentence."
 pnpm start --prompt "Use the sum tool to add 17 and 25, then report the total."
 ```
 
-The CLI writes the final answer to stdout and JSON event logs to stderr. Logs include model iteration numbers, tool names and call IDs, tool success/failure, and termination reasons. They omit prompts, tool arguments, raw provider errors, and API keys. For use in a pipeline without package-manager output:
+The CLI writes the final answer to stdout and JSON event logs to stderr. Logs include model iteration numbers, tool names and call IDs, tool success/failure, and termination reasons. Write records also include relative paths, content hashes, byte counts, outcome status, and any residual temporary-file path. They omit prompts, tool arguments, raw provider errors, and API keys. For use in a pipeline without package-manager output:
 
 ```powershell
 pnpm run build
@@ -79,7 +79,7 @@ node --env-file-if-exists=.env dist/src/cli.js --prompt "Use the sum tool to add
 
 Press Ctrl+C to cancel. A single-task invocation starts fresh history. No arguments displays help; use `--chat` for a continuous conversation.
 
-The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. Filesystem tools require an explicit `--workspace` selection. No file-writing, shell, or network tools are exposed.
+The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. Filesystem tools require an explicit `--workspace` selection. Writing requires --permission workspace-write; no shell or network tools are exposed.
 
 Each model request counts as one iteration; each new user turn receives a fresh iteration budget. If the last allowed request still asks for tools, the harness stops without executing those calls. Timeouts and transport failures stop the run; automatic SDK retries are disabled.
 
@@ -101,7 +101,7 @@ pnpm start --chat --workspace examples/workspace
 
 `--workspace` works with a single prompt or `--chat`; it cannot be used alone or with help/configuration checks. Without it, only `sum` is available. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
 
-The workspace exposes one general-purpose `read` tool. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
+The workspace exposes general-purpose `read` and `write` tools, with write permission denied by default. The `read` tool accepts files or directories. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
 
 | Input | Behavior |
 | --- | --- |
@@ -119,9 +119,33 @@ Files must be supported UTF-8 text, at most 1 MiB. Each content page has a 16 Ki
 
 Each page is a fresh read, not a snapshot; changes between calls can shift offsets. There is no recursive search or streaming access to larger files yet. Both `/` and Windows `\` separators are supported. Absolute paths, parent traversal, Windows device/data-stream paths, dot-prefixed names (including `.env` and `.git`), `node_modules`, symbolic links, junctions, and file hard links are rejected. Listings omit unsupported files. Supported text extensions are listed in [Tools architecture](docs/ARCHITECTURE/TOOLS.md).
 
-When the model reads a file, its contents enter the conversation and are sent to DeepSeek. Choose a directory appropriate for that use; path and extension checks do not redact secrets stored in ordinary text files. This is a read-only scope check, not an operating-system sandbox against another process changing files concurrently.
+When the model reads a file, its contents enter the conversation and are sent to DeepSeek. Choose a directory appropriate for that use; path and extension checks do not redact secrets stored in ordinary text files. These are application-level scope checks, not an operating-system sandbox against another process changing files concurrently.
 
-File errors return structured tool results that the model can correct or explain. Logs omit file contents and path arguments. Local files are treated as data and cannot change the enabled tools. File access does not write or execute workspace content.
+File errors return structured tool results that the model can correct or explain. Read logs omit file contents and path arguments. Local files are treated as data and cannot change tool permissions. Reading does not write or execute workspace content.
+
+## Write a workspace
+
+Grant write access to the selected directory for this invocation:
+
+```powershell
+pnpm start --chat --workspace examples/workspace --permission workspace-write
+pnpm start --workspace examples/workspace --permission workspace-write --prompt "Read project-notes.txt, then replace one unique fragment and read back the result."
+```
+
+The second command can modify the sample file. Use a disposable copy when experimenting. `--permission` accepts only `read-only` (the default) or `workspace-write`, and requires a workspace plus a task or chat. The tools remain discoverable in read-only mode; unauthorized writes return PERMISSION_DENIED. This grants workspace access for the invocation, with no per-write approval dialog.
+
+The `write` tool accepts exactly one of these forms:
+
+| Input | Behavior |
+| --- | --- |
+| path, content | Create a new text file; never overwrite an existing path. Parent directories must already exist. |
+| path, oldText, newText | Replace exactly one matching fragment in an existing file. Read first and include exact whitespace and line endings; missing or ambiguous matches return WRITE_CONFLICT. |
+
+The same path and extension restrictions as `read` apply. Files must be valid UTF-8 text within 1 MiB. Edits preserve unrelated content, existing line endings, and the UTF-8 BOM. Writes stage the complete content in the same directory and recheck the target before publishing. This detects changes during staging, but is not a cross-process lock or an operating-system sandbox; another writer can still race the final check. File replacement does not guarantee preservation of all NTFS metadata, ACLs, or alternate data streams. Creation requires filesystem hard-link support.
+
+Each staged attempt has a process-local record with a relative path, before/after SHA-256 hashes, byte count, and status. `committed` records a completed publication; `failed` records an attempt stopped before publication; `uncertain` requires inspecting the current file before retrying. Cleanup errors can accompany a committed change and include the residual temporary path. Records contain no file bodies, and historical hashes do not prove current contents. The journal holds at most 100 attempts; reaching that limit rejects further writes without dropping older records.
+
+Records survive failed turns and `/reset`, and are supplied to subsequent model requests. Already committed changes are not rolled back by cancellation or a later model failure. There is no persistent journal, crash recovery, file deletion, recursive directory creation, or command execution yet.
 
 ## Continuous chat
 
@@ -141,7 +165,7 @@ Blank lines are ignored. Lines beginning with `/` are reserved for local command
 
 Answers go to stdout. Terminal prompts, command feedback, and event logs go to stderr. Chat events include a user-turn number; reset does not rewind that number. Standard input can also supply lines through a pipe. At end-of-input the harness finishes queued lines and exits; `/exit` skips later queued lines. Press Ctrl+C to cancel the active turn and exit with code 130. On Windows, `/exit` is the simplest way to finish from the terminal.
 
-Successful turns keep the full user, assistant, and tool messages in memory. Failed or cancelled turns do not enter the saved history. A model failure displays an error and lets you continue; the eventual chat exit code is 1 if any turn failed. This discards local messages only; API requests already made may still consume credits.
+Successful turns keep the full user, assistant, and tool messages in memory. Failed or cancelled turns do not enter the saved history. A model failure displays an error and lets you continue; the eventual chat exit code is 1 if any turn failed. This discards conversation messages only; file changes and process-local write records remain, and API requests already made may still consume credits.
 
 History is lost on exit and is not automatically trimmed or summarized. Long conversations can reach provider context limits; use `/reset` to start fresh. There is no session storage or recovery in this increment.
 
@@ -154,7 +178,7 @@ pnpm start --chat --subagent --workspace examples/workspace
 
 `--subagent` enables `delegate_task`; it does not force every request to use delegation. It works with a prompt or `--chat`, optionally with a workspace. It cannot be used alone or with help/configuration checks.
 
-The parent supplies a self-contained `task` string of 1 to 4000 characters. A child starts with fresh history and the same DeepSeek configuration and basic tools, including the selected read-only workspace. It cannot see the parent conversation or delegate further. Its final answer returns as tool data; its internal messages stay out of the parent history. Answers longer than 12000 characters return an error rather than a successful partial answer.
+The parent supplies a self-contained `task` string of 1 to 4000 characters. A child starts with fresh history and the same DeepSeek configuration and basic tools, including the selected workspace and its permission. Parent and child share the same write journal; a child cannot elevate access, and its committed writes remain visible even if its turn fails. It cannot see the parent conversation or delegate further. Its final answer returns as tool data; its internal messages stay out of the parent history. Answers longer than 12000 characters return an error rather than a successful partial answer.
 
 Each user turn may start at most two child tasks, including failed attempts. Each child gets at most three model requests, further capped by HARNESS_MAX_ITERATIONS. The parent's own request limit is unchanged: with the default limit of 8, the total upper bound is 14 requests per user turn. Tasks run sequentially. A new user turn gets a fresh allowance.
 
@@ -177,7 +201,7 @@ With a real local key, explicitly run:
 pnpm run verify:live
 ```
 
-This checks a direct answer, a sum-tool round trip, a contextual follow-up, and directory listing and three one-line read pages against `examples/workspace`. It also checks child delegation with a file-tool result returned to the parent. The first three scenarios each allow at most three model requests; the workspace scenario allows five; the delegation scenario allows three parent requests plus up to six child requests, for at most 23 total. These explicit live checks can consume API credits. They only read the synthetic sample directory, not arbitrary local files. The current Windows implementation has passed offline tests and live DeepSeek checks; detailed results and limitations are in [PROGRESS.md](docs/PROGRESS.md).
+This checks a direct answer, a sum-tool round trip, a contextual follow-up, paginated reading against `examples/workspace`, child delegation, and a create/read/edit/read round trip. The write scenario uses a fresh temporary directory, verifies exact final bytes and committed records independently, and removes that directory afterwards. The first three scenarios allow three requests each, workspace reading five, delegation up to nine, and writing six: at most 29 total. These explicit checks consume API credits. Reads use synthetic samples and writes are confined to the generated temporary directory. This does not validate agent-driven command execution or a complete coding task. The current Windows implementation has passed offline tests and live DeepSeek checks; detailed results and limitations are in [PROGRESS.md](docs/PROGRESS.md).
 
 The provider protocol follows the [DeepSeek API documentation](https://api-docs.deepseek.com/) using openai 7.18.0 as a compatibility client. Thinking and streaming are explicitly disabled for this first loop. SDK client usage was checked against [official OpenAI documentation](https://developers.openai.com/api/docs/libraries) and the installed SDK.
 

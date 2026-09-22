@@ -15,6 +15,15 @@
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
 
+## 2026-09-22：原 write 功能的逐文件发布准备
+
+- 用户明确要求仅提交原 write 功能；终端 yes/no 与绿色提示保留在 fix/interactive-write-approval，不随本分支发布。本次使用 feat/workspace-write 的独立临时 worktree，基线为已有 fbcb4cb，未合入后来的 README 重组提交或交互修正。
+- 按用户要求，将源码、测试、样例和对应文档逐个文件提交；最终提交集合按整体功能验证，单文件中间提交不承诺独立可运行。临时样例 project-notes.txt 为固定虚构数据，纳入版本控制以便从检出运行验证。
+- 隔离分支 pnpm run typecheck、pnpm test（含构建）均通过，89 项测试无失败；本轮没有调用真实 DeepSeek。默认只读与显式 workspace-write 的行为已恢复并验证，没有引入 ask 或终端确认文件。
+- 初次离线安装在 C 盘缓存缺少锁定依赖；随后复用已有 D 盘 pnpm store 离线安装成功，没有修改锁文件或下载新版本。按仓库自动换行配置核对 diff，未改变公共 Git 配置。
+- 已核对 Markdown 链接、代码语言规则、原 chat 文件及当前 fix 工作目录文件摘要；未复制本地 .env、日志或凭据。当前完整工作目录内容保持不变。
+- 提交后统一推送目标为 origin/feat/workspace-write；不推送或合并 main、doc 或 fix 分支。实际远端结果将在发布交接时核对，交互修正的验证记录保留在 fix 工作目录。
+
 ## 2026-09-22：居中语言切换行
 
 - 将中英文 README 第 7 行的语言切换链接改为居中 HTML 段落，使用 HTML 链接确保段落内链接有效，保留用户已有的“中文”标签。

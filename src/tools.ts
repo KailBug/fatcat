@@ -1,7 +1,8 @@
 import type { LoopEvent } from "./loop.js";
 import { HarnessError, checkCancellation } from "./errors.js";
 import { sumTool } from "./tools/sum.js";
-import { createWorkspaceTools } from "./tools/workspace.js";
+import { createWorkspace } from "./tools/workspace.js";
+import { createReadTool } from "./tools/read.js";
 import { failure } from "./tools/types.js";
 import type { Tool, ToolResult } from "./tools/types.js";
 
@@ -51,7 +52,7 @@ export const defaultTools: Tools = collectTools([sumTool]);
 
 /** Filesystem access is enabled only by an explicit workspace selection. */
 export async function createTools(workspace?: string): Promise<Tools> {
-  return workspace === undefined ? defaultTools : collectTools([sumTool, ...await createWorkspaceTools(workspace)]);
+  return workspace === undefined ? defaultTools : collectTools([sumTool, createReadTool(await createWorkspace(workspace))]);
 }
 
 export const toolDefinitions = defaultTools.definitions;

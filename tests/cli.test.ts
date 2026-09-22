@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 
@@ -134,4 +134,36 @@ test("the actual CLI follows read pages through the model transport", async (t) 
   assert.equal(result.stdout.trim(), "first\nsecond\nlast");
   assert.equal((result.stderr.match(/"tool":"read"/g) ?? []).length, 3);
   assert.ok(!result.stderr.includes("second"));
+});
+
+
+test("CLI permissions enforce read-only and authorize exact writes explicitly", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  for (const args of [["--permission", "workspace-write", "--prompt", "task"],
+    ["--workspace", workspace, "--permission", "unsafe", "--prompt", "task"],
+    ["--workspace", workspace, "--permission", "workspace-write", "--help"]]) assert.equal(run(args).status, 2);
+  await writeFile(join(workspace, "notes.txt"), "before");
+  const env = { DEEPSEEK_API_KEY: "offline-only" };
+  const denied = run(["--workspace", workspace, "--prompt", "write fixture"], env, "");
+  assert.equal(denied.status, 0, denied.stderr);
+  assert.match(denied.stdout, /PERMISSION_DENIED/);
+  assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
+  const allowed = run(["--workspace", workspace, "--permission", "workspace-write", "--prompt", "write fixture"], env, "");
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "after");
+  assert.match(allowed.stderr, /"type":"write_record"/);
+  assert.match(allowed.stderr, /"status":"committed"/);
+  assert.ok(!allowed.stderr.includes(workspace));
+});
+
+test("CLI chat retains write facts after a provider failure and reset", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "notes.txt"), "before");
+  const result = run(["--chat", "--workspace", workspace, "--permission", "workspace-write"],
+    { DEEPSEEK_API_KEY: "offline-only" }, "write then fail\n/reset\nwrite records\n/exit\n");
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "after");
+  assert.match(result.stdout, /Earlier write is recorded/);
+  assert.match(result.stderr, /MODEL_HTTP/);
+  assert.match(result.stderr, /committed/);
 });

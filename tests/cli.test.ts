@@ -94,7 +94,7 @@ test("single tasks and chat share workspace definitions, results, and safe error
   const env = { DEEPSEEK_API_KEY: "offline-credential-only" };
   const single = run(["--workspace", folder, "--prompt", "workspace"], env, "");
   assert.equal(single.status, 0, single.stderr);
-  assert.deepEqual(JSON.parse(single.stdout), { ok: true, result: { path: "notes.txt", content: "fixture-only-text" } });
+  assert.deepEqual(JSON.parse(single.stdout), { ok: true, result: { kind: "file", path: "notes.txt", offset: 0, totalLines: 1, startLine: 1, endLine: 1, content: "fixture-only-text", truncated: false, nextOffset: null } });
   const chat = run(["--chat", "--workspace", folder], env, "workspace\n/reset\nworkspace\nworkspace blocked\n/exit\n");
   assert.equal(chat.status, 0, chat.stderr);
   const answers = chat.stdout.trim().split("\n").map((line) => JSON.parse(line));
@@ -120,7 +120,18 @@ test("subagent mode is explicit and completes child tool work through the actual
   const chat = run(["--chat", "--subagent", "--workspace", workspace], env, "delegate\n/reset\ndelegate\n/exit\n");
   assert.equal(chat.status, 0, chat.stderr);
   const answers = chat.stdout.trim().split("\n").map((line) => JSON.parse(line));
-  assert.deepEqual(answers[0], { ok: true, result: { path: "notes.txt", content: "child-workspace-result" } });
+  assert.deepEqual(answers[0], { ok: true, result: { kind: "file", path: "notes.txt", offset: 0, totalLines: 1, startLine: 1, endLine: 1, content: "child-workspace-result", truncated: false, nextOffset: null } });
   assert.deepEqual(answers[1], answers[0]);
   assert.ok(!chat.stderr.includes("child-workspace-result"));
+});
+
+
+test("the actual CLI follows read pages through the model transport", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "notes.txt"), "first\nsecond\nlast");
+  const result = run(["--workspace", workspace, "--prompt", "workspace pages"], { DEEPSEEK_API_KEY: "offline-only" }, "");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "first\nsecond\nlast");
+  assert.equal((result.stderr.match(/"tool":"read"/g) ?? []).length, 3);
+  assert.ok(!result.stderr.includes("second"));
 });

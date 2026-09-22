@@ -167,3 +167,24 @@ test("CLI chat retains write facts after a provider failure and reset", async (t
   assert.match(result.stderr, /MODEL_HTTP/);
   assert.match(result.stderr, /committed/);
 });
+
+
+test("CLI shell authorization is independent and pipes cannot silently approve commands", { skip: process.platform !== "win32" }, async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  for (const args of [["--shell-permission", "allow", "task"],
+    ["--workspace", workspace, "--shell-permission", "bad", "task"],
+    ["--workspace", workspace, "--permission", "read-only", "--shell-permission", "allow", "task"]]) {
+    assert.equal(run(args).status, 2);
+  }
+  const args = ["--workspace", workspace, "--permission", "workspace-write", "--prompt", "shell fixture"];
+  const denied = run(args, { DEEPSEEK_API_KEY: "offline-only" }, "yes\n");
+  assert.equal(denied.status, 0);
+  assert.match(denied.stdout, /PERMISSION_DENIED/);
+  assert.ok(!denied.stderr.includes("shell_record"));
+  const allowed = run([...args, "--shell-permission", "allow"], { DEEPSEEK_API_KEY: "offline-only" }, "");
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.match(allowed.stdout, /CLI_COMMAND_READY/);
+  assert.match(allowed.stdout, /"success":true/);
+  assert.match(allowed.stderr, /shell_record/);
+  assert.ok(!allowed.stderr.includes("CLI_COMMAND_READY"));
+});

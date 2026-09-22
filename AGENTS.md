@@ -17,6 +17,15 @@
 - Maintain the editable architecture diagram in docs/ARCHITECTURE/ alongside relevant design documents when module boundaries or development direction change. Distinguish implemented behavior from planned capabilities.
 - Treat selected LoopX and OpenViking capabilities as long-term benchmarks, evaluated through concrete tasks rather than feature counts.
 
+## Git workflow
+
+- Start implementation on a purpose-named branch after checking the current branch, base commit, and uncommitted changes.
+- Use feat/<topic> for features, fix/<topic> for bug fixes, doc/<topic> for documentation-only work, refactor/<topic> for behavior-preserving restructuring, and test/<topic> for test-only work. Follow any explicitly requested branch name.
+- Keep changes focused on one reviewable increment. Include documentation and tests with the feature or fix they support; do not split them into unrelated branches.
+- Preserve user changes and untracked files. Do not reset, clean, force-push, or rewrite shared history to prepare a branch.
+- When committing, stage explicit relevant paths and use a concise type(scope): summary message. Verify the staged diff and completed checks before committing.
+- Report the branch, validation, and remaining limitations at handoff. Do not merge or push without authorization.
+
 ## Language policy
 
 - Use English in all repository text files outside docs/, including source, tests, comments, identifiers, error messages, CLI help, scripts, configuration, README.md, and this file.
@@ -32,7 +41,7 @@
 ## During implementation
 
 - Update project scope, roadmap, or architecture documents when the scope or approach changes.
-- README.md must describe actual capabilities and current Windows installation, configuration, execution, and verification steps.
+- Keep README.md concise: logo, brief demo description, a usage-guide link, and image attribution. Maintain actual capabilities and current Windows installation, configuration, execution, and verification steps in docs/USAGE.md.
 - Keep architecture documents in docs/ARCHITECTURE/. README.md is the overview and index; create separate system design and implementation documents as needed.
 - Record actual modules, data flow, interfaces, and decisions. Clearly label future design and work as planned or unimplemented.
 - Do not create empty documents for future systems. Do not treat written code as verified behavior.
@@ -57,6 +66,7 @@
 - Help: pnpm start --help
 - Continuous chat: pnpm start --chat
 - Read-only workspace chat: pnpm start --chat --workspace examples/workspace
+- Authorized workspace editing: pnpm start --chat --workspace examples/workspace --permission workspace-write
 - Opt-in delegation: pnpm start --chat --subagent --workspace examples/workspace
 - Local configuration check: pnpm start --checkConfig
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).

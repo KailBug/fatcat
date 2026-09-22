@@ -10,7 +10,7 @@ The near-term goal is a local coding agent that reads projects, makes controlled
 
 ## Current capabilities
 
-The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, inspect text files in an explicitly selected workspace, or write them with explicit workspace-write permission; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
+The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, inspect text files in an explicitly selected workspace, or propose a write for terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
 The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading and guarded writing, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. An optional bounded subagent can handle isolated tasks. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
 
@@ -83,7 +83,7 @@ node --env-file-if-exists=.env dist/src/cli.js --prompt "Use the sum tool to add
 
 Press Ctrl+C to cancel. A single-task invocation starts fresh history. No arguments displays help; use `--chat` for a continuous conversation.
 
-The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. Filesystem tools require an explicit `--workspace` selection. Writing requires --permission workspace-write; no shell or network tools are exposed.
+The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. Filesystem tools require an explicit `--workspace` selection. Writing asks for yes/no in an interactive terminal by default; no shell or network tools are exposed.
 
 Each model request counts as one iteration; each new user turn receives a fresh iteration budget. If the last allowed request still asks for tools, the harness stops without executing those calls. Timeouts and transport failures stop the run; automatic SDK retries are disabled.
 
@@ -105,7 +105,7 @@ pnpm start --chat --workspace examples/workspace
 
 `--workspace` works with a single prompt or `--chat`; it cannot be used alone or with help/configuration checks. Without it, only `sum` is available. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
 
-The workspace exposes general-purpose `read` and `write` tools, with write permission denied by default. The `read` tool accepts files or directories. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
+The workspace exposes general-purpose `read` and `write` tools, with each write requiring approval by default. The `read` tool accepts files or directories. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
 
 | Input | Behavior |
 | --- | --- |
@@ -129,14 +129,31 @@ File errors return structured tool results that the model can correct or explain
 
 ## Write a workspace
 
-Grant write access to the selected directory for this invocation:
+Start normally and ask the agent to make the change:
 
 ```powershell
-pnpm start --chat --workspace examples/workspace --permission workspace-write
-pnpm start --workspace examples/workspace --permission workspace-write --prompt "Read project-notes.txt, then replace one unique fragment and read back the result."
+pnpm start --chat --workspace examples/workspace
 ```
 
-The second command can modify the sample file. Use a disposable copy when experimenting. `--permission` accepts only `read-only` (the default) or `workspace-write`, and requires a workspace plus a task or chat. The tools remain discoverable in read-only mode; unauthorized writes return PERMISSION_DENIED. This grants workspace access for the invocation, with no per-write approval dialog.
+When the model proposes a valid write, the terminal shows its relative path, operation, resulting byte count, and a bounded preview of the new content or replacement fragment. It then asks:
+
+```text
+Allow this write? [yes/no]
+```
+
+Enter `yes` to approve that specific write or `no` to refuse it. Invalid answers prompt again; closing input refuses the write and Ctrl+C cancels the run. Approval answers are consumed locally and never become chat messages. Each write asks separately, including writes requested by subagents. The file and parent are checked again after approval, so a change made while you were reviewing causes a conflict rather than applying an outdated edit.
+
+The default CLI policy is `ask`; there is no need to restart with an additional permission flag for ordinary interactive editing. Optional policies remain available:
+
+| Option | Behavior |
+| --- | --- |
+| --permission ask | Request terminal approval for each valid write; the default. |
+| --permission read-only | Refuse every write without asking. |
+| --permission workspace-write | Preauthorize writes for this invocation, including unattended scripts. |
+
+`--permission` requires a workspace plus a task or chat. Non-interactive input cannot approve writes: a piped `yes` is not authorization, and writes fail promptly unless explicitly preauthorized. Programmatic createTools callers still default to read-only; ask mode requires an approval callback. Single-task invocations support the same terminal confirmation.
+
+Use a disposable workspace when experimenting. Approval previews go to the terminal's stderr and may contain file text; JSON event records still omit file bodies. Preview text is escaped to prevent terminal controls and each preview is capped at 1200 characters with an explicit truncation marker. This is not a full-file diff viewer.
 
 The `write` tool accepts exactly one of these forms:
 
@@ -167,7 +184,7 @@ Enter one task per line. For example, ask `Use the sum tool to add 17 and 25.`, 
 
 Blank lines are ignored. Lines beginning with `/` are reserved for local commands; unknown commands print a hint without calling the model. Commands must occupy their own line. The `--chat` flag cannot be combined with a prompt, help, or configuration check.
 
-Answers go to stdout. Terminal prompts, command feedback, and event logs go to stderr. Chat events include a user-turn number; reset does not rewind that number. Standard input can also supply lines through a pipe. At end-of-input the harness finishes queued lines and exits; `/exit` skips later queued lines. Press Ctrl+C to cancel the active turn and exit with code 130. On Windows, `/exit` is the simplest way to finish from the terminal.
+Answers go to stdout. Terminal prompts, approval previews, command feedback, and event logs go to stderr. `You>` is bright green in an interactive terminal; `NO_COLOR`, TERM=dumb, or redirected input/output disables that color. Input and stderr must both be terminals for approval. Earlier queued chat lines cannot approve a later request. Chat events include a user-turn number; reset does not rewind that number. Standard input can also supply lines through a pipe. At end-of-input the harness finishes queued lines and exits; `/exit` skips later queued lines. Press Ctrl+C to cancel the active turn and exit with code 130. On Windows, `/exit` is the simplest way to finish from the terminal.
 
 Successful turns keep the full user, assistant, and tool messages in memory. Failed or cancelled turns do not enter the saved history. A model failure displays an error and lets you continue; the eventual chat exit code is 1 if any turn failed. This discards conversation messages only; file changes and process-local write records remain, and API requests already made may still consume credits.
 

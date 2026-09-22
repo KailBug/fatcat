@@ -9,11 +9,42 @@
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
 - 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
-- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 受控 write 已实现并完成离线与真实模型验证、待 review；完整代码修改闭环仍未完成；Channel 与其他 UI 后移。
+- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过用户 review，等待提交；完整代码修改闭环仍未完成；Channel 与其他 UI 后移。
 - 已有 CLI 任务输入、单模型接入、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+
+## 2026-09-22：fix 分支依赖整理完成
+
+- 已 fetch 并确认 origin/main 为 15ffd4c，包含已合入的 write PR #1；本地 main 已通过 fast-forward 同步。用户确认保留 README/使用文档重组，让它随 fix PR 一起提交。
+- 在 fix/interactive-write-approval 创建依赖合并提交 699a9bb，保留原文档提交 4ce59fd，没有改写历史。合并只出现 README 与 PROGRESS 冲突：README 保留已 review 的简洁首页，进度合并两边事实；合并时源码、测试与脚本与 main 完全一致，未提前提交交互修正。
+- 通过备份恢复用户已 review 的全部工作内容；源码、测试和脚本逐文件 SHA-256 与整理前一致。原 write 已成为分支基线，不再重复列为待提交代码；当前差异为终端确认、提示颜色及同步文档。
+- 保留原暂存意图：terminal.ts、write.ts 和 approval.test.ts 仍在暂存区；原先暂存但已与 main 相同的 text-file.ts、write.test.ts、write-integration.test.ts 不再显示差异。其他交互修正和文档仍未暂存，提交时应一并选择完整增量。
+- 整理后 pnpm run typecheck、pnpm test（含构建）通过，98 项测试无失败；没有重新请求真实模型。无未解决冲突，没有 push、强制推送或修改 GitHub PR。
+- 保留恢复用 stash ab837552（backup: reviewed approval fix before main integration）及临时文件备份；当前内容已经恢复，不应再次直接应用该 stash。下一步由用户提交本轮修正、推送 fix 分支并创建以 main 为目标的 PR；PR 会按用户选择包含已提交的文档重组。
+
+## 2026-09-22：原 write 功能逐文件提交并推送
+
+- 用户明确仅发布原 write 功能，yes/no 确认与绿色提示保留在 fix/interactive-write-approval。本轮在独立临时 worktree 中整理 feat/workspace-write，没有把交互修正或后来的 README 重组提交混入该分支。
+- 新建 26 个提交，每个提交只修改一个文件，覆盖原 write 源码、测试、固定虚构样例及同步文档；逐次核对暂存路径、内容及 diff --check。一次统一 push 至 origin/feat/workspace-write，并设置 upstream；没有推送或合并 main、doc、fix 分支。
+- 远端核对成功：分支 HEAD 为 b65686b765768682a2eb143906ac5ff05e800d5d，main 仍为 c75d7d2bd804a67942a0847d941f51516c4be15b。分支链接：https://github.com/KailBug/fatcat/tree/feat/workspace-write 。
+- 原始 write 分支独立执行 pnpm run typecheck、pnpm test（含构建）及 CLI 帮助检查，89 项测试全部通过；46 个文档本地链接和英文规则检查通过。本轮没有真实模型请求，确认交互的 98 项测试记录属于前一任务。
+- 临时 C 盘默认 pnpm 缓存缺少包，改用已有 D 盘 store 完成锁定依赖离线安装；没有更改依赖或锁文件。临时 checkout 已安全清理，feature 分支可正常切换。
+- 推送后逐文件 SHA-256 核对当前工作目录与执行前一致，索引仍为空，当前分支仍是 fix/interactive-write-approval；仅 PROGRESS 新增本条发布记录。原 write 基础改动在当前 fix 工作目录仍可显示为未提交，因为本轮没有合并或变基该分支。后续再处理 fix 的依赖整合与提交；无发布阻塞。
+
+## 2026-09-22：review 修正，终端写入确认与绿色输入提示
+
+- 用户要求普通交互不再依赖长权限参数或重启，写入时在终端输入 yes/no；You> 显示亮绿色。本轮从 doc/minimal-readme 的 4ce59fd 创建 fix/interactive-write-approval，保留此前尚未提交的写入实现、测试、架构图、examples/ 及用户注释，未提交、推送或合并。
+- CLI 默认策略改为 ask，每次有效写入先显示相对路径、操作、结果大小及有界内容/替换片段预览，再询问 yes/no。预览内容转义，超出 1200 字符明确标记截断。read-only 保留强制只读，workspace-write 保留脚本预授权；程序化 createTools 仍默认只读。
+- 新增 terminal.ts 统一持有 readline；普通任务排队，确认期间的新输入仅用于批准/拒绝，不进入模型历史。聊天与单次任务共用确认入口，子任务复用父回调。管道输入不能自动批准，默认写入返回权限错误；不会阻塞等待无法得到的回答。
+- write 在已有路径、内容与精确片段校验后才询问，批准后重新核对父目录及原始文件再暂存，发布前仍复查。no、EOF 或 Ctrl+C 不创建暂存文件或写入记录；批准期间文件变化返回冲突。取消不撤销此前已提交的修改。
+- 交互 You> 使用 ANSI 亮绿色；NO_COLOR、TERM=dumb 或非终端输入/提示输出禁用颜色，管道无颜色码。项目没有新增依赖或修改模型协议。
+- pnpm test（含构建）98 项全部通过，其中新增 9 项确认回归，覆盖 yes/no、非法答复、聊天隔离、预先排队的 yes 不授权、逐次确认、等待期间修改冲突、EOF/Ctrl+C、管道拒绝、颜色开关、预览转义及子任务继承；pnpm run typecheck 通过。
+- 实际 Windows 伪终端使用 fake Key 与注入模型传输验证：chat 中第一次 no 拒绝后继续，再次请求 yes 写入，最终文件为 after；单次任务同样询问并写入，退出码 0。支持颜色的终端捕获到亮绿色 You>；已清理专用临时样例。本轮未请求真实 DeepSeek，先前真实模型结果不冒充本轮验证。
+- 初次类型检查发现可选 terminal 字段受 exactOptionalPropertyTypes 限制，按 chat 分支必有终端的控制流修正，最终类型检查及测试通过。默认命令沙箱仍存在初始化 ACL 错误，使用获准的权限模式完成必要操作；无剩余阻塞。
+- 最终检查：51 个 Markdown 本地链接、架构图 35 个元素 ID/引用、修改代码的英文与 LF、CLI 帮助及 git diff --check 均通过。全仓语言扫描发现已提交 README 的“中文”语言切换标签，核对与 HEAD 一致并保留，不宣称全仓无例外。
+- 同步 USAGE、AGENTS、PROJECT、ROADMAP、相关架构文档和既有 Excalidraw 标签，保留简洁 README 与中文首页。当前确认仅针对单次 write，不持久记忆授权，不提供会话级同意、完整 diff 查看器或通用权限策略；后续先 review 此交互修正，阶段 2D 整体状态不变。
 
 ## 2026-09-22：原 write 功能的逐文件发布准备
 

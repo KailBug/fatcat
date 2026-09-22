@@ -65,8 +65,9 @@
 - Test: pnpm test
 - Help: pnpm start --help
 - Continuous chat: pnpm start --chat
-- Read-only workspace chat: pnpm start --chat --workspace examples/workspace
-- Authorized workspace editing: pnpm start --chat --workspace examples/workspace --permission workspace-write
+- Workspace chat with per-write terminal approval: pnpm start --chat --workspace examples/workspace
+- Explicit read-only workspace chat: pnpm start --chat --workspace examples/workspace --permission read-only
+- Preauthorized workspace editing (including scripts): pnpm start --chat --workspace examples/workspace --permission workspace-write
 - Opt-in delegation: pnpm start --chat --subagent --workspace examples/workspace
 - Local configuration check: pnpm start --checkConfig
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).

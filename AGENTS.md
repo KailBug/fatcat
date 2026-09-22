@@ -14,7 +14,7 @@
 - Prefer a small set of general-purpose, composable tools such as read, write, and shell execution. Do not add a separate model-facing tool for every development operation. Native Windows support must not require Bash.
 - Target task-driven tool selection and delegation. Users should not need to enable internal capabilities per task; the harness still enforces workspace access, permissions, budgets, and cancellation. Existing opt-in flags remain current behavior until explicitly migrated.
 - Keep interaction, loop control, model communication, tool execution, and state ownership clear. Favor readable modules and narrow interfaces; avoid monolithic handlers and speculative frameworks.
-- Maintain the editable architecture diagram in docs/ARCHITECTURE/ alongside relevant design documents when module boundaries or development direction change. Distinguish implemented behavior from planned capabilities.
+- Maintain architecture descriptions in docs/ARCHITECTURE/ when module boundaries or development direction change. Distinguish implemented behavior from planned capabilities. Do not maintain Excalidraw files or add docs/ARCHITECTURE/fatcat-architecture.excalidraw to Git; any local copy is an unmaintained reference.
 - Treat selected LoopX and OpenViking capabilities as long-term benchmarks, evaluated through concrete tasks rather than feature counts.
 
 ## Git workflow

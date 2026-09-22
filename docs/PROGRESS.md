@@ -15,6 +15,15 @@
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
 
+## 2026-09-22：停止维护与跟踪 Excalidraw
+
+- 用户要求不再将 docs/ARCHITECTURE/fatcat-architecture.excalidraw 纳入 Git，并停止维护 Excalidraw 文件。本轮从干净的 fix/interactive-write-approval（6f29e79）创建 doc/retire-excalidraw，未改动运行时代码。
+- 文件原本已被跟踪；已通过 git rm --cached 仅移除索引条目，并添加精确 .gitignore 规则。本地文件保留，操作前后 SHA-256 一致；不重写已有 Git 历史。
+- AGENTS 移除维护图源的要求，架构总览改为维护 Markdown 文档，移除对本地图源的链接和现行图例说明。旧进度中的绘图与验证记录保留为历史事实。
+- 已验证文件不在索引中且被忽略，本地内容未变；本轮仅调整仓库规则与文档，不运行代码测试或请求模型。无阻塞，后续按 Markdown 文档维护架构。
+- 图源的索引删除已暂存；其他规则与文档修改未暂存，尚未提交、推送或合并。
+
+
 ## 2026-09-22：fix 分支依赖整理完成
 
 - 已 fetch 并确认 origin/main 为 15ffd4c，包含已合入的 write PR #1；本地 main 已通过 fast-forward 同步。用户确认保留 README/使用文档重组，让它随 fix PR 一起提交。

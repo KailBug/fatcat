@@ -12,4 +12,3 @@ Still an early demo, with a simple agent loop, CLI chat, workspace reading and c
 
 [Setup and usage](docs/USAGE.md)
 
-<sub>The logo uses a cat photo found on Douyin. All rights belong to the original rights holder. No infringement is intended. If you own the image and would like it credited, replaced, or removed, please open an issue.</sub>

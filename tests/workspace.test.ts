@@ -18,7 +18,7 @@ test("only an explicit valid workspace enables filesystem definitions and execut
   hasCode(await call(defaultTools, "read", "notes.txt"), "UNKNOWN_TOOL");
   hasCode(await defaultTools.execute("__proto__", "{}"), "UNKNOWN_TOOL");
   const tools = await createTools(workspace);
-  assert.deepEqual(tools.definitions.map((tool) => tool.function.name), ["sum", "read"]);
+  assert.deepEqual(tools.definitions.map((tool) => tool.function.name), ["sum", "read", "write"]);
   for (const oldName of ["list_directory", "read_file"]) hasCode(await call(tools, oldName, "."), "UNKNOWN_TOOL");
   await assert.rejects(createTools(join(workspace, "missing")), /existing accessible directory/);
   await assert.rejects(createTools(" "), /existing accessible directory/);

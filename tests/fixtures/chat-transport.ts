@@ -7,6 +7,25 @@ globalThis.fetch = async (input, init) => {
   assert.equal(request.url, "https://api.deepseek.com/chat/completions");
   const { messages, tools } = await request.json() as { messages: Message[]; tools: { function: { name: string } }[] };
   const prompt = messages.findLast((message) => message.role === "user")?.content;
+  if (prompt === "write fixture" || prompt === "write then fail") {
+    const last = messages.at(-1);
+    if (last?.role === "user" || (last?.role === "tool" && last.tool_call_id === "inspect")) {
+      const reading = last?.role === "user";
+      const args = reading ? { path: "notes.txt" } : { path: "notes.txt", oldText: "before", newText: "after" };
+      return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
+        role: "assistant", content: null, tool_calls: [{ id: reading ? "inspect" : "edit", type: "function",
+          function: { name: reading ? "read" : "write", arguments: JSON.stringify(args) } }],
+      } }] });
+    }
+    if (prompt === "write then fail") return Response.json({ error: { message: "offline failure" } }, { status: 500 });
+    return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: String(last?.content) } }] });
+  }
+  if (prompt === "write records") {
+    const record = messages.find((message) => String(message.content).startsWith("Harness workspace write records"));
+    assert.ok(record);
+    assert.match(String(record.content), /committed/);
+    return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Earlier write is recorded." } }] });
+  }
   if (prompt === "delegate") {
     assert.ok(tools.some((tool) => tool.function.name === "delegate_task"));
     const last = messages.at(-1);
@@ -22,7 +41,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: value.result.answer } }] });
   }
   if (prompt === "workspace pages") {
-    assert.deepEqual(tools.map((tool) => tool.function.name), ["sum", "read"]);
+    assert.deepEqual(tools.map((tool) => tool.function.name), ["sum", "read", "write"]);
     const last = messages.at(-1);
     const previous = last?.role === "tool" ? JSON.parse(String(last.content)).result : undefined;
     if (previous?.nextOffset === null) {
@@ -38,7 +57,7 @@ globalThis.fetch = async (input, init) => {
     } }] });
   }
   if (prompt === "workspace" || prompt === "workspace blocked") {
-    assert.deepEqual(tools.map((tool) => tool.function.name), ["sum", "read"]);
+    assert.deepEqual(tools.map((tool) => tool.function.name), ["sum", "read", "write"]);
     const last = messages.at(-1);
     const list = prompt === "workspace" && last?.role === "user";
     if (last?.role === "user" || (last?.role === "tool" && last.tool_call_id === "list")) {

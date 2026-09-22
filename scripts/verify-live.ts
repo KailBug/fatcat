@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { createTools } from "../src/tools.js";
+import type { Tools, ToolResult } from "../src/tools.js";
 import { loadConfig } from "../src/config.js";
 import { HarnessError } from "../src/errors.js";
 import { runAgent } from "../src/loop.js";
@@ -29,26 +30,38 @@ try {
     assert.match(answer, scenario.expected);
     console.log(JSON.stringify({ scenario: scenario.name, passed: true, answer }));
   }
-  const tools = await createTools(fileURLToPath(new URL("../../examples/workspace", import.meta.url)));
+  const workspaceTools = await createTools(fileURLToPath(new URL("../../examples/workspace", import.meta.url)));
+  const readResults: ToolResult[] = [];
+  const tools: Tools = { ...workspaceTools, async execute(name, args, signal, callId) {
+    const result = await workspaceTools.execute(name, args, signal, callId);
+    if (name === "read") readResults.push(result);
+    return result;
+  } };
   const events: LoopEvent[] = [];
-  const answer = await runAgent("Use list_directory to inspect the workspace root, then use read_file to read project-notes.txt. Report the verification phrase from that file exactly.", {
-    model: createDeepSeekModel(config, undefined, tools), tools, maxIterations: Math.min(config.maxIterations, 4),
+  const answer = await runAgent("Use read to inspect the workspace root. Then read project-notes.txt with limit 1, starting at offset 0, and follow each nextOffset with limit 1 until it is null. Report the verification phrase from that file exactly.", {
+    model: createDeepSeekModel(config, undefined, tools), tools, maxIterations: Math.min(config.maxIterations, 5),
     onEvent: (event) => { events.push(event); console.error(JSON.stringify({ scenario: "workspace_read", ...event })); },
   });
-  for (const name of ["list_directory", "read_file"]) {
-    assert.ok(events.some((event) => event.type === "tool_result" && event.tool === name && event.ok), `Expected ${name}.`);
-  }
+  assert.ok(events.some((event) => event.type === "tool_result" && event.tool === "read" && event.ok));
+  const pages = readResults.filter((result) => result.ok).map((result) => result.result) as {
+    kind: string; offset: number; startLine?: number; endLine?: number; nextOffset: number | null;
+  }[];
+  assert.ok(pages.some((page) => page.kind === "directory"));
+  const filePages = pages.filter((page) => page.kind === "file");
+  assert.deepEqual(filePages.map((page) => page.offset), [0, 1, 2]);
+  assert.deepEqual(filePages.map((page) => page.nextOffset), [1, 2, null]);
+  assert.ok(filePages.every((page) => page.startLine === page.endLine));
   assert.match(answer, /AMBER-MEADOW-42/);
   console.log(JSON.stringify({ scenario: "workspace_read", passed: true, answer }));
   const delegatedTools = createSubagentTools(tools, createDeepSeekModel(config, undefined, tools), config.maxIterations);
   const delegatedEvents: LoopEvent[] = [];
-  const delegatedAnswer = await runAgent("Use delegate_task to ask a child assistant to read project-notes.txt with read_file and return its verification phrase. Then report the child's phrase only.", {
+  const delegatedAnswer = await runAgent("Use delegate_task to ask a child assistant to read project-notes.txt with read and return its verification phrase. Then report the child's phrase only.", {
     model: createDeepSeekModel(config, undefined, delegatedTools), tools: delegatedTools, maxIterations,
     onEvent: (event) => { delegatedEvents.push(event); console.error(JSON.stringify({ scenario: "subagent_read", ...event })); },
   });
   assert.ok(delegatedEvents.some((event) => event.type === "tool_result" && event.tool === "delegate_task" && event.ok));
   assert.ok(delegatedEvents.some((event) => event.type === "subagent_event"
-    && event.event.type === "tool_result" && event.event.tool === "read_file" && event.event.ok));
+    && event.event.type === "tool_result" && event.event.tool === "read" && event.event.ok));
   assert.match(delegatedAnswer, /AMBER-MEADOW-42/);
   console.log(JSON.stringify({ scenario: "subagent_read", passed: true, answer: delegatedAnswer }));
 } catch (error) {

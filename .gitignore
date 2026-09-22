@@ -5,3 +5,4 @@ dist/
 !.env.example
 *.log
 .idea/
+/docs/ARCHITECTURE/fatcat-architecture.excalidraw

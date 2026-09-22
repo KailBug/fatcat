@@ -8,7 +8,8 @@
 
 - `src/session.ts`：一个 Session 拥有独立消息历史；顺序执行用户回合，完成时保存完整历史，失败时保留此前成功历史；空闲时可重置。阶段 2B 的 tools 由创建方传入并固定，重置只清空历史，不改变工作目录或工具权限。阶段 2C 的委派预算由 Loop 每次调用 tools.forTurn 创建，避免跨回合或跨 Session 共用计数。
 - `src/loop.ts`：在历史副本上执行一个用户回合，返回答案与完整消息；原 `runAgent` 入口保持单次任务语义。
-- `src/chat.ts`：用 Node readline 读取一行一个任务，处理本地命令、终端提示、日志和取消；复用 Session。
+- `src/chat.ts`：读取一行一个任务，处理本地命令、终端提示、日志和取消；复用 Session。
+- `src/terminal.ts`：单一 readline 所有者；普通行进入任务队列，仅确认等待期间的新行可作为 yes/no 答案，避免与聊天输入竞争。CLI 注入 approveWrite，单次任务与 chat 共用相同确认行为。
 - `src/cli.ts`：增加与原有模式互斥的 `--chat`，保留单次任务、帮助、配置检查及用户已有注释。
 
 `new Session({ model, maxIterations, tools? })` 创建独立会话；`run(prompt, { signal?, onEvent? }?)` 返回 `Promise<string>`，`reset()` 清空历史。Loop 提供 `runAgentTurn(prompt, history, options)`，返回 `{ answer, messages }`，由 Session 保存成功结果；`runAgent(prompt, options)` 则包装空历史单次调用。
@@ -31,7 +32,9 @@ Session 的接口保持上述最小范围；不提供存储适配器、注册表
 - `/help` 显示本地命令，`/reset` 清空已完成历史，`/exit` 退出；未知斜杠命令只报提示，不发给模型。
 - 输入结束时处理已收到的行后退出；Ctrl+C 取消正在进行的回合并结束整个会话，退出码 130。
 - 模型回合失败后显示安全错误并允许继续；退出时只要有回合失败，返回 1，否则返回 0。
-- 答案写 stdout；提示、命令反馈和带用户回合编号的事件日志写 stderr。支持通过标准输入管道按行供给任务。
+- 答案写 stdout；提示、确认预览、命令反馈和带用户回合编号的事件日志写 stderr。You> 使用 ANSI 亮绿色，NO_COLOR、TERM=dumb 或非交互输入/提示输出禁用着色。
+- 确认提示使用 yes/no，每次只批准当前修改；预览对内容转义并有截断标识，拒绝和确认文本不进入模型历史。等待期间 Ctrl+C 关闭输入并传播取消，EOF 拒绝写入。
+- 标准输入管道仍可按行供给任务，但不能提供交互授权；默认 ask 的写入立即返回权限错误，需显式预授权才能自动写入。已排队的普通聊天行不会用于后续授权。
 
 ## 实施与验收状态
 

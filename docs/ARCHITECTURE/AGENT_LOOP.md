@@ -10,6 +10,7 @@
 | --- | --- |
 | `src/cli.ts` | 解析任务文本、`--prompt`、`--chat`、帮助与配置检查；管理 Ctrl+C；选择入口并输出退出码 |
 | `src/chat.ts`、`src/session.ts` | 连续输入和跨回合历史管理，详见 Session 文档 |
+| `src/terminal.ts` | 统一终端输入，隔离聊天和写入确认，管理提示颜色及终端取消 |
 | `src/config.ts` | `loadConfig(env = process.env): Config` 校验 Key、模型、迭代上限和单次请求超时 |
 | `src/model.ts` | `createDeepSeekModel(config, transport?, tools?): Model` 创建唯一模型客户端；提交请求、校验响应、转换服务错误 |
 | `src/tools.ts`、`src/tools/` | 创建内置工具集合，提供定义和异步执行；默认 sum，显式工作目录额外提供 read 与 write，实际写入检查工作目录权限，详见 TOOLS.md |
@@ -51,7 +52,7 @@
 
 sum 成功结果为 `{ ok: true, result: number }`；目录和文件工具的 result 为 JSON 对象，包含相对路径及条目或正文。各工具的详细协议与限制见 [TOOLS.md](TOOLS.md)。非法 JSON / 参数、未知工具、求和溢出返回 `{ ok: false, error: { code, message } }`，关联到原调用并回传模型，由模型在剩余轮次内纠正或解释。
 
-sum 使用 JavaScript number 运算，浮点精度遵循 JavaScript 语义，不是任意精度计算器。sum 不访问网络、文件、时钟或进程；文件工具只访问显式指定的目录，write 需要 workspace-write 权限；没有 shell 或网络工具。
+sum 使用 JavaScript number 运算，浮点精度遵循 JavaScript 语义，不是任意精度计算器。sum 不访问网络、文件、时钟或进程；文件工具只访问显式指定的目录，write 默认由终端逐次确认，也可显式只读或预授权；没有 shell 或网络工具。
 
 ## 终止与日志
 
@@ -60,7 +61,7 @@ sum 使用 JavaScript number 运算，浮点精度遵循 JavaScript 语义，不
 - 缺失配置、模型服务失败、超时、截断或无效响应均明确终止；不把部分响应当作最终成功。
 - Ctrl+C 发出取消信号，CLI 返回 130。其他运行错误返回 1，参数错误返回 2，成功返回 0。
 - Loop 事件包括 model_request、tool_result、write_record、completed 和 stopped；委派时用 subagent_event 包装子事件，并记录父调用 callId。CLI 将事件写入 stderr，最终答案写入 stdout；连续对话添加用户回合编号 turn，重置时另发 session_reset。
-- 日志包含轮次、工具名、调用 ID、成功标志和停止原因；write_record 另含相对路径、内容摘要、大小、状态及残留临时路径。日志不包含提示词、文件正文、完整参数、Key 或原始 SDK 错误。失败和 finally 同样检查记录变化，取消不丢失已发生事实。
+- 日志包含轮次、工具名、调用 ID、成功标志和停止原因；write_record 另含相对路径、内容摘要、大小、状态及残留临时路径。JSON 事件日志不包含提示词、文件正文、完整参数、Key 或原始 SDK 错误；终端确认预览会显示即将写入的片段，不属于 JSON 日志。失败和 finally 同样检查记录变化，取消不丢失已发生事实。
 
 这是第一阶段的必要日志，不是完整决策追踪或恢复体系。
 
@@ -68,4 +69,4 @@ sum 使用 JavaScript number 运算，浮点精度遵循 JavaScript 语义，不
 
 离线测试覆盖配置边界、工具参数和溢出、多工具关联、多轮纠错、迭代上限、协议错误、HTTP / 网络故障、超时、取消以及 CLI 退出码。
 
-真实验证已覆盖直接回答、工具闭环、Session 追问和完整 CLI 入口；详细结果以 PROGRESS.md 为准。阶段 2B 已通过用户 review；阶段 2C 和 2D-1 已通过用户 review；2D-2 受控 write 已完成离线及真实读改读验证，待 review。持久化、并行调度及其他子系统仍未实现。
+真实验证已覆盖直接回答、工具闭环、Session 追问和完整 CLI 入口；详细结果以 PROGRESS.md 为准。阶段 2B 已通过用户 review；阶段 2C 和 2D-1 已通过用户 review；2D-2 原 write 已完成离线及真实读改读验证并合入 main；终端确认修正已通过用户 review，待提交。持久化、并行调度及其他子系统仍未实现。

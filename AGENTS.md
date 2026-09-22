@@ -41,7 +41,7 @@
 ## During implementation
 
 - Update project scope, roadmap, or architecture documents when the scope or approach changes.
-- README.md must describe actual capabilities and current Windows installation, configuration, execution, and verification steps.
+- Keep README.md concise: logo, brief demo description, a usage-guide link, and image attribution. Maintain actual capabilities and current Windows installation, configuration, execution, and verification steps in docs/USAGE.md.
 - Keep architecture documents in docs/ARCHITECTURE/. README.md is the overview and index; create separate system design and implementation documents as needed.
 - Record actual modules, data flow, interfaces, and decisions. Clearly label future design and work as planned or unimplemented.
 - Do not create empty documents for future systems. Do not treat written code as verified behavior.
@@ -65,8 +65,9 @@
 - Test: pnpm test
 - Help: pnpm start --help
 - Continuous chat: pnpm start --chat
-- Read-only workspace chat: pnpm start --chat --workspace examples/workspace
-- Authorized workspace editing: pnpm start --chat --workspace examples/workspace --permission workspace-write
+- Workspace chat with per-write terminal approval: pnpm start --chat --workspace examples/workspace
+- Explicit read-only workspace chat: pnpm start --chat --workspace examples/workspace --permission read-only
+- Preauthorized workspace editing (including scripts): pnpm start --chat --workspace examples/workspace --permission workspace-write
 - Opt-in delegation: pnpm start --chat --subagent --workspace examples/workspace
 - Local configuration check: pnpm start --checkConfig
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).

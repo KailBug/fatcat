@@ -2,24 +2,25 @@
 
 ## 当前状态
 
-阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，已验证、待 review；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
+阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
 
 ## 模块与接口
 
 | 模块 | 已实现职责 |
 | --- | --- |
-| `src/tools.ts` | createTools(workspace?, permission = "read-only") 创建实际工具集合；统一 JSON 解析、名称查找、异步执行、取消和安全错误转换 |
+| `src/tools.ts` | createTools(workspace?, permission = "read-only", approveWrite?) 创建实际工具集合；统一 JSON 解析、名称查找、异步执行、取消和安全错误转换 |
 | `src/tools/types.ts` | 工具定义、执行类型与 JSON 可序列化 ToolResult |
 | `src/tools/sum.ts` | 纯计算示例工具的 Schema、校验与有限数求和 |
 | `src/tools/workspace.ts` | createWorkspace(workspace) 固定工作目录；resolvePath(path, signal?) 检查边界，返回内部绝对路径、规范化相对路径及文件状态；resolveNewFile 验证已有父目录并拒绝覆盖 |
 | `src/tools/read.ts` | createReadTool(workspace) 提供 read 定义、参数校验、目录与文本读取、分页及输出限制 |
 | `src/tools/text-file.ts` | read 与 write 共享有界 UTF-8 读取、文件身份核对、扩展名与编码限制 |
 | `src/tools/write.ts` | createWriteTool 实现创建、精确替换、暂存与发布；持有写权限和进程内记录 |
-| `src/cli.ts` | 解析 --workspace 和 --permission，在请求模型前初始化工具；不承担具体文件规则 |
+| `src/cli.ts` | 默认 ask，解析 --workspace / --permission 并注入终端确认回调；不承担具体文件规则 |
+| `src/terminal.ts` | 持有单一 readline 输入，隔离任务与确认答案，显示有界预览并返回批准/拒绝 |
 
 Tools 包含 definitions 和 execute(name, argumentsJson, signal?, callId?)。可选 forTurn(onEvent?) 由委派包装器使用，隔离每回合次数与事件；基础 collectTools 保留内部命名 execute 函数。可选 getWrites() 返回深复制的 WriteRecord[]，由工作目录工具持有，Loop 只消费事实并记录事件。模型客户端和 Loop/Session 使用同一工具集合，结果按 tool_call_id 关联。
 
-没有工作目录时仍只提供 sum；显式 --workspace 增加 read 和 write。默认 read-only，write 在实际执行入口返回 PERMISSION_DENIED；--permission workspace-write 授权本次运行写入。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和写入记录；委派本身当前仍需 --subagent。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
+没有工作目录时仍只提供 sum；显式 --workspace 增加 read 和 write。CLI 默认 ask，write 在参数、路径与内容校验后请求终端确认。显式 read-only 无条件拒绝写入；workspace-write 预授权本次运行。程序化 createTools 仍默认只读，ask 需要由调用方提供 approveWrite 回调。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和写入记录；委派本身当前仍需 --subagent。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
 
 旧模型工具名称 list_directory 和 read_file 已移除，调用返回 UNKNOWN_TOOL。项目尚无持久历史，不增加旧名称兼容层。内部 createWorkspaceTools 已替换为职责分离的 createWorkspace 与 createReadTool。
 
@@ -79,13 +80,13 @@ truncated=true 表示还有未返回内容，nextOffset 指向下一行或条目
 - `{ path, content }`：仅新建文件，路径已存在时 WRITE_CONFLICT；父目录必须存在。
 - `{ path, oldText, newText }`：已有文件中替换唯一精确片段。oldText 非空，newText 必须不同；可用空 newText 删除该片段。不存在、多次匹配或重叠匹配均拒绝，不自动重试或覆盖整份文件。
 
-模型工具描述要求先读后改。保留片段外的文本、原换行与 UTF-8 BOM；最终编码仍需满足 1 MiB 上限，拒绝未配对 Unicode 代理项和二进制控制字符。沿用 read 的路径与扩展名约束。最小权限是固定在 Tools 实例上的 read-only / workspace-write，不是逐次交互审批或完整权限框架；模型不能通过参数提升权限。
+模型工具描述要求先读后改。保留片段外的文本、原换行与 UTF-8 BOM；最终编码仍需满足 1 MiB 上限，拒绝未配对 Unicode 代理项和二进制控制字符。沿用 read 的路径与扩展名约束。策略固定在 Tools 实例上：ask 每次确认、read-only 拒绝、workspace-write 预授权。模型不能通过参数提升权限。ApproveWrite 接收 path、operation、bytes、newText 及编辑时的 oldText，通过 Promise<boolean> 返回单次批准；工具层不直接读终端。
 
 成功结果为 `{ recordId, path, operation, beforeHash, afterHash, bytes }`。path 只含规范化相对路径；beforeHash / afterHash 是原始文件字节的 SHA-256，新建的 beforeHash 为 null。结果不包含正文，不承诺文件随后未被其他进程修改。
 
 ## 写入提交与失败边界（已实现）
 
-1. 校验权限、参数、路径与文本。编辑时读取有界原始字节，确认 oldText 仅出现一次并生成新内容。
+1. 校验权限、参数、路径与文本。编辑时读取有界原始字节，确认 oldText 仅出现一次并生成新内容。ask 在此时请求确认，拒绝或 EOF 返回 PERMISSION_DENIED，取消抛 CANCELLED；都不会暂存文件或创建写入记录。批准后先复查父目录、文件身份及完整原始内容，冲突则拒绝。
 2. 创建 WriteRecord，状态 started；在同一目录独占创建 `.fatcat-write-<id>.tmp`，写入全部字节、sync 并关闭句柄。写入期间同一 Tools 的其他 write 返回 WRITE_BUSY。
 3. 再解析父目录并核对身份。编辑复核目标身份及完整原始字节；创建再次确认目标不存在。检查取消后才发布。
 4. 发布前标为 uncertain；新建使用 link 将完整临时文件安装到目标，目标已存在则失败且不覆盖；编辑使用 rename 替换，避免原地写到一半。发布返回后立即标为 committed，不在返回与记录之间检查取消。
@@ -109,4 +110,4 @@ Loop 在每次模型请求时把记录作为临时数据消息提供给模型，
 
 read 与 write 已实现；后续加入 shell 的权限、输出边界及进程生命周期，并将命令结果纳入独立执行事实。shell 建议默认 PowerShell，不强制 Bash。进程权限不能只靠文件路径校验实现。
 
-维持少量通用工具入口及清晰内部职责。搜索、流式大文件、持久状态、权限交互及完整插件体系均未实现，不为这些方向预建空接口。
+维持少量通用工具入口及清晰内部职责。搜索、流式大文件、持久状态、完整权限策略与插件体系均未实现，不为这些方向预建空接口。

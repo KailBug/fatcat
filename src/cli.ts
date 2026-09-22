@@ -1,4 +1,7 @@
 import { parseArgs } from "node:util";
+import { createTerminalInput } from "./terminal.js";
+import type { TerminalInput } from "./terminal.js";
+import type { WorkspacePermission } from "./tools/write.js";
 import { runChat } from "./chat.js";
 import { Session } from "./session.js";
 import { loadConfig } from "./config.js";
@@ -23,14 +26,15 @@ Use --chat for a continuous conversation with /help, /reset, and /exit.
 A prompt runs one task. History stays in memory.
 Use --subagent to allow up to two isolated child tasks per user turn.
 Each child uses at most three additional model requests and cannot delegate.
-Use --workspace <directory> to expose read and write; access defaults to read-only.
-Use --permission workspace-write to authorize file creation and exact edits in that workspace.
+Use --workspace <directory> to expose read and write. Each write asks for yes/no in the terminal.
+Use --permission read-only to forbid writes, or workspace-write to preauthorize them for scripts.
 Write records are logged even if the model fails or the run is cancelled.
 Selected file contents are sent to DeepSeek when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
 Logs go to stderr; the final answer goes to stdout. Press Ctrl+C to cancel.`;
 
 async function main(args: string[]): Promise<number> {
+  let terminal: TerminalInput | undefined;
   const controller = new AbortController();
   const cancel = () => controller.abort();
 
@@ -69,8 +73,8 @@ async function main(args: string[]): Promise<number> {
       throw new HarnessError("USAGE", "Use --workspace with a prompt or --chat and a non-empty directory.");
     }
     if (values.permission !== undefined && (values.workspace === undefined
-      || !["read-only", "workspace-write"].includes(values.permission))) {
-      throw new HarnessError("USAGE", "Use --permission read-only or workspace-write with --workspace and a task.");
+      || !["ask", "read-only", "workspace-write"].includes(values.permission))) {
+      throw new HarnessError("USAGE", "Use --permission ask, read-only, or workspace-write with --workspace and a task.");
     }
     if (values.subagent && (values.help || values.checkConfig
       || (!values.chat && values.prompt === undefined && positionals.length === 0))) {
@@ -95,21 +99,25 @@ async function main(args: string[]): Promise<number> {
     //start config
     const config = loadConfig();
     process.on("SIGINT", cancel);
-    const permission = values.permission === "workspace-write" ? "workspace-write" : "read-only";
-    const baseTools = await createTools(values.workspace, permission);
+    const permission = (values.permission ?? "ask") as WorkspacePermission;
+    if (values.chat || (values.workspace !== undefined && permission === "ask")) {
+      terminal = createTerminalInput(process.stdin, process.stderr, controller.signal);
+    }
+    const signal = terminal?.signal ?? controller.signal;
+    const baseTools = await createTools(values.workspace, permission, terminal?.approveWrite);
     const tools = values.subagent
       ? createSubagentTools(baseTools, createDeepSeekModel(config, undefined, baseTools), config.maxIterations)
       : baseTools;
     const model = createDeepSeekModel(config, undefined, tools);
     if (values.chat) {
       return await runChat(new Session({ model, tools, maxIterations: config.maxIterations }), {
-        input: process.stdin, output: process.stdout, error: process.stderr, signal: controller.signal,
+        input: process.stdin, output: process.stdout, error: process.stderr, signal, terminal: terminal!,
       });
     }
     const answer = await runAgent(prompt, {
       model, tools,
       maxIterations: config.maxIterations,
-      signal: controller.signal,
+      signal,
       onEvent: (event) => console.error(JSON.stringify(event)),
     });
     console.log(answer);
@@ -121,6 +129,7 @@ async function main(args: string[]): Promise<number> {
     if (known && error.code === "CANCELLED") return 130;
     return 1;
   } finally {
+    terminal?.close();
     process.off("SIGINT", cancel);
   }
 }

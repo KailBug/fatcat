@@ -7,6 +7,14 @@ globalThis.fetch = async (input, init) => {
   assert.equal(request.url, "https://api.deepseek.com/chat/completions");
   const { messages, tools } = await request.json() as { messages: Message[]; tools: { function: { name: string } }[] };
   const prompt = messages.findLast((message) => message.role === "user")?.content;
+  if (prompt === "shell fixture") {
+    const last = messages.at(-1);
+    if (last?.role === "user") return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
+      role: "assistant", content: null, tool_calls: [{ id: "shell-1", type: "function",
+        function: { name: "shell", arguments: JSON.stringify({ command: "'CLI_COMMAND_READY'" }) } }],
+    } }] });
+    return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: String(last?.content) } }] });
+  }
   if (prompt === "write fixture" || prompt === "write then fail") {
     const last = messages.at(-1);
     if (last?.role === "user" || (last?.role === "tool" && last.tool_call_id === "inspect")) {
@@ -41,7 +49,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: value.result.answer } }] });
   }
   if (prompt === "workspace pages") {
-    assert.deepEqual(tools.map((tool) => tool.function.name), ["sum", "read", "write"]);
+    assert.deepEqual(tools.map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
     const last = messages.at(-1);
     const previous = last?.role === "tool" ? JSON.parse(String(last.content)).result : undefined;
     if (previous?.nextOffset === null) {
@@ -57,7 +65,7 @@ globalThis.fetch = async (input, init) => {
     } }] });
   }
   if (prompt === "workspace" || prompt === "workspace blocked") {
-    assert.deepEqual(tools.map((tool) => tool.function.name), ["sum", "read", "write"]);
+    assert.deepEqual(tools.map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
     const last = messages.at(-1);
     const list = prompt === "workspace" && last?.role === "user";
     if (last?.role === "user" || (last?.role === "tool" && last.tool_call_id === "list")) {

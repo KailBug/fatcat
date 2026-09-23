@@ -65,11 +65,13 @@
 - Test: pnpm test
 - Help: pnpm start --help
 - Continuous chat: pnpm start --chat
-- Workspace chat with per-write terminal approval: pnpm start --chat --workspace examples/workspace
+- Workspace chat with per-write and per-command terminal approval: pnpm start --chat --workspace examples/workspace
 - Explicit read-only workspace chat: pnpm start --chat --workspace examples/workspace --permission read-only
-- Preauthorized workspace editing (including scripts): pnpm start --chat --workspace examples/workspace --permission workspace-write
+- Preauthorized workspace editing (does not preauthorize commands): pnpm start --chat --workspace examples/workspace --permission workspace-write
+- Preauthorized command execution: add --shell-permission allow to a workspace task; commands are not OS-sandboxed.
 - Opt-in delegation: pnpm start --chat --subagent --workspace examples/workspace
 - Local configuration check: pnpm start --checkConfig
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
+- Live coding verification: pnpm run verify:coding (uses a temporary fixture and authorizes only its designated source edit and fixed test command).
 - DeepSeek is the only model service. Keep real keys in local environment variables or the ignored .env file.
 - Automated tests must use fake credentials and injected transports. Live verification is a separate, explicit command.

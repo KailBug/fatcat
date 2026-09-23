@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { createTerminalInput } from "./terminal.js";
 import type { TerminalInput } from "./terminal.js";
+import type { ShellPermission } from "./tools/shell.js";
 import type { WorkspacePermission } from "./tools/write.js";
 import { runChat } from "./chat.js";
 import { Session } from "./session.js";
@@ -26,9 +27,11 @@ Use --chat for a continuous conversation with /help, /reset, and /exit.
 A prompt runs one task. History stays in memory.
 Use --subagent to allow up to two isolated child tasks per user turn.
 Each child uses at most three additional model requests and cannot delegate.
-Use --workspace <directory> to expose read and write. Each write asks for yes/no in the terminal.
-Use --permission read-only to forbid writes, or workspace-write to preauthorize them for scripts.
-Write records are logged even if the model fails or the run is cancelled.
+Use --workspace <directory> to expose read, write, and shell. Writes and commands ask for yes/no in the terminal.
+Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
+Shell authorization is separate: --shell-permission ask (default), deny, or allow for unattended commands.
+Shell uses Windows PowerShell with current-user access, not an operating-system sandbox.
+Write records are logged even if the model fails or the run is canceled.
 Selected file contents are sent to DeepSeek when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
 Logs go to stderr; the final answer goes to stdout. Press Ctrl+C to cancel.`;
@@ -50,6 +53,7 @@ async function main(args: string[]): Promise<number> {
           chat: { type: "boolean" },
           workspace: { type: "string" },
           permission: { type: "string" },
+          "shell-permission": { type: "string" },
           subagent: { type: "boolean" },
         },
         allowPositionals: true,
@@ -76,6 +80,11 @@ async function main(args: string[]): Promise<number> {
       || !["ask", "read-only", "workspace-write"].includes(values.permission))) {
       throw new HarnessError("USAGE", "Use --permission ask, read-only, or workspace-write with --workspace and a task.");
     }
+    if (values["shell-permission"] !== undefined && (values.workspace === undefined
+      || !["ask", "deny", "allow"].includes(values["shell-permission"])
+      || (values.permission === "read-only" && values["shell-permission"] !== "deny"))) {
+      throw new HarnessError("USAGE", "Use --shell-permission ask, deny, or allow with a workspace task; read-only permits only deny.");
+    }
     if (values.subagent && (values.help || values.checkConfig
       || (!values.chat && values.prompt === undefined && positionals.length === 0))) {
       throw new HarnessError("USAGE", "Use --subagent with a prompt or --chat.");
@@ -100,11 +109,15 @@ async function main(args: string[]): Promise<number> {
     const config = loadConfig();
     process.on("SIGINT", cancel);
     const permission = (values.permission ?? "ask") as WorkspacePermission;
-    if (values.chat || (values.workspace !== undefined && permission === "ask")) {
+    const shellPermission = (values["shell-permission"] ?? (permission === "read-only" ? "deny" : "ask")) as ShellPermission;
+    if (values.chat || (values.workspace !== undefined && (permission === "ask" || shellPermission === "ask"))) {
       terminal = createTerminalInput(process.stdin, process.stderr, controller.signal);
     }
     const signal = terminal?.signal ?? controller.signal;
-    const baseTools = await createTools(values.workspace, permission, terminal?.approveWrite);
+    const baseTools = await createTools(values.workspace, permission, terminal?.approveWrite, {
+      permission: values.workspace === undefined ? "deny" : shellPermission,
+      ...(terminal ? { approve: terminal.approveShell } : {}),
+    });
     const tools = values.subagent
       ? createSubagentTools(baseTools, createDeepSeekModel(config, undefined, baseTools), config.maxIterations)
       : baseTools;

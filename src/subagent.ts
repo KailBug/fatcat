@@ -60,7 +60,8 @@ export function createSubagentTools(baseTools: Tools, childModel: Model, maxIter
       }
     }
 
-    return { definitions, execute, forTurn, ...(baseTools.getWrites ? { getWrites: baseTools.getWrites } : {}) };
+    return { definitions, execute, forTurn, ...(baseTools.getWrites ? { getWrites: baseTools.getWrites } : {}),
+      ...(baseTools.getCommands ? { getCommands: baseTools.getCommands } : {}) };
   }
 
   return forTurn();

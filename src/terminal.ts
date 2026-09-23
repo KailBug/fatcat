@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { HarnessError, checkCancellation } from "./errors.js";
+import type { ApproveShell } from "./tools/shell.js";
 import type { ApproveWrite } from "./tools/write.js";
 
 /** One input owner routes approval answers separately from queued chat tasks. */
@@ -54,20 +55,20 @@ export function createTerminalInput(
     lines.prompt();
   }
 
-  function preview(value: string): string {
+  function preview(value: string, limit = 1200): string {
     // JSON escaping keeps file content from injecting terminal control sequences.
     const encoded = JSON.stringify(value).replace(/[\u007f-\u009f]/g,
       (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
-    return encoded.length > 1200 ? encoded.slice(0, 1200) + " ... [preview truncated]" : encoded;
+    return encoded.length > limit ? encoded.slice(0, limit) + " ... [preview truncated]" : encoded;
   }
 
-  const approveWrite: ApproveWrite = async (request, toolSignal) => {
+  async function confirm(action: string, details: string, unattended: string, toolSignal?: AbortSignal): Promise<boolean> {
     const waitingSignal = toolSignal ? AbortSignal.any([signal, toolSignal]) : signal;
     checkCancellation(waitingSignal);
     if (!interactive || closed) {
-      throw new HarnessError("PERMISSION_DENIED", "Write approval requires an interactive terminal. No write was approved. For unattended use, explicitly select --permission workspace-write.");
+      throw new HarnessError("PERMISSION_DENIED", `${action} approval requires an interactive terminal. No operation was approved. For unattended use, explicitly select ${unattended}.`);
     }
-    if (approvalAnswer) throw new HarnessError("PERMISSION_DENIED", "Another write approval is already pending.");
+    if (approvalAnswer) throw new HarnessError("PERMISSION_DENIED", "Another approval is already pending.");
     const allowed = await new Promise<boolean>((resolve) => {
       const finish = (approved: boolean) => {
         approvalAnswer = undefined;
@@ -84,18 +85,27 @@ export function createTerminalInput(
         }
       };
       waitingSignal.addEventListener("abort", abort, { once: true });
-      error.write(`\nWrite request: ${request.operation} ${preview(request.path)} (${request.bytes} bytes after write)\n`);
-      if (request.oldText !== undefined) error.write(`Replace: ${preview(request.oldText)}\n`);
-      error.write(`${request.operation === "create" ? "Content" : "With"}: ${preview(request.newText)}\n`);
-      lines.setPrompt("Allow this write? [yes/no] ");
+      error.write(details);
+      lines.setPrompt(`Allow this ${action.toLowerCase()}? [yes/no] `);
       lines.prompt();
     });
     checkCancellation(waitingSignal);
-    error.write(allowed ? "Write approved.\n" : "Write denied.\n");
+    error.write(`${action} ${allowed ? "approved" : "denied"}.\n`);
     return allowed;
   };
 
-  return { readTask, prompt, approveWrite, close, signal };
+  const approveWrite: ApproveWrite = (request, toolSignal) => confirm("Write",
+    `\nWrite request: ${request.operation} ${preview(request.path)} (${request.bytes} bytes after write)\n`
+      + (request.oldText === undefined ? "" : `Replace: ${preview(request.oldText)}\n`)
+      + `${request.operation === "create" ? "Content" : "With"}: ${preview(request.newText)}\n`,
+    "--permission workspace-write", toolSignal);
+
+  const approveShell: ApproveShell = (request, toolSignal) => confirm("Command",
+    `\nPowerShell request in ${preview(request.cwd)} (timeout ${request.timeoutMs} ms)\n`
+      + "This runs with your user permissions, including access outside the workspace and to the network.\n"
+      + `Command: ${preview(request.command, Infinity)}\n`, "--shell-permission allow", toolSignal);
+
+  return { readTask, prompt, approveWrite, approveShell, close, signal };
 }
 
 export type TerminalInput = ReturnType<typeof createTerminalInput>;

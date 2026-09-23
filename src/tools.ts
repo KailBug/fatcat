@@ -5,6 +5,8 @@ import { createWorkspace } from "./tools/workspace.js";
 import { createReadTool } from "./tools/read.js";
 import { createWriteTool } from "./tools/write.js";
 import type { ApproveWrite, WorkspacePermission, WriteRecord } from "./tools/write.js";
+import { createShellTool } from "./tools/shell.js";
+import type { CommandRecord, ShellOptions } from "./tools/shell.js";
 import { failure } from "./tools/types.js";
 import type { Tool, ToolResult } from "./tools/types.js";
 
@@ -12,6 +14,7 @@ export type { ToolResult } from "./tools/types.js";
 export type Tools = {
   definitions: Tool["definition"][];
   getWrites?: () => WriteRecord[];
+  getCommands?: () => CommandRecord[];
   execute: (name: string, argumentsJson: string, signal?: AbortSignal, callId?: string) => Promise<ToolResult>;
   forTurn?: (onEvent?: (event: LoopEvent) => void) => Tools;
 };
@@ -54,17 +57,26 @@ function collectTools(tools: Tool[]) {
 export const defaultTools: Tools = collectTools([sumTool]);
 
 /** Filesystem access is enabled only by an explicit workspace selection. */
-export async function createTools(workspace?: string, permission: WorkspacePermission = "read-only", approveWrite?: ApproveWrite): Promise<Tools> {
+export async function createTools(workspace?: string, permission: WorkspacePermission = "read-only", approveWrite?: ApproveWrite, shell: ShellOptions = {}): Promise<Tools> {
   if (permission !== "ask" && permission !== "read-only" && permission !== "workspace-write") {
     throw new HarnessError("CONFIG", "Workspace permission must be ask, read-only, or workspace-write.");
   }
+  if (shell.permission !== undefined && !["ask", "deny", "allow"].includes(shell.permission)) {
+    throw new HarnessError("CONFIG", "Shell permission must be ask, deny, or allow.");
+  }
+  if (permission === "read-only" && shell.permission !== undefined && shell.permission !== "deny") {
+    throw new HarnessError("CONFIG", "Read-only access cannot authorize shell execution.");
+  }
   if (workspace === undefined) {
+    if (shell.permission === "allow" || shell.permission === "ask") throw new HarnessError("CONFIG", "Shell execution requires an explicit workspace.");
     if (permission === "workspace-write") throw new HarnessError("CONFIG", "Writing requires an explicit workspace.");
     return defaultTools;
   }
   const scope = await createWorkspace(workspace);
   const writer = createWriteTool(scope, permission, undefined, approveWrite);
-  return { ...collectTools([sumTool, createReadTool(scope), writer.tool]), getWrites: writer.getWrites };
+  const commands = createShellTool(scope, shell);
+  return { ...collectTools([sumTool, createReadTool(scope), writer.tool, commands.tool]),
+    getWrites: writer.getWrites, getCommands: commands.getCommands };
 }
 
 export const toolDefinitions = defaultTools.definitions;

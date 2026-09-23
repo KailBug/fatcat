@@ -1,26 +1,28 @@
-# Tools：通用 read、受控 write 与工作目录边界
+# Tools：read、write、shell 与授权边界
 
 ## 当前状态
 
-阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
+阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已验证、待 review；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
 
 ## 模块与接口
 
 | 模块 | 已实现职责 |
 | --- | --- |
-| `src/tools.ts` | createTools(workspace?, permission = "read-only", approveWrite?) 创建实际工具集合；统一 JSON 解析、名称查找、异步执行、取消和安全错误转换 |
+| `src/tools.ts` | createTools(workspace?, permission = "read-only", approveWrite?, shellOptions?) 创建实际工具集合；统一 JSON 解析、名称查找、异步执行、取消和安全错误转换 |
 | `src/tools/types.ts` | 工具定义、执行类型与 JSON 可序列化 ToolResult |
 | `src/tools/sum.ts` | 纯计算示例工具的 Schema、校验与有限数求和 |
 | `src/tools/workspace.ts` | createWorkspace(workspace) 固定工作目录；resolvePath(path, signal?) 检查边界，返回内部绝对路径、规范化相对路径及文件状态；resolveNewFile 验证已有父目录并拒绝覆盖 |
 | `src/tools/read.ts` | createReadTool(workspace) 提供 read 定义、参数校验、目录与文本读取、分页及输出限制 |
 | `src/tools/text-file.ts` | read 与 write 共享有界 UTF-8 读取、文件身份核对、扩展名与编码限制 |
 | `src/tools/write.ts` | createWriteTool 实现创建、精确替换、暂存与发布；持有写权限和进程内记录 |
+| `src/tools/shell.ts` | 命令参数、独立权限、cwd 检查、命令记录及结果协议 |
+| `src/tools/process.ts` | Windows PowerShell 启动、有限输出、超时、取消和 taskkill 进程树清理 |
 | `src/cli.ts` | 默认 ask，解析 --workspace / --permission 并注入终端确认回调；不承担具体文件规则 |
-| `src/terminal.ts` | 持有单一 readline 输入，隔离任务与确认答案，显示有界预览并返回批准/拒绝 |
+| `src/terminal.ts` | 持有单一 readline 输入，隔离任务与确认答案，显示有界写入预览或完整命令预览，并返回单次批准/拒绝 |
 
 Tools 包含 definitions 和 execute(name, argumentsJson, signal?, callId?)。可选 forTurn(onEvent?) 由委派包装器使用，隔离每回合次数与事件；基础 collectTools 保留内部命名 execute 函数。可选 getWrites() 返回深复制的 WriteRecord[]，由工作目录工具持有，Loop 只消费事实并记录事件。模型客户端和 Loop/Session 使用同一工具集合，结果按 tool_call_id 关联。
 
-没有工作目录时仍只提供 sum；显式 --workspace 增加 read 和 write。CLI 默认 ask，write 在参数、路径与内容校验后请求终端确认。显式 read-only 无条件拒绝写入；workspace-write 预授权本次运行。程序化 createTools 仍默认只读，ask 需要由调用方提供 approveWrite 回调。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和写入记录；委派本身当前仍需 --subagent。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
+没有工作目录时仍只提供 sum；显式 --workspace 增加 read、write 和 shell。CLI 默认 ask，write 在参数、路径与内容校验后请求终端确认。显式 read-only 无条件拒绝写入；workspace-write 仅预授权文件写入，不授权 shell。程序化 createTools 仍默认只读，ask 需要由调用方提供 approveWrite 回调。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和写入记录；委派本身当前仍需 --subagent。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
 
 旧模型工具名称 list_directory 和 read_file 已移除，调用返回 UNKNOWN_TOOL。项目尚无持久历史，不增加旧名称兼容层。内部 createWorkspaceTools 已替换为职责分离的 createWorkspace 与 createReadTool。
 
@@ -106,8 +108,36 @@ Loop 在每次模型请求时把记录作为临时数据消息提供给模型，
 
 离线测试通过真实临时文件及窄范围文件操作注入，验证冲突、取消、发布失败、清理失败、回合失败后继续与父子权限继承；真实模型完成临时样例创建与精确修改后的读回。详情以 PROGRESS.md 为准。
 
+## shell 协议与授权（2D-3 已实现）
+
+createTools 第四参数为 `{ permission?: "ask" | "deny" | "allow", approve?: ApproveShell }`，程序化默认 deny。CLI 默认 ask，--shell-permission 可设 deny 或显式 allow；--permission read-only 强制禁止命令，workspace-write 只预授权文件写入。没有工作目录时不能授予命令权限。默认工具可被模型选择，授权在实际执行入口检查。
+
+输入 `{ command, cwd?, timeoutMs? }`，仅接受已定义字段。command 为非空、最多 4000 UTF-16 码元的有效 Unicode，拒绝控制码（允许换行和 tab）。cwd 默认 `.`，需通过现有路径检查且是目录，确认后复核身份；timeoutMs 默认为 30000，整数范围 100–120000。ApproveShell 接收规范化 cwd、完整 command 与 timeoutMs。终端展示全部转义命令，不截断批准依据；管道、拒绝、EOF 与批准前取消都不启动进程，已有排队任务不能变成批准。
+
+工作目录仅约束启动位置，**不是操作系统沙箱**。命令可以在当前用户权限内读写目录外文件和访问网络，也不受 read/write 的扩展名及隐藏路径过滤约束。确认界面明确说明此边界；不能把 shell 判定成安全的只读命令。子任务使用同一策略、回调和记录，不能提升权限。
+
+## 命令执行、输出与清理（2D-3 已实现）
+
+process.ts 使用系统目录下的 Windows PowerShell，通过 spawn 的参数数组传入 UTF-16LE EncodedCommand；无 profile、无 stdin、非交互、隐藏窗口，每次均为新进程，不保留变量或 cd 状态。设置 UTF-8 控制台编码、文本输出及关闭进度输出；PowerShell 错误转为非零退出，外部程序最终 LASTEXITCODE 作为退出码。多个外部命令串联时需逐个检查退出码，后来的命令可能覆盖先前失败。
+
+环境仅继承列出的 OS/运行时变量，例如 PATH、SystemRoot、TEMP、用户目录及 PNPM_HOME；不继承 DeepSeek Key、任意业务密钥或 NODE_OPTIONS。此措施不隔离当前账户可读取的磁盘凭据。命令输出与命令记录进入模型，JSON 事件不记录正文；终端授权会本地显示命令。
+
+stdout/stderr 合计最多收集 16 KiB 原始字节，UTF-8 解码；不兼容编码可能替换字符。超过上限标记 truncated 并请求终止；结果不把截断输出冒充完整验证。预算不含 JSON、元数据及转码开销。默认 30 秒超时，工具参数最多 120 秒。
+
+超时、取消或输出超限调用系统 taskkill /PID /T /F，仅针对本次启动的进程树；清理额外最多等待 5 秒。已观察到父进程退出后不再按旧 PID 执行清理，避免明显的 PID 复用风险；退出与系统调用间仍无 Job Object 级保证。未确认终止时记录 termination_failed / unconfirmed，并禁止同一 Tools 再启动命令。正常父进程退出只记 foreground-exited，不声称所有脱离的后代已结束。后台服务、脱离进程及交互式命令不受支持，不将其写成可靠恢复或隔离。
+
+依据：[Microsoft taskkill 文档](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill) 的 /PID、/T 和 /F 行为；实际本机测试验证了被启动子进程的 PID 在超时清理后不存在。
+
+## 命令结果与事实（2D-3 已实现）
+
+结果含 recordId、success、status、exitCode、stdout、stderr、truncated、durationMs、cleanup。状态为 completed / timed_out / output_limit / cancelled / spawn_failed / termination_failed；仅 completed 且 exitCode=0 且未截断时 success=true。ToolResult.ok 表示执行接口返回了结果，不等于测试通过；权限、参数等前置错误仍走 ok=false。取消在保存结果后继续抛 CANCELLED，Loop 仍报告记录。
+
+createShellTool 保存命令记录，getCommands() 返回深复制。每个工具实例最多 20 次启动尝试，满后拒绝新增，不静默淘汰；记录保留命令、cwd、退出事实，以及每个输出流最多 1000 Unicode 码点的摘要，outputSummaryTruncated 明确说明省略。Loop 在后续每次请求补入临时数据消息，与成功历史分离；失败、/reset 和子任务失败不清除命令事实。shell_record 事件仅发 cwd、ID、状态、退出码、耗时及截断/清理标志，不含 command/stdout/stderr。父子事件可重复报告同一记录 ID。
+
+输出摘要、退出码与文件版本尚无强绑定，也不能保证模型最终叙述逐条符合工具证据；当前成功证明依赖明确工具结果与外部验收脚本，不是完整 Task 关卡。记录仅在进程内，命令副作用不自动回滚，没有崩溃恢复或全量持久日志。
+
 ## 后续安排（未实现）
 
-read 与 write 已实现；后续加入 shell 的权限、输出边界及进程生命周期，并将命令结果纳入独立执行事实。shell 建议默认 PowerShell，不强制 Bash。进程权限不能只靠文件路径校验实现。
+read、write 与前台 shell 均已实现。后续先处理 review 与实际任务暴露的问题，再收敛委派默认可用、上下文容量和验证证据组织；不提前建设后台调度或持久执行框架。
 
 维持少量通用工具入口及清晰内部职责。搜索、流式大文件、持久状态、完整权限策略与插件体系均未实现，不为这些方向预建空接口。

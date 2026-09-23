@@ -9,10 +9,49 @@
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
 - 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
-- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过用户 review，等待提交；完整代码修改闭环仍未完成；Channel 与其他 UI 后移。
+- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已实现并通过固定临时样例的读改测闭环，待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
 - 已有 CLI 任务输入、单模型接入、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+
+## 2026-09-22：review 调整，提取进程执行内部函数
+
+- 按用户要求，将 runPowerShell 中较长的 Promise 匿名执行器提取为具名内部函数 executeProcess，末尾仅返回 new Promise<ProcessResult>(executeProcess)。执行器函数体与原有脚本格式保持不变，不调整进程行为或模块边界。
+- pnpm run typecheck 通过，并逐字核对提取前后的执行器函数体一致。本次未重新运行进程测试或真实模型验证。
+- 在现有 feat/workspace-shell 上进行局部 review 修改，不切换分支、不改变索引或其他用户修改；无阻塞，待用户继续 review。
+
+## 2026-09-22：阶段 2D-3，Windows shell（已验证，待 review）
+
+### 实际结果
+
+- 从 main 的 4104aaf 创建 feat/workspace-shell；确认终端批准与停止维护 Excalidraw 的 PR 已合入。保留原有图源索引删除及用户对 examples/workspace/project-notes.txt 的修改，不恢复或维护图源、不改写样例。本轮未提交、推送或合并。
+- 新增一个 shell 模型工具，选定 workspace 后即可被模型选择。采用系统 Windows PowerShell，不依赖 Bash、WSL 或新依赖。shell.ts 管理参数、授权、cwd、结果及记录，process.ts 管理本机进程与输出；CLI 和 terminal.ts 复用原终端确认。
+- 默认 CLI 命令逐次 yes/no，完整转义显示命令并说明当前用户权限边界；--shell-permission ask/deny/allow 与写入授权分开。显式 read-only 禁止命令，workspace-write 不隐含命令授权；管道不能自动批准。程序化 createTools 的 shell 默认 deny，父子任务共享策略与记录。
+- cwd 默认根目录并复查，命令最多 4000 字符；每次独立非交互进程、无 profile/stdin、隐藏窗口。超时默认 30 秒、最大 120 秒，stdout/stderr 合计最多 16 KiB 原始字节，超时、取消和输出超限请求终止所启动的进程树。清理未确认会阻止同一工具实例继续启动命令。
+- 结果区分工具返回成功和命令 success，明确给出退出码、状态、输出、截断、耗时及清理结果。命令记录独立于成功历史，模型失败、/reset 或子任务失败仍可见；最多 20 次启动尝试，每流保留 1000 Unicode 码点的摘要，未实现持久化。
+- 新增 pnpm run verify:coding，只允许临时样例 math.mjs 修改与固定 node --test check.test.mjs；脚本独立检查原失败、修复后通过及测试文件未变，并清理临时目录。未修改既有 verify:live 的读取场景或用户样例。
+- 同步 README、USAGE、PROJECT、ROADMAP、AGENTS 和相关 Markdown 架构文档，没有修改模型 SDK、运行时、依赖或锁文件。
+
+### 验证结果
+
+- 开发前 98 项离线基线通过；最终 pnpm test（含构建）110 项全部通过，pnpm run typecheck 和 CLI help 通过。
+- 使用真实 Windows 进程离线验证 Unicode/cwd/stderr、PowerShell 错误和外部程序非零退出、输出超限终止、超时及取消；超时后检查子进程 PID 已不存在。另验证授权分离、管道拒绝、完整命令预览、cwd 变化、启动失败、命令互斥、记录上限、摘要截断及清理不确定后的拒绝。
+- Session、实际 CLI 离线传输和子任务验证：命令完成后模型失败、/reset、父子批准/拒绝继承、事件不泄露命令正文或输出。模型通信使用 fake Key，原有写入确认测试全部回归通过。
+- 实施中修正了 ES2022 类型库不提供 String.isWellFormed 的兼容问题；两个测试夹具问题分别为 Windows 大 inode 数值加 1 无效和 PowerShell 对 node -e 嵌套引号处理，改用确定的路径变化及独立脚本夹具。最终无测试失败。
+- 真实 DeepSeek 编码验收执行两次，每次 4 次请求，本轮共 8 次真实请求。两次均读取源码与测试、精确替换 a - b 为 a + b、运行固定测试，exitCode=0 且无截断，最终报告 CODING_VERIFIED；外部脚本独立复验通过。
+- 首次真实验收发现 PowerShell 进度 CLIXML 混入 stderr，已关闭进度输出并指定文本输出；后续完整离线回归及第二次真实验收均通过。
+- 未运行原 verify:live：用户在其三行固定样例中新增了一行内容，本轮保留该修改；新编码验收使用完全独立的临时样例，没有读取或展示凭据。
+- 最终检查通过：50 个 Markdown 本地链接、修改源码英文与 LF、git diff --check、依赖锁文件未变，以及用户样例和原暂存状态保留。README 既有中文语言标签及用户样例新增中文行保持原样；.env 与退役图源均被忽略，未重新维护图源。
+
+### 限制与下一步
+
+- 无实现或真实模型验收阻塞，待用户 review。固定任务已跑通读改测，但阶段 2D 的默认委派迁移和更广泛任务验收仍未完成。
+- shell 不提供 OS 沙箱；命令可使用当前账户的文件/网络权限，cwd 只限定起始位置。环境白名单不防止程序读取磁盘凭据，输出可能包含程序自行打印的内容并进入模型。read/write 路径规则不限制 shell 的实际文件访问。
+- taskkill 是尽力进程树清理，未使用 Windows Job Object；后台/脱离进程可能存活，正常父进程退出只说明前台结束。尚不支持后台服务、交互程序、持久状态、恢复或回滚。多条外部命令需要显式检查各自退出码，不能只依赖最后一条。
+- UTF-8 不兼容程序的输出可能含替换字符，16 KiB 是原始收集字节预算；命令历史和摘要仍消耗模型上下文，没有长期上下文管理。
+- 真实模型回答额外声称了写后重读，调用记录没有支持这一细节；本轮验收依据实际工具事件和独立测试，而非自然语言自述。现有 harness 不保证答案逐项符合证据，后续需要围绕验证证据与交付报告完善，不能据本次小样例宣称广泛任务成功率。
+- 下一步先处理本轮 review，继续围绕实际代码任务完善命令结果、验证证据和按需委派，不直接扩展 Channel 或 UI。
 
 
 ## 2026-09-22：停止维护与跟踪 Excalidraw

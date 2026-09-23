@@ -8,7 +8,7 @@
 
 A small TypeScript agent harness demo for local coding experiments, powered by DeepSeek and built to run natively on Windows.
 
-Still an early demo, with a simple agent loop, CLI chat, workspace reading and controlled editing, and optional subagents.
+Still an early demo, with a simple agent loop, CLI chat, workspace reading and controlled editing, approved Windows command execution, and optional subagents.
 
 [Setup and usage](docs/USAGE.md)
 

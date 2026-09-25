@@ -6,13 +6,13 @@ Run all commands below from the repository root.
 
 A TypeScript Agent Harness that runs natively on Windows.
 
-The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI. Controlled text-file creation and editing are available. Foreground Windows PowerShell execution is available with separate command authorization. Task-driven delegation without an opt-in flag remains planned. TUI, Web UI, app, and channel work is deferred. See the [architecture overview](ARCHITECTURE/README.md) and [roadmap](ROADMAP.md).
+The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI. Controlled text-file creation and editing are available. Foreground Windows PowerShell execution is available with separate command authorization. Bounded delegation is available by default, with the model choosing whether to use it for the task. TUI, Web UI, app, and channel work is deferred. See the [architecture overview](ARCHITECTURE/README.md) and [roadmap](ROADMAP.md).
 
 ## Current capabilities
 
 The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, inspect text files in an explicitly selected workspace, propose a write, or run a command after terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. An optional bounded subagent can handle isolated tasks. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
+The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
 
 ## Windows setup
 
@@ -103,7 +103,7 @@ pnpm start --workspace examples/workspace --prompt "Read project-notes.txt and r
 pnpm start --chat --workspace examples/workspace
 ```
 
-`--workspace` works with a single prompt or `--chat`; it cannot be used alone or with help/configuration checks. Without it, only `sum` is available. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
+`--workspace` works with a single prompt or `--chat`; it cannot be used alone or with help/configuration checks. Without it, the parent has `sum` and `delegate_task`; children have only `sum`. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
 
 The workspace exposes general-purpose `read`, `write`, and `shell` tools, with each write requiring approval by default. The `read` tool accepts files or directories. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
 
@@ -221,11 +221,12 @@ History is lost on exit and is not automatically trimmed or summarized. Long con
 ## Delegate a task
 
 ```powershell
-pnpm start --subagent --prompt "Delegate adding 8 and 13 to a child using sum, then report its result."
-pnpm start --chat --subagent --workspace examples/workspace
+pnpm start --chat --workspace examples/workspace
 ```
 
-`--subagent` enables `delegate_task`; it does not force every request to use delegation. It works with a prompt or `--chat`, optionally with a workspace. It cannot be used alone or with help/configuration checks.
+`delegate_task` is available in ordinary single-task and chat commands. The model chooses when to delegate; no capability flag is required. The old `--subagent` option has been removed and now returns usage exit code 2; remove it from existing scripts.
+
+Parent-only guidance favors direct work for simple questions, arithmetic, and single file operations, and focused delegation for independent investigations or reviews. Children receive concrete context supplied by the parent. Short reviews can still be handled directly; this is model judgment, not a fixed classifier or a guarantee of optimal task splitting. No child requests are made unless the model invokes the tool. Read-only mode still permits delegation while denying writes and commands.
 
 The parent supplies a self-contained `task` string of 1 to 4000 characters. A child starts with fresh history and the same DeepSeek configuration and basic tools, including the selected workspace and its permission. Parent and child share the same write and command journals and approval callbacks; a child cannot elevate access, and its committed writes remain visible even if its turn fails. It cannot see the parent conversation or delegate further. Its final answer returns as tool data; its internal messages stay out of the parent history. Answers longer than 12000 characters return an error rather than a successful partial answer.
 
@@ -259,6 +260,14 @@ pnpm run verify:coding
 ```
 
 It creates a temporary buggy module and a fixed test, verifies the initial failure, then asks DeepSeek to read, edit the module, and run `node --test check.test.mjs`. Only that command and the designated source file are authorized. The script checks that the test was unchanged, independently reruns it, and cleans up the fixture. It permits at most eight model requests and consumes API credits. It does not use or modify `examples/workspace`.
+
+To verify default task selection with isolated temporary read-only fixtures:
+
+```powershell
+pnpm run verify:delegation
+```
+
+This checks arithmetic without child requests, then a task requiring independent second-opinion reviews with separate context. It uses the same agent assembly as the CLI, checks bounded delegation and child reading, checks both filenames in the final answer, and verifies unchanged fixtures and empty write/command journals. The script does not mechanically prove every claim in the review. Each scenario allows at most four parent requests plus two children of at most three requests: at most 20 requests in total, consuming API credits. Model selection can vary; a failed check is reported rather than retried automatically. See PROGRESS.md for observed results and earlier failed checks.
 
 The provider protocol follows the [DeepSeek API documentation](https://api-docs.deepseek.com/) using openai 7.18.0 as a compatibility client. Thinking and streaming are explicitly disabled for this first loop. SDK client usage was checked against [official OpenAI documentation](https://developers.openai.com/api/docs/libraries) and the installed SDK.
 

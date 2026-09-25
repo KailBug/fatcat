@@ -12,7 +12,7 @@
 
 - Prioritize a working local coding workflow: inspect, modify, verify, and deliver reviewable results. Keep CLI interaction for now; defer channels, TUI, Web UI, and app development.
 - Prefer a small set of general-purpose, composable tools such as read, write, and shell execution. Do not add a separate model-facing tool for every development operation. Native Windows support must not require Bash.
-- Target task-driven tool selection and delegation. Users should not need to enable internal capabilities per task; the harness still enforces workspace access, permissions, budgets, and cancellation. Existing opt-in flags remain current behavior until explicitly migrated.
+- Target task-driven tool selection and delegation. Users should not need to enable internal capabilities per task; the harness still enforces workspace access, permissions, budgets, and cancellation. The CLI makes bounded delegation available by default; the model chooses whether to use it.
 - Keep interaction, loop control, model communication, tool execution, and state ownership clear. Favor readable modules and narrow interfaces; avoid monolithic handlers and speculative frameworks.
 - Maintain architecture descriptions in docs/ARCHITECTURE/ when module boundaries or development direction change. Distinguish implemented behavior from planned capabilities. Do not maintain Excalidraw files or add docs/ARCHITECTURE/fatcat-architecture.excalidraw to Git; any local copy is an unmaintained reference.
 - Treat selected LoopX and OpenViking capabilities as long-term benchmarks, evaluated through concrete tasks rather than feature counts.
@@ -69,9 +69,10 @@
 - Explicit read-only workspace chat: pnpm start --chat --workspace examples/workspace --permission read-only
 - Preauthorized workspace editing (does not preauthorize commands): pnpm start --chat --workspace examples/workspace --permission workspace-write
 - Preauthorized command execution: add --shell-permission allow to a workspace task; commands are not OS-sandboxed.
-- Opt-in delegation: pnpm start --chat --subagent --workspace examples/workspace
+- Task-driven delegation is available in ordinary task and chat commands without a capability flag.
 - Local configuration check: pnpm start --checkConfig
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
+- Live delegation verification: pnpm run verify:delegation (fixed read-only temporary fixtures, at most 20 real model requests).
 - Live coding verification: pnpm run verify:coding (uses a temporary fixture and authorizes only its designated source edit and fixed test command).
 - DeepSeek is the only model service. Keep real keys in local environment variables or the ignored .env file.
 - Automated tests must use fake credentials and injected transports. Live verification is a separate, explicit command.

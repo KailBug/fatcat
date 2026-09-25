@@ -64,6 +64,23 @@ globalThis.fetch = async (input, init) => {
       }],
     } }] });
   }
+  if (prompt === "workspace search") {
+    const last = messages.at(-1);
+    const previous = last?.role === "tool" ? JSON.parse(String(last.content)).result : undefined;
+    if (previous?.nextOffset === null) {
+      const matches = messages.filter((message) => message.role === "tool")
+        .flatMap((message) => JSON.parse(String(message.content)).result.matches);
+      return Response.json({ choices: [{ finish_reason: "stop", message: {
+        role: "assistant", content: JSON.stringify(matches),
+      } }] });
+    }
+    const offset = previous?.nextOffset ?? 0;
+    return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
+      role: "assistant", content: null, tool_calls: [{ id: `search-${offset}`, type: "function",
+        function: { name: "read", arguments: JSON.stringify({ path: ".", query: "SEARCH_TOKEN", offset, limit: 1 }) },
+      }],
+    } }] });
+  }
   if (prompt === "workspace" || prompt === "workspace blocked") {
     assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
     const last = messages.at(-1);

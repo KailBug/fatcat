@@ -252,3 +252,24 @@ test("chat emits per-turn reports on provider failure and reset without repeatin
   assert.equal(report[1]!.outcome, "answered");
   assert.equal(report[1]!.writes.length, 0);
 });
+
+
+test("read-only CLI follows recursive search pages without logging source content", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  await mkdir(join(workspace, "src"));
+  const source = "before\nSEARCH_TOKEN private-text\n";
+  await writeFile(join(workspace, "src", "a.ts"), source);
+  await writeFile(join(workspace, "src", "b.ts"), "SEARCH_TOKEN final-match");
+  const result = run(["--workspace", workspace, "--permission", "read-only", "--prompt", "workspace search"],
+    { DEEPSEEK_API_KEY: "offline-only" }, "");
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [
+    { path: "src/a.ts", line: 2, text: "SEARCH_TOKEN private-text" },
+    { path: "src/b.ts", line: 1, text: "SEARCH_TOKEN final-match" },
+  ]);
+  assert.equal((result.stderr.match(/"tool":"read"/g) ?? []).length, 2);
+  for (const text of ["SEARCH_TOKEN", "private-text", "final-match", workspace]) assert.ok(!result.stderr.includes(text));
+  assert.equal(await readFile(join(workspace, "src", "a.ts"), "utf8"), source);
+  assert.deepEqual(reports(result.stderr)[0]!.writes, []);
+  assert.deepEqual(reports(result.stderr)[0]!.commands, []);
+});

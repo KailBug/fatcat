@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { loadConfig } from "../src/config.js";
@@ -13,18 +13,22 @@ import { failure } from "../src/tools/types.js";
 import { runPowerShell } from "../src/tools/process.js";
 
 const command = "node --test check.test.mjs";
+const sourcePath = "src/math/add.mjs";
 const source = "export const add = (a, b) => a - b;\n";
+const consumer = 'import { add } from "./math/add.mjs";\nexport const total = (a, b) => add(a, b);\n';
 const checks = `import assert from "node:assert/strict";
 import test from "node:test";
-import { add } from "./math.mjs";
+import { total } from "./src/total.mjs";
 test("adds positive and negative values", () => {
-  assert.equal(add(2, 3), 5);
-  assert.equal(add(-4, 1), -3);
+  assert.equal(total(2, 3), 5);
+  assert.equal(total(-4, 1), -3);
 });
 `;
 const workspace = await mkdtemp(join(tmpdir(), "fatcat-coding-"));
 try {
-  await writeFile(join(workspace, "math.mjs"), source);
+  await mkdir(join(workspace, "src", "math"), { recursive: true });
+  await writeFile(join(workspace, sourcePath), source);
+  await writeFile(join(workspace, "src", "total.mjs"), consumer);
   await writeFile(join(workspace, "check.test.mjs"), checks);
   const before = await runPowerShell(command, workspace, 10000);
   assert.equal(before.status, "completed");
@@ -34,16 +38,26 @@ try {
     permission: "ask", approve: async (request) => request.command === command && request.cwd === ".",
   });
   // Only the known source file and fixed verification command are authorized by this live check.
+  let searches = 0;
+  let locatedSource = false;
   const tools: Tools = { ...base, async execute(name, args, signal, callId) {
     if (name === "write") {
       const input = JSON.parse(args) as { path?: string };
-      if (input.path !== "math.mjs") return failure("PERMISSION_DENIED", "Only math.mjs may be edited in this verification fixture.");
+      if (input.path !== sourcePath) return failure("PERMISSION_DENIED", "Only src/math/add.mjs may be edited in this verification fixture.");
     }
-    return base.execute(name, args, signal, callId);
+    const result = await base.execute(name, args, signal, callId);
+    if (name === "read" && result.ok) {
+      const value = result.result as { kind?: string; matches?: { path: string }[] };
+      if (value.kind === "search") {
+        searches++;
+        locatedSource ||= value.matches?.some((match) => match.path === sourcePath) ?? false;
+      }
+    }
+    return result;
   } };
   let report: ExecutionReport | undefined;
   const agent = createAgent({ ...config, maxIterations: Math.min(config.maxIterations, 8) }, tools);
-  const answer = await runAgent(`Read math.mjs and check.test.mjs. Fix the addition bug using an exact write edit to math.mjs only. Run shell with command exactly "${command}" and cwd ".". Do not change the test. Report CODING_VERIFIED only if the command succeeds; otherwise explain the failure.`, {
+  const answer = await runAgent(`The total function returns an incorrect sum. Use read with a literal query in src to locate the add implementation and its caller, then inspect the relevant files and check.test.mjs. Fix only the add implementation using an exact write edit. Do not change its caller. Run shell with command exactly "${command}" and cwd ".". Do not change the test. Report CODING_VERIFIED only if the command succeeds; otherwise explain the failure.`, {
     ...agent,
     onEvent: createTurnReporter((event) => {
       if (event.type === "execution_report") report = event.report;
@@ -51,7 +65,9 @@ try {
     }),
   });
   assert.equal(await readFile(join(workspace, "check.test.mjs"), "utf8"), checks);
-  assert.notEqual(await readFile(join(workspace, "math.mjs"), "utf8"), source);
+  assert.equal(await readFile(join(workspace, "src", "total.mjs"), "utf8"), consumer);
+  assert.notEqual(await readFile(join(workspace, sourcePath), "utf8"), source);
+  assert.ok(searches > 0 && locatedSource, "Search must locate the implementation before completing the task.");
   assert.ok(tools.getWrites!().some((record) => record.status === "committed"));
   assert.ok(tools.getCommands!().some((record) => record.command === command && record.status === "completed" && record.exitCode === 0 && !record.truncated));
   const after = await runPowerShell(command, workspace, 10000);
@@ -66,7 +82,7 @@ try {
   assert.deepEqual(report.commands.map((record) => record.id).sort(), commands.map((record) => record.id).sort());
   assert.ok(report.commands.some((record) => record.succeeded && !record.laterWriteAttempt));
   const requests = report.modelRequests.parent + report.modelRequests.children;
-  console.log(JSON.stringify({ scenario: "coding", passed: true, requests, answer }));
+  console.log(JSON.stringify({ scenario: "coding", passed: true, requests, searches, answer }));
 } catch {
   console.error("Coding verification failed. Inspect the recorded outcomes; no provider details are displayed.");
   process.exitCode = 1;

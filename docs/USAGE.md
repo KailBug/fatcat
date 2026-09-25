@@ -12,7 +12,9 @@ The near-term goal is a local coding agent that reads projects, makes controlled
 
 The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, inspect text files in an explicitly selected workspace, propose a write, or run a command after terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, and basic event logs. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
+The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
+
+The shared system prompt asks Fatcat to respond concisely in your language, inspect relevant code before edits, complete authorized implementation work, and report checks actually performed. It avoids unsolicited edits for review-only questions and keeps assumptions separate from observed facts. This is model guidance, not a guarantee of correctness or an additional permission mechanism. Restart the CLI after changing the prompt source and rebuilding.
 
 ## Windows setup
 
@@ -93,6 +95,27 @@ Each model request counts as one iteration; each new user turn receives a fresh 
 | 1 | Configuration, model, protocol, or iteration-limit failure; chat also returns 1 if any turn failed |
 | 2 | Invalid CLI usage or empty prompt |
 | 130 | User cancellation |
+
+## Review execution evidence
+
+Each started CLI task emits one `execution_report` JSON event to stderr when the root loop answers or stops. Chat reports include the user-turn number. Stdout remains the model answer. Help, configuration checks, local chat commands, and failures before the loop starts do not produce a report. Low-level `runAgent`/Session callers can opt into the same observer with `createTurnReporter`; their return values are unchanged.
+
+The report is computed from observed events, including child events, independently of the model's final wording:
+
+| Field | Meaning |
+| --- | --- |
+| outcome / stopCode | `answered` means the model returned an answer; `stopped` includes the stop reason. Neither certifies task success. |
+| taskVerification | Always `not_assessed`: the harness has not evaluated task acceptance criteria. |
+| modelRequests | Parent and child request attempts, counted separately. |
+| toolResults | Counts of returned `ok` and `errors`, including children and delegation calls. A shell `ok` does not imply a zero exit code. Cancelled tools may leave records without returning a tool result. |
+| writes | Current-turn write records with paths, hashes, byte counts, and actual statuses. Shared parent/child records appear once per record ID. |
+| commands | Current-turn command IDs, cwd, status, exit code, truncation and cleanup metadata. No command text or output bodies. |
+| commands[].succeeded | Completed with exit code 0, no output truncation, and no unconfirmed cleanup; says nothing about the command's relevance or coverage. |
+| commands[].laterWriteAttempt | A new or changed write-tool record was observed after this command. Even a failed or uncertain staged attempt conservatively sets this flag. |
+
+A report with `commands: []` has no command execution evidence for that turn, even if the answer says tests passed. A command with `laterWriteAttempt: true` predates a later write attempt; review whether checks need rerunning. A false value is not a freshness guarantee: commands themselves and other processes can change files without write-tool records. Journal summary truncation (`outputSummaryTruncated`) differs from process-output truncation (`truncated`); the former does not change the recorded exit outcome.
+
+Every user turn gets a new report; earlier records survive in the shared journals but are not presented as newly executed after a follow-up or `/reset`. Reports preserve effects observed before failure or cancellation, but do not rewrite the model's answer, change existing exit codes, persist to disk, or provide crash recovery. Full claim validation, file-version binding, and task acceptance gates remain unimplemented.
 
 ## Read a workspace
 
@@ -259,7 +282,7 @@ For the local coding workflow, run this separate explicit live check:
 pnpm run verify:coding
 ```
 
-It creates a temporary buggy module and a fixed test, verifies the initial failure, then asks DeepSeek to read, edit the module, and run `node --test check.test.mjs`. Only that command and the designated source file are authorized. The script checks that the test was unchanged, independently reruns it, and cleans up the fixture. It permits at most eight model requests and consumes API credits. It does not use or modify `examples/workspace`.
+It creates a temporary buggy module and a fixed test, verifies the initial failure, then asks DeepSeek to read, edit the module, and run `node --test check.test.mjs`. Only that command and the designated source file are authorized. The script checks that the test was unchanged, independently reruns it, and cleans up the fixture. It now uses the same default agent assembly and report observer as the CLI, checks report IDs against the command journal, and requires a successful command with no later write attempt. It permits at most eight parent requests plus two children of at most three requests (14 total), and consumes API credits. It does not use or modify `examples/workspace`.
 
 To verify default task selection with isolated temporary read-only fixtures:
 
@@ -281,6 +304,7 @@ The provider protocol follows the [DeepSeek API documentation](https://api-docs.
 - [Session architecture](ARCHITECTURE/SESSION.md)
 - [Tools architecture](ARCHITECTURE/TOOLS.md)
 - [Subagent architecture](ARCHITECTURE/SUBAGENT.md)
+- [Execution reports](ARCHITECTURE/EXECUTION_REPORT.md)
 - [Development guidelines](../AGENTS.md)
 
 All repository text outside docs/ must be English. Chinese is allowed only under docs/. Runtime user input and model output may use any language.

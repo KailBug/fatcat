@@ -8,6 +8,7 @@
 
 | 模块 | 当前职责与接口 |
 | --- | --- |
+| `src/system-prompt.ts` | 父子 Loop 共用的英文 systemPrompt：CLI 编码协作、沟通、工具边界和证据化交付 |
 | `src/agent.ts` | `createAgent(config, baseTools?, transport?)` 装配父子模型与工具，返回 model / tools / maxIterations；父请求指导不进入保存历史 |
 | `src/cli.ts` | 解析任务文本、`--prompt`、`--chat`、帮助与配置检查；管理 Ctrl+C；选择入口并输出退出码 |
 | `src/chat.ts`、`src/session.ts` | 连续输入和跨回合历史管理，详见 Session 文档 |
@@ -17,6 +18,7 @@
 | `src/tools.ts`、`src/tools/` | 创建内置工具集合，提供定义和异步执行；默认 sum，显式工作目录额外提供 read / write / shell，执行处落实各自权限，详见 TOOLS.md |
 | `src/loop.ts` | `runAgentTurn(prompt, history, options)` 在副本上执行一轮用户任务，返回答案及完整历史；`runAgent(prompt, options): Promise<string>` 保持单次任务入口 |
 | `src/subagent.ts` | CLI 默认装配的单层委派包装器，复用空历史 Loop，限制子任务次数及轮次 |
+| `src/execution-report.ts` | CLI/chat 的每回合事件观察器，转发原事件并在根回合结束时发出独立 execution_report，详见 EXECUTION_REPORT.md |
 | `src/errors.ts` | `HarnessError` 携带稳定错误码与可展示的英文提示；共享取消检查 |
 | `scripts/verify-coding.ts` | 临时故障样例的真实读改测验证，仅允许指定源文件修改和固定测试命令，独立核对结果 |
 | `scripts/verify-delegation.ts` | 复用 CLI 装配的真实模型验证：算术直接完成、隔离上下文审查的默认委派，使用独立只读临时样例 |
@@ -36,6 +38,16 @@
 6. 将包含关联结果的历史提交给下一轮模型，直到得到最终回答或明确失败。
 
 同一响应中的多个工具调用按顺序处理，也支持后续回合继续调用工具。同一用户回合内 ID 重复、响应结构不合法、终止原因与工具列表不一致时停止，避免构造歧义历史。
+
+## System prompt（当前实现）
+
+`src/system-prompt.ts` 集中维护基础提示词，Loop 创建新历史时作为第一条 system 消息使用；单次任务、Session 新历史及子任务共用。已有内存历史保留其原 system；开发修改后需重新启动进程使用新构建。`agent.ts` 仍只在父模型请求副本中追加原有委派指导，不向子模型加入委派能力，不改变预算或权限。
+
+本轮按用户要求参考 Claude Code 的公开工作流方向，以 Fatcat 当前能力重新编写：简洁直接、跟随用户语言、实现请求执行读改测、先了解相关代码、保持改动聚焦、只在关键歧义时提问，并据实际结果报告验证与限制。保留 Fatcat 身份，不再默认扮演猫；用户明确要求时才使用角色化表达。提示词只描述实际暴露的工具，适配 Windows PowerShell、分页读取、独立命令授权和现有权限边界。
+
+特别强调工具 ok 不等于测试成功、历史哈希不证明当前文件、没有执行过的重读/测试/比较不能声称完成。它是模型行为指导，不是新增的确定性检查或权限机制，也不保证杜绝错误陈述。
+
+参考（2026-09-25）：[Claude Code 官方最佳实践](https://code.claude.com/docs/en/best-practices)中的先理解代码、按任务复杂度决定规划与实际验证，以及[输出风格文档](https://code.claude.com/docs/en/output-styles)的沟通与编码工作方式区分。本项目没有复制或声称复现 Claude Code 的完整内部 system prompt，也没有引入它的额外工具、计划模式或恢复能力。
 
 ## DeepSeek 接入决策
 
@@ -68,10 +80,12 @@ sum 使用 JavaScript number 运算，浮点精度遵循 JavaScript 语义，不
 
 shell 的工具 ok=true 仅表示拿到执行结果；测试是否通过须检查 result.success、exitCode、status 与截断标记。命令失败可回传模型继续处理；取消时先保留事实再结束回合。
 
-这是必要日志，不是完整决策追踪或恢复体系。
+CLI / chat 另通过 createTurnReporter 发出 execution_report。它基于本回合实际事件汇总，包含子任务且按记录 ID 去重；不是 LoopEvent 的新分支，也不送入模型或 Session。底层调用者需显式接入观察器。详情见 [执行报告](EXECUTION_REPORT.md)。
+
+这是必要日志与执行摘要，不是完整决策追踪、任务认证或恢复体系。
 
 ## 验证与后续安排
 
 离线测试覆盖配置边界、工具参数和溢出、多工具关联、多轮纠错、迭代上限、协议错误、HTTP / 网络故障、超时、取消以及 CLI 退出码。
 
-真实验证已覆盖直接回答、工具闭环、Session 追问和完整 CLI 入口；详细结果以 PROGRESS.md 为准。阶段 2B 已通过用户 review；阶段 2C 和 2D-1 已通过用户 review；2D-2 原 write 已完成离线及真实读改读验证并合入 main；终端确认修正已合入 main。2D-3 的 shell 和固定样例编码闭环已通过离线与真实模型验证、用户 review 并合入 main。2D-4 默认委派迁移已验证，待 review。持久化、并行调度及其他子系统仍未实现。
+真实验证已覆盖直接回答、工具闭环、Session 追问和完整 CLI 入口；详细结果以 PROGRESS.md 为准。阶段 2B 已通过用户 review；阶段 2C 和 2D-1 已通过用户 review；2D-2 原 write 已完成离线及真实读改读验证并合入 main；终端确认修正已合入 main。2D-3 的 shell 和固定样例编码闭环已通过离线与真实模型验证、用户 review 并合入 main。2D-4 默认委派迁移已通过 review 并合入；2D-5 的回合执行报告已验证，待 review。持久化、并行调度及其他子系统仍未实现。

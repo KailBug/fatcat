@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ExecutionReport } from "../src/execution-report.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 
 const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
@@ -212,4 +213,42 @@ test("default CLI delegation inherits read-only and non-interactive approval res
     assert.match(result.stderr, /subagent_event/);
     assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
   }
+});
+
+
+function reports(stderr: string): (ExecutionReport & { turn: number | undefined })[] {
+  return stderr.split("\n").filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line) as { type: string; turn?: number; report: ExecutionReport })
+    .filter((event) => event.type === "execution_report").map((event) => ({ ...event.report, turn: event.turn }));
+}
+
+test("ordinary CLI emits one independent report for direct and delegated work", () => {
+  for (const prompt of ["add", "delegate"]) {
+    const result = run(["--prompt", prompt], { DEEPSEEK_API_KEY: "offline-only" }, "");
+    assert.equal(result.status, 0, result.stderr);
+    const report = reports(result.stderr);
+    assert.equal(report.length, 1);
+    assert.equal(report[0]!.outcome, "answered");
+    assert.equal(report[0]!.taskVerification, "not_assessed");
+    assert.deepEqual(report[0]!.modelRequests, { parent: 2, children: prompt === "delegate" ? 2 : 0 });
+    assert.deepEqual(report[0]!.commands, []);
+    assert.equal(result.stdout.trim(), "42");
+  }
+});
+
+test("chat emits per-turn reports on provider failure and reset without repeating earlier writes", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "notes.txt"), "before");
+  const result = run(["--chat", "--workspace", workspace, "--permission", "workspace-write"],
+    { DEEPSEEK_API_KEY: "offline-only" }, "write then fail\n/reset\nwrite records\n/exit\n");
+  assert.equal(result.status, 1, result.stderr);
+  const report = reports(result.stderr);
+  assert.equal(report.length, 2);
+  assert.equal(report[0]!.turn, 1);
+  assert.equal(report[0]!.outcome, "stopped");
+  assert.equal(report[0]!.stopCode, "MODEL_HTTP");
+  assert.equal(report[0]!.writes[0]!.status, "committed");
+  assert.equal(report[1]!.turn, 2);
+  assert.equal(report[1]!.outcome, "answered");
+  assert.equal(report[1]!.writes.length, 0);
 });

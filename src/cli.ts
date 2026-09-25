@@ -8,6 +8,7 @@ import { Session } from "./session.js";
 import { loadConfig } from "./config.js";
 import { HarnessError, formatError } from "./errors.js";
 import { runAgent } from "./loop.js";
+import { createTurnReporter } from "./execution-report.js";
 import { createAgent } from "./agent.js";
 import { createTools } from "./tools.js";
 
@@ -30,7 +31,8 @@ Use --workspace <directory> to expose read, write, and shell. Writes and command
 Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
 Shell authorization is separate: --shell-permission ask (default), deny, or allow for unattended commands.
 Shell uses Windows PowerShell with current-user access, not an operating-system sandbox.
-Write records are logged even if the model fails or the run is canceled.
+Each task emits an execution_report with observed writes and command outcomes, even on failure.
+An answer or a zero exit code alone does not certify the task; inspect the recorded evidence.
 Selected file contents are sent to DeepSeek when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
 Logs go to stderr; the final answer goes to stdout. Press Ctrl+C to cancel.`;
@@ -121,7 +123,7 @@ async function main(args: string[]): Promise<number> {
     const answer = await runAgent(prompt, {
       ...agent,
       signal,
-      onEvent: (event) => console.error(JSON.stringify(event)),
+      onEvent: createTurnReporter((event) => console.error(JSON.stringify(event))),
     });
     console.log(answer);
     return 0;

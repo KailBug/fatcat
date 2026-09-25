@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { loadConfig } from "../src/config.js";
 import { runAgent } from "../src/loop.js";
-import { createDeepSeekModel } from "../src/model.js";
+import { createAgent } from "../src/agent.js";
+import { createTurnReporter } from "../src/execution-report.js";
+import type { ExecutionReport } from "../src/execution-report.js";
 import { createTools } from "../src/tools.js";
 import type { Tools } from "../src/tools.js";
 import { failure } from "../src/tools/types.js";
@@ -39,13 +41,14 @@ try {
     }
     return base.execute(name, args, signal, callId);
   } };
-  let requests = 0;
+  let report: ExecutionReport | undefined;
+  const agent = createAgent({ ...config, maxIterations: Math.min(config.maxIterations, 8) }, tools);
   const answer = await runAgent(`Read math.mjs and check.test.mjs. Fix the addition bug using an exact write edit to math.mjs only. Run shell with command exactly "${command}" and cwd ".". Do not change the test. Report CODING_VERIFIED only if the command succeeds; otherwise explain the failure.`, {
-    model: createDeepSeekModel(config, undefined, tools), tools, maxIterations: Math.min(config.maxIterations, 8),
-    onEvent: (event) => {
-      if (event.type === "model_request") requests++;
+    ...agent,
+    onEvent: createTurnReporter((event) => {
+      if (event.type === "execution_report") report = event.report;
       console.error(JSON.stringify({ scenario: "coding", ...event }));
-    },
+    }),
   });
   assert.equal(await readFile(join(workspace, "check.test.mjs"), "utf8"), checks);
   assert.notEqual(await readFile(join(workspace, "math.mjs"), "utf8"), source);
@@ -55,6 +58,14 @@ try {
   assert.equal(after.exitCode, 0);
   assert.equal(after.status, "completed");
   assert.match(answer, /CODING_VERIFIED/);
+  assert.ok(report);
+  assert.equal(report.outcome, "answered");
+  assert.equal(report.taskVerification, "not_assessed");
+  assert.ok(report.writes.some((record) => record.status === "committed"));
+  const commands = tools.getCommands!();
+  assert.deepEqual(report.commands.map((record) => record.id).sort(), commands.map((record) => record.id).sort());
+  assert.ok(report.commands.some((record) => record.succeeded && !record.laterWriteAttempt));
+  const requests = report.modelRequests.parent + report.modelRequests.children;
   console.log(JSON.stringify({ scenario: "coding", passed: true, requests, answer }));
 } catch {
   console.error("Coding verification failed. Inspect the recorded outcomes; no provider details are displayed.");

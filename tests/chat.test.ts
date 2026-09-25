@@ -86,6 +86,9 @@ test("cancellation during a model request exits without consuming later queued t
   await assert.rejects(pending, /cancelled/);
   assert.equal(calls, 1);
   assert.equal(output.text(), "");
+  const reports = error.text().split("\n").filter((line) => line.includes('"type":"execution_report"'));
+  assert.equal(reports.length, 1);
+  assert.equal(JSON.parse(reports[0]!).report.stopCode, "CANCELLED");
   session.reset();
 });
 

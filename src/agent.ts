@@ -16,13 +16,13 @@ export function createAgent(config: Config, baseTools: Tools = defaultTools, tra
   const childModel = createDeepSeekModel(config, transport, baseTools);
   const tools = createSubagentTools(baseTools, childModel, config.maxIterations);
   const parentModel = createDeepSeekModel(config, transport, tools);
-  const model: Model = (messages, signal) => {
+  const model: Model = (messages, signal, observe) => {
     // Add parent-only guidance on a request copy; leave saved history and child prompts untouched.
     const first = messages[0];
     const system = first?.role === "system" && typeof first.content === "string";
     return parentModel(system
       ? [{ ...first, content: `${first.content}\n\n${delegationPolicy}` }, ...messages.slice(1)]
-      : [{ role: "system", content: delegationPolicy }, ...messages], signal);
+      : [{ role: "system", content: delegationPolicy }, ...messages], signal, observe);
   };
   return { tools, model, maxIterations: config.maxIterations };
 }

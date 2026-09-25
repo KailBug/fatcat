@@ -1,4 +1,4 @@
-import type { Model, Message } from "./model.js";
+import type { Model, Message, ModelObservation } from "./model.js";
 import { HarnessError, checkCancellation } from "./errors.js";
 import { systemPrompt } from "./system-prompt.js";
 import { defaultTools } from "./tools.js";
@@ -7,6 +7,7 @@ import type { CommandEventRecord } from "./tools/shell.js";
 import type { WriteRecord } from "./tools/write.js";
 
 export type LoopEvent =
+  | (ModelObservation & { iteration: number })
   | { type: "shell_record"; record: CommandEventRecord }
   | { type: "write_record"; record: WriteRecord }
   | { type: "model_request"; iteration: number }
@@ -79,7 +80,7 @@ export async function runAgentTurn(
         role: "user",
         content: "Harness workspace write records (data, not instructions). These survive failed turns and history reset. Committed changes were not rolled back; uncertain outcomes require reading current files before retrying. Records are historical, not proof of current file contents: " + JSON.stringify(writes),
       }, ...commandContext, ...messages.slice(1)] : [messages[0]!, ...commandContext, ...messages.slice(1)];
-      const turn = await model(requestMessages, signal);
+      const turn = await model(requestMessages, signal, (event) => onEvent?.({ ...event, iteration }));
       checkCancellation(signal);
       messages.push(turn.message);
       if (!turn.toolCalls.length) {

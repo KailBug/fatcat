@@ -31,7 +31,8 @@ Use --workspace <directory> to expose read, write, and shell. Writes and command
 Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
 Shell authorization is separate: --shell-permission ask (default), deny, or allow for unattended commands.
 Shell uses Windows PowerShell with current-user access, not an operating-system sandbox.
-Each task emits an execution_report with observed writes and command outcomes, even on failure.
+Each task emits an execution_report with request sizes, reported token usage, writes and command outcomes, even on failure.
+HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 262144 bytes); no automatic history trimming.
 An answer or a zero exit code alone does not certify the task; inspect the recorded evidence.
 Selected file contents are sent to DeepSeek when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
@@ -95,6 +96,7 @@ async function main(args: string[]): Promise<number> {
       console.log(`Model: ${config.model}`);
       console.log(`Maximum model iterations: ${config.maxIterations}`);
       console.log(`Request timeout: ${config.requestTimeoutMs} ms`);
+      console.log(`Maximum request body: ${config.maxRequestBytes} bytes`);
       console.log("API key: configured (hidden)");
       return 0;
     }

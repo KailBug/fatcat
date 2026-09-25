@@ -1,3 +1,4 @@
+import { createTurnReporter } from "./execution-report.js";
 import { createTerminalInput } from "./terminal.js";
 import type { TerminalInput } from "./terminal.js";
 import type { Readable, Writable } from "node:stream";
@@ -43,7 +44,7 @@ export async function runChat(
         try {
           const answer = await session.run(prompt, {
             signal,
-            onEvent: (event) => error.write(`${JSON.stringify({ turn, ...event })}\n`),
+            onEvent: createTurnReporter((event) => error.write(`${JSON.stringify({ turn, ...event })}\n`)),
           });
           output.write(`${answer}\n`);
         } catch (cause) {

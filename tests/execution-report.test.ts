@@ -38,7 +38,9 @@ test("a model claiming tests passed cannot manufacture execution evidence", asyn
   assert.equal(await runAgent("Review", { model: async () => answer("All tests passed."), maxIterations: 1,
     onEvent: result.onEvent }), "All tests passed.");
   assert.deepEqual(result.report(), { outcome: "answered", stopCode: null, taskVerification: "not_assessed",
-    modelRequests: { parent: 1, children: 0 }, toolResults: { ok: 0, errors: 0 }, writes: [], commands: [] });
+    modelRequests: { parent: 1, children: 0 },
+    requestBytes: { parent: { checked: 0, rejected: 0, maxBytes: null }, children: { checked: 0, rejected: 0, maxBytes: null } },
+    tokenUsage: { parent: { reportedRequests: 0, totals: null }, children: { reportedRequests: 0, totals: null } }, toolResults: { ok: 0, errors: 0 }, writes: [], commands: [] });
 });
 
 test("rejected tools are errors, not executed commands or writes", async (t) => {

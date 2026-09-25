@@ -50,6 +50,7 @@ DEEPSEEK_API_KEY=replace-with-your-deepseek-api-key
 DEEPSEEK_MODEL=deepseek-flash
 HARNESS_MAX_ITERATIONS=8
 HARNESS_REQUEST_TIMEOUT_MS=60000
+HARNESS_MAX_REQUEST_BYTES=262144
 ```
 
 Do not commit or share credentials. The example key above is a placeholder.
@@ -60,6 +61,7 @@ Do not commit or share credentials. The example key above is a placeholder.
 | DEEPSEEK_MODEL | Defaults to deepseek-flash |
 | HARNESS_MAX_ITERATIONS | Positive safe integer; defaults to 8 model requests per user turn |
 | HARNESS_REQUEST_TIMEOUT_MS | Positive integer up to 2147483647; defaults to 60000 milliseconds per request |
+| HARNESS_MAX_REQUEST_BYTES | Positive integer up to 16777216; defaults to 262144 bytes (256 KiB) per complete model JSON request body |
 
 Process environment variables take priority over `.env`. Optional variables use defaults only when absent; explicitly empty values are errors.
 
@@ -106,7 +108,9 @@ The report is computed from observed events, including child events, independent
 | --- | --- |
 | outcome / stopCode | `answered` means the model returned an answer; `stopped` includes the stop reason. Neither certifies task success. |
 | taskVerification | Always `not_assessed`: the harness has not evaluated task acceptance criteria. |
-| modelRequests | Parent and child request attempts, counted separately. |
+| modelRequests | Parent and child model-call attempts, including locally rejected requests; not confirmed HTTP calls or billing. |
+| requestBytes | Separate parent/children counts: checked, rejected by the local budget, and maxBytes (including rejected bodies). No observation means maxBytes is null. |
+| tokenUsage | Separate parent/children reportedRequests and totals (promptTokens, completionTokens, totalTokens). Totals sum only valid provider reports; null means no known total. Fewer reports than attempts means incomplete usage coverage. |
 | toolResults | Counts of returned `ok` and `errors`, including children and delegation calls. A shell `ok` does not imply a zero exit code. Cancelled tools may leave records without returning a tool result. |
 | writes | Current-turn write records with paths, hashes, byte counts, and actual statuses. Shared parent/child records appear once per record ID. |
 | commands | Current-turn command IDs, cwd, status, exit code, truncation and cleanup metadata. No command text or output bodies. |
@@ -116,6 +120,16 @@ The report is computed from observed events, including child events, independent
 A report with `commands: []` has no command execution evidence for that turn, even if the answer says tests passed. A command with `laterWriteAttempt: true` predates a later write attempt; review whether checks need rerunning. A false value is not a freshness guarantee: commands themselves and other processes can change files without write-tool records. Journal summary truncation (`outputSummaryTruncated`) differs from process-output truncation (`truncated`); the former does not change the recorded exit outcome.
 
 Every user turn gets a new report; earlier records survive in the shared journals but are not presented as newly executed after a follow-up or `/reset`. Reports preserve effects observed before failure or cancellation, but do not rewrite the model's answer, change existing exit codes, persist to disk, or provide crash recovery. Full claim validation, file-version binding, and task acceptance gates remain unimplemented.
+
+## Model request size and usage
+
+Before sending to DeepSeek, Fatcat measures the complete JSON body in UTF-8, including JSON escaping, system and parent guidance, tool definitions, conversation history, tool results, execution records and generation settings. HTTP headers and the API key are excluded. At most HARNESS_MAX_REQUEST_BYTES is allowed; an exact match is accepted. This is a local byte limit, not a token estimate, provider context window, or spending limit.
+
+An oversized request stops with MODEL_CONTEXT_LIMIT before transport, without trimming or summarizing messages. In chat, the previous successful history remains. Use a smaller task or `/reset` to clear conversation history. Already committed edits and commands remain; their records survive reset and still count toward the next request. If those records alone exceed the limit, inspect them before starting a new process or explicitly raising the configured limit. A new process loses its in-memory history and journals.
+
+The model_input event contains only bytes, limitBytes and accepted, plus the iteration; accepted means it passed the local size check, not that the server accepted it. The model_usage event reports valid provider token counts or null. Missing, malformed or inconsistent counters stay unknown and do not invalidate an otherwise valid answer. Received counts are retained even if the answer is truncated or fails protocol validation; transport errors or early cancellation may have no usage report.
+
+The execution report aggregates parent and child observations separately. It never estimates missing usage, cache prices or currency cost. Known zero counts differ from unknown totals; an aggregate exceeding safe integer precision also becomes null. No usage data is inserted into the model conversation. Request size is checked after constructing the body, so this does not bound process memory or automatically manage long histories; the provider may still reject a request within the local byte budget.
 
 ## Read a workspace
 
@@ -258,7 +272,7 @@ Answers go to stdout. Terminal prompts, approval previews, command feedback, and
 
 Successful turns keep the full user, assistant, and tool messages in memory. Failed or cancelled turns do not enter the saved history. A model failure displays an error and lets you continue; the eventual chat exit code is 1 if any turn failed. This discards conversation messages only; file changes and process-local write records remain, and API requests already made may still consume credits.
 
-History is lost on exit and is not automatically trimmed or summarized. Long conversations can reach provider context limits; use `/reset` to start fresh. There is no session storage or recovery in this increment.
+History is lost on exit and is not automatically trimmed or summarized. Long conversations can hit the local request-body budget or provider context limits; use `/reset` to clear conversation history while retaining execution records. There is no session storage or recovery in this increment.
 
 ## Delegate a task
 
@@ -301,7 +315,7 @@ For the local coding workflow, run this separate explicit live check:
 pnpm run verify:coding
 ```
 
-It creates a temporary nested source module, a caller and a fixed test, verifies the initial failure, then asks DeepSeek to locate the implementation through a read query, inspect and edit it, and run `node --test check.test.mjs`. Only that command and the designated source file are authorized. The script checks that search returned the implementation path and that the caller and test were unchanged, independently reruns the test, and cleans up the fixture. It now uses the same default agent assembly and report observer as the CLI, checks report IDs against the command journal, and requires a successful command with no later write attempt. It permits at most eight parent requests plus two children of at most three requests (14 total), and consumes API credits. It does not use or modify `examples/workspace`.
+It creates a temporary nested source module, a caller and a fixed test, verifies the initial failure, then asks DeepSeek to locate the implementation through a read query, inspect and edit it, and run `node --test check.test.mjs`. Only that command and the designated source file are authorized. The script checks that search returned the implementation path and that the caller and test were unchanged, independently reruns the test, and cleans up the fixture. It now uses the same default agent assembly and report observer as the CLI, checks report IDs against the command journal, requires a successful command with no later write attempt, and verifies request-size observations and valid provider token usage for every actual model call. It permits at most eight parent requests plus two children of at most three requests (14 total), and consumes API credits. It does not use or modify `examples/workspace`.
 
 To verify default task selection with isolated temporary read-only fixtures:
 

@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移和 2D-5 回合报告已通过 review 并合入；2D-6 在 read 中增加字面文本搜索，已验证、待 review；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
+阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移和 2D-5 回合报告已通过 review 并合入；2D-6 在 read 中增加字面文本搜索，已通过 review 并合入；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
 
 ## 模块与接口
 
@@ -90,7 +90,7 @@ read.ts 负责统一参数入口和搜索分发；search.ts 只组合现有 Work
 
 结果保持 `{ ok: true, result }` 或 `{ ok: false, error: { code, message } }`。使用 DIRECTORY_TOO_LARGE、OUTPUT_LIMIT、SEARCH_LIMIT；继续使用 INVALID_ARGUMENTS、PATH_NOT_ALLOWED、NOT_FOUND、UNSUPPORTED_FILE、FILE_TOO_LARGE、TOOL_IO、UNKNOWN_TOOL。sum 行为不变。
 
-工具错误供模型纠正或说明，取消抛出 CANCELLED 终止回合。路径检查、目录迭代、文件读取循环及返回结果前检查 signal；不承诺立即中断底层文件系统调用。成功回合保留已读取页，失败回合仍采用现有 Session 临时历史丢弃规则。读取日志不输出内容或路径参数；write_record 记录规范化相对路径、摘要及结果状态，不记录正文。
+工具错误供模型纠正或说明，取消抛出 CANCELLED 终止回合。路径检查、目录迭代、文件读取循环及返回结果前检查 signal；不承诺立即中断底层文件系统调用。成功回合保留已读取页，失败回合仍采用现有 Session 临时历史丢弃规则。2D-7 在模型发送边界对包含工具结果与执行事实的请求做字节预算检查；下一次请求超限不回滚此前已发生的 write/shell，也不通过裁剪工具结果绕过上限。读取日志不输出内容或路径参数；write_record 记录规范化相对路径、摘要及结果状态，不记录正文。
 
 ## write 协议与权限（已实现）
 

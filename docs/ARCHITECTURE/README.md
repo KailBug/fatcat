@@ -31,13 +31,13 @@
 | [README.md](README.md) | 架构总览、共享决策与文档组织约定 | 已建立 |
 | [AGENT_LOOP.md](AGENT_LOOP.md) | CLI、配置与最小 Loop 的设计和实现安排 | 最小 Loop 已实现、验证并通过 review |
 | [SESSION.md](SESSION.md) | 内存 Session 与连续对话的边界及实现安排 | 已实现、验证并通过用户 review |
-| [TOOLS.md](TOOLS.md) | 通用 read / write / shell、授权及执行记录 | read / write / shell 基线已合入；2D-6 文本搜索已验证、待 review |
+| [TOOLS.md](TOOLS.md) | 通用 read / write / shell、授权及执行记录 | read / write / shell 基线已合入；2D-6 文本搜索已通过 review 并合入 |
 | [SUBAGENT.md](SUBAGENT.md) | 默认可用的有界委派、历史隔离及取消 | 2C 已通过 review；2D-4 默认迁移已通过 review 并合入 |
-| [EXECUTION_REPORT.md](EXECUTION_REPORT.md) | 按用户回合汇总真实事件、共享记录去重与命令后写入提示 | 2D-5 已通过 review 并合入 |
+| [EXECUTION_REPORT.md](EXECUTION_REPORT.md) | 按用户回合汇总真实事件、共享记录去重与命令后写入提示 | 2D-5 已合入；2D-7 请求大小与 token 用量已验证、待 review |
 
 ## 当前实现
 
-当前工程已实现 CLI、配置校验、DeepSeek 模型客户端、内存消息循环、纯计算工具及统一错误处理；阶段 2A 已有独立内存 Session 和终端连续对话；阶段 2B 已有统一异步工具集合与显式开启的工作目录读取；阶段 2C 增加显式开启的最小子任务委派；阶段 2D-1 合并为通用 read，并分离 workspace 路径边界与 read 的读取和分页实现；2D-2 增加受控 write，共享有界文本读取模块，并将写入记录与成功对话历史分开。review 修正新增 terminal.ts 统一聊天与确认输入，CLI 注入批准回调，工具负责校验与落实权限。2D-3 新增 shell.ts 与 process.ts，分别持有命令规则/事实与 Windows 进程生命周期，terminal.ts 复用单次确认。2D-4 新增 agent.ts 集中装配父子模型与工具，普通 CLI 默认可委派；仅父请求带任务选择指导，不改变保存的历史。共享基础提示词现集中在 system-prompt.ts，父子 Loop 都使用简洁、行动导向及基于验证结果的编码协作规则。2D-5 新增 execution-report.ts，在交互边界观察事件，汇总当前回合报告；不改变 Loop / Session 返回值，不写入模型历史。2D-6 新增 tools/search.ts，负责 read query 的有界遍历与匹配；read.ts 持有统一 Schema、参数校验与分发，Workspace 和 text-file 继续负责访问与解码边界。真实运行可从 CLI 输入任务，经历模型调用与工具结果回传，再输出最终结果。Loop 接口、错误行为与数据流见 [AGENT_LOOP.md](AGENT_LOOP.md)，跨用户回合的历史所有权与连续输入见 [SESSION.md](SESSION.md)，内置工具与文件边界见 [TOOLS.md](TOOLS.md)，委派与请求上限见 [SUBAGENT.md](SUBAGENT.md)。
+当前工程已实现 CLI、配置校验、DeepSeek 模型客户端、内存消息循环、纯计算工具及统一错误处理；阶段 2A 已有独立内存 Session 和终端连续对话；阶段 2B 已有统一异步工具集合与显式开启的工作目录读取；阶段 2C 增加显式开启的最小子任务委派；阶段 2D-1 合并为通用 read，并分离 workspace 路径边界与 read 的读取和分页实现；2D-2 增加受控 write，共享有界文本读取模块，并将写入记录与成功对话历史分开。review 修正新增 terminal.ts 统一聊天与确认输入，CLI 注入批准回调，工具负责校验与落实权限。2D-3 新增 shell.ts 与 process.ts，分别持有命令规则/事实与 Windows 进程生命周期，terminal.ts 复用单次确认。2D-4 新增 agent.ts 集中装配父子模型与工具，普通 CLI 默认可委派；仅父请求带任务选择指导，不改变保存的历史。共享基础提示词现集中在 system-prompt.ts，父子 Loop 都使用简洁、行动导向及基于验证结果的编码协作规则。2D-5 新增 execution-report.ts，在交互边界观察事件，汇总当前回合报告；不改变 Loop / Session 返回值，不写入模型历史。2D-6 新增 tools/search.ts，负责 read query 的有界遍历与匹配；read.ts 持有统一 Schema、参数校验与分发，Workspace 和 text-file 继续负责访问与解码边界。2D-7 在 model.ts 发送前检查完整请求字节，model-usage.ts 校验服务用量；Model 的可选观察回调经 Loop 转为元数据事件，execution-report.ts 汇总父子请求和用量。没有新增独立 Context 系统，也不裁剪 Session 历史。真实运行可从 CLI 输入任务，经历模型调用与工具结果回传，再输出最终结果。Loop 接口、错误行为与数据流见 [AGENT_LOOP.md](AGENT_LOOP.md)，跨用户回合的历史所有权与连续输入见 [SESSION.md](SESSION.md)，内置工具与文件边界见 [TOOLS.md](TOOLS.md)，委派与请求上限见 [SUBAGENT.md](SUBAGENT.md)。
 
 `tsconfig.json` 使用严格模式与 NodeNext 模块规则，将 `src/`、`tests/`、`scripts/` 编译到 `dist/` 下对应目录。CLI 入口为 `dist/src/cli.js`；测试使用 Node 内置运行器。唯一生产依赖为 `openai@7.18.0`，用于 DeepSeek 兼容接口。`pnpm run verify:live` 提供显式真实服务验证；自动化测试保持离线。
 

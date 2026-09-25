@@ -5,6 +5,8 @@ import type {
   ChatCompletionMessageFunctionToolCall,
   ChatCompletionMessageParam,
 } from "openai/resources/chat/completions";
+import { parseTokenUsage } from "./model-usage.js";
+import type { TokenUsage } from "./model-usage.js";
 import type { Config } from "./config.js";
 import { HarnessError, checkCancellation } from "./errors.js";
 import { defaultTools } from "./tools.js";
@@ -15,7 +17,11 @@ export type ModelTurn = {
   message: ChatCompletionAssistantMessageParam;
   toolCalls: ChatCompletionMessageFunctionToolCall[];
 };
-export type Model = (messages: Message[], signal?: AbortSignal) => Promise<ModelTurn>;
+export type ModelObservation =
+  | { type: "model_input"; bytes: number; limitBytes: number; accepted: boolean }
+  | { type: "model_usage"; usage: TokenUsage | null };
+export type Model = (messages: Message[], signal?: AbortSignal,
+  observe?: (event: ModelObservation) => void) => Promise<ModelTurn>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -64,6 +70,9 @@ function parseResponse(response: unknown): ModelTurn {
 
 /** The optional transport keeps SDK-level tests offline without adding another provider. */
 export function createDeepSeekModel(config: Config, transport?: typeof fetch, tools: Tools = defaultTools): Model {
+  if (!Number.isSafeInteger(config.maxRequestBytes) || config.maxRequestBytes < 1 || config.maxRequestBytes > 16 * 1024 * 1024) {
+    throw new HarnessError("CONFIG", "maxRequestBytes must be a positive integer no greater than 16777216.");
+  }
   const client = new OpenAI({
     apiKey: config.apiKey,
     baseURL: "https://api.deepseek.com",
@@ -75,10 +84,8 @@ export function createDeepSeekModel(config: Config, transport?: typeof fetch, to
     ...(transport ? { fetch: transport } : {}),
   });
 
-  async function callModel(messages: Message[], signal?: AbortSignal) :Promise<ModelTurn>{
+  const callModel: Model = async (messages, signal, observe) => {
     checkCancellation(signal);
-    const deadline = AbortSignal.timeout(config.requestTimeoutMs);
-    const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
     const body: ChatCompletionCreateParamsNonStreaming & { thinking: { type: "disabled" } } = {
       model: config.model,
       messages,
@@ -88,8 +95,20 @@ export function createDeepSeekModel(config: Config, transport?: typeof fetch, to
       stream: false,
       max_completion_tokens: 2048,
     };
+    // Count the complete JSON body, including tools, guidance, history, and execution facts.
+    const bytes = Buffer.byteLength(JSON.stringify(body));
+    const accepted = bytes <= config.maxRequestBytes;
+    observe?.({ type: "model_input", bytes, limitBytes: config.maxRequestBytes, accepted });
+    if (!accepted) {
+      throw new HarnessError("MODEL_CONTEXT_LIMIT", `Model request is ${bytes} bytes; the local limit is ${config.maxRequestBytes}. Use a smaller task or /reset in chat. Execution records survive reset and may still exceed the limit; review them before starting a new process or explicitly increasing HARNESS_MAX_REQUEST_BYTES. No messages were trimmed and this request was not sent.`);
+    }
+    checkCancellation(signal);
+    const deadline = AbortSignal.timeout(config.requestTimeoutMs);
+    const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
     try {
       const response = await client.chat.completions.create(body, { signal: requestSignal });
+      // Record received usage even when the response is truncated, invalid, or cancelled afterwards.
+      observe?.({ type: "model_usage", usage: parseTokenUsage(response?.usage) });
       checkCancellation(signal);
       if (deadline.aborted) throw new HarnessError("MODEL_TIMEOUT", "DeepSeek request timed out.");
       return parseResponse(response);
@@ -107,7 +126,7 @@ export function createDeepSeekModel(config: Config, transport?: typeof fetch, to
       }
       throw new HarnessError("MODEL_RESPONSE", "DeepSeek request or response processing failed.");
     }
-  }
+  };
 
   return callModel;
 }

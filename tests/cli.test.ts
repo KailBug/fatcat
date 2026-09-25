@@ -14,7 +14,7 @@ function run(args: string[], overrides: NodeJS.ProcessEnv = {}, input?: string) 
     encoding: "utf8",
     ...(input === undefined ? {} : { input }),
     env: { ...process.env, DEEPSEEK_API_KEY: "", DEEPSEEK_MODEL: "deepseek-flash", HARNESS_MAX_ITERATIONS: "8",
-      HARNESS_REQUEST_TIMEOUT_MS: "60000", ...overrides },
+      HARNESS_REQUEST_TIMEOUT_MS: "60000", HARNESS_MAX_REQUEST_BYTES: "262144", ...overrides },
     timeout: 5000,
   });
 }
@@ -272,4 +272,37 @@ test("read-only CLI follows recursive search pages without logging source conten
   assert.equal(await readFile(join(workspace, "src", "a.ts"), "utf8"), source);
   assert.deepEqual(reports(result.stderr)[0]!.writes, []);
   assert.deepEqual(reports(result.stderr)[0]!.commands, []);
+});
+
+
+test("CLI rejects an oversized request locally and reports unknown usage without exposing the prompt", () => {
+  const result = run(["--prompt", "private-budget-prompt"], { DEEPSEEK_API_KEY: "offline-only", HARNESS_MAX_REQUEST_BYTES: "1" }, "");
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /MODEL_CONTEXT_LIMIT/);
+  assert.ok(!result.stderr.includes("private-budget-prompt"));
+  assert.ok(!result.stderr.includes("offline-only"));
+  const report = reports(result.stderr)[0]!;
+  assert.equal(report.requestBytes.parent.rejected, 1);
+  assert.deepEqual(report.tokenUsage.parent, { reportedRequests: 0, totals: null });
+  const local = run(["--checkConfig"], { DEEPSEEK_API_KEY: "offline-only", HARNESS_MAX_REQUEST_BYTES: "12345" });
+  assert.equal(local.status, 0);
+  assert.match(local.stdout, /Maximum request body: 12345 bytes/);
+});
+
+
+test("CLI usage reports reset per chat turn without affecting model answers", () => {
+  const result = run(["--chat"], { DEEPSEEK_API_KEY: "offline-only" }, "usage fixture\n/reset\nusage fixture\n/exit\n");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "Usage recorded.\nUsage recorded.");
+  const records = reports(result.stderr);
+  assert.equal(records.length, 2);
+  for (const report of records) {
+    assert.equal(report.requestBytes.parent.checked, 1);
+    assert.equal(report.requestBytes.parent.rejected, 0);
+    assert.ok(report.requestBytes.parent.maxBytes! > 0);
+    assert.deepEqual(report.tokenUsage.parent, { reportedRequests: 1,
+      totals: { promptTokens: 20, completionTokens: 4, totalTokens: 24 } });
+    assert.deepEqual(report.tokenUsage.children, { reportedRequests: 0, totals: null });
+  }
 });

@@ -5,6 +5,7 @@ export type Config = {
   model: string;
   maxIterations: number;
   requestTimeoutMs: number;
+  maxRequestBytes: number;
 };
 
 function positiveInteger(value: string, name: string, maximum: number): number {
@@ -30,6 +31,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     apiKey,
     model,
     maxIterations: positiveInteger(env.HARNESS_MAX_ITERATIONS ?? "8", "HARNESS_MAX_ITERATIONS", Number.MAX_SAFE_INTEGER),
+    maxRequestBytes: positiveInteger(env.HARNESS_MAX_REQUEST_BYTES ?? "262144", "HARNESS_MAX_REQUEST_BYTES", 16 * 1024 * 1024),
     requestTimeoutMs: positiveInteger(env.HARNESS_REQUEST_TIMEOUT_MS ?? "60000", "HARNESS_REQUEST_TIMEOUT_MS", 2_147_483_647),
   };
 }

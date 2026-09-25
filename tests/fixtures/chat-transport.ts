@@ -7,6 +7,10 @@ globalThis.fetch = async (input, init) => {
   assert.equal(request.url, "https://api.deepseek.com/chat/completions");
   const { messages, tools } = await request.json() as { messages: Message[]; tools: { function: { name: string } }[] };
   const prompt = messages.findLast((message) => message.role === "user")?.content;
+  if (prompt === "usage fixture") return Response.json({
+    usage: { prompt_tokens: 20, completion_tokens: 4, total_tokens: 24 },
+    choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Usage recorded." } }],
+  });
   if (prompt === "shell fixture") {
     const last = messages.at(-1);
     if (last?.role === "user") return Response.json({ choices: [{ finish_reason: "tool_calls", message: {

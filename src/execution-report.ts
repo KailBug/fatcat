@@ -1,12 +1,30 @@
+import type { TokenUsage } from "./model-usage.js";
 import type { LoopEvent } from "./loop.js";
 import type { CommandEventRecord } from "./tools/shell.js";
 import type { WriteRecord } from "./tools/write.js";
+
+type InputSummary = { checked: number; rejected: number; maxBytes: number | null };
+type UsageSummary = { reportedRequests: number; totals: TokenUsage | null };
+
+function addUsage(summary: UsageSummary, usage: TokenUsage): void {
+  if (summary.reportedRequests === 0) summary.totals = { ...usage };
+  else if (summary.totals) {
+    const totals = { promptTokens: summary.totals.promptTokens + usage.promptTokens,
+      completionTokens: summary.totals.completionTokens + usage.completionTokens,
+      totalTokens: summary.totals.totalTokens + usage.totalTokens };
+    summary.totals = Object.values(totals).every(Number.isSafeInteger) ? totals : null;
+  }
+  // A null aggregate after overflow stays unknown rather than silently restarting the total.
+  summary.reportedRequests++;
+}
 
 export type ExecutionReport = {
   outcome: "answered" | "stopped";
   stopCode: string | null;
   taskVerification: "not_assessed";
   modelRequests: { parent: number; children: number };
+  requestBytes: { parent: InputSummary; children: InputSummary };
+  tokenUsage: { parent: UsageSummary; children: UsageSummary };
   toolResults: { ok: number; errors: number };
   writes: WriteRecord[];
   commands: (CommandEventRecord & { succeeded: boolean; laterWriteAttempt: boolean })[];
@@ -16,6 +34,12 @@ export type ReportEvent = LoopEvent | { type: "execution_report"; report: Execut
 /** Observe one root turn without changing the loop, tool permissions, or saved history. */
 export function createTurnReporter(emit: (event: ReportEvent) => void): (event: LoopEvent) => void {
   const modelRequests = { parent: 0, children: 0 };
+  const requestBytes: ExecutionReport["requestBytes"] = {
+    parent: { checked: 0, rejected: 0, maxBytes: null }, children: { checked: 0, rejected: 0, maxBytes: null },
+  };
+  const tokenUsage: ExecutionReport["tokenUsage"] = {
+    parent: { reportedRequests: 0, totals: null }, children: { reportedRequests: 0, totals: null },
+  };
   const toolResults = { ok: 0, errors: 0 };
   const writes = new Map<string, WriteRecord>();
   const commands = new Map<string, ExecutionReport["commands"][number]>();
@@ -26,6 +50,13 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
       observe(event.event, true);
     } else if (event.type === "model_request") {
       modelRequests[child ? "children" : "parent"]++;
+    } else if (event.type === "model_input") {
+      const input = requestBytes[child ? "children" : "parent"];
+      input.checked++;
+      if (!event.accepted) input.rejected++;
+      input.maxBytes = Math.max(input.maxBytes ?? 0, event.bytes);
+    } else if (event.type === "model_usage" && event.usage) {
+      addUsage(tokenUsage[child ? "children" : "parent"], event.usage);
     } else if (event.type === "tool_result") {
       toolResults[event.ok ? "ok" : "errors"]++;
     } else if (event.type === "write_record") {
@@ -52,7 +83,7 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
         outcome: event.type === "completed" ? "answered" : "stopped",
         stopCode: event.type === "stopped" ? event.code : null,
         taskVerification: "not_assessed",
-        modelRequests, toolResults, writes: [...writes.values()], commands: [...commands.values()],
+        modelRequests, requestBytes, tokenUsage, toolResults, writes: [...writes.values()], commands: [...commands.values()],
       }) });
     }
   };

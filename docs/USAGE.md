@@ -6,7 +6,7 @@ Run all commands below from the repository root.
 
 A TypeScript Agent Harness that runs natively on Windows.
 
-The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI. Controlled text-file creation and editing are available. Foreground Windows PowerShell execution is available with separate command authorization. Bounded delegation is available by default, with the model choosing whether to use it for the task. TUI, Web UI, app, and channel work is deferred. See the [architecture overview](ARCHITECTURE/README.md) and [roadmap](ROADMAP.md).
+The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI. Workspace reading, bounded literal text search, and controlled text-file creation and editing are available. Foreground Windows PowerShell execution is available with separate command authorization. Bounded delegation is available by default, with the model choosing whether to use it for the task. TUI, Web UI, app, and channel work is deferred. See the [architecture overview](ARCHITECTURE/README.md) and [roadmap](ROADMAP.md).
 
 ## Current capabilities
 
@@ -133,10 +133,11 @@ The workspace exposes general-purpose `read`, `write`, and `shell` tools, with e
 | Input | Behavior |
 | --- | --- |
 | path | Required relative file or directory path; `.` lists the root. |
-| offset | Optional zero-based line or sorted-entry offset; defaults to 0. |
-| limit | Optional integer from 1 to 200; defaults to 100 lines or entries. |
+| query | Optional case-sensitive literal substring; searches one file or a directory recursively. No regex. |
+| offset | Optional zero-based line, sorted-entry, or matching-line offset; defaults to 0. |
+| limit | Optional integer from 1 to 200; defaults to 100 lines, entries, or matches. |
 
-File results include content, totalLines, and one-based startLine/endLine. Directory results include filtered entries and totalEntries. Both include truncated and nextOffset: continue with the same path and nextOffset until it is null. Empty or past-end pages have no continuation. For example, asking to read lines 21 through 40 should use offset 20 and limit 20.
+Without query, file results include content, totalLines, and one-based startLine/endLine. Directory results include filtered entries and totalEntries. Both include truncated and nextOffset: continue with the same path and nextOffset until it is null. Empty or past-end pages have no continuation. For example, asking to read lines 21 through 40 should use offset 20 and limit 20.
 
 ```powershell
 pnpm start --workspace examples/workspace --prompt "Read project-notes.txt one line at a time using read with limit 1. Follow nextOffset until the end and report the verification phrase."
@@ -144,11 +145,29 @@ pnpm start --workspace examples/workspace --prompt "Read project-notes.txt one l
 
 Files must be supported UTF-8 text, at most 1 MiB. Each content page has a 16 KiB UTF-8 budget and preserves whole lines and original line endings; a line exceeding the budget returns OUTPUT_LIMIT. This budget excludes metadata and JSON escaping. Listings are non-recursive and sorted before pagination; more than 1000 raw directory entries returns DIRECTORY_TOO_LARGE. A known child path can still be read directly. Directory entry payloads also have a 16 KiB budget.
 
-Each page is a fresh read, not a snapshot; changes between calls can shift offsets. There is no recursive search or streaming access to larger files yet. Both `/` and Windows `\` separators are supported. Absolute paths, parent traversal, Windows device/data-stream paths, dot-prefixed names (including `.env` and `.git`), `node_modules`, symbolic links, junctions, and file hard links are rejected. Listings omit unsupported files. Supported text extensions are listed in [Tools architecture](ARCHITECTURE/TOOLS.md).
+Each page is a fresh read, not a snapshot; changes between calls can shift offsets. Streaming access to larger files is not implemented. Both `/` and Windows `\` separators are supported. Absolute paths, parent traversal, Windows device/data-stream paths, dot-prefixed names (including `.env` and `.git`), `node_modules`, symbolic links, junctions, and file hard links are rejected. Listings omit unsupported files. Supported text extensions are listed in [Tools architecture](ARCHITECTURE/TOOLS.md).
 
 When the model reads a file, its contents enter the conversation and are sent to DeepSeek. Choose a directory appropriate for that use; path and extension checks do not redact secrets stored in ordinary text files. These are application-level scope checks, not an operating-system sandbox against another process changing files concurrently.
 
 File errors return structured tool results that the model can correct or explain. Read logs omit file contents and path arguments. Local files are treated as data and cannot change tool permissions. Reading does not write or execute workspace content.
+
+## Locate code with text search
+
+Ask the agent to locate relevant code before inspecting or editing it, for example:
+
+```powershell
+pnpm start --workspace src --permission read-only --prompt "Use read with query createAgent to locate its definition and callers, then explain them."
+```
+
+The model can call `read({"path":".","query":"createAgent","limit":20})`. With a directory path, it searches the allowed subtree; with a file path, it searches just that file. Query is a non-blank, valid single-line literal of at most 512 UTF-16 code units. Matching is case-sensitive. There are no regex, glob, or multiline modes.
+
+Results have kind `search`, `totalMatches`, and `matches` containing workspace-relative path, one-based line number, and text without its line ending. A line is returned once even if the query occurs twice. Matches are sorted by path and then line. Follow `nextOffset` with the same path and query; here offset counts matching lines. The JSON-encoded matches array, including escaping and separators, has a 16 KiB budget. A whole match that cannot fit returns OUTPUT_LIMIT.
+
+Each search is limited to 1000 raw directory entries across the subtree, 128 candidate text files and 12 directory levels below the selected path. SEARCH_LIMIT means choose a narrower path; it never returns a partial traversal as exhaustive. Each candidate retains the 1 MiB file limit. The same path/extension restrictions apply as ordinary read; there is no Git ignore support.
+
+`scannedFiles` counts successfully decoded files. During a directory search, oversized or invalid text candidates are skipped and counted in `skippedFiles`, with `complete=false`. Directly searching such a file returns its normal file error. Other access or file-change errors fail the search. `nextOffset=null` only ends pagination: with incomplete coverage, zero matches does not establish absence. Filtered hidden names, dependencies, links and unsupported extensions are outside the search scope, even when complete=true.
+
+Every page rescans current files; there is no index, snapshot, or guarantee against concurrent edits. Matching text enters the model conversation, while event logs omit queries and content. Search requires no write or shell authorization and is available to children through the same read tool.
 
 ## Write a workspace
 
@@ -282,7 +301,7 @@ For the local coding workflow, run this separate explicit live check:
 pnpm run verify:coding
 ```
 
-It creates a temporary buggy module and a fixed test, verifies the initial failure, then asks DeepSeek to read, edit the module, and run `node --test check.test.mjs`. Only that command and the designated source file are authorized. The script checks that the test was unchanged, independently reruns it, and cleans up the fixture. It now uses the same default agent assembly and report observer as the CLI, checks report IDs against the command journal, and requires a successful command with no later write attempt. It permits at most eight parent requests plus two children of at most three requests (14 total), and consumes API credits. It does not use or modify `examples/workspace`.
+It creates a temporary nested source module, a caller and a fixed test, verifies the initial failure, then asks DeepSeek to locate the implementation through a read query, inspect and edit it, and run `node --test check.test.mjs`. Only that command and the designated source file are authorized. The script checks that search returned the implementation path and that the caller and test were unchanged, independently reruns the test, and cleans up the fixture. It now uses the same default agent assembly and report observer as the CLI, checks report IDs against the command journal, and requires a successful command with no later write attempt. It permits at most eight parent requests plus two children of at most three requests (14 total), and consumes API credits. It does not use or modify `examples/workspace`.
 
 To verify default task selection with isolated temporary read-only fixtures:
 

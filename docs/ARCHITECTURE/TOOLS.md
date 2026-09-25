@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移已通过 review 并合入；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
+阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移和 2D-5 回合报告已通过 review 并合入；2D-6 在 read 中增加字面文本搜索，已验证、待 review；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
 
 ## 模块与接口
 
@@ -12,8 +12,9 @@
 | `src/tools/types.ts` | 工具定义、执行类型与 JSON 可序列化 ToolResult |
 | `src/tools/sum.ts` | 纯计算示例工具的 Schema、校验与有限数求和 |
 | `src/tools/workspace.ts` | createWorkspace(workspace) 固定工作目录；resolvePath(path, signal?) 检查边界，返回内部绝对路径、规范化相对路径及文件状态；resolveNewFile 验证已有父目录并拒绝覆盖 |
-| `src/tools/read.ts` | createReadTool(workspace) 提供 read 定义、参数校验、目录与文本读取、分页及输出限制 |
-| `src/tools/text-file.ts` | read 与 write 共享有界 UTF-8 读取、文件身份核对、扩展名与编码限制 |
+| `src/tools/read.ts` | createReadTool(workspace) 提供 read 定义、参数校验、目录与文本读取、分页及 query 分发 |
+| `src/tools/search.ts` | 有界子树遍历、文本匹配、搜索分页与扫描覆盖标记 |
+| `src/tools/text-file.ts` | read、search 与 write 共享有界 UTF-8 读取、文件身份核对、扩展名与编码限制 |
 | `src/tools/write.ts` | createWriteTool 实现创建、精确替换、暂存与发布；持有写权限和进程内记录 |
 | `src/tools/shell.ts` | 命令参数、独立权限、cwd 检查、命令记录及结果协议 |
 | `src/tools/process.ts` | Windows PowerShell 启动、有限输出、超时、取消和 taskkill 进程树清理 |
@@ -28,14 +29,15 @@ Tools 包含 definitions 和 execute(name, argumentsJson, signal?, callId?)。�
 
 ## read 协议
 
-输入：`{ path: string, offset?: number, limit?: number }`，拒绝额外字段及错误类型。
+输入：`{ path: string, offset?: number, limit?: number, query?: string }`，拒绝额外字段及错误类型。
 
 - path：非空相对路径，最多 1024 字符；`.` 为根目录，支持 `/` 和 Windows 反斜杠。
-- offset：从 0 开始，默认 0，必须为非负安全整数；文件表示跳过的行数，目录表示跳过的已过滤、排序条目数。
-- limit：默认 100，范围 1–200 的整数；最多返回的行数或条目数，字节预算可能使实际数量更少。
-- 文件和目录由实际路径类型决定，无需 mode/action 参数。目录名称即使带 .txt 也返回目录页。
+- offset：从 0 开始，默认 0，必须为非负安全整数；无 query 时文件表示跳过的行数、目录表示跳过的已过滤排序条目数；有 query 时表示跳过的匹配行数。
+- limit：默认 100，范围 1–200 的整数；最多返回的行数、条目数或匹配行数，字节预算可能使实际数量更少。
+- query：可选、非空白的有效单行 Unicode 字符串，最多 512 个 UTF-16 码元；拒绝控制码（非空查询内可含 tab）及未配对代理项。指定后转为文本搜索，见下节。
+- 未指定 query 时，文件和目录由实际路径类型决定，无需 mode/action 参数。目录名称即使带 .txt 也返回目录页。
 
-成功 result：
+不带 query 的成功 result：
 
 | 类型 | 字段 |
 | --- | --- |
@@ -48,6 +50,21 @@ truncated=true 表示还有未返回内容，nextOffset 指向下一行或条目
 
 示例：`read({"path":"src/main.ts","offset":20,"limit":40})` 从第 21 行开始，最多读取 40 行。返回 nextOffset 时以它为准，不自行假设已返回 limit 行。
 
+## query 搜索协议与覆盖（2D-6 已实现）
+
+例如 `read({"path":"src","query":"createAgent","limit":20})` 在 src 下递归搜索，或指定文件只搜索该文件。区分大小写、纯字面子串匹配；同一行中出现多次只返回一次，不支持正则、glob 或跨行匹配。无需 shell、外部搜索程序或新权限，子 Agent 自动复用同一实现。
+
+结果为 `{ kind: "search", path, query, offset, totalMatches, matches: [{ path, line, text }], truncated, nextOffset, scannedFiles, skippedFiles, complete }`。匹配路径相对于固定工作目录；line 从 1 开始，text 保留原始行内容但不含行尾换行或文件 BOM。先按相对路径的 UTF-16 码元排序，再按行号排序。使用相同 path/query 和 nextOffset 继续；offset 不代表源文件行号。空页或超出匹配总数时 nextOffset=null。
+
+- 遍历先收集候选路径，整个子树最多扫描 1000 个原始条目（含随后过滤的条目）、128 个候选文本文件、选定目录下 12 层子目录。任一超限返回 SEARCH_LIMIT，不返回部分成功，需缩小 path。目录句柄随结束、失败或取消关闭。
+- 隐藏名称、node_modules、链接、特殊文件和不支持扩展名由既有边界排除，不计入候选或 skippedFiles。此覆盖范围不等于整个磁盘目录；未解析 .gitignore，普通生成目录仍可能被扫描。
+- 候选文件读取前再次解析路径，并复用 text-file 的身份、大小与严格 UTF-8 检查。递归搜索中，过大或编码/二进制控制字符不支持的候选被跳过，增加 skippedFiles 并置 complete=false；直接搜索单文件仍返回 FILE_TOO_LARGE / UNSUPPORTED_FILE。其他 I/O、消失或身份变化错误使整次搜索失败；取消终止回合。
+- totalMatches / scannedFiles 仅统计成功读到的合规文本；complete=true 仅表示本次遍历发现的候选没有因大小或编码跳过，不保证目录在扫描期间未变化。complete=false 即使 totalMatches=0、nextOffset=null，也不能声称范围内无匹配。
+- matches 整体 JSON 编码的 UTF-8 大小最多 16 KiB，包括转义、数组和分隔符，不含其余结果元数据；不截断行。下一条放不下时以 nextOffset 继续，单条本身超限则 OUTPUT_LIMIT。该预算不是 token 上限。
+- 内存只保留有界路径集合、当前文件及当前匹配页；仍扫描所有候选和全部行来计算总数，每个候选沿用 1 MiB 上限。每次翻页重新遍历，无索引、缓存或一致性快照；文件变化可能改变总数和分页位置。
+
+read.ts 负责统一参数入口和搜索分发；search.ts 只组合现有 Workspace / text-file 与搜索规则，不修改 Loop、Session、权限或日志协议。日志仍不记录查询、路径参数和匹配正文；工具结果会进入模型上下文。
+
 ## 输入、扫描与输出限制
 
 - 文本文件最多 1 MiB（1048576 字节）；先检查已打开文件大小，再使用上限加 1 字节的缓冲检测读取期间增长。超限为 FILE_TOO_LARGE。
@@ -57,7 +74,7 @@ truncated=true 表示还有未返回内容，nextOffset 指向下一行或条目
 - 保留原有文本扩展名集合：.txt、.md、.json、.ts、.tsx、.js、.jsx、.mjs、.cjs、.yaml、.yml、.toml、.csv、.html、.css、.xml、.sql、.py，不区分大小写。
 - 严格 UTF-8 解码，拒绝非法编码和二进制控制字符。文件句柄在 finally 中关闭；目录迭代在结束、错误和取消时关闭。
 
-每一页都是重新读取，不是快照；期间文件或目录变化可能使 offset 对应内容发生变化。当前没有版本令牌或一致性快照。每页都对整个有界文件做解码，尚未实现流式大文件读取、递归查找或内容搜索。
+每一页都是重新读取，不是快照；期间文件或目录变化可能使 offset 对应内容发生变化。当前没有版本令牌或一致性快照。每页都对整个有界文件做解码，尚未实现流式大文件读取；有 query 的递归搜索使用上节规则。
 
 ## 工作目录与访问边界
 
@@ -71,7 +88,7 @@ truncated=true 表示还有未返回内容，nextOffset 指向下一行或条目
 
 ## 错误、取消与历史
 
-结果保持 `{ ok: true, result }` 或 `{ ok: false, error: { code, message } }`。新增 DIRECTORY_TOO_LARGE、OUTPUT_LIMIT；继续使用 INVALID_ARGUMENTS、PATH_NOT_ALLOWED、NOT_FOUND、UNSUPPORTED_FILE、FILE_TOO_LARGE、TOOL_IO、UNKNOWN_TOOL。sum 行为不变。
+结果保持 `{ ok: true, result }` 或 `{ ok: false, error: { code, message } }`。使用 DIRECTORY_TOO_LARGE、OUTPUT_LIMIT、SEARCH_LIMIT；继续使用 INVALID_ARGUMENTS、PATH_NOT_ALLOWED、NOT_FOUND、UNSUPPORTED_FILE、FILE_TOO_LARGE、TOOL_IO、UNKNOWN_TOOL。sum 行为不变。
 
 工具错误供模型纠正或说明，取消抛出 CANCELLED 终止回合。路径检查、目录迭代、文件读取循环及返回结果前检查 signal；不承诺立即中断底层文件系统调用。成功回合保留已读取页，失败回合仍采用现有 Session 临时历史丢弃规则。读取日志不输出内容或路径参数；write_record 记录规范化相对路径、摘要及结果状态，不记录正文。
 
@@ -142,4 +159,4 @@ createShellTool 保存命令记录，getCommands() 返回深复制。每个工�
 
 read、write 与前台 shell 均已实现，委派默认可用已在 2D-4 完成。后续先处理 review 与实际任务暴露的问题，再完善上下文容量和验证证据组织；不提前建设后台调度或持久执行框架。
 
-维持少量通用工具入口及清晰内部职责。搜索、流式大文件、持久状态、完整权限策略与插件体系均未实现，不为这些方向预建空接口。
+维持少量通用工具入口及清晰内部职责。正则/索引搜索、流式大文件、持久状态、完整权限策略与插件体系均未实现，不为这些方向预建空接口。

@@ -9,10 +9,36 @@
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
 - 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
-- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告已实现并验证、待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
+- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已验证、待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
 - 已有 CLI 任务输入、单模型接入、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+
+## 2026-09-25：阶段 2D-6，read 文本搜索（已验证，待 review）
+
+### 实际结果
+
+- 核对 main / origin/main 为 99bf916（PR #7 已合入）、Git 工作区干净后，创建 feat/read-text-search。保留用户已提交的 personal agent 提示词定位与 examples/ 忽略规则，不改写本地样例；不维护退役 Excalidraw 文件。本轮未暂存、提交、推送或合并。
+- read 增加可选 query：对单文件或选定子树进行区分大小写的字面搜索，返回相对路径、原始行号与整行文本。同一行只匹配一次，结果按路径和行号排序；offset / nextOffset 表示匹配行分页，原有不带 query 的读取协议保持。
+- 新增 tools/search.ts，复用 Workspace 和 text-file 的访问、身份、扩展名、大小和编码检查。扫描最多 1000 个原始条目、128 个候选文件、12 层子目录；超限返回 SEARCH_LIMIT，要求缩小路径。每个匹配页的 JSON 数组最多 16 KiB，单条无法容纳时明确报错，不截断成功结果。
+- 递归扫描中，过大或编码不支持的候选文件计入 skippedFiles 并返回 complete=false；分页结束不能代替完整覆盖判断。直接搜索坏文件保持原有错误，其他访问错误使搜索失败。遍历和逐行匹配检查取消，父子 Agent 共享同一搜索能力，无新增功能开关、工具名称、依赖、命令权限或子系统。
+- 在共享 system prompt 中补充按需搜索定位及报告不完整覆盖的指导。扩展现有 verify:coding 为嵌套源文件、调用方及固定测试的样例，要求实际 query 返回实现路径后完成读改测；仍只授权指定源文件和固定测试命令，请求上界仍为 14。同步使用指南、PROJECT、ROADMAP、AGENTS 与受影响架构，不新增验证框架。
+
+### 验证结果
+
+- 开发前 126 项离线基线通过；新增 10 项搜索测试和 1 项实际 CLI 注入传输测试。pnpm run typecheck、pnpm test（含构建）通过，最终 137 项全部通过，无跳过；自动化模型使用 fake Key / 注入传输，无网络请求。
+- 覆盖嵌套路径、大小写和纯字面匹配、原始行号/BOM/混合换行、匹配分页与尾页、JSON 转义后的字节上限、无效参数、隐藏/依赖/链接排除、编码/大小导致的不完整覆盖、遍历/文件数/深度上限、取消及枚举后新增硬链接拒绝。CLI 在显式只读模式完成搜索翻页，无写入或命令记录，事件日志没有查询和正文；SDK 父子测试验证相同 Schema 和结果关联。
+- 首次新增测试的类型检查发现 assert.rejects 不能直接接收 Tool.execute 的同步或异步联合返回值，已改为 async 回调；之后类型检查与全部测试通过，无剩余实现阻塞。
+- 真实 DeepSeek 的 verify:coding 执行一次：5 次父请求、零子请求，1 次 query 搜索、共 4 次 read、1 次 committed 精确修改、1 次成功 shell。报告 answered / taskVerification=not_assessed，6 个工具 ok、零错误；命令 exitCode=0、未截断、laterWriteAttempt=false。
+- 脚本独立确认初始测试失败、搜索命中 src/math/add.mjs、实际源文件已改变、调用方和测试字节未变、报告与命令日志 ID 一致，并独立复验通过，最后清理临时目录。此次未重跑 verify:live / verify:delegation；真实验证仅使用临时合成样例，不读取或修改本地 examples。
+- 最终静态检查通过：git diff --check、55 个 Markdown 本地链接、18 个修改/新增文件的 UTF-8 与 LF、本轮源码/测试/脚本/AGENTS 英文约定。README 原有中文语言切换标签保持原样；package.json 与 pnpm-lock.yaml 未变，.env 和 examples 仍被忽略，退役图源不存在且未被跟踪，索引为空。
+
+### 限制与下一步
+
+- 无阻塞，等待本轮 review；阶段 2D 整体仍未完成。本轮为有界字面搜索，不提供正则、glob、索引、Git ignore 解析、流式大文件或一致性快照。每次分页重新扫描；大目录需要选择较窄范围，变化中的文件可能改变分页位置。
+- complete 只描述既有路径/扩展名过滤后的候选覆盖，不证明整个目录无匹配；跳过文件不会返回其正文。应用级路径检查仍不能防御恶意本机并发修改。扫描和工具结果会消耗时间及上下文，未据小样例宣称总体成功率或 token 成本改善。
+- 下一步先处理 review，再选代表性多文件任务检验定位、修改与验证链路，依据失败原因补强现有工具和上下文容量；Channel、UI、后台调度继续后移。
 
 
 ## 2026-09-25：review 调整，编码协作 system prompt（已验证，待 review）

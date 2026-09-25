@@ -8,9 +8,8 @@ import { Session } from "./session.js";
 import { loadConfig } from "./config.js";
 import { HarnessError, formatError } from "./errors.js";
 import { runAgent } from "./loop.js";
-import { createDeepSeekModel } from "./model.js";
+import { createAgent } from "./agent.js";
 import { createTools } from "./tools.js";
-import { createSubagentTools } from "./subagent.js";
 
 const help = `Fatcat - minimal Agent Harness
 
@@ -19,13 +18,13 @@ Usage:
   pnpm start --checkConfig
   pnpm start --chat
   pnpm start --chat --workspace examples/workspace
-  pnpm start --chat --subagent --workspace examples/workspace
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
 
 Use --chat for a continuous conversation with /help, /reset, and /exit.
 A prompt runs one task. History stays in memory.
-Use --subagent to allow up to two isolated child tasks per user turn.
+The agent can delegate focused independent tasks when useful; simple tasks stay direct.
+At most two child tasks may start per user turn (up to six additional model requests).
 Each child uses at most three additional model requests and cannot delegate.
 Use --workspace <directory> to expose read, write, and shell. Writes and commands ask for yes/no in the terminal.
 Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
@@ -54,7 +53,6 @@ async function main(args: string[]): Promise<number> {
           workspace: { type: "string" },
           permission: { type: "string" },
           "shell-permission": { type: "string" },
-          subagent: { type: "boolean" },
         },
         allowPositionals: true,
         strict: true,
@@ -85,10 +83,6 @@ async function main(args: string[]): Promise<number> {
       || (values.permission === "read-only" && values["shell-permission"] !== "deny"))) {
       throw new HarnessError("USAGE", "Use --shell-permission ask, deny, or allow with a workspace task; read-only permits only deny.");
     }
-    if (values.subagent && (values.help || values.checkConfig
-      || (!values.chat && values.prompt === undefined && positionals.length === 0))) {
-      throw new HarnessError("USAGE", "Use --subagent with a prompt or --chat.");
-    }
     if (values.help || args.length === 0) {
       console.log(help);
       return 0;
@@ -118,18 +112,14 @@ async function main(args: string[]): Promise<number> {
       permission: values.workspace === undefined ? "deny" : shellPermission,
       ...(terminal ? { approve: terminal.approveShell } : {}),
     });
-    const tools = values.subagent
-      ? createSubagentTools(baseTools, createDeepSeekModel(config, undefined, baseTools), config.maxIterations)
-      : baseTools;
-    const model = createDeepSeekModel(config, undefined, tools);
+    const agent = createAgent(config, baseTools);
     if (values.chat) {
-      return await runChat(new Session({ model, tools, maxIterations: config.maxIterations }), {
+      return await runChat(new Session(agent), {
         input: process.stdin, output: process.stdout, error: process.stderr, signal, terminal: terminal!,
       });
     }
     const answer = await runAgent(prompt, {
-      model, tools,
-      maxIterations: config.maxIterations,
+      ...agent,
       signal,
       onEvent: (event) => console.error(JSON.stringify(event)),
     });

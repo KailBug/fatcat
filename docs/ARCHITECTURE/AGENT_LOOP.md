@@ -8,6 +8,7 @@
 
 | 模块 | 当前职责与接口 |
 | --- | --- |
+| `src/agent.ts` | `createAgent(config, baseTools?, transport?)` 装配父子模型与工具，返回 model / tools / maxIterations；父请求指导不进入保存历史 |
 | `src/cli.ts` | 解析任务文本、`--prompt`、`--chat`、帮助与配置检查；管理 Ctrl+C；选择入口并输出退出码 |
 | `src/chat.ts`、`src/session.ts` | 连续输入和跨回合历史管理，详见 Session 文档 |
 | `src/terminal.ts` | 统一终端输入，隔离聊天、写入及命令确认，管理提示颜色及终端取消 |
@@ -15,14 +16,15 @@
 | `src/model.ts` | `createDeepSeekModel(config, transport?, tools?): Model` 创建唯一模型客户端；提交请求、校验响应、转换服务错误 |
 | `src/tools.ts`、`src/tools/` | 创建内置工具集合，提供定义和异步执行；默认 sum，显式工作目录额外提供 read / write / shell，执行处落实各自权限，详见 TOOLS.md |
 | `src/loop.ts` | `runAgentTurn(prompt, history, options)` 在副本上执行一轮用户任务，返回答案及完整历史；`runAgent(prompt, options): Promise<string>` 保持单次任务入口 |
-| `src/subagent.ts` | 显式开启的单层委派包装器，复用空历史 Loop，限制子任务次数及轮次 |
+| `src/subagent.ts` | CLI 默认装配的单层委派包装器，复用空历史 Loop，限制子任务次数及轮次 |
 | `src/errors.ts` | `HarnessError` 携带稳定错误码与可展示的英文提示；共享取消检查 |
 | `scripts/verify-coding.ts` | 临时故障样例的真实读改测验证，仅允许指定源文件修改和固定测试命令，独立核对结果 |
+| `scripts/verify-delegation.ts` | 复用 CLI 装配的真实模型验证：算术直接完成、隔离上下文审查的默认委派，使用独立只读临时样例 |
 | `scripts/verify-live.ts` | 显式真实模型验证：直接回答、工具闭环、依赖前文的追问、样例工作目录读取、子任务委派及临时目录读改读，与离线测试分开 |
 
 `Model` 是接收 SDK 消息数组、返回一个已校验模型回合的函数类型，服务于当前 Loop 和离线测试。没有模型注册表、插件体系或多供应商抽象。
 
-可注入的 `transport` 仅用于在 SDK 请求边界验证实际 JSON 与错误行为；生产客户端地址固定为 `https://api.deepseek.com`。CLI 创建一个 Tools 实例，传给模型和 Loop/Session，保证实际启用的定义与执行入口一致。省略 tools 时使用仅含 sum 的默认集合。
+可注入的 `transport` 仅用于在 SDK 请求边界验证实际 JSON 与错误行为；生产客户端地址固定为 `https://api.deepseek.com`。CLI 先创建带权限和记录的基础 Tools，再通过 createAgent 装配父子模型与委派包装；父模型和 Loop/Session 共用包装后的 Tools，子模型与子 Loop 共用基础 Tools。createAgent 默认基础工具为 sum，父集合增加 delegate_task；低层 createTools 和 runAgent 省略 tools 时仍只提供 sum。装配本身不发送网络请求。
 
 ## 数据流与内存历史
 
@@ -72,4 +74,4 @@ shell 的工具 ok=true 仅表示拿到执行结果；测试是否通过须检�
 
 离线测试覆盖配置边界、工具参数和溢出、多工具关联、多轮纠错、迭代上限、协议错误、HTTP / 网络故障、超时、取消以及 CLI 退出码。
 
-真实验证已覆盖直接回答、工具闭环、Session 追问和完整 CLI 入口；详细结果以 PROGRESS.md 为准。阶段 2B 已通过用户 review；阶段 2C 和 2D-1 已通过用户 review；2D-2 原 write 已完成离线及真实读改读验证并合入 main；终端确认修正已合入 main。2D-3 的 shell 和固定样例编码闭环已通过离线与真实模型验证，待 review。持久化、并行调度及其他子系统仍未实现。
+真实验证已覆盖直接回答、工具闭环、Session 追问和完整 CLI 入口；详细结果以 PROGRESS.md 为准。阶段 2B 已通过用户 review；阶段 2C 和 2D-1 已通过用户 review；2D-2 原 write 已完成离线及真实读改读验证并合入 main；终端确认修正已合入 main。2D-3 的 shell 和固定样例编码闭环已通过离线与真实模型验证、用户 review 并合入 main。2D-4 默认委派迁移已验证，待 review。持久化、并行调度及其他子系统仍未实现。

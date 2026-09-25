@@ -6,6 +6,7 @@
 
 ## 已实现的职责边界
 
+- CLI 通过 `src/agent.ts` 的 createAgent 向 Session 注入父模型与默认可委派的工具集合；Session 本身不决定是否委派，也不持有能力开关。
 - `src/session.ts`：一个 Session 拥有独立消息历史；顺序执行用户回合，完成时保存完整历史，失败时保留此前成功历史；空闲时可重置。阶段 2B 的 tools 由创建方传入并固定，重置只清空历史，不改变工作目录或工具权限。阶段 2C 的委派预算由 Loop 每次调用 tools.forTurn 创建，避免跨回合或跨 Session 共用计数。
 - `src/loop.ts`：在历史副本上执行一个用户回合，返回答案与完整消息；原 `runAgent` 入口保持单次任务语义。
 - `src/chat.ts`：读取一行一个任务，处理本地命令、终端提示、日志和取消；复用 Session。

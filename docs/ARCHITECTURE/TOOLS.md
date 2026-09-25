@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已验证、待 review；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
+阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移已验证、待 review；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
 
 ## 模块与接口
 
@@ -22,7 +22,7 @@
 
 Tools 包含 definitions 和 execute(name, argumentsJson, signal?, callId?)。可选 forTurn(onEvent?) 由委派包装器使用，隔离每回合次数与事件；基础 collectTools 保留内部命名 execute 函数。可选 getWrites() 返回深复制的 WriteRecord[]，由工作目录工具持有，Loop 只消费事实并记录事件。模型客户端和 Loop/Session 使用同一工具集合，结果按 tool_call_id 关联。
 
-没有工作目录时仍只提供 sum；显式 --workspace 增加 read、write 和 shell。CLI 默认 ask，write 在参数、路径与内容校验后请求终端确认。显式 read-only 无条件拒绝写入；workspace-write 仅预授权文件写入，不授权 shell。程序化 createTools 仍默认只读，ask 需要由调用方提供 approveWrite 回调。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和写入记录；委派本身当前仍需 --subagent。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
+基础 createTools 没有工作目录时只提供 sum；CLI 经 createAgent 包装后另提供 delegate_task；显式 --workspace 增加 read、write 和 shell。CLI 默认 ask，write 在参数、路径与内容校验后请求终端确认。显式 read-only 无条件拒绝写入；workspace-write 仅预授权文件写入，不授权 shell。程序化 createTools 仍默认只读，ask 需要由调用方提供 approveWrite 回调。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和写入记录；委派由 agent.ts 默认装配，无需 --subagent 开关。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
 
 旧模型工具名称 list_directory 和 read_file 已移除，调用返回 UNKNOWN_TOOL。项目尚无持久历史，不增加旧名称兼容层。内部 createWorkspaceTools 已替换为职责分离的 createWorkspace 与 createReadTool。
 
@@ -138,6 +138,6 @@ createShellTool 保存命令记录，getCommands() 返回深复制。每个工�
 
 ## 后续安排（未实现）
 
-read、write 与前台 shell 均已实现。后续先处理 review 与实际任务暴露的问题，再收敛委派默认可用、上下文容量和验证证据组织；不提前建设后台调度或持久执行框架。
+read、write 与前台 shell 均已实现，委派默认可用已在 2D-4 完成。后续先处理 review 与实际任务暴露的问题，再完善上下文容量和验证证据组织；不提前建设后台调度或持久执行框架。
 
 维持少量通用工具入口及清晰内部职责。搜索、流式大文件、持久状态、完整权限策略与插件体系均未实现，不为这些方向预建空接口。

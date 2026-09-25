@@ -22,6 +22,8 @@ test("help works without credentials", () => {
   const result = run(["--help"]);
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Fatcat/);
+  assert.match(result.stdout, /two child tasks/);
+  assert.ok(!result.stdout.includes("--subagent"));
   assert.equal(result.stderr, "");
 });
 
@@ -106,18 +108,18 @@ test("single tasks and chat share workspace definitions, results, and safe error
 });
 
 
-test("subagent mode is explicit and completes child tool work through the actual CLI", async (t) => {
-  for (const args of [["--subagent"], ["--subagent", "--help"], ["--subagent", "--checkConfig"]]) {
+test("ordinary CLI tasks can delegate without an enabling flag", async (t) => {
+  for (const args of [["--subagent"], ["--subagent", "--help"], ["--subagent", "--prompt", "delegate"]]) {
     assert.equal(run(args).status, 2);
   }
   const env = { DEEPSEEK_API_KEY: "offline-only" };
-  const sum = run(["--subagent", "--prompt", "delegate"], env, "");
+  const sum = run(["--prompt", "delegate"], env, "");
   assert.equal(sum.status, 0, sum.stderr);
   assert.equal(sum.stdout.trim(), "42");
   assert.match(sum.stderr, /"type":"subagent_event","callId":"delegated"/);
   const { workspace } = await temporaryWorkspace(t);
   await writeFile(join(workspace, "notes.txt"), "child-workspace-result");
-  const chat = run(["--chat", "--subagent", "--workspace", workspace], env, "delegate\n/reset\ndelegate\n/exit\n");
+  const chat = run(["--chat", "--workspace", workspace], env, "delegate\n/reset\ndelegate\n/exit\n");
   assert.equal(chat.status, 0, chat.stderr);
   const answers = chat.stdout.trim().split("\n").map((line) => JSON.parse(line));
   assert.deepEqual(answers[0], { ok: true, result: { kind: "file", path: "notes.txt", offset: 0, totalLines: 1, startLine: 1, endLine: 1, content: "child-workspace-result", truncated: false, nextOffset: null } });
@@ -187,4 +189,27 @@ test("CLI shell authorization is independent and pipes cannot silently approve c
   assert.match(allowed.stdout, /"success":true/);
   assert.match(allowed.stderr, /shell_record/);
   assert.ok(!allowed.stderr.includes("CLI_COMMAND_READY"));
+});
+
+
+test("simple CLI work stays direct despite delegation being available", () => {
+  const result = run(["--prompt", "add"], { DEEPSEEK_API_KEY: "offline-only" }, "");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "42");
+  assert.equal((result.stderr.match(/"type":"model_request"/g) ?? []).length, 2);
+  assert.ok(!result.stderr.includes("subagent_event"));
+});
+
+
+test("default CLI delegation inherits read-only and non-interactive approval restrictions", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "notes.txt"), "before");
+  for (const flags of [[], ["--permission", "read-only"]]) {
+    const result = run(["--workspace", workspace, ...flags, "--prompt", "delegate write"],
+      { DEEPSEEK_API_KEY: "offline-only" }, "yes\n");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /PERMISSION_DENIED/);
+    assert.match(result.stderr, /subagent_event/);
+    assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
+  }
 });

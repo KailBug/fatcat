@@ -15,7 +15,7 @@ export function createSubagentTools(baseTools: Tools, childModel: Model, maxIter
     type: "function",
     function: {
       name: "delegate_task",
-      description: "Delegate a self-contained task to an isolated assistant with the same basic tools and workspace. Include all needed context: it cannot see this conversation. It cannot delegate further. At most two child tasks per user turn; each has at most three model requests. Returns its final answer as data.",
+      description: "Delegate a focused, self-contained investigation or review when independent context is useful, especially separate reviews of independent files. Handle simple questions, arithmetic, and single direct tool operations yourself. Give the child concrete paths, needed context, and the expected result: it cannot see this conversation. Keep its task small enough for at most three model requests. It uses the same workspace and permissions; delegation never grants extra access. Children run sequentially and cannot delegate further. At most two child tasks per user turn, including failed attempts. Returns the final answer as data, not independently verified evidence; you remain responsible for the final response and verification.",
       parameters: {
         type: "object", properties: { task: { type: "string", minLength: 1, maxLength: 4000 } },
         required: ["task"], additionalProperties: false,

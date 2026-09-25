@@ -9,10 +9,49 @@
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
 - 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
-- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已验证、待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
+- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已通过 review 并随 PR #8 合入；2D-7 请求容量与用量记录已验证、待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
 - 已有 CLI 任务输入、单模型接入、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+
+## 2026-09-25：按用户要求整理并提交已有改动
+
+- 在 feat/model-request-budget 上整理原有 27 个改动文件，起始 HEAD 为 fe888c7；排除 .gitignore 及被忽略文件，保留本地 .env 和 examples。开始时已有两个新增文件暂存，均归入对应功能提交，没有撤销用户暂存或改写源码。
+- ee4aa02：feat(model): enforce request budgets and report token usage，包含请求预算、用量观察与汇总、配置/帮助及相关单元测试。
+- ad17a0f：test(cli): verify request budgets and token usage reporting，包含 CLI 场景、测试传输及真实编码验收脚本中的统计校验。
+- 文档以 docs: document request budgets and token usage reporting 单独提交，包含原有使用指南、架构、阶段说明及本次记录。此次仅整理已有开发成果并补充进度，不推进新功能或改变阶段验收状态。
+- 本次重新运行 pnpm run typecheck 和 pnpm test（含构建），151 项全部通过、无跳过；git diff --check 和 55 个 Markdown 本地链接检查通过。未重新运行真实模型验收，既有结果见下节。
+- 无阻塞；提交均保留在当前本地分支，未推送或合并。后续 review 与开发继续由主任务推进。
+
+
+## 2026-09-25：阶段 2D-7，请求容量与用量记录（已验证，待 review）
+
+### 实际结果
+
+- 用户确认上轮 review 无修改；核对 main / origin/main 为 fe888c7（PR #8），工作区干净后创建 feat/model-request-budget。保留原有提示词、用户样例与忽略规则，本轮不维护 Excalidraw，未暂存、提交、推送或合并。
+- 配置新增 HARNESS_MAX_REQUEST_BYTES，默认 262144（256 KiB）、正整数上限 16777216。model.ts 在 SDK 调用前计算完整 JSON 请求体的 UTF-8 字节，计入 system、父指导、工具定义、历史、工具结果、执行事实及生成参数；超限返回 MODEL_CONTEXT_LIMIT，不发出该请求，不静默裁剪或重试。这是本地字节预算，不是模型 token 上限或费用预算。
+- Model 增加可选元数据观察回调；model_input 提供字节数/上限/是否通过本地检查，model_usage 只提供已校验 token 计数或 null。model-usage.ts 校验三项非负安全整数及总和，拒绝异常统计进入日志；不影响本来有效的答案。用量在响应解析前观察，截断/非法响应或收到后取消仍保留已知统计。
+- Loop 为观察事件补充 iteration，父包装器和子事件链路透传；报告分别汇总 parent / children 的 requestBytes 和 tokenUsage。reportedRequests 只数有效统计；没有有效统计或累计溢出时 totals=null，不能解释成零费用。报告不保存提示、原始供应商 usage 字段或密钥，也不把统计写入模型历史。
+- 保持 Session 成功历史所有权与失败隔离；超限不回滚已提交 write/shell，/reset 仍保留工具事实，事实本身超限时不绕过预算。CLI 帮助、配置检查与 .env.example 说明新设置；本地 .env 未修改。扩展原 verify:coding 核对每次模型调用的大小观察与有效服务用量，未新增依赖、工具、存储或上下文框架。
+
+### 验证结果
+
+- 开发前 137 项离线基线通过；新增 11 项请求/用量测试、1 项配置和 2 项实际 CLI 测试。最终 pnpm run typecheck、pnpm test（含构建）通过，151 项全部通过、无跳过，模型均为 fake Key / 注入传输。
+- 验证实际 SDK 请求正文与计量相同（含 Unicode、JSON 转义和工具定义）、精确上限、超限零网络请求、无效配置不能关闭预算、零/缺失/非法/不一致用量、统计溢出、截断/协议错误/取消/HTTP 失败后的部分统计、父子分开汇总、子超限回传，以及 CLI 新回合/reset 统计隔离。
+- 用真实临时文件写入及注入的大工具结果验证“已提交写入 → 下一次请求超限 → reset 后事实仍可见”，并检查旧成功历史在失败后未被裁剪。另用符合单条长度边界的多条命令事实验证 reset 无法让超预算事实消失。测试不会为制造超限而发真实服务请求。
+- 首次完整检查在 verify:coding 的循环索引用量变量上遇到 TypeScript TS7022 推断错误，已使用现有 ExecutionReport 字段类型显式标注；后续检查通过。Windows 普通执行入口仍发生 deny-read ACL 初始化失败，获准执行模式完成了验证，无剩余实现阻塞。
+- 真实 DeepSeek 的 verify:coding 执行一次：5 次父请求、零子请求，1 次 query、共 6 次 read、1 次 committed 精确修改、1 次成功 shell。请求全部低于默认预算，最大正文 16371 字节；5 次均返回有效统计，累计 promptTokens=15408、completionTokens=501、totalTokens=15909。统计是本次服务响应之和，不是账单金额或成本改善证据。
+- 真实脚本确认初始测试失败、搜索命中指定实现、调用方与测试字节未变、执行报告/工具日志一致、测试通过且独立复验成功，之后清理临时目录。未重跑 verify:live / verify:delegation；父子用量与超限覆盖来自离线 SDK 验证。
+- 模型真实回答在重读后仍称内容“matches the recorded afterHash”；它没有执行独立哈希计算，未将这句话计为验收事实。本轮不声称字节预算或统计能约束全部自然语言断言，验证依据仍是外部脚本和命令。
+- 最终静态检查通过：git diff --check、55 个 Markdown 本地链接、27 个修改/新增文件的 UTF-8 与 LF、docs 外新增文本的英文约定；README 原有语言标签保留。依赖与 system prompt 未变，.env 和 examples 仍被忽略，退役图源不存在且未跟踪，暂存区为空。
+
+### 限制与下一步
+
+- 无阻塞，待用户 review；阶段 2D 整体仍未完成。没有自动摘要、历史淘汰、token 估算器、费用上限、持久用量或完整 Context 系统；请求大小在序列化后检查，不是进程内存上限。服务端 token 限制仍可能拒绝本地预算内的请求。
+- modelRequests 是调用尝试，包含本地拒绝；tokenUsage 仅汇总已收到的有效计数，缺失统计的请求可能已消耗服务资源。未计算缓存价格、金额或完整账单，不基于单一样例声称效率提高。
+- 工具批次在下一次模型请求检查前可能已经执行，超限不会自动回滚；reset 不清工具事实。若事实本身超限，需要先核查状态，再决定调整配置或新进程，后者会丢失进程内历史和记录。
+- 下一步先处理 review，再以代表性多文件和多回合任务观察请求增长与失败点，针对性完善上下文组织及可核验交付；自动压缩要保留用户要求和工具关联，不先增加 Channel、UI 或后台系统。
 
 
 ## 2026-09-25：阶段 2D-6，read 文本搜索（已验证，待 review）

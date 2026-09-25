@@ -82,7 +82,18 @@ try {
   assert.deepEqual(report.commands.map((record) => record.id).sort(), commands.map((record) => record.id).sort());
   assert.ok(report.commands.some((record) => record.succeeded && !record.laterWriteAttempt));
   const requests = report.modelRequests.parent + report.modelRequests.children;
-  console.log(JSON.stringify({ scenario: "coding", passed: true, requests, searches, answer }));
+  for (const role of ["parent", "children"] as const) {
+    assert.equal(report.requestBytes[role].checked, report.modelRequests[role]);
+    assert.equal(report.requestBytes[role].rejected, 0);
+    assert.equal(report.tokenUsage[role].reportedRequests, report.modelRequests[role]);
+    if (report.modelRequests[role] > 0) {
+      const usage: ExecutionReport["tokenUsage"]["parent"]["totals"] = report.tokenUsage[role].totals;
+      assert.ok(usage && usage.promptTokens > 0 && usage.completionTokens > 0);
+      assert.equal(usage.totalTokens, usage.promptTokens + usage.completionTokens);
+    }
+  }
+
+  console.log(JSON.stringify({ scenario: "coding", passed: true, requests, searches, requestBytes: report.requestBytes, tokenUsage: report.tokenUsage, answer }));
 } catch {
   console.error("Coding verification failed. Inspect the recorded outcomes; no provider details are displayed.");
   process.exitCode = 1;

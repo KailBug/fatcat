@@ -8,6 +8,7 @@
 
 | 模块 | 当前职责与接口 |
 | --- | --- |
+| `src/system-prompt.ts` | 父子 Loop 共用的英文 systemPrompt：CLI 编码协作、沟通、工具边界和证据化交付 |
 | `src/agent.ts` | `createAgent(config, baseTools?, transport?)` 装配父子模型与工具，返回 model / tools / maxIterations；父请求指导不进入保存历史 |
 | `src/cli.ts` | 解析任务文本、`--prompt`、`--chat`、帮助与配置检查；管理 Ctrl+C；选择入口并输出退出码 |
 | `src/chat.ts`、`src/session.ts` | 连续输入和跨回合历史管理，详见 Session 文档 |
@@ -37,6 +38,16 @@
 6. 将包含关联结果的历史提交给下一轮模型，直到得到最终回答或明确失败。
 
 同一响应中的多个工具调用按顺序处理，也支持后续回合继续调用工具。同一用户回合内 ID 重复、响应结构不合法、终止原因与工具列表不一致时停止，避免构造歧义历史。
+
+## System prompt（当前实现）
+
+`src/system-prompt.ts` 集中维护基础提示词，Loop 创建新历史时作为第一条 system 消息使用；单次任务、Session 新历史及子任务共用。已有内存历史保留其原 system；开发修改后需重新启动进程使用新构建。`agent.ts` 仍只在父模型请求副本中追加原有委派指导，不向子模型加入委派能力，不改变预算或权限。
+
+本轮按用户要求参考 Claude Code 的公开工作流方向，以 Fatcat 当前能力重新编写：简洁直接、跟随用户语言、实现请求执行读改测、先了解相关代码、保持改动聚焦、只在关键歧义时提问，并据实际结果报告验证与限制。保留 Fatcat 身份，不再默认扮演猫；用户明确要求时才使用角色化表达。提示词只描述实际暴露的工具，适配 Windows PowerShell、分页读取、独立命令授权和现有权限边界。
+
+特别强调工具 ok 不等于测试成功、历史哈希不证明当前文件、没有执行过的重读/测试/比较不能声称完成。它是模型行为指导，不是新增的确定性检查或权限机制，也不保证杜绝错误陈述。
+
+参考（2026-09-25）：[Claude Code 官方最佳实践](https://code.claude.com/docs/en/best-practices)中的先理解代码、按任务复杂度决定规划与实际验证，以及[输出风格文档](https://code.claude.com/docs/en/output-styles)的沟通与编码工作方式区分。本项目没有复制或声称复现 Claude Code 的完整内部 system prompt，也没有引入它的额外工具、计划模式或恢复能力。
 
 ## DeepSeek 接入决策
 

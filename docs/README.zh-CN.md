@@ -8,7 +8,7 @@
 
 一个用于本地编程实验的小型 TypeScript Agent Harness demo，由 DeepSeek 驱动，原生运行于 Windows。
 
-项目仍处于早期 demo 阶段，目前支持简单的 Agent Loop、CLI 对话、工作目录读取与受控编辑、经授权的 Windows 命令执行，以及根据任务选择的有界子 Agent 委派。
+项目仍处于早期 demo 阶段，目前支持简单的 Agent Loop、CLI 对话、工作目录读取与受控编辑、经授权的 Windows 命令执行，根据任务选择的有界子 Agent 委派，以及每回合的执行报告。
 
 [安装与使用（英文）](USAGE.md)
 

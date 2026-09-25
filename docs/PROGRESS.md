@@ -9,10 +9,39 @@
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
 - 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
-- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已实现并验证、待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
+- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告已实现并验证、待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
 - 已有 CLI 任务输入、单模型接入、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+
+## 2026-09-25：阶段 2D-5，回合执行报告（已验证，待 review）
+
+### 实际结果
+
+- 核对 main / origin/main 为 754bc56（PR #6 已合入），创建 feat/turn-execution-report。原工作区仅有未跟踪的 examples/workspace/hello.ts，保留不改；scripts/verify-coding.ts 已在此前提交入库。退役图源及原精确忽略行已由用户此前提交删除，当前文件不存在且未被跟踪，本轮不恢复或维护。本轮没有提交、暂存、推送或合并。
+- 新增 src/execution-report.ts，在交互边界观察既有 Loop 事件。普通 CLI 和 chat 的每个根用户回合结束时，向 stderr 发出一个 execution_report；原事件继续转发，stdout 仍为模型答案。包含父子模型请求尝试、工具 ok / errors、去重写入记录、命令退出/截断/清理状态，以及命令后是否观察到新的或变化的写入记录。
+- 根模型错误、取消和迭代耗尽仍输出已观察到的操作；子任务结束不会提前结束报告，父子共享记录按 ID 去重。新回合使用新观察器，失败回合和 /reset 之前的旧操作不会被呈现为新执行。Loop、Session、权限及工具协议保持不变；报告不进入模型历史。
+- answered 仅表示得到模型答案，taskVerification 始终为 not_assessed。命令 succeeded 与工具 ok 分开；laterWriteAttempt 是保守的已记录写入尝试顺序提示，包含失败或未决记录，不证明文件版本或任务通过。
+- verify:coding 改为复用 CLI 的 createAgent 与报告观察器，核对报告记录 ID、命令状态与写入顺序提示，并保留原独立复验。默认委派可用后脚本请求上界为父 8 + 子 2 × 3 = 14；授权仍只限临时 math.mjs 修改和固定测试命令。
+- 新增当前执行报告架构文档，并同步使用指南、首页、PROJECT、ROADMAP、AGENTS 和受影响系统文档；没有新增依赖、工具、权限、持久状态或 Task 框架。
+
+### 验证结果
+
+- 开发前 116 项离线基线通过；最终 pnpm test（含构建）126 项全部通过，无跳过，pnpm run typecheck 和 pnpm start --help 通过。自动化模型均使用 fake Key / 注入传输。
+- 新增覆盖：模型声称测试通过但没有命令时报告仍为空；拒绝工具不算执行；模型失败/取消/耗尽后保留已提交写入；子模型写后失败仍保留事实且去重；超时/非零/输出截断/启动失败/清理不确定的汇总；写入状态更新、回合/reset 隔离、真实 CLI 单次/聊天/委派及取消报告。
+- 命令状态组合的报告规则使用固定事件验证；另使用真实 Windows PowerShell 执行非零退出 → write → 零退出，核对报告中的顺序提示，确认命令正文、输出和文件正文未出现在事件报告中。原 shell 超时/取消/进程清理回归也通过。
+- 首次类型检查在新增测试辅助函数的可选 turn 字段上发现 exactOptionalPropertyTypes 不匹配，已将该辅助返回字段明确声明为 number | undefined；最终检查通过。Windows 默认执行沙箱仍出现 ACL 初始化错误，经获准的执行模式完成验证，没有剩余实现阻塞。
+- 真实 DeepSeek 的 verify:coding 执行一次，共 4 次父模型请求、零子请求：read 两个固定文件、精确编辑源文件、运行指定测试并回答。报告为 answered，4 个工具 ok，1 条 committed 写入，1 条 exitCode=0 且未截断的命令，laterWriteAttempt=false。脚本确认初始测试失败、测试文件字节未变、报告 ID 与命令日志一致，独立复验通过后清理临时目录。本轮未重跑 verify:live / verify:delegation。
+- 真实回答额外声称“记录哈希与当前状态匹配”；调用记录不足以支持这一完整判断。没有把此句计为验证结果，也没有宣称报告能纠正所有模型陈述。通过结论来自固定样例的外部断言和独立命令，不是模型文字中的 CODING_VERIFIED 标记本身。
+- 最终静态检查通过：55 个 Markdown 本地链接、git diff --check、本轮新增文本英文规则、修改文件 LF。用户 hello.ts 的 SHA-256 与开始时一致，package.json / pnpm-lock.yaml 未变，暂存区仍为空；README 既有中文语言标签保持原样。
+
+### 限制与下一步
+
+- 无开发或真实验收阻塞，待用户 review；阶段 2D 整体仍未完成。报告提供可核对的本回合事实，没有自动判定任务验收、逐条验证回答、强制模型重试或改变现有退出码。
+- laterWriteAttempt 只观察 write 工具记录，不监控 shell、编辑器及其他进程的文件变化；false 不是新鲜度保证，true 也可能来自失败暂存或无关文件。命令退出 0 不说明检查覆盖了任务需求。配置/输入错误等 Loop 启动前失败没有报告；崩溃、强制结束及日志输出异常不保证最终报告。
+- 记录仍在进程内，遵守原写入 100 次、命令 20 次上限；没有恢复、回滚、持久报告、并行调度或 UI 扩展。本轮没有依据小样例宣称广泛成功率或 token 成本改善。
+- 下一步先处理 review，再用更多代表性代码任务检验交付报告与验证覆盖，按暴露的问题完善已有工具/上下文边界；不直接扩展 Channel 或 UI。
 
 
 ## 2026-09-23：阶段 2D-4，任务驱动委派（已验证，待 review）

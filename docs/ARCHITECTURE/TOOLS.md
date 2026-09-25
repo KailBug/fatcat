@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移已验证、待 review；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
+阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移已通过 review 并合入；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
 
 ## 模块与接口
 
@@ -133,6 +133,8 @@ stdout/stderr 合计最多收集 16 KiB 原始字节，UTF-8 解码；不兼容�
 结果含 recordId、success、status、exitCode、stdout、stderr、truncated、durationMs、cleanup。状态为 completed / timed_out / output_limit / cancelled / spawn_failed / termination_failed；仅 completed 且 exitCode=0 且未截断时 success=true。ToolResult.ok 表示执行接口返回了结果，不等于测试通过；权限、参数等前置错误仍走 ok=false。取消在保存结果后继续抛 CANCELLED，Loop 仍报告记录。
 
 createShellTool 保存命令记录，getCommands() 返回深复制。每个工具实例最多 20 次启动尝试，满后拒绝新增，不静默淘汰；记录保留命令、cwd、退出事实，以及每个输出流最多 1000 Unicode 码点的摘要，outputSummaryTruncated 明确说明省略。Loop 在后续每次请求补入临时数据消息，与成功历史分离；失败、/reset 和子任务失败不清除命令事实。shell_record 事件仅发 cwd、ID、状态、退出码、耗时及截断/清理标志，不含 command/stdout/stderr。父子事件可重复报告同一记录 ID。
+
+2D-5 的执行报告从现有事件汇总本回合命令结果，并标记命令之后观察到的 write 尝试；不会增加授权或重新执行工具。后续 shell 或外部进程修改文件不会触发该标记。
 
 输出摘要、退出码与文件版本尚无强绑定，也不能保证模型最终叙述逐条符合工具证据；当前成功证明依赖明确工具结果与外部验收脚本，不是完整 Task 关卡。记录仅在进程内，命令副作用不自动回滚，没有崩溃恢复或全量持久日志。
 

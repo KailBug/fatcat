@@ -4,7 +4,7 @@
 
 架构文档统一放在 `docs/ARCHITECTURE/` 下，本文件作为总览和索引，记录整体边界、跨系统关系及共享决策。
 
-- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md` 和 `SUBAGENT.md`；其他系统文档在需要时建立。
+- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`SUBAGENT.md` 和 `EXECUTION_REPORT.md`；其他系统文档在需要时建立。
 - 系统文档记录该系统的职责、设计决策、接口与数据流，以及分步实现安排和验收方式；按当前需要展开，不要求提前填满所有内容。
 - 每份文档明确区分当前已实现内容和计划设计，具体实现安排也标注状态；验证与完成事实以 [PROGRESS.md](../PROGRESS.md) 为准，避免重复维护进度记录。
 - 新增系统文档时更新本文件的索引。项目阶段目标仍放在 [ROADMAP.md](../ROADMAP.md)，系统内部的实现安排放在对应架构文档中。
@@ -14,7 +14,7 @@
 
 架构现状与设计安排以本目录的 Markdown 文档为准。模块职责、调用关系或开发方向变化时，同步更新本总览及相关系统文档，区分已实现行为与计划能力；实际验证以 PROGRESS.md 为准。
 
-按用户要求，停止维护 Excalidraw 文件。fatcat-architecture.excalidraw 已从 Git 索引移除并加入忽略规则；本地副本保留，仅作未维护的历史参考，不再作为当前架构依据，也不要求新检出包含此文件。
+按用户要求，停止维护 Excalidraw 文件。fatcat-architecture.excalidraw 已随此前提交删除并停止 Git 跟踪，当前工作目录没有该文件；不恢复或维护，不作为当前架构依据。以后如自行保留本地参考副本，也不得提交。
 
 ## 近期组织原则（设计方向）
 
@@ -32,11 +32,12 @@
 | [AGENT_LOOP.md](AGENT_LOOP.md) | CLI、配置与最小 Loop 的设计和实现安排 | 最小 Loop 已实现、验证并通过 review |
 | [SESSION.md](SESSION.md) | 内存 Session 与连续对话的边界及实现安排 | 已实现、验证并通过用户 review |
 | [TOOLS.md](TOOLS.md) | 通用 read / write / shell、授权及执行记录 | 2D-1/2D-2 已合入；2D-3 shell 已通过 review 并合入 |
-| [SUBAGENT.md](SUBAGENT.md) | 默认可用的有界委派、历史隔离及取消 | 2C 已通过 review；2D-4 默认迁移已验证、待 review |
+| [SUBAGENT.md](SUBAGENT.md) | 默认可用的有界委派、历史隔离及取消 | 2C 已通过 review；2D-4 默认迁移已通过 review 并合入 |
+| [EXECUTION_REPORT.md](EXECUTION_REPORT.md) | 按用户回合汇总真实事件、共享记录去重与命令后写入提示 | 2D-5 已验证，待 review |
 
 ## 当前实现
 
-当前工程已实现 CLI、配置校验、DeepSeek 模型客户端、内存消息循环、纯计算工具及统一错误处理；阶段 2A 已有独立内存 Session 和终端连续对话；阶段 2B 已有统一异步工具集合与显式开启的工作目录读取；阶段 2C 增加显式开启的最小子任务委派；阶段 2D-1 合并为通用 read，并分离 workspace 路径边界与 read 的读取和分页实现；2D-2 增加受控 write，共享有界文本读取模块，并将写入记录与成功对话历史分开。review 修正新增 terminal.ts 统一聊天与确认输入，CLI 注入批准回调，工具负责校验与落实权限。2D-3 新增 shell.ts 与 process.ts，分别持有命令规则/事实与 Windows 进程生命周期，terminal.ts 复用单次确认。2D-4 新增 agent.ts 集中装配父子模型与工具，普通 CLI 默认可委派；仅父请求带任务选择指导，不改变保存的历史。真实运行可从 CLI 输入任务，经历模型调用与工具结果回传，再输出最终结果。Loop 接口、错误行为与数据流见 [AGENT_LOOP.md](AGENT_LOOP.md)，跨用户回合的历史所有权与连续输入见 [SESSION.md](SESSION.md)，内置工具与文件边界见 [TOOLS.md](TOOLS.md)，委派与请求上限见 [SUBAGENT.md](SUBAGENT.md)。
+当前工程已实现 CLI、配置校验、DeepSeek 模型客户端、内存消息循环、纯计算工具及统一错误处理；阶段 2A 已有独立内存 Session 和终端连续对话；阶段 2B 已有统一异步工具集合与显式开启的工作目录读取；阶段 2C 增加显式开启的最小子任务委派；阶段 2D-1 合并为通用 read，并分离 workspace 路径边界与 read 的读取和分页实现；2D-2 增加受控 write，共享有界文本读取模块，并将写入记录与成功对话历史分开。review 修正新增 terminal.ts 统一聊天与确认输入，CLI 注入批准回调，工具负责校验与落实权限。2D-3 新增 shell.ts 与 process.ts，分别持有命令规则/事实与 Windows 进程生命周期，terminal.ts 复用单次确认。2D-4 新增 agent.ts 集中装配父子模型与工具，普通 CLI 默认可委派；仅父请求带任务选择指导，不改变保存的历史。2D-5 新增 execution-report.ts，在交互边界观察事件，汇总当前回合报告；不改变 Loop / Session 返回值，不写入模型历史。真实运行可从 CLI 输入任务，经历模型调用与工具结果回传，再输出最终结果。Loop 接口、错误行为与数据流见 [AGENT_LOOP.md](AGENT_LOOP.md)，跨用户回合的历史所有权与连续输入见 [SESSION.md](SESSION.md)，内置工具与文件边界见 [TOOLS.md](TOOLS.md)，委派与请求上限见 [SUBAGENT.md](SUBAGENT.md)。
 
 `tsconfig.json` 使用严格模式与 NodeNext 模块规则，将 `src/`、`tests/`、`scripts/` 编译到 `dist/` 下对应目录。CLI 入口为 `dist/src/cli.js`；测试使用 Node 内置运行器。唯一生产依赖为 `openai@7.18.0`，用于 DeepSeek 兼容接口。`pnpm run verify:live` 提供显式真实服务验证；自动化测试保持离线。
 

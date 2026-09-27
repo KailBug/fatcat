@@ -9,10 +9,39 @@
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
 - 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
-- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已通过 review 并随 PR #8 合入；2D-7 请求容量与用量记录已验证、待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
+- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已通过 review 并随 PR #8 合入；2D-7 请求容量与用量记录已通过 review 并随 PR #9 合入；2D-8 旧读取结果的请求投影已完成离线与真实多回合验证，待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
 - 已有 CLI 任务输入、单模型接入、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+
+## 2026-09-25：阶段 2D-8，旧读取结果的请求投影（已验证，待 review）
+
+### 实际结果
+
+- 核对 main / origin/main 为 8d9c695（PR #9），工作区干净，创建 feat/read-context-reduction。保留用户此前整理的提交、personal agent 提示词定位、.env 和本地 examples；本轮不维护 Excalidraw，未暂存、提交、推送或合并。
+- 新增 context.ts 请求准备函数：完整请求未超预算时原样返回；超限时按最旧优先，把较早成功 read 的文件/目录/搜索结果替换成明确 context_omitted 标记。仅实际减少字节时替换，达到预算即停止，最后重新计量整个请求。没有增加依赖、模型请求、功能开关或工具。
+- 保护当前和最近完成回合、所有用户/system/assistant 消息、原始工具调用参数与 ID、错误、其他工具结果以及独立写入/命令事实。局部调用批次匹配避免跨回合重复 ID 混淆；无有效完成边界、未知结果格式或无可省略内容时保持原样。
+- 只修改请求副本，不淘汰 Session 原始历史；每次请求重新准备，失败、取消和 reset 沿用原有边界。模型需要正文时重新 read 当前文件，仍受原路径、权限和读取限制；不提供历史文件版本。整理后仍超限就 MODEL_CONTEXT_LIMIT，不发送或隐藏重试。
+- 新增 context_reduction 元数据与报告中的 contextReduction 父子汇总，记录请求次数、被替换结果数和字节差；同一历史结果在多个请求中替换会重复计数，整理后仍拒绝的请求也计入，不能解释成 token 或费用节省。提示词说明省略标记不是当前内容证据。
+- 新增 pnpm run verify:context，三回合临时只读合成样例，使用 26000 字节预算和最多 27 次真实请求验证整理、内容变化后重读及前文要求；不使用 examples。同步使用指南、PROJECT、ROADMAP、AGENTS 及相关架构，新增实际 Context 模块文档。
+
+### 验证结果
+
+- 开发前 151 项离线基线通过；本轮新增 9 项 Context 测试和 1 项 CLI 连续对话测试。pnpm run typecheck、pnpm test（含构建）通过，最终 161 项全部通过，无跳过；自动化模型均使用 fake Key / 注入传输。
+- 覆盖真实 SDK 正文计量、UTF-8 与 JSON 转义、精确上限、不可变历史、局部调用关联与重复 ID、文件/目录/搜索、错误/未知格式/小结果保留、当前/最近回合与执行事实保护、单次任务与子历史、取消、整理后仍超限零传输、HTTP 失败后短回合恢复原内容、reset、文件变化后重读及 CLI 日志无正文。
+- 首次新增 Session 测试把 system prompt 中的 context_omitted 说明文字误判为实际省略标记，已改为检查关联 tool 结果；首次 CLI 样例沿用会回显整份读取正文的测试传输，导致受保护的最近回合在第二轮超预算，符合既定保护边界。改用专用短确认传输后通过；没有为通过测试而放宽生产策略，此情况也列为已知限制。
+- 真实 DeepSeek 的 verify:context 执行一次并通过：3 个用户回合，父请求分别为 2 / 1 / 2，共 5 次，零子请求。前两回合不整理；第三回合两个请求分别从 30040 → 18145、30516 → 18621 字节，均通过 26000 字节预算。两次投影各省略同一个较早 read 结果，报告 requests=2、omittedReadResults=2、bytesSaved=23790。
+- 真实模型重新读取第一行后返回 RESULT: CURRENT_MARKER=INDIGO-83，未沿用旧值 AMBER-17，并保留第二回合的 RESULT: 要求。脚本核对实际全量初读、更新后的重读、最终文件字节和空写入/命令记录；临时目录已清理。5 次服务统计合计 promptTokens=16901、completionTokens=107、totalTokens=17008，只是本次报告计数，不是成本改善证据。
+- 既有真实 verify:coding 执行一次并通过：5 次父请求、零子请求，1 次 query、共 4 次 read、1 次 committed 精确修改与 1 次成功 shell；6 个工具 ok、零错误，命令 exitCode=0、未截断、laterWriteAttempt=false。最大请求 15729 字节，未触发整理；报告用量 promptTokens=15195、completionTokens=496、totalTokens=15691。脚本确认初始测试失败、搜索定位、调用方/测试未变、报告与事实一致及独立复验通过，随后清理临时目录。
+- pnpm start --help 与 --checkConfig 通过；本机 Node v24.19.0、pnpm 11.21.0，实际依赖及锁文件未变。未重复运行 verify:live / verify:delegation；当前子任务无旧回合，保留与超限边界由离线测试覆盖。
+- 最终静态检查通过：git diff --check、67 个 Markdown/HTML 本地链接、25 个修改/新增文件的 UTF-8 与 LF，以及 docs 外文本英文约定（README 原有语言切换标签保留）。package.json 仅增加验证脚本，pnpm-lock.yaml 未变；.env 与本地未跟踪样例仍被忽略，退役图源不存在且未跟踪，索引为空。
+
+### 限制与下一步
+
+- 无实现阻塞，等待本轮 review；阶段 2D 整体未完成。本功能只处理较早成功 read 的请求内容，单次任务、子任务、当前/最近回合、长用户输入、assistant 复制的正文与执行事实仍可能超预算。整理后的调用参数和历史陈述也继续占空间。
+- 完整历史仍在内存，准备请求仍需构造、序列化及解析，没有历史内存上限。按需重读获得当前文件而非历史快照；模型是否判断该重读仍受提示词和任务影响，不保证自动恢复所有背景、消除错误陈述或优化 token 成本。
+- 下一步先处理 review，再用代表性多文件任务检查读取、修改、验证和多回合跟进，按具体失败补强现有工具、上下文及证据关联。完整 Task、分层记忆、Channel、UI 与后台调度继续后移，不预建框架。
 
 
 ## 2026-09-25：按用户要求整理并提交已有改动

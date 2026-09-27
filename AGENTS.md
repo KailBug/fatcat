@@ -74,5 +74,6 @@
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
 - Live delegation verification: pnpm run verify:delegation (fixed read-only temporary fixtures, at most 20 real model requests).
 - Live coding verification: pnpm run verify:coding (uses a temporary search/read/edit fixture, authorizes only its designated edit and fixed test command, checks the execution report and provider token usage, and allows at most 14 real model requests).
+- Live context verification: pnpm run verify:context (three turns over a synthetic read-only temporary workspace, a 26000-byte request budget, and at most 27 real model requests).
 - DeepSeek is the only model service. Keep real keys in local environment variables or the ignored .env file.
 - Automated tests must use fake credentials and injected transports. Live verification is a separate, explicit command.

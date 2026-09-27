@@ -77,7 +77,7 @@ globalThis.fetch = async (input, init) => {
     assert.ok(tools.some((tool) => tool.function.name === "delegate_task"));
     const last = messages.at(-1);
     if (last?.role === "user") {
-      const task = prompt === "delegate write" ? "write fixture" : tools.some((tool) => tool.function.name === "read") ? "workspace" : "add";
+      const task = prompt === "delegate write" ? "write fixture" : tools.some((tool) => tool.function.name === "write") ? "workspace" : "add";
       return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
         role: "assistant", content: null, tool_calls: [{ id: "delegated", type: "function",
           function: { name: "delegate_task", arguments: JSON.stringify({ task }) } }],

@@ -16,6 +16,7 @@
     "test": "pnpm run build && node --test dist/tests/*.test.js",
     "verify:delegation": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-delegation.js",
     "verify:coding": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-coding.js",
+    "verify:workflow": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-workflow.js",
     "verify:context": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-context.js",
     "verify:live": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-live.js"
   },
@@ -24,6 +25,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "openai": "7.18.0"
+    "openai": "7.18.0",
+    "yaml": "2.9.1"
   }
 }

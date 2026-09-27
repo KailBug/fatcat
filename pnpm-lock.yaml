@@ -11,6 +11,9 @@ importers:
       openai:
         specifier: 7.18.0
         version: 7.18.0
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
     devDependencies:
       '@types/node':
         specifier: 24.13.5
@@ -176,6 +179,11 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
 snapshots:
 
   '@types/node@24.13.5':
@@ -268,3 +276,5 @@ snapshots:
       '@typescript/typescript-win32-x64': 7.0.2
 
   undici-types@7.18.2: {}
+
+  yaml@2.9.1: {}

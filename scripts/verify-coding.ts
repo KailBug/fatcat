@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { loadConfig } from "../src/config.js";
+import { loadLiveConfig } from "./fixtures/live-config.js";
 import { runAgent } from "../src/loop.js";
 import { createAgent } from "../src/agent.js";
 import { createTurnReporter } from "../src/execution-report.js";
@@ -33,7 +33,7 @@ try {
   const before = await runPowerShell(command, workspace, 10000);
   assert.equal(before.status, "completed");
   assert.notEqual(before.exitCode, 0, "The initial fixture must fail verification.");
-  const config = loadConfig();
+  const config = loadLiveConfig();
   const base = await createTools(workspace, "workspace-write", undefined, {
     permission: "ask", approve: async (request) => request.command === command && request.cwd === ".",
   });

@@ -9,10 +9,89 @@
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
 - 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
-- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已通过 review 并随 PR #8 合入；2D-7 请求容量与用量记录已通过 review 并随 PR #9 合入；2D-8 旧读取结果的请求投影已完成离线与真实多回合验证，待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
-- 已有 CLI 任务输入、单模型接入、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
-- 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；用户指定 DeepSeek，默认配置模型为 deepseek-flash。模型 SDK 为 openai 7.18.0，已接入 DeepSeek。
+- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已通过 review 并随 PR #8 合入；2D-7 请求容量与用量记录已通过 review 并随 PR #9 合入；2D-8 旧读取结果的请求投影已完成离线与真实多回合验证，随 PR #10 合入；2D-9 多文件双回合验收已完成离线与真实验证，待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
+- 阶段 2D-10：单个 Session 的本地 Skills、四个按 subsystem 组织的内置 Skill 与 Kimi / MiMo / Qwen 接入已完成离线验收，待 review；新增厂商按用户要求没有 API 在线验证。
+- 已有 CLI 任务输入、单 Session 供应商选择、本地 Skills、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
+- 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；新增 yaml 2.9.1 解析 Skill frontmatter。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+
+## 2026-09-27：阶段 2D-10 补充，按 subsystem 分组的内置 Skills（离线已验证，待 review）
+
+### 实际结果
+
+- 按用户要求继续使用 feat/session-perfection，开始时 HEAD 为 855aeaa；保留已暂存的 src/providers.ts、src/skills.ts 及 agent / cli / config / model 的未暂存变更。本轮在这些已有实现上增量开发，没有改动索引、提交、推送或合并。
+- 新建 src/skill/<subsystem>/<skill-name>/SKILL.md，首批四项为 tools/workspace-editing、subagent/focused-delegation、context/context-recovery、execution-report/verification-handoff。内容面向运行中的 Fatcat 完成用户任务，提供精确读改验证、有界委派、当前证据恢复与准确交付指导；不要求目标项目使用 Fatcat 自身开发规范，不为未来 subsystem 创建空目录。
+- 运行时仍由 src/skills.ts 发现与加载。内置项默认进入同一元数据目录，scope=builtin 并带 subsystem；按模块位置定位，与 CLI 当前目录无关。显式工作目录与用户安装的同名技能优先，内置项为最后来源；URI 仍为 skill://name/...。内置 subsystem / skill 两层有界扫描，沿用所有来源合计 64 项上限和原路径检查。
+- 构建新增 scripts/copy-skills.ts：先校验源目录，再将资源同步到 dist/src/skill。固定输出路径及链接检查通过后只替换这个生成目录，移除不再存在的旧资产；不修改用户技能根或工作区内容。没有增加依赖、安装步骤、CLI 能力开关或执行工具。
+- 已加载的指令、父子独立历史、取消、权限与请求预算保持既有边界。无 workspace 的 CLI 现在也可用 read 读取内置技能 URI，普通文件访问、write 和 shell 不因此开放。相关使用、架构、项目范围、路线图及仓库约定已同步。
+
+### 验证结果
+
+- pnpm run typecheck、pnpm test（含构建）通过，233 项测试全部通过、0 失败、0 跳过，较上一增量新增 12 项。新测试核对真实源码与分发资产逐字一致、无凭据/异 cwd 的默认发现、同名覆盖、两层目录上限、非法元数据与路径/junction 拒绝，以及实际 SDK 注入传输下的内置 Skill 加载、Session 复用/reset 和子任务独立加载。
+- 原本地 Skill 测试显式隔离内置源，保留已有目录边界的断言。CLI 模拟传输不再以存在 read 推断已授权工作区，改为查看工作区 write 定义；实际权限仍在工具执行处校验。所有既有 provider、Windows 工具、编码工作流、Context 与执行报告回归通过。
+- 四份 SKILL.md 均通过 skill-creator 的 quick_validate 检查，并按实际 Tools / Subagent / Context / Execution Report 行为审阅。正文没有把 Skill 当成权限来源，没有承诺后台/递归委派、持久恢复或模型自动读取执行报告。
+- 首次构建遇到 Node cp 的 errorOnExist 与预建目标目录冲突，已删除冗余 mkdir，后续构建和全量测试通过。另在已确认的 dist/src/skill 内加入临时过期资产，重建后确认被清除；最终无凭据 CLI --listSkills 正常列出四项内置技能。
+- 独立复核没有发现剩余实质问题；另在隔离临时项目中验证过期产物清理、无效源 Skill 使构建非零退出且既有产物哈希保持。该复核未修改工作区构建产物或源码。
+- 最终差异与文本检查通过：当前 26 个变动/新增文本符合 UTF-8 与英文约定（保留 README 既有语言标签），变动文档的 63 个本地链接有效，git diff --check 通过。pnpm-lock.yaml 未改动，用户原有两项暂存记录保持，本轮没有暂存操作。
+- 本轮没有调用任何在线模型 API。注入传输验证的是发现、读取和状态边界，不证明真实模型的选择质量或任务效果已提高。
+
+### 限制与下一步
+
+- 内置 Skill 是按需读取的任务指导，不是运行时约束、自动调度器或新增工具；模型仍可能选错或未遵循。与本地 Skill 共享名称空间和容量上限，覆盖来源由目录元数据明确区分，已有权限不能由指令扩大。
+- 构建分发必须携带 dist/src/skill；正在运行的 Session 不热刷新目录或已加载指令，更新/重建后应重启。仅覆盖四个已有 subsystem 的具体任务，后续根据使用反馈添加有实际用途的 Skill 和必要资源，不预建多会话或 UI 能力。
+- 无产品实现阻塞；Windows 默认执行沙箱的 ACL 初始化限制仍由获准本机执行入口绕过，未改变 Fatcat 的运行要求。下一步 review 目录组织与任务指导，再按实际使用问题小步扩充。
+
+
+## 2026-09-27：阶段 2D-10，单个 Session 的 Skills 与供应商支持（离线已验证，待 review）
+
+### 实际结果
+
+- 按用户要求核对原分支 test/multifile-coding-workflow、HEAD 42f9a04 与未提交的 2D-9 增量后，创建 feat/session-perfection。保留已有多文件验收脚本、测试、文档与本地忽略文件；未暂存、提交、推送或合并。
+- 新增 skills.ts：启动时发现显式工作目录及用户目录中的 .fatcat/skills、.agents/skills，按优先级校验并生成有界元数据目录。引入 yaml 2.9.1 正确处理 YAML 引号、多行、重复键和非法结构，未更换运行时、包管理器或模型 SDK。
+- 模型通过现有 read 按需读取 skill://name/SKILL.md 与引用资源；没有新增专用技能工具。指令完整返回为 kind=skill，保留于成功 Session 历史，不参加旧普通 read 的省略；失败、取消、reset 和子任务独立历史继续由既有 Session / Loop 持有。目录和正文均计入请求预算。
+- CLI 增加无凭据、无网络的 --listSkills，普通任务与 chat 自动发现技能。用户可提及 $name，由模型按目录选择并读取；不是确定性命令解析。目录、链接、字节限制和加载时复查不扩大普通工作区权限，allowed-tools 不构成授权，脚本仍需正常 shell 审批。
+- 新增 providers.ts 与共享 createModel：通过 HARNESS_PROVIDER 选择 DeepSeek、Kimi、MiMo、Qwen，隔离各家凭据、默认模型、区域固定地址及非思考请求参数。父子 Agent 使用相同配置，保留完整请求计量、上下文投影、取消/超时、无自动重试、安全错误及用量校验。兼容入口 createDeepSeekModel 拒绝被静默转向其他厂商。
+- 新增 PROVIDERS / SKILLS 架构文档，记录官方协议依据、provider 开发规范、实际模块边界和未实现能力；同步项目范围、路线图、使用指南、架构索引、README 与 AGENTS。五个已有 live 脚本通过共享 loadLiveConfig 限定 DeepSeek，避免供应商切换后误将旧验收脚本转发给新增厂商。
+
+### 验证结果
+
+- Windows 原生 Node v24.19.0、pnpm 11.21.0；pnpm install --frozen-lockfile、pnpm run typecheck、pnpm test（含构建）及 pnpm start --help 通过。最终 221 项测试全部通过，0 失败、0 跳过，较前一增量新增 53 项。模型检查全部使用虚构凭据与注入传输，本轮没有在线模型 API 请求。
+- Skills 覆盖发现优先级、无效 YAML、元数据/正文/目录数量上限、UTF-8、完整加载、资源分页/搜索、未知 URI、越界、隐藏路径、硬链接、Windows junction 与发现后目录替换；集成覆盖普通 CLI、无工作目录、父子权限、成功/失败/reset/新 Session 隔离、旧读取投影保留和超预算零传输。
+- 四家 provider 合约检查捕获实际 SDK URL、认证头及请求 JSON，核对厂商扩展字段、工具调用关联、直接回答、用量、精确字节上限、截断/非法响应、HTTP/连接错误脱敏、超时/取消和禁止重试。配置检查验证不回退其他厂商凭据、区域隔离与本地 CLI 行为；三个新增厂商没有进行 API 在线验收。
+- 既有多文件双回合编码验收、权限确认、Windows 命令执行、上下文和执行报告均通过离线回归。此前 2D-9 的 10 次真实 DeepSeek 请求是上一增量事实，本轮没有重新运行任何 verify:* 在线脚本，也不以其结果证明 Skills 或新增厂商在线可用。
+- 开发检查发现并修复了 Skill URI 尾部/重复斜杠可绕过完整指令读取，以及 YAML silent 选项抑制多文档错误的问题，均补入负例。独立只读审阅复查了权限、历史隔离、路径和预算边界，没有发现剩余阻塞问题。
+- 最终静态检查通过：40 个改动/新增文本的 UTF-8 与 LF、docs 外英文约定（保留 README 已有语言切换标签）、83 个本地文档链接及 git diff --check；暂存区为空。没有输出或修改真实凭据，.env 与本地 examples 保持忽略。
+
+### 限制与下一步
+
+- 新增厂商仅完成离线协议验收，账号权限、真实连通性和模型任务表现未验证，遵循本轮不调用其 API 的要求。当前仅非流式、非思考路径；自定义模型名必须满足工具调用和关闭思考的协议要求，Session 内不切换供应商。
+- Skills 没有自动下载安装、热刷新、独立激活缓存或确定性 $name 注入；真实模型是否正确选择并遵循技能尚未在线验证。引用资源沿用现有 read 的文本扩展名和大小限制；路径检查不是抵御恶意并发本机进程的 OS 沙箱。保留的技能指令可能占满请求预算，不能绕过超限错误。
+- 无产品实现阻塞。默认 Windows 沙箱 deny-read ACL 初始化问题仍存在，获准本机执行入口完成检查。下一步 review 本增量，并以单 Session 的具体使用反馈决定后续改进；阶段 2D 整体仍进行中，不预建多会话、持久化或 UI 框架。
+
+
+## 2026-09-27：阶段 2D-9，多文件修复与双回合跟进验收（已验证，待 review）
+
+### 实际结果
+
+- 核对 main 为 42f9a04（合入 PR #10）、工作区干净后创建 test/multifile-coding-workflow。同步当前文档中的 2D-8 合入事实，保留历史验收记录。没有修改生产源码、运行时、SDK、权限接口或依赖锁文件，未暂存、提交、推送或合并。
+- 新增 scripts/verify-workflow.ts 和脚本专用 fixtures/coding-workflow.ts，通过 pnpm run verify:workflow 复用 createAgent、Session 和逐回合报告。第一回合搜索、读取并修复 subtotal 数量计算与 receipt 税额取整两个模块；第二回合由脚本添加折扣检查和用户注释，要求重读当前文件、保留注释、只修改 receipt 并重新验证。
+- 每回合只批准指定源文件的精确编辑与固定 node --test check.test.mjs 命令；测试、catalog 无关文件及第二回合的 subtotal 受保护。分别核对预期文件变化、读取/搜索证据、失败命令、最后写入后的成功命令、当回合 journal 新增记录及报告元数据；每次请求核对预算观察与有效服务用量，最后独立复跑测试。不以模型回答中的完成标记作为验收条件。
+- 两回合各最多 8 次父请求与 2 × 3 次子请求，总上限 28 次；没有自动重试，也不要求模型委派。运行目录由脚本创建在系统临时目录，清理前检查绝对路径和固定前缀，不使用本地 examples。
+
+### 验证结果
+
+- 开发前 Windows 原生基线通过：Node v24.19.0、pnpm 11.21.0，161 项离线测试全部通过。新增离线测试使用注入 Model 和虚构用量观察、真实临时文件及 PowerShell；涵盖两回合成功、无操作却宣称完成、受保护文件篡改、只改一个模块、历史成功后行为回退、缺少新读取/搜索、命令报告缺失或结果失真、旧回合报告复用及用户注释丢失。最终 pnpm run typecheck、pnpm test（含构建）通过，168 项测试全部通过、无跳过；自动化过程没有发出模型服务请求。
+- 真实 verify:workflow 执行一次通过：父请求 5 + 5，零子请求，共 10 次。第一回合 4 次 read（其中一次 query）、2 次 committed 写入、2 次 shell，8 个工具 ok；第二回合 3 次 read、1 次 committed 写入、2 次 shell，6 个工具 ok。两回合都先观察 exitCode=1，再在修改后观察 exitCode=0；最后命令未截断、laterWriteAttempt=false，独立复验通过。
+- 第二回合报告只包含新写入及两条新命令，未重计第一回合的事实；固定测试、无关 catalog、用户新增注释保持，两个回合临时样例均通过独立检查，目录已清理。最大请求分别为 22832 / 34735 字节，均在默认 262144 字节预算内，未触发旧读取整理。服务用量分别为 prompt/completion/total = 22968/855/23823 和 41366/904/42270，仅为本次样例统计。
+- 独立代码审阅发现验收门原先只比较命令 ID，可能漏掉先前失败命令的报告元数据错误；已加强为逐条比较状态、退出码等元数据及 succeeded 推导，并补充离线反例。另补强第二回合 subtotal 字节保持断言。此审阅没有发现需要改变生产实现的问题；审阅后新增断言由最终离线检查验证，没有重复消耗真实模型请求。
+- 最终静态检查通过：git diff --check、13 个改动文本的 UTF-8/LF 和 docs 外英文约定、67 个本地文档链接。收尾检查发现并修正了混合换行及一次 PowerShell 文档替换错误，回读 PROJECT 差异后确认只保留两处预期段落更新。pnpm-lock.yaml、生产源码和原有脚本未变；.env / examples 保持忽略，暂存区为空。
+
+### 限制与下一步
+
+- 本轮是受控合成任务的验收增量，不代表大仓库、复杂重构或通用成功率。新读取要求来自脚本观察，正常 CLI 没有新增强制读改顺序或任务自动验收；报告仍为 taskVerification=not_assessed。失败先于首次编辑是提示要求，断言要求本回合存在失败检查、最后检查成功且其后无 write 尝试。
+- 没有重跑 verify:live、verify:coding、verify:delegation、verify:context；已有行为由离线回归覆盖。本双回合未触发 Context 省略，不能替代原三回合真实验收；真实失败/取消的中途恢复仍没有新增模型样例。
+- 无产品实现阻塞。默认 Windows 执行沙箱仍因 deny-read ACL 初始化失败，获准的本机执行入口完成开发和验证。下一步 review 本轮样例与断言，再选择范围有限的真实仓库修改任务评估定位、测试新增及交付覆盖；根据具体失败决定工具或上下文改进，阶段 2D 保持进行中。
 
 
 ## 2026-09-25：阶段 2D-8，旧读取结果的请求投影（已验证，待 review）

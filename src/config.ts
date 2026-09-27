@@ -1,6 +1,10 @@
 import { HarnessError } from "./errors.js";
+import { getProviderProfile, parseProvider, providerEndpoint } from "./providers.js";
+import type { Provider, ProviderRegion } from "./providers.js";
 
 export type Config = {
+  provider: Provider;
+  region: ProviderRegion;
   apiKey: string;
   model: string;
   maxIterations: number;
@@ -19,15 +23,21 @@ function positiveInteger(value: string, name: string, maximum: number): number {
 
 /** Configuration contains credentials. Never log this object. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const apiKey = env.DEEPSEEK_API_KEY?.trim();
+  const provider = parseProvider((env.HARNESS_PROVIDER ?? "deepseek").trim());
+  const profile = getProviderProfile(provider);
+  const region = (profile.regionEnv ? env[profile.regionEnv] ?? profile.defaultRegion : profile.defaultRegion).trim();
+  providerEndpoint(provider, region);
+  const apiKey = env[profile.apiKeyEnv]?.trim();
   if (!apiKey) {
-    throw new HarnessError("CONFIG", "DEEPSEEK_API_KEY is required. Set it in .env or the environment.");
+    throw new HarnessError("CONFIG", `${profile.apiKeyEnv} is required. Set it in .env or the environment.`);
   }
-  const model = (env.DEEPSEEK_MODEL ?? "deepseek-flash").trim();
+  const model = (env[profile.modelEnv] ?? profile.defaultModel).trim();
   if (!model) {
-    throw new HarnessError("CONFIG", "DEEPSEEK_MODEL must not be empty.");
+    throw new HarnessError("CONFIG", `${profile.modelEnv} must not be empty.`);
   }
   return {
+    provider,
+    region: region as ProviderRegion,
     apiKey,
     model,
     maxIterations: positiveInteger(env.HARNESS_MAX_ITERATIONS ?? "8", "HARNESS_MAX_ITERATIONS", Number.MAX_SAFE_INTEGER),

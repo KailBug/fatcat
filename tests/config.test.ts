@@ -16,7 +16,7 @@ test("accepts explicit settings and trims surrounding whitespace", () => {
     DEEPSEEK_API_KEY: ` ${fakeKey} `,
     DEEPSEEK_MODEL: " custom-model ",
     HARNESS_MAX_ITERATIONS: " 3 ",
-  }), { apiKey: fakeKey, model: "custom-model", maxIterations: 3, requestTimeoutMs: 60000, maxRequestBytes: 262144 });
+  }), { provider: "deepseek", region: "global", apiKey: fakeKey, model: "custom-model", maxIterations: 3, requestTimeoutMs: 60000, maxRequestBytes: 262144 });
 });
 
 test("rejects missing or blank credentials", () => {
@@ -76,4 +76,48 @@ test("request byte budgets are positive bounded integers without leaking invalid
   }
   for (const value of [1, 16777216]) assert.equal(loadConfig({ DEEPSEEK_API_KEY: fakeKey,
     HARNESS_MAX_REQUEST_BYTES: String(value) }).maxRequestBytes, value);
+});
+
+const providerCases = [
+  { provider: "deepseek", key: "DEEPSEEK_API_KEY", modelEnv: "DEEPSEEK_MODEL", model: "deepseek-flash", region: "global" },
+  { provider: "kimi", key: "MOONSHOT_API_KEY", modelEnv: "KIMI_MODEL", model: "kimi-k2.6", region: "cn" },
+  { provider: "mimo", key: "MIMO_API_KEY", modelEnv: "MIMO_MODEL", model: "mimo-v2.6-flash", region: "global" },
+  { provider: "qwen", key: "DASHSCOPE_API_KEY", modelEnv: "QWEN_MODEL", model: "qwen-plus", region: "cn" },
+];
+
+test("each provider selects only its own credentials, model, and defaults", () => {
+  for (const item of providerCases) {
+    const env = Object.fromEntries(providerCases.map((entry) => [entry.key, `fake-${entry.provider}`]));
+    const config = loadConfig({ ...env, HARNESS_PROVIDER: ` ${item.provider} ` });
+    assert.equal(config.provider, item.provider);
+    assert.equal(config.apiKey, `fake-${item.provider}`);
+    assert.equal(config.model, item.model);
+    assert.equal(config.region, item.region);
+    assert.equal(loadConfig({ ...env, HARNESS_PROVIDER: item.provider, [item.modelEnv]: " custom-model " }).model, "custom-model");
+    assert.throws(() => loadConfig({ ...env, HARNESS_PROVIDER: item.provider, [item.modelEnv]: " " }), new RegExp(item.modelEnv));
+    for (const absent of [undefined, "", " "]) {
+      assert.throws(() => loadConfig({ ...env, HARNESS_PROVIDER: item.provider, [item.key]: absent,
+        OPENAI_API_KEY: fakeKey }), new RegExp(item.key));
+    }
+  }
+});
+
+test("provider and endpoint regions are explicit and invalid values do not leak", () => {
+  for (const provider of ["", " ", "openai", "__proto__", fakeKey]) {
+    assert.throws(() => loadConfig({ HARNESS_PROVIDER: provider }),
+      (error: unknown) => error instanceof Error && /HARNESS_PROVIDER/.test(error.message) && !error.message.includes(fakeKey));
+  }
+  for (const item of [{ provider: "kimi", key: "MOONSHOT_API_KEY", regionEnv: "KIMI_REGION", regions: ["cn", "global"] },
+    { provider: "qwen", key: "DASHSCOPE_API_KEY", regionEnv: "QWEN_REGION", regions: ["cn", "intl"] }]) {
+    for (const region of item.regions) {
+      assert.equal(loadConfig({ HARNESS_PROVIDER: item.provider, [item.key]: fakeKey,
+        [item.regionEnv]: ` ${region} ` }).region, region);
+    }
+    for (const region of ["", " ", "us", "__proto__", fakeKey, "https://untrusted.invalid"]) {
+      assert.throws(() => loadConfig({ HARNESS_PROVIDER: item.provider, [item.key]: fakeKey, [item.regionEnv]: region }),
+        (error: unknown) => error instanceof Error && error.message.includes(item.regionEnv) && !error.message.includes(fakeKey));
+    }
+  }
+  // Unselected provider configuration cannot change a DeepSeek-only setup.
+  assert.equal(loadConfig({ DEEPSEEK_API_KEY: fakeKey, KIMI_REGION: "invalid", QWEN_REGION: "invalid" }).provider, "deepseek");
 });

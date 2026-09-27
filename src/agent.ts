@@ -1,9 +1,11 @@
 import type { Config } from "./config.js";
-import { createDeepSeekModel } from "./model.js";
+import { createModel } from "./model.js";
 import type { Model } from "./model.js";
 import { createSubagentTools } from "./subagent.js";
 import { defaultTools } from "./tools.js";
 import type { Tools } from "./tools.js";
+import { skillCatalogPrompt, withSkills } from "./skills.js";
+import type { SkillCatalog } from "./skills.js";
 
 const delegationPolicy = "For straightforward questions, arithmetic, or one direct file operation, work directly. "
   + "When the task asks for independent reviews or investigations of separate components, prefer delegate_task for focused independent parts, then synthesize their findings. "
@@ -12,17 +14,25 @@ const delegationPolicy = "For straightforward questions, arithmetic, or one dire
   + "Do not delegate merely to repeat work already completed, and do not present child claims as verified facts without supporting tool evidence.";
 
 /** Assemble the CLI agent and its bounded child using the same authorized tools. */
-export function createAgent(config: Config, baseTools: Tools = defaultTools, transport?: typeof fetch) {
-  const childModel = createDeepSeekModel(config, transport, baseTools);
-  const tools = createSubagentTools(baseTools, childModel, config.maxIterations);
-  const parentModel = createDeepSeekModel(config, transport, tools);
-  const model: Model = (messages, signal, observe) => {
-    // Add parent-only guidance on a request copy; leave saved history and child prompts untouched.
+export function createAgent(config: Config, baseTools: Tools = defaultTools, transport?: typeof fetch,
+  skills?: SkillCatalog) {
+  const sharedTools = skills ? withSkills(baseTools, skills) : baseTools;
+  const skillGuidance = skills ? skillCatalogPrompt(skills) : "";
+  const childModel = withGuidance(createModel(config, transport, sharedTools), skillGuidance);
+  const tools = createSubagentTools(sharedTools, childModel, config.maxIterations);
+  const model = withGuidance(createModel(config, transport, tools),
+    [delegationPolicy, skillGuidance].filter(Boolean).join("\n\n"));
+  return { tools, model, maxIterations: config.maxIterations };
+}
+
+function withGuidance(model: Model, guidance: string): Model {
+  if (!guidance) return model;
+  return (messages, signal, observe) => {
+    // Request-only guidance leaves Session history and independent child history untouched.
     const first = messages[0];
     const system = first?.role === "system" && typeof first.content === "string";
-    return parentModel(system
-      ? [{ ...first, content: `${first.content}\n\n${delegationPolicy}` }, ...messages.slice(1)]
-      : [{ role: "system", content: delegationPolicy }, ...messages], signal, observe);
+    return model(system
+      ? [{ ...first, content: `${first.content}\n\n${guidance}` }, ...messages.slice(1)]
+      : [{ role: "system", content: guidance }, ...messages], signal, observe);
   };
-  return { tools, model, maxIterations: config.maxIterations };
 }

@@ -7,6 +7,19 @@ globalThis.fetch = async (input, init) => {
   assert.equal(request.url, "https://api.deepseek.com/chat/completions");
   const { messages, tools } = await request.json() as { messages: Message[]; tools: { function: { name: string } }[] };
   const prompt = messages.findLast((message) => message.role === "user")?.content;
+  if (prompt === "skill load" || prompt === "skill recall") {
+    assert.ok(String(messages[0]?.content).includes("skill://review-fixture/SKILL.md"));
+    assert.ok(!String(messages[0]?.content).includes("PRIVATE_SKILL_BODY"));
+    if (prompt === "skill load" && messages.at(-1)?.role === "user") return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
+      role: "assistant", content: null, tool_calls: [{ id: "skill-read", type: "function", function: {
+        name: "read", arguments: JSON.stringify({ path: "skill://review-fixture/SKILL.md" }),
+      } }],
+    } }] });
+    const loaded = messages.some((message) => message.role === "tool" && String(message.content).includes("PRIVATE_SKILL_BODY"));
+    if (prompt === "skill load") assert.ok(loaded);
+    return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant",
+      content: prompt === "skill load" ? "SKILL_LOADED" : loaded ? "SKILL_PRESENT" : "SKILL_ABSENT" } }] });
+  }
   if (prompt === "context load") {
     if (messages.at(-1)?.role === "user") return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
       role: "assistant", content: null, tool_calls: [{ id: "context-load", type: "function", function: {
@@ -64,7 +77,7 @@ globalThis.fetch = async (input, init) => {
     assert.ok(tools.some((tool) => tool.function.name === "delegate_task"));
     const last = messages.at(-1);
     if (last?.role === "user") {
-      const task = prompt === "delegate write" ? "write fixture" : tools.some((tool) => tool.function.name === "read") ? "workspace" : "add";
+      const task = prompt === "delegate write" ? "write fixture" : tools.some((tool) => tool.function.name === "write") ? "workspace" : "add";
       return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
         role: "assistant", content: null, tool_calls: [{ id: "delegated", type: "function",
           function: { name: "delegate_task", arguments: JSON.stringify({ task }) } }],

@@ -10,10 +10,37 @@
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
 - 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
 - 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已通过 review 并随 PR #8 合入；2D-7 请求容量与用量记录已通过 review 并随 PR #9 合入；2D-8 旧读取结果的请求投影已完成离线与真实多回合验证，随 PR #10 合入；2D-9 多文件双回合验收已完成离线与真实验证，待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
-- 阶段 2D-10：单个 Session 的本地 Skills 与 Kimi / MiMo / Qwen 接入已完成离线验收，待 review；新增厂商按用户要求没有 API 在线验证。
+- 阶段 2D-10：单个 Session 的本地 Skills、四个按 subsystem 组织的内置 Skill 与 Kimi / MiMo / Qwen 接入已完成离线验收，待 review；新增厂商按用户要求没有 API 在线验证。
 - 已有 CLI 任务输入、单 Session 供应商选择、本地 Skills、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；新增 yaml 2.9.1 解析 Skill frontmatter。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+
+## 2026-09-27：阶段 2D-10 补充，按 subsystem 分组的内置 Skills（离线已验证，待 review）
+
+### 实际结果
+
+- 按用户要求继续使用 feat/session-perfection，开始时 HEAD 为 855aeaa；保留已暂存的 src/providers.ts、src/skills.ts 及 agent / cli / config / model 的未暂存变更。本轮在这些已有实现上增量开发，没有改动索引、提交、推送或合并。
+- 新建 src/skill/<subsystem>/<skill-name>/SKILL.md，首批四项为 tools/workspace-editing、subagent/focused-delegation、context/context-recovery、execution-report/verification-handoff。内容面向运行中的 Fatcat 完成用户任务，提供精确读改验证、有界委派、当前证据恢复与准确交付指导；不要求目标项目使用 Fatcat 自身开发规范，不为未来 subsystem 创建空目录。
+- 运行时仍由 src/skills.ts 发现与加载。内置项默认进入同一元数据目录，scope=builtin 并带 subsystem；按模块位置定位，与 CLI 当前目录无关。显式工作目录与用户安装的同名技能优先，内置项为最后来源；URI 仍为 skill://name/...。内置 subsystem / skill 两层有界扫描，沿用所有来源合计 64 项上限和原路径检查。
+- 构建新增 scripts/copy-skills.ts：先校验源目录，再将资源同步到 dist/src/skill。固定输出路径及链接检查通过后只替换这个生成目录，移除不再存在的旧资产；不修改用户技能根或工作区内容。没有增加依赖、安装步骤、CLI 能力开关或执行工具。
+- 已加载的指令、父子独立历史、取消、权限与请求预算保持既有边界。无 workspace 的 CLI 现在也可用 read 读取内置技能 URI，普通文件访问、write 和 shell 不因此开放。相关使用、架构、项目范围、路线图及仓库约定已同步。
+
+### 验证结果
+
+- pnpm run typecheck、pnpm test（含构建）通过，233 项测试全部通过、0 失败、0 跳过，较上一增量新增 12 项。新测试核对真实源码与分发资产逐字一致、无凭据/异 cwd 的默认发现、同名覆盖、两层目录上限、非法元数据与路径/junction 拒绝，以及实际 SDK 注入传输下的内置 Skill 加载、Session 复用/reset 和子任务独立加载。
+- 原本地 Skill 测试显式隔离内置源，保留已有目录边界的断言。CLI 模拟传输不再以存在 read 推断已授权工作区，改为查看工作区 write 定义；实际权限仍在工具执行处校验。所有既有 provider、Windows 工具、编码工作流、Context 与执行报告回归通过。
+- 四份 SKILL.md 均通过 skill-creator 的 quick_validate 检查，并按实际 Tools / Subagent / Context / Execution Report 行为审阅。正文没有把 Skill 当成权限来源，没有承诺后台/递归委派、持久恢复或模型自动读取执行报告。
+- 首次构建遇到 Node cp 的 errorOnExist 与预建目标目录冲突，已删除冗余 mkdir，后续构建和全量测试通过。另在已确认的 dist/src/skill 内加入临时过期资产，重建后确认被清除；最终无凭据 CLI --listSkills 正常列出四项内置技能。
+- 独立复核没有发现剩余实质问题；另在隔离临时项目中验证过期产物清理、无效源 Skill 使构建非零退出且既有产物哈希保持。该复核未修改工作区构建产物或源码。
+- 最终差异与文本检查通过：当前 26 个变动/新增文本符合 UTF-8 与英文约定（保留 README 既有语言标签），变动文档的 63 个本地链接有效，git diff --check 通过。pnpm-lock.yaml 未改动，用户原有两项暂存记录保持，本轮没有暂存操作。
+- 本轮没有调用任何在线模型 API。注入传输验证的是发现、读取和状态边界，不证明真实模型的选择质量或任务效果已提高。
+
+### 限制与下一步
+
+- 内置 Skill 是按需读取的任务指导，不是运行时约束、自动调度器或新增工具；模型仍可能选错或未遵循。与本地 Skill 共享名称空间和容量上限，覆盖来源由目录元数据明确区分，已有权限不能由指令扩大。
+- 构建分发必须携带 dist/src/skill；正在运行的 Session 不热刷新目录或已加载指令，更新/重建后应重启。仅覆盖四个已有 subsystem 的具体任务，后续根据使用反馈添加有实际用途的 Skill 和必要资源，不预建多会话或 UI 能力。
+- 无产品实现阻塞；Windows 默认执行沙箱的 ACL 初始化限制仍由获准本机执行入口绕过，未改变 Fatcat 的运行要求。下一步 review 目录组织与任务指导，再按实际使用问题小步扩充。
 
 
 ## 2026-09-27：阶段 2D-10，单个 Session 的 Skills 与供应商支持（离线已验证，待 review）

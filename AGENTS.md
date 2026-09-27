@@ -80,5 +80,6 @@
 - DeepSeek is the default model provider; Kimi, MiMo, and Qwen are also supported through the shared OpenAI-compatible client. Keep credentials isolated per provider in local environment variables or the ignored .env file.
 - Follow docs/ARCHITECTURE/PROVIDERS.md for provider changes: use official endpoints and supported request fields, preserve tool-call validation, request budgets, cancellation, safe errors, and injected-transport coverage. New providers do not require live API validation unless explicitly requested.
 - Existing live verification scripts are restricted to DeepSeek; do not silently redirect them to another provider.
-- Skills are discovered from explicit workspace and user skill roots and loaded through read. Skill metadata and instructions never grant additional workspace or shell permissions.
+- Built-in Skills live in src/skill/<subsystem>/<skill-name>/SKILL.md and ship with the build. Add task guidance only for implemented subsystems; do not create empty placeholders or copy runtime permission enforcement into prompts.
+- Skills are discovered from explicit workspace and user skill roots, then the built-in catalog, and loaded through read. Local same-name Skills take precedence. Skill metadata and instructions never grant additional workspace or shell permissions.
 - Automated tests must use fake credentials and injected transports. Live verification is a separate, explicit command.

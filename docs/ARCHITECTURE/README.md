@@ -35,18 +35,20 @@
 | [SUBAGENT.md](SUBAGENT.md) | 默认可用的有界委派、历史隔离及取消 | 2C 已通过 review；2D-4 默认迁移已通过 review 并合入 |
 | [EXECUTION_REPORT.md](EXECUTION_REPORT.md) | 按用户回合汇总真实事件、共享记录去重与命令后写入提示 | 2D-5 / 2D-7 / 2D-8 已合入；2D-9 扩充双回合验收 |
 | [CONTEXT.md](CONTEXT.md) | 请求预算下的旧读取省略、历史所有权及按需重读 | 2D-8 已验证并合入 |
-| [SKILLS.md](SKILLS.md) | 本地技能目录、通用 read 按需加载、Session 历史和权限边界 | 2D-10 增量；验证事实见 PROGRESS |
+| [SKILLS.md](SKILLS.md) | 本地及按 subsystem 组织的内置技能、构建资源、通用 read、Session 和权限边界 | 2D-10 含内置补充；验证事实见 PROGRESS |
 | [PROVIDERS.md](PROVIDERS.md) | DeepSeek / Kimi / MiMo / Qwen 配置及 provider 开发规范 | 2D-10 新厂商按离线 SDK 合约验收，无新增厂商 API 在线验证 |
 
 ## 当前实现
 
 当前工程已实现 CLI、配置校验、DeepSeek 模型客户端、内存消息循环、纯计算工具及统一错误处理；阶段 2A 已有独立内存 Session 和终端连续对话；阶段 2B 已有统一异步工具集合与显式开启的工作目录读取；阶段 2C 增加显式开启的最小子任务委派；阶段 2D-1 合并为通用 read，并分离 workspace 路径边界与 read 的读取和分页实现；2D-2 增加受控 write，共享有界文本读取模块，并将写入记录与成功对话历史分开。review 修正新增 terminal.ts 统一聊天与确认输入，CLI 注入批准回调，工具负责校验与落实权限。2D-3 新增 shell.ts 与 process.ts，分别持有命令规则/事实与 Windows 进程生命周期，terminal.ts 复用单次确认。2D-4 新增 agent.ts 集中装配父子模型与工具，普通 CLI 默认可委派；仅父请求带任务选择指导，不改变保存的历史。共享基础提示词现集中在 system-prompt.ts，父子 Loop 都使用简洁、行动导向及基于验证结果的编码协作规则。2D-5 新增 execution-report.ts，在交互边界观察事件，汇总当前回合报告；不改变 Loop / Session 返回值，不写入模型历史。2D-6 新增 tools/search.ts，负责 read query 的有界遍历与匹配；read.ts 持有统一 Schema、参数校验与分发，Workspace 和 text-file 继续负责访问与解码边界。2D-7 在 model.ts 发送前检查完整请求字节，model-usage.ts 校验服务用量；Model 的可选观察回调经 Loop 转为元数据事件，execution-report.ts 汇总父子请求和用量。2D-8 新增 context.ts，在完整请求超预算时整理较早成功 read 的请求副本，保留当前/最近回合和完整 Session 历史；具体边界见 [CONTEXT.md](CONTEXT.md)。真实运行可从 CLI 输入任务，经历模型调用与工具结果回传，再输出最终结果。Loop 接口、错误行为与数据流见 [AGENT_LOOP.md](AGENT_LOOP.md)，跨用户回合的历史所有权与连续输入见 [SESSION.md](SESSION.md)，内置工具与文件边界见 [TOOLS.md](TOOLS.md)，委派与请求上限见 [SUBAGENT.md](SUBAGENT.md)。
 
-`tsconfig.json` 使用严格模式与 NodeNext 模块规则，将 `src/`、`tests/`、`scripts/` 编译到 `dist/` 下对应目录。CLI 入口为 `dist/src/cli.js`；测试使用 Node 内置运行器。生产依赖为 `openai@7.18.0`（共享 Chat Completions 兼容客户端）与 `yaml@2.9.1`（Skill frontmatter 解析）。`pnpm run verify:live` 提供显式 DeepSeek 验证；自动化测试保持离线。
+`tsconfig.json` 使用严格模式与 NodeNext 模块规则，将 `src/`、`tests/`、`scripts/` 编译到 `dist/` 下对应目录。`pnpm run build` 在编译后运行 `scripts/copy-skills.ts` 的构建产物，验证 `src/skill` 并刷新复制到 `dist/src/skill`；运行时从模块相对路径加载这些内置资源，不依赖 cwd。CLI 入口为 `dist/src/cli.js`；测试使用 Node 内置运行器。生产依赖为 `openai@7.18.0`（共享 Chat Completions 兼容客户端）与 `yaml@2.9.1`（Skill frontmatter 解析）。`pnpm run verify:live` 提供显式 DeepSeek 验证；自动化测试保持离线。
 
 2D-9 在脚本与测试层扩充多文件双回合验收，不改变上述生产职责或接口。`scripts/verify-workflow.ts` 通过 `pnpm run verify:workflow` 复用同一 Session、createAgent 与 createTurnReporter；`scripts/fixtures/coding-workflow.ts` 管理临时计价样例、逐回合事实断言及独立复验，供离线测试共用。它检查修复、后续需求、受保护文件、实际命令及每回合新增记录；实际运行结果以 PROGRESS 为准，不将验证脚本视作生产 Task 系统。
 
 2D-10 继续完善单个 Session。`skills.ts` 发现并校验本地元数据，包装通用 read 以加载 Skill 与引用资源；目录仅加入模型请求，加载结果仍由成功历史持有，`kind: skill` 不参与旧读取省略。`providers.ts` 将所选供应商的地址、模型、凭据名称和请求参数限制在小型 profile 中；`model.ts` 通过 createModel 复用同一预算、取消、解析与错误边界。新增三家只有离线合约验收，本轮不发起其 API 在线验证；没有多会话管理、模型自动路由、流式或思考历史。
+
+同阶段的内置 Skill 补充采用 `src/skill/<subsystem>/<skill-name>/SKILL.md`，当前涵盖 tools/workspace-editing、subagent/focused-delegation、context/context-recovery、execution-report/verification-handoff。它们指导 Fatcat 完成用户编码任务，不是 Fatcat 源码开发规范。`src/skills.ts` 继续持有运行时逻辑，内置目录以最低优先级加入已有发现流程；名称保持统一 URI，subsystem 只作组织与元数据。父子读取、成功历史、请求预算和执行权限不变，正文仍按需加载；只在实际 subsystem 任务需要时增加内容，不建空目录或确定性工作流引擎。内置补充的离线与真实验证状态以 PROGRESS 为准。
 
 ## 已确定的约束与决策
 

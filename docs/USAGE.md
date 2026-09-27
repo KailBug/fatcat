@@ -31,7 +31,7 @@ pnpm install --frozen-lockfile
 pnpm start --help
 ```
 
-If PowerShell blocks `pnpm.ps1`, use `pnpm.cmd` instead. The start and test scripts compile before execution.
+If PowerShell blocks `pnpm.ps1`, use `pnpm.cmd` instead. The start and test scripts build before execution. Building compiles TypeScript, validates the built-in Skill assets, and refreshes their copy under `dist/src/skill`.
 
 ## Configuration
 
@@ -149,7 +149,18 @@ The execution report aggregates parent and child observations separately. It nev
 
 ## Use local Skills
 
-Fatcat discovers Skills automatically at startup. A Skill is a directory containing a UTF-8 `SKILL.md` with YAML metadata and task instructions. Only name, description and a read URI are initially shown to the model; the full document is loaded when needed through the existing `read` tool.
+Fatcat discovers local and built-in Skills automatically at startup. A Skill is a directory containing a UTF-8 `SKILL.md` with YAML metadata and task instructions. Only metadata, including name, description, source scope and a read URI, is initially shown to the model; the full document is loaded when needed through the existing `read` tool.
+
+Four built-in Skills are available without installing anything:
+
+| Skill | Subsystem | Use |
+| --- | --- | --- |
+| workspace-editing | tools | Inspect current code, make focused edits, and check the result within existing permissions. |
+| focused-delegation | subagent | Give bounded independent investigations or reviews to children with self-contained context. |
+| context-recovery | context | Reread current evidence after omitted reads, external changes, failure, or reset. |
+| verification-handoff | execution-report | Assess actual check results and hand back the work with accurate limitations. |
+
+These are instructions for Fatcat to work on your coding tasks. They follow the target project's conventions and do not impose Fatcat's own source layout or package manager. The model chooses whether to read them; bundling them does not automatically load their full text or grant permissions.
 
 The search order is:
 
@@ -157,8 +168,9 @@ The search order is:
 2. `<workspace>/.agents/skills/<name>/SKILL.md`.
 3. `<user-home>/.fatcat/skills/<name>/SKILL.md`.
 4. `<user-home>/.agents/skills/<name>/SKILL.md`.
+5. Built-in assets beside the running module, at `dist/src/skill/<subsystem>/<name>/SKILL.md` in this repository's build.
 
-The first valid occurrence of a name wins. Fatcat scans immediate child directories only; it does not search ancestors, download Skills, or install them. Without `--workspace`, only user Skills are discovered. Keep Skills in those explicit locations; ordinary workspace read still rejects hidden paths.
+The first valid occurrence of a name wins, so workspace or user Skills can override a built-in with the same name. Local roots contain one level of Skill directories; built-ins add a subsystem grouping level. Fatcat does not search ancestor repositories, download Skills, or install them. Without `--workspace`, it still discovers user and built-in Skills. Built-in paths are relative to the running module rather than the launch directory, so starting the compiled CLI from another directory retains them. Ordinary workspace read still rejects hidden paths.
 
 To list discovered metadata and diagnostics locally, without a provider key or network request:
 
@@ -166,6 +178,14 @@ To list discovered metadata and diagnostics locally, without a provider key or n
 pnpm start --listSkills
 pnpm start --listSkills --workspace examples/workspace
 ```
+
+Built-in entries have `scope: "builtin"` and a `subsystem` field. All sources share the same URI format, for example `skill://workspace-editing/SKILL.md`; the subsystem is not part of the URI. You can use a built-in immediately:
+
+```powershell
+pnpm start --workspace examples/workspace --prompt 'Use $workspace-editing to inspect the project and make the requested change.'
+```
+
+Replace the generic task text with the change you want. Asking by purpose also lets the model select a relevant Skill without a name mention.
 
 For example, create `.fatcat/skills/code-review/SKILL.md` under your chosen workspace:
 
@@ -179,7 +199,7 @@ file locations. Use references/checklist.md if it is present. Describe checks
 actually performed and separate assumptions from observed facts.
 ```
 
-The name must match its directory and contain 1–64 lowercase ASCII letters, digits or hyphens, with no leading, trailing or consecutive hyphens. Description must be nonblank and at most 1024 characters. SKILL.md is limited to 32 KiB; invalid YAML, duplicate keys, aliases and custom tags are rejected. Optional fields such as `allowed-tools` do not grant permissions. Discovery accepts at most 64 Skills; a root with over 128 raw entries is skipped with a diagnostic.
+The name must match its directory and contain 1–64 lowercase ASCII letters, digits or hyphens, with no leading, trailing or consecutive hyphens. Description must be nonblank and at most 1024 characters. SKILL.md is limited to 32 KiB; invalid YAML, duplicate keys, aliases and custom tags are rejected. Optional fields such as `allowed-tools` do not grant permissions. Discovery accepts at most 64 Skills across all sources; a scanned directory with over 128 raw entries is skipped with a diagnostic. The built-in root and each subsystem directory have that same entry limit.
 
 Ask for the task by purpose, or mention the name:
 
@@ -189,7 +209,9 @@ pnpm start --workspace examples/workspace --prompt 'Use $code-review to review t
 
 Use PowerShell single quotes to preserve the literal `$`. Mentions are model guidance, not a local slash command or deterministic instruction injection. The model reads `skill://code-review/SKILL.md` to receive the entire document; partial reads and queries of that file are rejected. References resolve inside the same Skill, such as `skill://code-review/references/checklist.md`, and retain normal text, paging and search limits. Traversal, links, hidden resource paths and unsupported files are rejected.
 
-Skill metadata and loaded contents can be sent to your selected model provider. Skills guide the task but do not grant write or shell access. Bundled scripts are not automatically executed; any proposed shell command uses the same separate authorization. Successful turns preserve loaded instructions in the Session and protect them from old-read omission. Failure discards new loads, and `/reset` clears the instruction history while retaining the startup catalog and execution records. Restart after adding Skills or changing their metadata; there is no catalog hot reload. See [Skills architecture](ARCHITECTURE/SKILLS.md) for exact boundaries.
+Skill metadata and loaded contents can be sent to your selected model provider. Skills guide the task but do not grant write or shell access. Bundled scripts are not automatically executed; any proposed shell command uses the same separate authorization. Successful turns preserve loaded instructions in the Session and protect them from old-read omission. Failure discards new loads, and `/reset` clears the instruction history while retaining the startup catalog and execution records. Restart after adding Skills or changing their metadata; there is no catalog hot reload.
+
+Built-in source files live under `src/skill/<subsystem>/<name>/SKILL.md`; run `pnpm run build` after changing them. Keep `dist/src/skill` with the compiled application when copying build outputs. A missing built-in installation produces a diagnostic; rebuilding restores the assets. Build refresh affects that generated directory only, not your workspace or user Skills. Normal CLI use needs no capability flag. The four built-in workflows have offline loading and integration coverage; their effect on real model task performance has not been validated online. See [Skills architecture](ARCHITECTURE/SKILLS.md) for exact boundaries.
 
 ## Read a workspace
 
@@ -200,7 +222,7 @@ pnpm start --workspace examples/workspace --prompt "Read project-notes.txt and r
 pnpm start --chat --workspace examples/workspace
 ```
 
-`--workspace` works with a single prompt, `--chat`, or the local `--listSkills` command; it cannot be used alone or with help/configuration checks. Without it, the parent has `sum` and `delegate_task`; children have `sum`, plus `read` for both when user Skills were discovered. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
+`--workspace` works with a single prompt, `--chat`, or the local `--listSkills` command; it cannot be used alone or with help/configuration checks. Without it, the parent has `sum` and `delegate_task`; children have `sum`, and both have `read` for discovered user or built-in Skills. This does not grant access to ordinary workspace paths. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
 
 The workspace exposes general-purpose `read`, `write`, and `shell` tools, with each write requiring approval by default. The `read` tool accepts files or directories. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
 

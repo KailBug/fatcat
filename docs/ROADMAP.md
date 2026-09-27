@@ -156,13 +156,21 @@ CLI 的父 Agent 默认具有 delegate_task，由模型判断任务是否值得�
 
 按用户要求在 `feat/session-perfection` 分支内先实现 Skills，再支持 Kimi、MiMo 和 Qwen。继续完善单个 Session，不扩展交互入口或管理多个会话。实现及验证事实见 PROGRESS.md，2D 整体仍进行中。
 
-- 启动发现显式工作目录和用户目录内的 `.fatcat/skills`、`.agents/skills`；按确定优先级处理同名技能，校验 YAML 元数据并报告无效项。模型最初只看到名称、描述和读取 URI。
+- 启动发现显式工作目录和用户目录内的 `.fatcat/skills`、`.agents/skills`；按确定优先级处理同名技能，校验 YAML 元数据并报告无效项。模型最初只看到名称、描述、读取 URI 和来源等元数据；内置补充见下节。
 - 沿用通用 read，按需完整加载 `skill://name/SKILL.md`，再读取引用资源；不增加专用模型工具。已加载指令属于成功 Session 历史，不受旧 read 投影省略；失败回合和 /reset 沿用既有历史规则。
 - Skills 不改变工作目录授权、write/shell 确认、取消或预算。目录和引用文件保持有界读取，不自动安装、下载或执行脚本；不将 metadata 或 allowed-tools 解释为权限。
 - DeepSeek 保持默认，通过固定供应商配置选择 Kimi、MiMo、Qwen。沿用 `openai@7.18.0` 与 Model 接口，隔离各厂商凭据、地址、区域和请求参数；父子 Agent 使用相同配置。一个 Session 创建后不切换供应商。
 - 新增厂商严格按 [provider 开发规范](ARCHITECTURE/PROVIDERS.md) 实现。离线检查真实 SDK 请求形状、工具历史、响应解析、错误脱敏、取消/超时、预算及 token 用量；不需要且本轮不执行新增厂商的 API 在线验证。
 
 离线验收已通过：发现优先级、无效元数据、路径/链接/大小边界、完整 Skill 加载、引用读取、Session 失败/reset 与上下文保护、父子工具与目录一致；四个供应商的配置和离线 SDK 合约，既有 Windows 编码工作流测试不退化。锁文件安装、类型检查、构建和 221 项离线测试通过，证据见 PROGRESS。在线模型能否选择和执行技能、新增厂商账号权限及真实连通性均不由离线测试证明，不将未运行的 API 检查记作通过。
+
+### 同阶段补充：按 subsystem 组织的内置 Skills（离线已验证）
+
+继续使用 `feat/session-perfection`，在 `src/skill/<subsystem>/<skill-name>/SKILL.md` 提供四个已有能力的任务指导：tools/workspace-editing、subagent/focused-delegation、context/context-recovery、execution-report/verification-handoff。它们面向 Fatcat 执行用户编码任务，不是开发 Fatcat 仓库的规范；只随实际 subsystem 任务扩展，不预建空目录。
+
+构建时校验并复制至 `dist/src/skill`，发现位置相对运行时模块，内置项排在工作目录与用户技能之后；同名优先级、平坦 URI、按需完整读取、Session 历史、父子权限和请求预算继续沿用。`src/skills.ts` 保持运行时职责，不因存放内容增加框架或大规模源码搬迁。内置全文不自动加载，不授予权限，也不确定性地触发工作流。
+
+离线验收覆盖构建资源复制、离开仓库 cwd 的读取、四项元数据与正文、subsystem、同名覆盖、两层发现边界与损坏资源诊断，以及 SDK / Session 与既有工具、provider、工作流回归。类型检查及含构建的 233 项测试通过；四份内置 Skill 的格式校验通过，具体结果和曾出现的构建问题见 PROGRESS。本轮未运行模型 API，不宣称真实模型任务效果已经改善。
 
 ## 后移与按需引入
 

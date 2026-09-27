@@ -10,6 +10,7 @@ import { parseTokenUsage } from "./model-usage.js";
 import type { TokenUsage } from "./model-usage.js";
 import type { Config } from "./config.js";
 import { HarnessError, checkCancellation } from "./errors.js";
+import { getProviderProfile, providerEndpoint } from "./providers.js";
 import { defaultTools } from "./tools.js";
 import type { Tools } from "./tools.js";
 
@@ -29,23 +30,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function invalidResponse(): never {
-  throw new HarnessError("MODEL_RESPONSE", "DeepSeek returned an invalid or unsupported response.");
+function invalidResponse(label: string): never {
+  throw new HarnessError("MODEL_RESPONSE", `${label} returned an invalid or unsupported response.`);
 }
 
-function parseResponse(response: unknown): ModelTurn {
+function parseResponse(response: unknown, label: string): ModelTurn {
   if (!isRecord(response) || !Array.isArray(response.choices) || response.choices.length !== 1) {
-    return invalidResponse();
+    return invalidResponse(label);
   }
   const choice: unknown = response.choices[0];
-  if (!isRecord(choice) || !isRecord(choice.message)) return invalidResponse();
+  if (!isRecord(choice) || !isRecord(choice.message)) return invalidResponse(label);
   if (choice.finish_reason === "length") {
     throw new HarnessError("MODEL_TRUNCATED", "The model output was truncated before completion.");
   }
-  if (choice.finish_reason !== "stop" && choice.finish_reason !== "tool_calls") return invalidResponse();
+  if (choice.finish_reason !== "stop" && choice.finish_reason !== "tool_calls") return invalidResponse(label);
   const raw = choice.message;
-  if (raw.role !== "assistant" || (raw.content != null && typeof raw.content !== "string")) return invalidResponse();
-  if (raw.tool_calls != null && !Array.isArray(raw.tool_calls)) return invalidResponse();
+  if (raw.role !== "assistant" || (raw.content != null && typeof raw.content !== "string")) return invalidResponse(label);
+  if (raw.tool_calls != null && !Array.isArray(raw.tool_calls)) return invalidResponse(label);
 
   const toolCalls: ChatCompletionMessageFunctionToolCall[] = [];
   const ids = new Set<string>();
@@ -53,7 +54,7 @@ function parseResponse(response: unknown): ModelTurn {
     if (!isRecord(call) || call.type !== "function"
       || typeof call.id !== "string" || !call.id.trim() || ids.has(call.id)
       || !isRecord(call.function) || typeof call.function.name !== "string" || !call.function.name.trim()
-      || typeof call.function.arguments !== "string") return invalidResponse();
+      || typeof call.function.arguments !== "string") return invalidResponse(label);
     ids.add(call.id);
     toolCalls.push({
       id: call.id,
@@ -61,23 +62,25 @@ function parseResponse(response: unknown): ModelTurn {
       function: { name: call.function.name, arguments: call.function.arguments },
     });
   }
-  if ((choice.finish_reason === "tool_calls") !== (toolCalls.length > 0)) return invalidResponse();
+  if ((choice.finish_reason === "tool_calls") !== (toolCalls.length > 0)) return invalidResponse(label);
   const content = typeof raw.content === "string" ? raw.content : null;
-  if (!toolCalls.length && !content?.trim()) return invalidResponse();
+  if (!toolCalls.length && !content?.trim()) return invalidResponse(label);
   return {
     message: { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) },
     toolCalls,
   };
 }
 
-/** The optional transport keeps SDK-level tests offline without adding another provider. */
-export function createDeepSeekModel(config: Config, transport?: typeof fetch, tools: Tools = defaultTools): Model {
+/** Share the bounded SDK transport while keeping provider-specific protocol settings explicit. */
+export function createModel(config: Config, transport?: typeof fetch, tools: Tools = defaultTools): Model {
+  const profile = getProviderProfile(config.provider);
+  const baseURL = providerEndpoint(config.provider, config.region);
   if (!Number.isSafeInteger(config.maxRequestBytes) || config.maxRequestBytes < 1 || config.maxRequestBytes > 16 * 1024 * 1024) {
     throw new HarnessError("CONFIG", "maxRequestBytes must be a positive integer no greater than 16777216.");
   }
   const client = new OpenAI({
     apiKey: config.apiKey,
-    baseURL: "https://api.deepseek.com",
+    baseURL,
     organization: null,
     project: null,
     maxRetries: 0,
@@ -88,14 +91,13 @@ export function createDeepSeekModel(config: Config, transport?: typeof fetch, to
 
   const callModel: Model = async (messages, signal, observe) => {
     checkCancellation(signal);
-    const body: ChatCompletionCreateParamsNonStreaming & { thinking: { type: "disabled" } } = {
+    const body: ChatCompletionCreateParamsNonStreaming = {
       model: config.model,
       messages,
       tools: tools.definitions,
       tool_choice: "auto",
-      thinking: { type: "disabled" },
       stream: false,
-      max_completion_tokens: 2048,
+      ...profile.generation,
     };
     // Count the complete JSON body, including tools, guidance, history, and execution facts.
     const prepared = prepareRequestContext(body, config.maxRequestBytes, signal);
@@ -115,23 +117,31 @@ export function createDeepSeekModel(config: Config, transport?: typeof fetch, to
       // Record received usage even when the response is truncated, invalid, or canceled afterward.
       observe?.({ type: "model_usage", usage: parseTokenUsage(response?.usage) });
       checkCancellation(signal);
-      if (deadline.aborted) throw new HarnessError("MODEL_TIMEOUT", "DeepSeek request timed out.");
-      return parseResponse(response);
+      if (deadline.aborted) throw new HarnessError("MODEL_TIMEOUT", `${profile.label} request timed out.`);
+      return parseResponse(response, profile.label);
     } catch (error) {
       checkCancellation(signal);
       if (deadline.aborted || error instanceof OpenAI.APIConnectionTimeoutError) {
-        throw new HarnessError("MODEL_TIMEOUT", "DeepSeek request timed out.");
+        throw new HarnessError("MODEL_TIMEOUT", `${profile.label} request timed out.`);
       }
       if (error instanceof HarnessError) throw error;
       if (error instanceof OpenAI.APIError && error.status !== undefined) {
-        throw new HarnessError("MODEL_HTTP", `DeepSeek request failed (HTTP ${error.status}). Check credentials, model access, and service availability.`);
+        throw new HarnessError("MODEL_HTTP", `${profile.label} request failed (HTTP ${error.status}). Check credentials, model access, and service availability.`);
       }
       if (error instanceof OpenAI.APIConnectionError) {
-        throw new HarnessError("MODEL_CONNECTION", "Could not connect to DeepSeek.");
+        throw new HarnessError("MODEL_CONNECTION", `Could not connect to ${profile.label}.`);
       }
-      throw new HarnessError("MODEL_RESPONSE", "DeepSeek request or response processing failed.");
+      throw new HarnessError("MODEL_RESPONSE", `${profile.label} request or response processing failed.`);
     }
   };
 
   return callModel;
+}
+
+/** Keep explicitly DeepSeek-only callers from silently contacting a different provider. */
+export function createDeepSeekModel(config: Config, transport?: typeof fetch, tools: Tools = defaultTools): Model {
+  if (config.provider !== "deepseek") {
+    throw new HarnessError("CONFIG", "This operation requires HARNESS_PROVIDER=deepseek.");
+  }
+  return createModel(config, transport, tools);
 }

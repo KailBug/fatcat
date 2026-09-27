@@ -11,7 +11,7 @@
   "packageManager": "pnpm@11.21.0",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc",
+    "build": "tsc && node dist/scripts/copy-skills.js",
     "start": "pnpm run build && node --env-file-if-exists=.env dist/src/cli.js",
     "test": "pnpm run build && node --test dist/tests/*.test.js",
     "verify:delegation": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-delegation.js",

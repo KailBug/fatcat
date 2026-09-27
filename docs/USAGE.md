@@ -6,13 +6,13 @@ Run all commands below from the repository root.
 
 A TypeScript Agent Harness that runs natively on Windows.
 
-The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI. Workspace reading, bounded literal text search, and controlled text-file creation and editing are available. Foreground Windows PowerShell execution is available with separate command authorization. Bounded delegation is available by default, with the model choosing whether to use it for the task. TUI, Web UI, app, and channel work is deferred. See the [architecture overview](ARCHITECTURE/README.md) and [roadmap](ROADMAP.md).
+The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI or optional TUI. Workspace reading, bounded literal text search, and controlled text-file creation and editing are available. Foreground Windows PowerShell execution is available with separate command authorization. Bounded delegation is available by default, with the model choosing whether to use it for the task. Web UI, app, and channel work is deferred. See the [architecture overview](ARCHITECTURE/README.md) and [roadmap](ROADMAP.md).
 
 ## Current capabilities
 
 The CLI runs a single task or an in-memory conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. The model can answer directly, call the pure `sum` tool, load local Skills, inspect text files in an explicitly selected workspace, propose a write, or run a command after terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
+The implementation includes isolated in-memory sessions, continuous chat, an optional terminal interface with configuration and usage panels, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or Web UI.
 
 The shared system prompt asks Fatcat to respond concisely in your language, inspect relevant code before edits, complete authorized implementation work, and report checks actually performed. It avoids unsolicited edits for review-only questions and keeps assumptions separate from observed facts. This is model guidance, not a guarantee of correctness or an additional permission mechanism. Restart the CLI after changing the prompt source and rebuilding.
 
@@ -96,7 +96,7 @@ pnpm run build
 node --env-file-if-exists=.env dist/src/cli.js --prompt "Use the sum tool to add 17 and 25."
 ```
 
-Press Ctrl+C to cancel. A single-task invocation starts fresh history. No arguments displays help; use `--chat` for a continuous conversation.
+Press Ctrl+C to cancel. A single-task invocation starts fresh history. No arguments displays help; use `--chat` for a continuous conversation or `--tui` for the interactive terminal interface.
 
 The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. Workspace files require an explicit `--workspace` selection; discovered Skills have a separate, read-only `skill://` scope. Writing asks for yes/no in an interactive terminal by default; shell uses separate authorization; there is no dedicated network tool.
 
@@ -111,7 +111,7 @@ Each model request counts as one iteration; each new user turn receives a fresh 
 
 ## Review execution evidence
 
-Each started CLI task emits one `execution_report` JSON event to stderr when the root loop answers or stops. Chat reports include the user-turn number. Stdout remains the model answer. Help, configuration checks, local chat commands, and failures before the loop starts do not produce a report. Low-level `runAgent`/Session callers can opt into the same observer with `createTurnReporter`; their return values are unchanged.
+Each started single-task or `--chat` CLI task emits one `execution_report` JSON event to stderr when the root loop answers or stops. Chat reports include the user-turn number. Stdout remains the model answer. TUI observes the same report for display instead of interleaving JSON with the screen. Help, configuration checks, local chat commands, and failures before the loop starts do not produce a report. Low-level `runAgent`/Session callers can opt into the same observer with `createTurnReporter`; their return values are unchanged.
 
 The report is computed from observed events, including child events, independently of the model's final wording:
 
@@ -146,6 +146,8 @@ A request that is still oversized stops with MODEL_CONTEXT_LIMIT before transpor
 The context_reduction event records beforeBytes, afterBytes and omittedReadResults only when a projection changes the body; it contains no paths or contents. The model_input event contains the final bytes, limitBytes and accepted, plus the iteration; accepted means it passed the local size check, not that the server accepted it. The model_usage event reports valid provider token counts or null. Missing, malformed or inconsistent counters stay unknown and do not invalidate an otherwise valid answer. Received counts are retained even if the answer is truncated or fails protocol validation; transport errors or early cancellation may have no usage report.
 
 The execution report aggregates parent and child observations separately. It never estimates missing usage, cache prices or currency cost. Known zero counts differ from unknown totals; an aggregate exceeding safe integer precision also becomes null. No usage data is inserted into the model conversation. Request size is checked after constructing the body, so this does not bound process memory. Large user instructions, copied assistant text, execution records or current-turn reads may still exceed the budget. Fresh single-task and child histories have no eligible older turns. The provider may also reject a request within the local byte budget. See [Context architecture](ARCHITECTURE/CONTEXT.md) for the exact boundary.
+
+Provider cache counters are validated separately from the base token totals. Supported response fields are `prompt_tokens_details.cached_tokens` and DeepSeek's `prompt_cache_hit_tokens`; a supplied DeepSeek miss counter must agree with the hit count and prompt total. Missing, malformed, conflicting, or oversized cache counters remain unknown without discarding valid base usage. The TUI cache percentage uses total cached input tokens divided by total prompt tokens for the same cache-reporting requests, with coverage shown. It is not an average of request percentages or a measure of server KV memory. No field means unknown, not a zero cache hit rate.
 
 ## Use local Skills
 
@@ -356,6 +358,49 @@ Successful turns keep the full user, assistant, and tool messages in memory. Fai
 
 Saved history is lost on exit and is not automatically trimmed or summarized. Only outgoing requests may omit eligible older read contents as described above. Long conversations can still hit the local request-body budget or provider context limits; use `/reset` to clear conversation history while retaining execution records. There is no session storage or recovery in this increment.
 
+## Interactive TUI
+
+Run in an interactive Windows terminal:
+
+```powershell
+pnpm start --tui
+pnpm start --tui --workspace D:\your-project
+pnpm start --tui --workspace D:\your-project --permission read-only
+```
+
+Replace `D:\your-project` with the project you want Fatcat to access. The TUI uses the same provider settings, Skills, tools, delegation limits, and workspace permissions as the CLI. `--permission workspace-write` preauthorizes file edits only; commands still ask unless `--shell-permission allow` is supplied. Without `--workspace`, the screen does not imply authorization to read or edit the launch directory.
+
+The cyan and purple interface combines Markdown conversation output, a status area, a metrics panel, and a Unicode input editor. At 110 columns or wider, conversation and metrics appear side by side; narrower terminals use a stacked layout. `/status` shows full values when the screen cannot fit them. `NO_COLOR` disables theme colors. `--tui` is an exclusive interactive mode; do not combine it with `--chat`, a prompt, `--help`, `--checkConfig`, or `--listSkills`. Redirected input/output and `TERM=dumb` are rejected with usage exit code 2; use the existing CLI modes for pipes.
+
+Enter sends the prompt; Alt+Enter inserts a newline. Up/Down recalls prompts, and PageUp/PageDown scrolls. You can draft the next prompt during a running turn, but it is not submitted or queued automatically. Pasted text also requires explicit submission.
+
+| Command | Behavior |
+| --- | --- |
+| /help | Show local commands and editor shortcuts. |
+| /status | Show effective configuration and current telemetry. |
+| /reset | Clear conversation history; keep consumed usage and execution records. |
+| /exit | Restore the terminal and exit. |
+
+Blank input is ignored, and unknown slash commands stay local. Write and shell approvals open a separate yes/no input with the current operation's preview. Only a fresh answer to that approval can authorize it; ordinary task text is not approval. The shell preview retains the warning that commands run with your user permissions, including file and network access beyond the selected directory.
+
+Escape or Ctrl+C cancels a running TUI turn, propagates to the parent, children, and tools, then returns to the input editor so you can continue. Ctrl+C at idle exits; Ctrl+D cancels and exits. Failed or cancelled turns do not enter the saved Session history; earlier successful history, completed edits, command effects, and already received usage remain. `/reset` also keeps those effects and process usage. It does not change provider, workspace, permissions, or Skill discovery. The TUI exits with 1 if any turn failed or was cancelled, otherwise 0. The original `--chat` mode retains its behavior: Ctrl+C cancels and exits with 130.
+
+| Display | What it measures |
+| --- | --- |
+| Provider / model / region | The actual startup configuration, fixed for the Session. |
+| Workspace / write / shell | The explicitly authorized directory and independent permission policies. |
+| Skills / iteration / timeout | Discovered catalog size and configured per-turn / per-request limits. |
+| Turn / process usage | Valid provider input, output, and total tokens, including children, with reporting coverage; process totals survive reset. |
+| Parent / child requests | Loop request attempts, including local budget rejections; not confirmed billing or HTTP counts. |
+| Latest prompt tokens | The most recent parent response's reported input size; cleared at the next parent request or reset, then unavailable until reported. |
+| Request bytes | The latest complete parent JSON request against the local byte budget, after any older-read projection. |
+| Model context window | Unknown: the configuration does not provide a trusted token capacity for arbitrary model names. |
+| KV / prompt cache | Valid provider cached input counters; the weighted hit rate covers only requests that reported them. |
+| Context reduction | Actual omitted read-result counts and JSON bytes saved, not token savings. |
+| Execution state | Current model/tool activity and observed report outcomes; an answer does not certify task acceptance. |
+
+The model APIs remain non-streaming: activity and elapsed time can update while waiting, but complete answers and usage arrive with the response. The local request-byte gauge is not a token-context percentage. Missing usage and cache data remain unknown; partial coverage is shown explicitly. The interface does not estimate fees, service cache capacity, or unreported tokens. Session history, display records, and statistics are process-local and lost on exit. Implementation details and terminal verification limits are recorded in [TUI architecture](ARCHITECTURE/TUI.md) and [PROGRESS.md](PROGRESS.md).
+
 ## Delegate a task
 
 ```powershell
@@ -445,6 +490,7 @@ Provider protocols use openai 7.18.0 as a compatibility client, with thinking an
 - [Context architecture](ARCHITECTURE/CONTEXT.md)
 - [Skills architecture](ARCHITECTURE/SKILLS.md)
 - [Provider architecture and development rules](ARCHITECTURE/PROVIDERS.md)
+- [TUI architecture and telemetry](ARCHITECTURE/TUI.md)
 - [Development guidelines](../AGENTS.md)
 
 All repository text outside docs/ must be English. Chinese is allowed only under docs/. Runtime user input and model output may use any language.

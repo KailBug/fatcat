@@ -10,7 +10,7 @@
 
 ## Development direction and organization
 
-- Prioritize a working local coding workflow: inspect, modify, verify, and deliver reviewable results. Keep CLI interaction for now; defer channels, TUI, Web UI, and app development.
+- Prioritize a working local coding workflow: inspect, modify, verify, and deliver reviewable results. Keep the existing CLI and an optional TUI for this workflow; defer channels, Web UI, and app development.
 - Prefer a small set of general-purpose, composable tools such as read, write, and shell execution. Do not add a separate model-facing tool for every development operation. Native Windows support must not require Bash.
 - Target task-driven tool selection and delegation. Users should not need to enable internal capabilities per task; the harness still enforces workspace access, permissions, budgets, and cancellation. The CLI makes bounded delegation available by default; the model chooses whether to use it.
 - Keep interaction, loop control, model communication, tool execution, and state ownership clear. Favor readable modules and narrow interfaces; avoid monolithic handlers and speculative frameworks.
@@ -65,6 +65,7 @@
 - Test: pnpm test
 - Help: pnpm start --help
 - Continuous chat: pnpm start --chat
+- Interactive TUI: pnpm start --tui (add --workspace <directory> for project access; requires a terminal).
 - Workspace chat with per-write and per-command terminal approval: pnpm start --chat --workspace examples/workspace
 - Explicit read-only workspace chat: pnpm start --chat --workspace examples/workspace --permission read-only
 - Preauthorized workspace editing (does not preauthorize commands): pnpm start --chat --workspace examples/workspace --permission workspace-write

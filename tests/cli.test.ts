@@ -25,9 +25,21 @@ test("help works without credentials", () => {
   const result = run(["--help"]);
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Fatcat/);
+  assert.match(result.stdout, /--tui/);
   assert.match(result.stdout, /two child tasks/);
   assert.ok(!result.stdout.includes("--subagent"));
   assert.equal(result.stderr, "");
+});
+
+test("TUI mode rejects pipes and conflicting modes before loading credentials", () => {
+  const piped = run(["--tui"], {}, "/exit\n");
+  assert.equal(piped.status, 2);
+  assert.match(piped.stderr, /interactive terminal/);
+  assert.ok(!piped.stderr.includes("DEEPSEEK_API_KEY"));
+  for (const args of [["--tui", "--chat"], ["--tui", "--help"], ["--tui", "--checkConfig"],
+    ["--tui", "--listSkills"], ["--tui", "task"], ["--tui", "--prompt", "task"]]) {
+    assert.equal(run(args).status, 2, JSON.stringify(args));
+  }
 });
 
 test("usage errors and missing credentials have distinct exit codes", () => {

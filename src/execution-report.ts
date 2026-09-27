@@ -5,10 +5,12 @@ import type { WriteRecord } from "./tools/write.js";
 
 type InputSummary = { checked: number; rejected: number; maxBytes: number | null };
 type ReductionSummary = { requests: number; omittedReadResults: number; bytesSaved: number };
-type UsageSummary = { reportedRequests: number; totals: TokenUsage | null };
+type UsageSummary = { reportedRequests: number; totals: Pick<TokenUsage, "promptTokens" | "completionTokens" | "totalTokens"> | null };
 
 function addUsage(summary: UsageSummary, usage: TokenUsage): void {
-  if (summary.reportedRequests === 0) summary.totals = { ...usage };
+  if (summary.reportedRequests === 0) summary.totals = {
+    promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, totalTokens: usage.totalTokens,
+  };
   else if (summary.totals) {
     const totals = { promptTokens: summary.totals.promptTokens + usage.promptTokens,
       completionTokens: summary.totals.completionTokens + usage.completionTokens,

@@ -306,3 +306,23 @@ test("CLI usage reports reset per chat turn without affecting model answers", ()
     assert.deepEqual(report.tokenUsage.children, { reportedRequests: 0, totals: null });
   }
 });
+
+test("CLI chat projects old read payloads under pressure while preserving follow-up rules", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "notes.txt"), "CURRENT_MARKER\n" + "x".repeat(12000));
+  const result = run(["--chat", "--workspace", workspace, "--permission", "read-only"],
+    { DEEPSEEK_API_KEY: "offline-only", HARNESS_MAX_REQUEST_BYTES: "30000" },
+    "context load\nkeep-context-rule\ncontext recall " + "padding ".repeat(1375) + "\n/exit\n");
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.stdout.trim().endsWith("CURRENT_MARKER"));
+  const report = reports(result.stderr);
+  assert.equal(report.length, 3);
+  assert.equal(report[0]!.contextReduction.parent.requests, 0);
+  assert.equal(report[1]!.contextReduction.parent.requests, 0);
+  assert.equal(report[2]!.contextReduction.parent.requests, 2);
+  assert.equal(report[2]!.requestBytes.parent.rejected, 0);
+  assert.ok(report[2]!.contextReduction.parent.bytesSaved > 20000);
+  assert.ok(!result.stderr.includes("CURRENT_MARKER"));
+  assert.deepEqual(report[2]!.writes, []);
+  assert.deepEqual(report[2]!.commands, []);
+});

@@ -2,13 +2,13 @@
 
 ## 状态与目的
 
-阶段 2D-5 基线已通过用户 review 并合入 main；2D-7 增加请求大小及服务端 token 用量，已验证、待 review；实际记录见 [PROGRESS.md](../PROGRESS.md)。解决用户需要从分散日志中自行重建本回合操作的问题，同时让实际记录独立于模型最终回答。
+阶段 2D-5 基线已通过用户 review 并合入 main；2D-7 请求大小及服务端 token 用量已通过 review 并合入；2D-8 请求整理统计已验证、待 review；实际记录见 [PROGRESS.md](../PROGRESS.md)。解决用户需要从分散日志中自行重建本回合操作的问题，同时让实际记录独立于模型最终回答。
 
 报告是交付时的事实摘要，不是完整 Task 系统，不判定模型回答的每项声明，也不认证任务成功。没有新依赖、模型工具、权限开关或持久状态。
 
 ## 模块与数据流
 
-`src/execution-report.ts` 导出 `createTurnReporter(emit): (event: LoopEvent) => void`、`ExecutionReport` 和 `ReportEvent`。只消费事件，不访问文件、请求模型或调用工具；2D-7 新增 model_input / model_usage 元数据观察。
+`src/execution-report.ts` 导出 `createTurnReporter(emit): (event: LoopEvent) => void`、`ExecutionReport` 和 `ReportEvent`。只消费事件，不访问文件、请求模型或调用工具；2D-7 新增 model_input / model_usage 元数据观察，2D-8 增加 context_reduction。
 
 CLI 单次任务 / chat 每个用户回合创建观察器 → 传入 Loop / Session 的 onEvent → 转发原始事件并累积本回合数据 → 根 completed / stopped 后额外发出 execution_report → stderr。stdout 及 Loop / Session 的返回值不变。命令和写入的日志仍由 Tools 所有；观察器不改变它们。
 
@@ -27,7 +27,7 @@ CLI 单次任务 / chat 每个用户回合创建观察器 → 传入 Loop / Sess
 
 ## 请求大小与用量（2D-7 已实现）
 
-- requestBytes 分为 parent / children：checked 为 model_input 次数，rejected 为本地预算拒绝次数，maxBytes 为本回合观察到的最大请求体（包括拒绝请求）；无观察为 null。每次事件仍保留 bytes / limitBytes / accepted。
+- requestBytes 分为 parent / children：checked 为 model_input 次数，rejected 为本地预算拒绝次数，maxBytes 为本回合观察到的最大最终请求体（2D-8 整理之后，包括仍被拒绝的请求）；无观察为 null。每次事件仍保留 bytes / limitBytes / accepted。
 - tokenUsage 分为 parent / children：reportedRequests 只计有效 usage 的请求数；totals 为已报告部分的 promptTokens / completionTokens / totalTokens 之和。没有有效报告时 totals=null，不能当作零消耗；有效全零统计仍是明确的零。
 - reportedRequests 小于 modelRequests 时，totals 只代表已报告的部分，不能称作完整回合用量。预算拒绝、取消、HTTP 错误、统计缺失/非法、自定义 Model 不观察用量都会造成差异；不推算其中请求是否计费。
 - 收到统计后发生截断、协议错误或取消，已观察到的用量仍进入停止报告。统计不进入模型历史；/reset 后新回合重新计数。父子统计分别汇总，子用量不会因父再次报告共享工具记录而重复累加。
@@ -48,3 +48,9 @@ CLI 单次任务 / chat 每个用户回合创建观察器 → 传入 Loop / Sess
 离线使用注入模型验证空命令记录不会被“测试已通过”的回答填充、权限拒绝不算执行、失败/取消/耗尽后保留写入、子任务去重、回合/reset 隔离、状态更新与记录副本。固定事件验证超时、截断、启动失败和清理不确定的汇总规则；真实 Windows 命令验证非零退出 → 写入 → 零退出的顺序及日志不包含命令/输出。
 
 实际 CLI 测试覆盖单次和聊天、直接和委派、模型失败及 Ctrl+C 报告；pnpm run verify:coding 使用临时故障源文件和固定测试，模型读改测后核对报告 ID/状态，并独立执行同一测试。详细请求次数与结果以 PROGRESS.md 为准。
+
+## 请求整理统计（2D-8 已实现）
+
+contextReduction 分为 parent / children，每项包含 requests、omittedReadResults 和 bytesSaved，未发生整理时均为 0。requests 统计实际省略旧 read 的请求尝试；omittedReadResults 按每次请求累计被替换的结果数，同一历史结果在两个请求中被省略会计两次，不是唯一读取次数。bytesSaved 累加 beforeBytes - afterBytes，是完整 JSON 正文的字节差，不是 token、已发送流量或计费节省。
+
+事件发生在最终 model_input 之前：整理后仍超限、传输失败或回合失败都保留已观察到的统计。事件只有大小与数量，不记录路径、正文、搜索词或原始结果。报告仍不进入 Session 或模型历史；它证明程序做了请求整理，不证明任务正确、内容恢复或成本优化。

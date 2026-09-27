@@ -4,6 +4,7 @@ import type { CommandEventRecord } from "./tools/shell.js";
 import type { WriteRecord } from "./tools/write.js";
 
 type InputSummary = { checked: number; rejected: number; maxBytes: number | null };
+type ReductionSummary = { requests: number; omittedReadResults: number; bytesSaved: number };
 type UsageSummary = { reportedRequests: number; totals: TokenUsage | null };
 
 function addUsage(summary: UsageSummary, usage: TokenUsage): void {
@@ -24,6 +25,7 @@ export type ExecutionReport = {
   taskVerification: "not_assessed";
   modelRequests: { parent: number; children: number };
   requestBytes: { parent: InputSummary; children: InputSummary };
+  contextReduction: { parent: ReductionSummary; children: ReductionSummary };
   tokenUsage: { parent: UsageSummary; children: UsageSummary };
   toolResults: { ok: number; errors: number };
   writes: WriteRecord[];
@@ -36,6 +38,9 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
   const modelRequests = { parent: 0, children: 0 };
   const requestBytes: ExecutionReport["requestBytes"] = {
     parent: { checked: 0, rejected: 0, maxBytes: null }, children: { checked: 0, rejected: 0, maxBytes: null },
+  };
+  const contextReduction: ExecutionReport["contextReduction"] = {
+    parent: { requests: 0, omittedReadResults: 0, bytesSaved: 0 }, children: { requests: 0, omittedReadResults: 0, bytesSaved: 0 },
   };
   const tokenUsage: ExecutionReport["tokenUsage"] = {
     parent: { reportedRequests: 0, totals: null }, children: { reportedRequests: 0, totals: null },
@@ -55,6 +60,11 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
       input.checked++;
       if (!event.accepted) input.rejected++;
       input.maxBytes = Math.max(input.maxBytes ?? 0, event.bytes);
+    } else if (event.type === "context_reduction") {
+      const reduction = contextReduction[child ? "children" : "parent"];
+      reduction.requests++;
+      reduction.omittedReadResults += event.omittedReadResults;
+      reduction.bytesSaved += event.beforeBytes - event.afterBytes;
     } else if (event.type === "model_usage" && event.usage) {
       addUsage(tokenUsage[child ? "children" : "parent"], event.usage);
     } else if (event.type === "tool_result") {
@@ -83,7 +93,7 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
         outcome: event.type === "completed" ? "answered" : "stopped",
         stopCode: event.type === "stopped" ? event.code : null,
         taskVerification: "not_assessed",
-        modelRequests, requestBytes, tokenUsage, toolResults, writes: [...writes.values()], commands: [...commands.values()],
+        modelRequests, requestBytes, contextReduction, tokenUsage, toolResults, writes: [...writes.values()], commands: [...commands.values()],
       }) });
     }
   };

@@ -12,7 +12,7 @@ The near-term goal is a local coding agent that reads projects, makes controlled
 
 The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, inspect text files in an explicitly selected workspace, propose a write, or run a command after terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
+The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
 
 The shared system prompt asks Fatcat to respond concisely in your language, inspect relevant code before edits, complete authorized implementation work, and report checks actually performed. It avoids unsolicited edits for review-only questions and keeps assumptions separate from observed facts. This is model guidance, not a guarantee of correctness or an additional permission mechanism. Restart the CLI after changing the prompt source and rebuilding.
 
@@ -109,7 +109,8 @@ The report is computed from observed events, including child events, independent
 | outcome / stopCode | `answered` means the model returned an answer; `stopped` includes the stop reason. Neither certifies task success. |
 | taskVerification | Always `not_assessed`: the harness has not evaluated task acceptance criteria. |
 | modelRequests | Parent and child model-call attempts, including locally rejected requests; not confirmed HTTP calls or billing. |
-| requestBytes | Separate parent/children counts: checked, rejected by the local budget, and maxBytes (including rejected bodies). No observation means maxBytes is null. |
+| requestBytes | Separate parent/children counts: checked, rejected by the local budget, and maxBytes after any context reduction (including rejected bodies). No observation means maxBytes is null. |
+| contextReduction | Separate parent/children requests, omittedReadResults, and bytesSaved. Counts each request projection, including attempts still rejected afterward; repeated omission of the same result counts again. Byte differences are not token or billing savings. |
 | tokenUsage | Separate parent/children reportedRequests and totals (promptTokens, completionTokens, totalTokens). Totals sum only valid provider reports; null means no known total. Fewer reports than attempts means incomplete usage coverage. |
 | toolResults | Counts of returned `ok` and `errors`, including children and delegation calls. A shell `ok` does not imply a zero exit code. Cancelled tools may leave records without returning a tool result. |
 | writes | Current-turn write records with paths, hashes, byte counts, and actual statuses. Shared parent/child records appear once per record ID. |
@@ -125,11 +126,15 @@ Every user turn gets a new report; earlier records survive in the shared journal
 
 Before sending to DeepSeek, Fatcat measures the complete JSON body in UTF-8, including JSON escaping, system and parent guidance, tool definitions, conversation history, tool results, execution records and generation settings. HTTP headers and the API key are excluded. At most HARNESS_MAX_REQUEST_BYTES is allowed; an exact match is accepted. This is a local byte limit, not a token estimate, provider context window, or spending limit.
 
-An oversized request stops with MODEL_CONTEXT_LIMIT before transport, without trimming or summarizing messages. In chat, the previous successful history remains. Use a smaller task or `/reset` to clear conversation history. Already committed edits and commands remain; their records survive reset and still count toward the next request. If those records alone exceed the limit, inspect them before starting a new process or explicitly raising the configured limit. A new process loses its in-memory history and journals.
+If the complete body is too large, Fatcat first replaces eligible older successful read results with explicit `context_omitted` markers, oldest first, stopping as soon as the request fits. Files, directories and search results are eligible only before the most recent completed user turn. The current and most recent completed turns remain intact, as do all user/system/assistant messages, tool-call arguments and IDs, errors, other tool results, and independent write/command records. This happens automatically without another model call or a capability flag.
 
-The model_input event contains only bytes, limitBytes and accepted, plus the iteration; accepted means it passed the local size check, not that the server accepted it. The model_usage event reports valid provider token counts or null. Missing, malformed or inconsistent counters stay unknown and do not invalidate an otherwise valid answer. Received counts are retained even if the answer is truncated or fails protocol validation; transport errors or early cancellation may have no usage report.
+Each marker retains the result kind and path and states that the content is unavailable in this request. The model can repeat the original or a narrower read when needed; that reads the current file under the same permissions, not an archived snapshot. Full Session history is unchanged. Every request is prepared again from that history, so a shorter later request may include previously omitted contents. There is no model-generated summary or persisted reduction.
 
-The execution report aggregates parent and child observations separately. It never estimates missing usage, cache prices or currency cost. Known zero counts differ from unknown totals; an aggregate exceeding safe integer precision also becomes null. No usage data is inserted into the model conversation. Request size is checked after constructing the body, so this does not bound process memory or automatically manage long histories; the provider may still reject a request within the local byte budget.
+A request that is still oversized stops with MODEL_CONTEXT_LIMIT before transport. In chat, the previous successful history remains. Use a smaller task or `/reset` to clear conversation history. Already committed edits and commands remain; their records survive reset and still count toward the next request. If those records alone exceed the limit, inspect them before starting a new process or explicitly raising the configured limit. A new process loses its in-memory history and journals.
+
+The context_reduction event records beforeBytes, afterBytes and omittedReadResults only when a projection changes the body; it contains no paths or contents. The model_input event contains the final bytes, limitBytes and accepted, plus the iteration; accepted means it passed the local size check, not that the server accepted it. The model_usage event reports valid provider token counts or null. Missing, malformed or inconsistent counters stay unknown and do not invalidate an otherwise valid answer. Received counts are retained even if the answer is truncated or fails protocol validation; transport errors or early cancellation may have no usage report.
+
+The execution report aggregates parent and child observations separately. It never estimates missing usage, cache prices or currency cost. Known zero counts differ from unknown totals; an aggregate exceeding safe integer precision also becomes null. No usage data is inserted into the model conversation. Request size is checked after constructing the body, so this does not bound process memory. Large user instructions, copied assistant text, execution records or current-turn reads may still exceed the budget. Fresh single-task and child histories have no eligible older turns. The provider may also reject a request within the local byte budget. See [Context architecture](ARCHITECTURE/CONTEXT.md) for the exact boundary.
 
 ## Read a workspace
 
@@ -272,7 +277,7 @@ Answers go to stdout. Terminal prompts, approval previews, command feedback, and
 
 Successful turns keep the full user, assistant, and tool messages in memory. Failed or cancelled turns do not enter the saved history. A model failure displays an error and lets you continue; the eventual chat exit code is 1 if any turn failed. This discards conversation messages only; file changes and process-local write records remain, and API requests already made may still consume credits.
 
-History is lost on exit and is not automatically trimmed or summarized. Long conversations can hit the local request-body budget or provider context limits; use `/reset` to clear conversation history while retaining execution records. There is no session storage or recovery in this increment.
+Saved history is lost on exit and is not automatically trimmed or summarized. Only outgoing requests may omit eligible older read contents as described above. Long conversations can still hit the local request-body budget or provider context limits; use `/reset` to clear conversation history while retaining execution records. There is no session storage or recovery in this increment.
 
 ## Delegate a task
 
@@ -325,6 +330,16 @@ pnpm run verify:delegation
 
 This checks arithmetic without child requests, then a task requiring independent second-opinion reviews with separate context. It uses the same agent assembly as the CLI, checks bounded delegation and child reading, checks both filenames in the final answer, and verifies unchanged fixtures and empty write/command journals. The script does not mechanically prove every claim in the review. Each scenario allows at most four parent requests plus two children of at most three requests: at most 20 requests in total, consuming API credits. Model selection can vary; a failed check is reported rather than retried automatically. See PROGRESS.md for observed results and earlier failed checks.
 
+To verify older-read omission and rereading changed content:
+
+```powershell
+pnpm run verify:context
+```
+
+This separate live check uses three turns in a temporary read-only workspace. The script creates a synthetic file, asks the model to read it, records a follow-up formatting requirement, changes the fixture itself, and adds synthetic request pressure before asking for a fresh first-line read. It requires a reduction event, the updated marker in the final answer, the retained answer prefix, request sizes within the limit, unchanged final fixture bytes, and empty write/command journals. It then removes the temporary directory; it does not use `examples/workspace`.
+
+The check deliberately overrides the local request budget to 26000 bytes and caps each parent turn at three requests; default bounded delegation remains available. With up to two children of three requests per turn, the total upper bound is 27 real requests. It consumes API credits and reports failed expectations without automatic retries. This is a small behavioral check, not a task-success or token-cost benchmark.
+
 The provider protocol follows the [DeepSeek API documentation](https://api-docs.deepseek.com/) using openai 7.18.0 as a compatibility client. Thinking and streaming are explicitly disabled for this first loop. SDK client usage was checked against [official OpenAI documentation](https://developers.openai.com/api/docs/libraries) and the installed SDK.
 
 ## Project documents
@@ -338,6 +353,7 @@ The provider protocol follows the [DeepSeek API documentation](https://api-docs.
 - [Tools architecture](ARCHITECTURE/TOOLS.md)
 - [Subagent architecture](ARCHITECTURE/SUBAGENT.md)
 - [Execution reports](ARCHITECTURE/EXECUTION_REPORT.md)
+- [Context architecture](ARCHITECTURE/CONTEXT.md)
 - [Development guidelines](../AGENTS.md)
 
 All repository text outside docs/ must be English. Chinese is allowed only under docs/. Runtime user input and model output may use any language.

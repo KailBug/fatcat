@@ -40,6 +40,7 @@ test("a model claiming tests passed cannot manufacture execution evidence", asyn
   assert.deepEqual(result.report(), { outcome: "answered", stopCode: null, taskVerification: "not_assessed",
     modelRequests: { parent: 1, children: 0 },
     requestBytes: { parent: { checked: 0, rejected: 0, maxBytes: null }, children: { checked: 0, rejected: 0, maxBytes: null } },
+    contextReduction: { parent: { requests: 0, omittedReadResults: 0, bytesSaved: 0 }, children: { requests: 0, omittedReadResults: 0, bytesSaved: 0 } },
     tokenUsage: { parent: { reportedRequests: 0, totals: null }, children: { reportedRequests: 0, totals: null } }, toolResults: { ok: 0, errors: 0 }, writes: [], commands: [] });
 });
 

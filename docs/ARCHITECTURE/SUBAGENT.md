@@ -50,3 +50,7 @@
 父子 DeepSeek 客户端从同一 Config 获取 maxRequestBytes，分别检查各自包含工具、提示和执行事实的完整 JSON 请求体。子超限不会发送该请求，仍占已启动的子任务额度，并按既有 SUBAGENT_FAILED / MODEL_CONTEXT_LIMIT 回传父模型；父模型可继续解释失败。预算不提供额外权限，不改变三次子请求上限。
 
 子 model_input / model_usage 通过既有 subagent_event 关联，报告将其与父请求分开；没有为了统计把子内部历史合并到父历史。用量未知不记成零，子失败之前收到的统计仍保留。
+
+## 旧读取投影（2D-8 已实现）
+
+父子客户端复用同一请求准备函数及预算。当前子任务总是从空历史开始，整个子任务属于受保护的当前回合，没有可省略的旧读取；超限仍按既有错误边界回传。父 Session 的较早 read 结果可被请求投影，delegate_task 的最终答案不属于 read，不会被省略。context_reduction 元数据若出现仍经 subagent_event 分开汇总，不扩大权限、不共享父消息。

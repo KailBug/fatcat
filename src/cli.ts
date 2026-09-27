@@ -32,7 +32,8 @@ Use --permission read-only to forbid writes and commands, or workspace-write to 
 Shell authorization is separate: --shell-permission ask (default), deny, or allow for unattended commands.
 Shell uses Windows PowerShell with current-user access, not an operating-system sandbox.
 Each task emits an execution_report with request sizes, reported token usage, writes and command outcomes, even on failure.
-HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 262144 bytes); no automatic history trimming.
+HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 262144 bytes); older read outputs may be replaced by explicit markers to fit.
+Current and recent turns, user instructions, and execution facts are preserved; full history remains in memory.
 An answer or a zero exit code alone does not certify the task; inspect the recorded evidence.
 Selected file contents are sent to DeepSeek when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.

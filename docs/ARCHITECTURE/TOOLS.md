@@ -90,7 +90,7 @@ read.ts 负责统一参数入口和搜索分发；search.ts 只组合现有 Work
 
 结果保持 `{ ok: true, result }` 或 `{ ok: false, error: { code, message } }`。使用 DIRECTORY_TOO_LARGE、OUTPUT_LIMIT、SEARCH_LIMIT；继续使用 INVALID_ARGUMENTS、PATH_NOT_ALLOWED、NOT_FOUND、UNSUPPORTED_FILE、FILE_TOO_LARGE、TOOL_IO、UNKNOWN_TOOL。sum 行为不变。
 
-工具错误供模型纠正或说明，取消抛出 CANCELLED 终止回合。路径检查、目录迭代、文件读取循环及返回结果前检查 signal；不承诺立即中断底层文件系统调用。成功回合保留已读取页，失败回合仍采用现有 Session 临时历史丢弃规则。2D-7 在模型发送边界对包含工具结果与执行事实的请求做字节预算检查；下一次请求超限不回滚此前已发生的 write/shell，也不通过裁剪工具结果绕过上限。读取日志不输出内容或路径参数；write_record 记录规范化相对路径、摘要及结果状态，不记录正文。
+工具错误供模型纠正或说明，取消抛出 CANCELLED 终止回合。路径检查、目录迭代、文件读取循环及返回结果前检查 signal；不承诺立即中断底层文件系统调用。成功回合保留已读取页，失败回合仍采用现有 Session 临时历史丢弃规则。2D-7 在模型发送边界对包含工具结果与执行事实的请求做字节预算检查；下一次请求超限不回滚此前已发生的 write/shell。2D-8 仅可在请求副本中省略较早成功 read 的内容，显式标记为 context_omitted；这不改变实际工具返回协议或保存历史。当前/最近回合、工具错误、write/shell 结果与执行事实保持完整，最终请求仍必须通过预算检查。读取日志不输出内容或路径参数；write_record 记录规范化相对路径、摘要及结果状态，不记录正文。
 
 ## write 协议与权限（已实现）
 

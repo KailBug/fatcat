@@ -5,6 +5,7 @@ import type {
   ChatCompletionMessageFunctionToolCall,
   ChatCompletionMessageParam,
 } from "openai/resources/chat/completions";
+import { prepareRequestContext } from "./context.js";
 import { parseTokenUsage } from "./model-usage.js";
 import type { TokenUsage } from "./model-usage.js";
 import type { Config } from "./config.js";
@@ -18,6 +19,7 @@ export type ModelTurn = {
   toolCalls: ChatCompletionMessageFunctionToolCall[];
 };
 export type ModelObservation =
+  | { type: "context_reduction"; beforeBytes: number; afterBytes: number; omittedReadResults: number }
   | { type: "model_input"; bytes: number; limitBytes: number; accepted: boolean }
   | { type: "model_usage"; usage: TokenUsage | null };
 export type Model = (messages: Message[], signal?: AbortSignal,
@@ -96,18 +98,21 @@ export function createDeepSeekModel(config: Config, transport?: typeof fetch, to
       max_completion_tokens: 2048,
     };
     // Count the complete JSON body, including tools, guidance, history, and execution facts.
-    const bytes = Buffer.byteLength(JSON.stringify(body));
+    const prepared = prepareRequestContext(body, config.maxRequestBytes, signal);
+    const { bytes } = prepared;
+    if (prepared.omittedReadResults) observe?.({ type: "context_reduction", beforeBytes: prepared.beforeBytes,
+      afterBytes: bytes, omittedReadResults: prepared.omittedReadResults });
     const accepted = bytes <= config.maxRequestBytes;
     observe?.({ type: "model_input", bytes, limitBytes: config.maxRequestBytes, accepted });
     if (!accepted) {
-      throw new HarnessError("MODEL_CONTEXT_LIMIT", `Model request is ${bytes} bytes; the local limit is ${config.maxRequestBytes}. Use a smaller task or /reset in chat. Execution records survive reset and may still exceed the limit; review them before starting a new process or explicitly increasing HARNESS_MAX_REQUEST_BYTES. No messages were trimmed and this request was not sent.`);
+      throw new HarnessError("MODEL_CONTEXT_LIMIT", `Model request is ${bytes} bytes; the local limit is ${config.maxRequestBytes}. Use a smaller task or /reset in chat. Execution records survive reset and may still exceed the limit; review them before starting a new process or explicitly increasing HARNESS_MAX_REQUEST_BYTES. Eligible older read outputs were considered for omission; protected messages remain intact. This request was not sent.`);
     }
     checkCancellation(signal);
     const deadline = AbortSignal.timeout(config.requestTimeoutMs);
     const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
     try {
-      const response = await client.chat.completions.create(body, { signal: requestSignal });
-      // Record received usage even when the response is truncated, invalid, or cancelled afterwards.
+      const response = await client.chat.completions.create(prepared.body, { signal: requestSignal });
+      // Record received usage even when the response is truncated, invalid, or canceled afterward.
       observe?.({ type: "model_usage", usage: parseTokenUsage(response?.usage) });
       checkCancellation(signal);
       if (deadline.aborted) throw new HarnessError("MODEL_TIMEOUT", "DeepSeek request timed out.");

@@ -7,6 +7,28 @@ globalThis.fetch = async (input, init) => {
   assert.equal(request.url, "https://api.deepseek.com/chat/completions");
   const { messages, tools } = await request.json() as { messages: Message[]; tools: { function: { name: string } }[] };
   const prompt = messages.findLast((message) => message.role === "user")?.content;
+  if (prompt === "context load") {
+    if (messages.at(-1)?.role === "user") return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
+      role: "assistant", content: null, tool_calls: [{ id: "context-load", type: "function", function: {
+        name: "read", arguments: JSON.stringify({ path: "notes.txt" }),
+      } }],
+    } }] });
+    return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Loaded" } }] });
+  }
+  if (typeof prompt === "string" && prompt.startsWith("context recall ")) {
+    const omitted = messages.find((message) => message.role === "tool"
+      && JSON.parse(String(message.content))?.result?.kind === "context_omitted");
+    assert.ok(omitted);
+    assert.ok(messages.some((message) => message.role === "user" && message.content === "keep-context-rule"));
+    const last = messages.at(-1)!;
+    if (last.role === "user") return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
+      role: "assistant", content: null, tool_calls: [{ id: "context-read", type: "function", function: {
+        name: "read", arguments: JSON.stringify({ path: "notes.txt", limit: 1 }),
+      } }],
+    } }] });
+    const content = JSON.parse(String(last.content)).result.content;
+    return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content } }] });
+  }
   if (prompt === "usage fixture") return Response.json({
     usage: { prompt_tokens: 20, completion_tokens: 4, total_tokens: 24 },
     choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Usage recorded." } }],

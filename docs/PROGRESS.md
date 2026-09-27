@@ -9,11 +9,37 @@
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
 - 阶段 2B：最小 Tools 与只读工作目录工具已通过用户 review。
 - 阶段 2C：最小 Subagent 已实现，通过 64 项离线测试及真实 DeepSeek 委派闭环；已通过用户 review。
-- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已通过 review 并随 PR #8 合入；2D-7 请求容量与用量记录已通过 review 并随 PR #9 合入；2D-8 旧读取结果的请求投影已完成离线与真实多回合验证，随 PR #10 合入；2D-9 多文件双回合验收已完成离线与真实验证，待 review；阶段 2D 整体未完成，Channel 与其他 UI 后移。
+- 后续方向已确定：优先完成本地开发闭环，采用少量通用工具与任务驱动委派；2D-1 通用 read 已通过用户 review，2D-2 原 write 已通过 PR 合入 main；yes/no 与绿色提示修正已通过 PR #2 合入 main；2D-3 shell 已通过用户 review 并随 PR #4 合入 main；2D-4 默认委派已通过用户 review 并随 PR #6 合入 main；2D-5 回合执行报告及提示词修正已通过 review 并随 PR #7 合入 main；2D-6 read 文本搜索已通过 review 并随 PR #8 合入；2D-7 请求容量与用量记录已通过 review 并随 PR #9 合入；2D-8 旧读取结果的请求投影已完成离线与真实多回合验证，随 PR #10 合入；2D-9 多文件双回合验收已完成离线与真实验证，待 review；阶段 2D 整体未完成，Channel / Web UI / App 后移。
 - 阶段 2D-10：单个 Session 的本地 Skills、四个按 subsystem 组织的内置 Skill 与 Kimi / MiMo / Qwen 接入已完成离线验收，待 review；新增厂商按用户要求没有 API 在线验证。
-- 已有 CLI 任务输入、单 Session 供应商选择、本地 Skills、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
-- 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；新增 yaml 2.9.1 解析 Skill frontmatter。
+- 阶段 2D-11：按用户要求在 feat/tui-dev 增加可选 TUI，覆盖配置、对话、请求预算、token 用量和 provider 缓存遥测；264 项离线测试及原生 Windows ConPTY 检查通过，待用户 review。TUI 提前进入本轮范围，Channel / Web UI / App 仍后移；本轮没有模型 API 在线验证。
+- 已有 CLI / 可选 TUI 任务输入、单 Session 供应商选择、本地 Skills、内存历史、纯计算工具、关联结果回传、迭代限制、错误处理、超时和必要日志。
+- 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；yaml 2.9.1 解析 Skill frontmatter，@earendil-works/pi-tui 0.87.1 支撑可选终端界面。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
+
+
+## 2026-09-27：阶段 2D-11，可选 TUI 与准确遥测（离线及原生终端已验证，待 review）
+
+### 实际结果
+
+- 核对 main、HEAD a4a8011 和干净工作区后，按用户明确要求创建 feat/tui-dev，提前进入此前后移的 TUI 范围；保留现有单次 CLI 和 --chat。更新 AGENTS、PROJECT、ROADMAP、README、USAGE 与架构说明，新增 TUI.md 区分交互、视图、遥测以及 Session / Loop / Tools 的所有权。没有提交、推送或合并。
+- 选择 @earendil-works/pi-tui 0.87.1 复用 TypeScript 终端编辑、Markdown 和渲染能力；界面参考 pi / Charm 的布局与配色。沿用 Node.js 24、pnpm 11.21.0、TypeScript 及 openai 7.18.0；不引入 Go 运行时或另一套 Agent Loop。
+- 新增 src/tui/index.ts / app.ts / view.ts / theme.ts / telemetry.ts / metrics.ts，分别装配既有 Agent、持有输入与审批控制、渲染会话与指标、处理主题，以及统计并解释真实事件。宽度至少 110 列时会话与指标并列，窄窗口上下排列；完整配置和字段可通过 /status 查看。支持 Unicode / 多行编辑、Markdown、本地命令、审批后的草稿恢复和取消当前回合后继续。
+- model-usage.ts 增加合法 provider 缓存字段的观察，原 execution_report 继续保留三个基础 token 总量；TUI 从原始事件独立维护每回合与进程累计，按父子来源和有效报告覆盖区分。缓存计数必须合法且与 prompt tokens 一致，命中率按相同请求集合加权；缺失数据不当作零。模型 token 窗口未知，本地 JSON 字节预算单独显示，不伪造上下文百分比。新父请求和 reset 清空过期的 prompt 计量。
+
+### 验证结果
+
+- Windows 原生环境下 pnpm install --frozen-lockfile、pnpm run typecheck、pnpm test（含构建）及 pnpm start --help 通过。最终 264 项离线测试全部通过，0 失败、0 取消、0 跳过，较此前 233 项基线新增 31 项；帮助包含 --tui。模型相关检查使用虚构凭据与注入传输，没有在线 API 请求。
+- 新回归覆盖标准 / DeepSeek 缓存字段、缺失 / 非法 / 冲突计数、加权命中率与覆盖、父子及回合累计、溢出保持未知、失败 / 取消 / reset 边界、实际 CLI 模式与非 TTY 拒绝。交互检查涵盖审批草稿隔离、拒绝 / 同意、运行中取消后继续、按键释放、退出清理，以及真实临时工作区的子任务写入：明确输入 yes 批准之前文件不存在，之后出现，父子共享事实只展示一次。
+- 渲染检查覆盖 54 种宽高组合（含 1 列窄窗口）、CJK / emoji / Markdown、控制序列清理、NO_COLOR、滚动，以及 120 列紧凑窗口中四组核心指标。测试的渲染输出不是截图或真实 provider 结果；另行执行了原生终端检查。
+- 使用 Windows ConPTY 在 80×24、TERM=xterm-256color 下运行真实 TUI 及离线模型夹具：/status 可通过 PageUp 回看 CONFIGURATION；中文与 emoji 多行粘贴（bracketed paste）保持草稿，显式 Enter 后由夹具正确回显。/exit 恢复终端，包装检查同时记录 TUI_SMOKE_RETURN=0 与 TUI_SMOKE_EXIT=0。当前执行工具默认 TERM=dumb，不适合直接启用全屏模式；生产 CLI 对该设置明确拒绝，而非静默绘制乱码。
+- 同一轮较早 ConPTY 检查核对模拟服务用量为 20 输入 + 4 输出 = 24，未报告缓存显示 N/A；拒绝 shell 后命令计数为 0；批准固定无副作用的 CLI_COMMAND_READY 命令后得到 exitCode=0、1 条命令报告。此处只有终端与本机命令真实执行，模型响应和计量是离线夹具，不证明真实服务命中率或新厂商连通性。
+- 初次全量运行曾中断：新增交互测试将已滚出可见区域的 CONFIGURATION 标题当作断言目标，失败后定时器使进程未退出。已修正断言及清理。独立复核还发现 pi-tui 先消费 PageUp / PageDown、Kitty 按键释放可能再次取消 / 退出的问题，改为局部输入适配并忽略释放包；退出有界 drain 后始终 stop，共享父子写入 / 命令提示按记录去重。上述修正均包含在最终通过的回归中。
+- 文档的 78 个本地链接检查通过，12 个修改/新增文档统一为 LF；git diff --check 通过。没有提交、推送或合并，没有调用任何 verify:* 在线脚本，也不继承此前 DeepSeek 验证作为本轮 TUI / 缓存 / 新厂商的在线证据。
+
+### 限制与下一步
+
+- 无剩余产品实现阻塞，进入用户 review。下一步在实际编码任务中使用 --tui，按具体交互反馈改善布局及信息密度；阶段 2D 不据新入口标记整体完成。开发工具的 Windows 默认沙箱 ACL 限制沿用获准的本机执行路径处理，没有改变 Fatcat 原生运行要求。
+- 保持非流式模型响应、单 Session、进程内历史与统计；没有会话持久化、provider 热切换、费用估算、硬件 KV 容量或新权限能力。/reset 不撤销操作、不清除已消耗用量或工具事实。真实 provider 的缓存字段可用性、实时命中率和真实输入法候选窗口未在本轮验证；Unicode / 多行输入检查不等同于完整 IME 验收。
 
 
 ## 2026-09-27：阶段 2D-10 补充，按 subsystem 分组的内置 Skills（离线已验证，待 review）

@@ -12,6 +12,8 @@
 
 `Model`、Loop、Session、Tools、执行报告和上下文投影继续使用共同协议。供应商差异保持在配置和完整请求体构造处，不把特定厂商字段散入业务循环或各工具。注入 transport 只用于测试，不开放任意生产 base URL。
 
+2D-11 的 TUI 复用这些非流式协议，模型完成响应后才有完整答案和服务端 usage；界面的运行状态更新不代表 token 流式输出。缓存用量也是响应元数据，不新增缓存控制请求参数。界面只展示选定 profile 的非秘密配置，不显示凭据。
+
 ## 配置与当前请求约定
 
 `HARNESS_PROVIDER` 可为 deepseek、kimi、mimo、qwen，省略时使用 deepseek。只读取被选中的配置：
@@ -35,6 +37,14 @@
 Qwen 使用 max_tokens，是因为所选 qwen-plus 的兼容范围不统一支持较新的 max_completion_tokens；不将 DeepSeek/Kimi/MiMo 的 thinking 参数发送给 Qwen。Kimi 默认选用文档明确支持关闭思考的 kimi-k2.6，不能切换到只能思考的模型后期待当前协议继续成立。MiMo 文档支持 Bearer 和 api-key，本项目统一使用 SDK Bearer。
 
 ## Provider 开发规范
+
+### 用量与缓存字段
+
+标准 `prompt_tokens`、`completion_tokens`、`total_tokens` 必须为非负安全整数且加和一致，才成为有效 token 用量。缓存字段单独校验：兼容格式的 `prompt_tokens_details.cached_tokens` 与 DeepSeek 的 `prompt_cache_hit_tokens` 可表示输入缓存命中；必须不超过同一响应的 prompt tokens。DeepSeek 同时给出 `prompt_cache_miss_tokens` 时还需与 hit 加和一致；多个已给出的缓存计数若冲突或非法，缓存信息保持未知，不因此抹去有效的基础用量。
+
+没有缓存字段表示未报告，不是零命中；明确的合法零计数才是已知零。每回合和进程累计率只对具有合法缓存数据的请求计算 `sum(cached tokens) / sum(prompt tokens)`，并显示覆盖范围。分母为零时不显示伪造百分比，不平均每个响应的百分比，不把模型输出 tokens 纳入缓存命中分母，也不推算服务内部 KV 占用、缓存容量、价格或费用。实际解析字段与离线验收见 `src/model-usage.ts` 和 PROGRESS.md；UI 口径见 [TUI.md](TUI.md)。
+
+### 开发要求
 
 新增或修改供应商必须同时满足以下要求：
 

@@ -21,11 +21,13 @@ Usage:
   pnpm start --checkConfig
   pnpm start --listSkills
   pnpm start --chat
+  pnpm start --tui --workspace .
   pnpm start --chat --workspace examples/workspace
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
 
 Use --chat for a continuous conversation with /help, /reset, and /exit.
+Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
 A prompt runs one task. History stays in memory.
 The agent can delegate focused independent tasks when useful; simple tasks stay direct.
 At most two child tasks may start per user turn (up to six additional model requests).
@@ -62,6 +64,7 @@ async function main(args: string[]): Promise<number> {
           listSkills: { type: "boolean" },
           prompt: { type: "string" },
           chat: { type: "boolean" },
+          tui: { type: "boolean" },
           workspace: { type: "string" },
           permission: { type: "string" },
           "shell-permission": { type: "string" },
@@ -77,15 +80,16 @@ async function main(args: string[]): Promise<number> {
       + Number(Boolean(values.checkConfig))
       + Number(Boolean(values.listSkills))
       + Number(Boolean(values.chat))
+      + Number(Boolean(values.tui))
       + Number(values.prompt !== undefined || positionals.length > 0);
 
     //start parsing if
     if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
-      throw new HarnessError("USAGE", "Choose one mode: help, config check, skill listing, chat, or one prompt.");
+      throw new HarnessError("USAGE", "Choose one mode: help, config check, skill listing, chat, TUI, or one prompt.");
     }
     if (values.workspace !== undefined && (!values.workspace.trim() || values.help || values.checkConfig
-      || (!values.chat && !values.listSkills && values.prompt === undefined && positionals.length === 0))) {
-      throw new HarnessError("USAGE", "Use --workspace with a prompt, --chat, or --listSkills and a non-empty directory.");
+      || (!values.chat && !values.tui && !values.listSkills && values.prompt === undefined && positionals.length === 0))) {
+      throw new HarnessError("USAGE", "Use --workspace with a prompt, --chat, --tui, or --listSkills and a non-empty directory.");
     }
     if (values.permission !== undefined && (values.workspace === undefined || values.listSkills
       || !["ask", "read-only", "workspace-write"].includes(values.permission))) {
@@ -120,13 +124,20 @@ async function main(args: string[]): Promise<number> {
       return 0;
     }
     const prompt = values.prompt ?? positionals.join(" ");
-    if (!values.chat && !prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
+    if (!values.chat && !values.tui && !prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
+    if (values.tui && (!process.stdin.isTTY || !process.stdout.isTTY || process.env.TERM === "dumb")) {
+      throw new HarnessError("USAGE", "TUI requires an interactive terminal. Use --chat for pipes or TERM=dumb.");
+    }
 
     //start config
     const config = loadConfig();
-    process.on("SIGINT", cancel);
     const permission = (values.permission ?? "ask") as WorkspacePermission;
     const shellPermission = (values["shell-permission"] ?? (permission === "read-only" ? "deny" : "ask")) as ShellPermission;
+    if (values.tui) {
+      const { runTui } = await import("./tui/index.js");
+      return await runTui(config, values.workspace, permission, shellPermission);
+    }
+    process.on("SIGINT", cancel);
     if (values.chat || (values.workspace !== undefined && (permission === "ask" || shellPermission === "ask"))) {
       terminal = createTerminalInput(process.stdin, process.stderr, controller.signal);
     }

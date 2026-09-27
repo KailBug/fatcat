@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createAgent } from "../src/agent.js";
-import { loadConfig } from "../src/config.js";
+import { loadLiveConfig } from "./fixtures/live-config.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import type { ExecutionReport } from "../src/execution-report.js";
 import { Session } from "../src/session.js";
@@ -30,7 +30,7 @@ try {
     }
     return result;
   } };
-  const config = loadConfig();
+  const config = loadLiveConfig();
   // The smaller local budget deliberately exercises projection using only synthetic data.
   const session = new Session(createAgent({ ...config, maxRequestBytes: 26000,
     maxIterations: Math.min(config.maxIterations, 3) }, tools));

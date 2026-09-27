@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createAgent } from "../src/agent.js";
-import { loadConfig } from "../src/config.js";
+import { loadLiveConfig } from "./fixtures/live-config.js";
 import { runAgent } from "../src/loop.js";
 import type { LoopEvent } from "../src/loop.js";
 import { createTools } from "../src/tools.js";
@@ -24,7 +24,7 @@ export function clamp(value: number, min: number, max: number): number {
 const workspace = await mkdtemp(join(tmpdir(), "fatcat-delegation-"));
 try {
   for (const [name, contents] of Object.entries(fixtures)) await writeFile(join(workspace, name), contents);
-  const config = loadConfig();
+  const config = loadLiveConfig();
   const agent = createAgent({ ...config, maxIterations: Math.min(config.maxIterations, 4) }, await createTools(workspace));
   const directEvents: LoopEvent[] = [];
   const direct = await runAgent("What is 17 plus 25? Answer with the number only.", { ...agent,

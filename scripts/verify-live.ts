@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createTools } from "../src/tools.js";
 import type { Tools, ToolResult } from "../src/tools.js";
-import { loadConfig } from "../src/config.js";
+import { loadLiveConfig } from "./fixtures/live-config.js";
 import { HarnessError } from "../src/errors.js";
 import { runAgent } from "../src/loop.js";
 import { createDeepSeekModel } from "../src/model.js";
@@ -13,7 +13,7 @@ import { Session } from "../src/session.js";
 import { createSubagentTools } from "../src/subagent.js";
 import type { LoopEvent } from "../src/loop.js";
 
-async function verifyWorkspaceWrite(config: ReturnType<typeof loadConfig>): Promise<void> {
+async function verifyWorkspaceWrite(config: ReturnType<typeof loadLiveConfig>): Promise<void> {
   const workspace = await mkdtemp(join(tmpdir(), "fatcat-live-write-"));
   try {
     const tools = await createTools(workspace, "workspace-write");
@@ -38,7 +38,7 @@ async function verifyWorkspaceWrite(config: ReturnType<typeof loadConfig>): Prom
 }
 
 try {
-  const config = loadConfig();
+  const config = loadLiveConfig();
   const model = createDeepSeekModel(config);
   const maxIterations = Math.min(config.maxIterations, 3);
   const session = new Session({ model, maxIterations });

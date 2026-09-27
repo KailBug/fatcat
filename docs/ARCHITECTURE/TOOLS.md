@@ -4,6 +4,8 @@
 
 阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移和 2D-5 回合报告已通过 review 并合入；2D-6 在 read 中增加字面文本搜索，已通过 review 并合入；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
 
+以上为工作目录工具的基线。2D-10 通过 `src/skills.ts` 的包装器扩展同一个 read 入口，加入已发现 Skill 的只读 URI 范围，不改变现有工作目录读写与命令授权。Skill frontmatter 新增 YAML 解析依赖；具体接口、边界及状态见 [SKILLS.md](SKILLS.md)。
+
 ## 模块与接口
 
 | 模块 | 已实现职责 |
@@ -24,6 +26,8 @@
 Tools 包含 definitions 和 execute(name, argumentsJson, signal?, callId?)。可选 forTurn(onEvent?) 由委派包装器使用，隔离每回合次数与事件；基础 collectTools 保留内部命名 execute 函数。可选 getWrites() 返回深复制的 WriteRecord[]，由工作目录工具持有，Loop 只消费事实并记录事件。模型客户端和 Loop/Session 使用同一工具集合，结果按 tool_call_id 关联。
 
 基础 createTools 没有工作目录时只提供 sum；CLI 经 createAgent 包装后另提供 delegate_task；显式 --workspace 增加 read、write 和 shell。CLI 默认 ask，write 在参数、路径与内容校验后请求终端确认。显式 read-only 无条件拒绝写入；workspace-write 仅预授权文件写入，不授权 shell。程序化 createTools 仍默认只读，ask 需要由调用方提供 approveWrite 回调。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和写入记录；委派由 agent.ts 默认装配，无需 --subagent 开关。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
+
+CLI 另外调用 discoverSkills，并把目录传入 createAgent，由后者调用 withSkills。发现用户技能后，即使没有 workspace，也可添加只接受 `skill://` 的 read；有 workspace 时沿用单个 read 定义并按 URI 或普通路径分发。只有已发现的技能可读，不能据此读取任意用户主目录文件。包装器透传写入和命令事实，不改变父子权限、回合额度和取消。普通工作目录路径仍按下述规则校验。
 
 旧模型工具名称 list_directory 和 read_file 已移除，调用返回 UNKNOWN_TOOL。项目尚无持久历史，不增加旧名称兼容层。内部 createWorkspaceTools 已替换为职责分离的 createWorkspace 与 createReadTool。
 
@@ -84,7 +88,7 @@ read.ts 负责统一参数入口和搜索分发；search.ts 只组合现有 Work
 - 逐级 lstat 拒绝符号链接、junction、特殊文件和文件硬链接；realpath 后再次检查目录包含关系和名称。目录条目复用相同路径检查。
 - 打开文件后核对类型、硬链接计数、dev/ino。结果只暴露相对路径；不回传绝对根目录或原始文件系统错误。
 
-这些检查不是操作系统沙箱，不能保证抵御恶意本机进程并发替换路径或内容。用户选择的文本会经工具结果发送给 DeepSeek；名称和扩展名过滤不等于内容脱敏。read 不写入；write 仅在授权后修改支持的文本，不执行文件。
+这些检查不是操作系统沙箱，不能保证抵御恶意本机进程并发替换路径或内容。用户选择的文本会经工具结果发送给当前模型供应商；名称和扩展名过滤不等于内容脱敏。read 不写入；write 仅在授权后修改支持的文本，不执行文件。
 
 ## 错误、取消与历史
 
@@ -137,7 +141,7 @@ createTools 第四参数为 `{ permission?: "ask" | "deny" | "allow", approve?: 
 
 process.ts 使用系统目录下的 Windows PowerShell，通过 spawn 的参数数组传入 UTF-16LE EncodedCommand；无 profile、无 stdin、非交互、隐藏窗口，每次均为新进程，不保留变量或 cd 状态。设置 UTF-8 控制台编码、文本输出及关闭进度输出；PowerShell 错误转为非零退出，外部程序最终 LASTEXITCODE 作为退出码。多个外部命令串联时需逐个检查退出码，后来的命令可能覆盖先前失败。
 
-环境仅继承列出的 OS/运行时变量，例如 PATH、SystemRoot、TEMP、用户目录及 PNPM_HOME；不继承 DeepSeek Key、任意业务密钥或 NODE_OPTIONS。此措施不隔离当前账户可读取的磁盘凭据。命令输出与命令记录进入模型，JSON 事件不记录正文；终端授权会本地显示命令。
+环境仅继承列出的 OS/运行时变量，例如 PATH、SystemRoot、TEMP、用户目录及 PNPM_HOME；不继承模型供应商 Key、任意业务密钥或 NODE_OPTIONS。此措施不隔离当前账户可读取的磁盘凭据。命令输出与命令记录进入模型，JSON 事件不记录正文；终端授权会本地显示命令。
 
 stdout/stderr 合计最多收集 16 KiB 原始字节，UTF-8 解码；不兼容编码可能替换字符。超过上限标记 truncated 并请求终止；结果不把截断输出冒充完整验证。预算不含 JSON、元数据及转码开销。默认 30 秒超时，工具参数最多 120 秒。
 

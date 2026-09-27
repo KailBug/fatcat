@@ -10,7 +10,7 @@ The near-term goal is a local coding agent that reads projects, makes controlled
 
 ## Current capabilities
 
-The CLI runs a single task or an in-memory conversation through DeepSeek Chat Completions. The model can answer directly, call the pure `sum` tool, inspect text files in an explicitly selected workspace, propose a write, or run a command after terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
+The CLI runs a single task or an in-memory conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. The model can answer directly, call the pure `sum` tool, load local Skills, inspect text files in an explicitly selected workspace, propose a write, or run a command after terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
 The implementation includes isolated in-memory sessions, continuous chat, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or UI.
 
@@ -43,9 +43,10 @@ if (-not (Test-Path -LiteralPath .env)) {
 }
 ```
 
-Edit `.env` locally and set a real DeepSeek API key:
+Edit `.env` locally and set the selected provider's API key. DeepSeek remains the default:
 
 ```dotenv
+HARNESS_PROVIDER=deepseek
 DEEPSEEK_API_KEY=replace-with-your-deepseek-api-key
 DEEPSEEK_MODEL=deepseek-flash
 HARNESS_MAX_ITERATIONS=8
@@ -57,19 +58,29 @@ Do not commit or share credentials. The example key above is a placeholder.
 
 | Variable | Behavior |
 | --- | --- |
-| DEEPSEEK_API_KEY | Required; never included in logs |
-| DEEPSEEK_MODEL | Defaults to deepseek-flash |
+| HARNESS_PROVIDER | deepseek (default), kimi, mimo, or qwen |
 | HARNESS_MAX_ITERATIONS | Positive safe integer; defaults to 8 model requests per user turn |
 | HARNESS_REQUEST_TIMEOUT_MS | Positive integer up to 2147483647; defaults to 60000 milliseconds per request |
 | HARNESS_MAX_REQUEST_BYTES | Positive integer up to 16777216; defaults to 262144 bytes (256 KiB) per complete model JSON request body |
 
-Process environment variables take priority over `.env`. Optional variables use defaults only when absent; explicitly empty values are errors.
+Each provider has separate credentials and model settings. Only the selected provider's settings are read:
+
+| Provider | Required key | Model variable and default | Optional region |
+| --- | --- | --- | --- |
+| deepseek | DEEPSEEK_API_KEY | DEEPSEEK_MODEL=deepseek-flash | Fixed DeepSeek endpoint |
+| kimi | MOONSHOT_API_KEY | KIMI_MODEL=kimi-k2.6 | KIMI_REGION=cn (default) or global |
+| mimo | MIMO_API_KEY | MIMO_MODEL=mimo-v2.6-flash | Fixed MiMo endpoint |
+| qwen | DASHSCOPE_API_KEY | QWEN_MODEL=qwen-plus | QWEN_REGION=cn (default) or intl |
+
+For example, choose Kimi by setting `HARNESS_PROVIDER=kimi`, `MOONSHOT_API_KEY`, and the region matching that account. MiMo uses `HARNESS_PROVIDER=mimo` and `MIMO_API_KEY`; Qwen uses `HARNESS_PROVIDER=qwen`, `DASHSCOPE_API_KEY`, and the matching region. There is no fallback to another provider's key or OPENAI_API_KEY. See [Provider architecture and development rules](ARCHITECTURE/PROVIDERS.md) for exact endpoints and request fields.
+
+Process environment variables take priority over `.env`. Optional variables use defaults only when absent; explicitly empty selected settings are errors. A chat fixes its provider, model, and region at startup; restart to change them. All profiles use non-streaming, non-thinking, tool-capable Chat Completions. Model overrides must support those capabilities; thinking-only models and reasoning-history protocols are not supported.
 
 ```powershell
 pnpm start --checkConfig
 ```
 
-This command checks local fields without contacting DeepSeek. It does not validate credentials or account access.
+This command checks local fields without contacting a provider. It does not validate credentials or account access. Kimi, MiMo, and Qwen were added using official protocol documentation and offline SDK contract tests; no API online validation is required or performed for those additions in this increment.
 
 ## Run a task
 
@@ -87,7 +98,7 @@ node --env-file-if-exists=.env dist/src/cli.js --prompt "Use the sum tool to add
 
 Press Ctrl+C to cancel. A single-task invocation starts fresh history. No arguments displays help; use `--chat` for a continuous conversation.
 
-The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. Filesystem tools require an explicit `--workspace` selection. Writing asks for yes/no in an interactive terminal by default; shell uses separate authorization; there is no dedicated network tool.
+The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. Workspace files require an explicit `--workspace` selection; discovered Skills have a separate, read-only `skill://` scope. Writing asks for yes/no in an interactive terminal by default; shell uses separate authorization; there is no dedicated network tool.
 
 Each model request counts as one iteration; each new user turn receives a fresh iteration budget. If the last allowed request still asks for tools, the harness stops without executing those calls. Timeouts and transport failures stop the run; automatic SDK retries are disabled.
 
@@ -124,9 +135,9 @@ Every user turn gets a new report; earlier records survive in the shared journal
 
 ## Model request size and usage
 
-Before sending to DeepSeek, Fatcat measures the complete JSON body in UTF-8, including JSON escaping, system and parent guidance, tool definitions, conversation history, tool results, execution records and generation settings. HTTP headers and the API key are excluded. At most HARNESS_MAX_REQUEST_BYTES is allowed; an exact match is accepted. This is a local byte limit, not a token estimate, provider context window, or spending limit.
+Before sending to the selected provider, Fatcat measures the complete JSON body in UTF-8, including JSON escaping, system and parent guidance, Skill metadata, tool definitions, conversation history, tool results, execution records and provider-specific generation settings. HTTP headers and the API key are excluded. At most HARNESS_MAX_REQUEST_BYTES is allowed; an exact match is accepted. This is a local byte limit, not a token estimate, provider context window, or spending limit.
 
-If the complete body is too large, Fatcat first replaces eligible older successful read results with explicit `context_omitted` markers, oldest first, stopping as soon as the request fits. Files, directories and search results are eligible only before the most recent completed user turn. The current and most recent completed turns remain intact, as do all user/system/assistant messages, tool-call arguments and IDs, errors, other tool results, and independent write/command records. This happens automatically without another model call or a capability flag.
+If the complete body is too large, Fatcat first replaces eligible older successful read results with explicit `context_omitted` markers, oldest first, stopping as soon as the request fits. Files, directories and search results are eligible only before the most recent completed user turn. The current and most recent completed turns remain intact, as do all user/system/assistant messages, tool-call arguments and IDs, errors, loaded SKILL.md instructions, other tool results, and independent write/command records. Skill reference pages are ordinary file/directory/search results and can be omitted when eligible. This happens automatically without another model call or a capability flag.
 
 Each marker retains the result kind and path and states that the content is unavailable in this request. The model can repeat the original or a narrower read when needed; that reads the current file under the same permissions, not an archived snapshot. Full Session history is unchanged. Every request is prepared again from that history, so a shorter later request may include previously omitted contents. There is no model-generated summary or persisted reduction.
 
@@ -135,6 +146,50 @@ A request that is still oversized stops with MODEL_CONTEXT_LIMIT before transpor
 The context_reduction event records beforeBytes, afterBytes and omittedReadResults only when a projection changes the body; it contains no paths or contents. The model_input event contains the final bytes, limitBytes and accepted, plus the iteration; accepted means it passed the local size check, not that the server accepted it. The model_usage event reports valid provider token counts or null. Missing, malformed or inconsistent counters stay unknown and do not invalidate an otherwise valid answer. Received counts are retained even if the answer is truncated or fails protocol validation; transport errors or early cancellation may have no usage report.
 
 The execution report aggregates parent and child observations separately. It never estimates missing usage, cache prices or currency cost. Known zero counts differ from unknown totals; an aggregate exceeding safe integer precision also becomes null. No usage data is inserted into the model conversation. Request size is checked after constructing the body, so this does not bound process memory. Large user instructions, copied assistant text, execution records or current-turn reads may still exceed the budget. Fresh single-task and child histories have no eligible older turns. The provider may also reject a request within the local byte budget. See [Context architecture](ARCHITECTURE/CONTEXT.md) for the exact boundary.
+
+## Use local Skills
+
+Fatcat discovers Skills automatically at startup. A Skill is a directory containing a UTF-8 `SKILL.md` with YAML metadata and task instructions. Only name, description and a read URI are initially shown to the model; the full document is loaded when needed through the existing `read` tool.
+
+The search order is:
+
+1. `<workspace>/.fatcat/skills/<name>/SKILL.md`, when `--workspace` is supplied.
+2. `<workspace>/.agents/skills/<name>/SKILL.md`.
+3. `<user-home>/.fatcat/skills/<name>/SKILL.md`.
+4. `<user-home>/.agents/skills/<name>/SKILL.md`.
+
+The first valid occurrence of a name wins. Fatcat scans immediate child directories only; it does not search ancestors, download Skills, or install them. Without `--workspace`, only user Skills are discovered. Keep Skills in those explicit locations; ordinary workspace read still rejects hidden paths.
+
+To list discovered metadata and diagnostics locally, without a provider key or network request:
+
+```powershell
+pnpm start --listSkills
+pnpm start --listSkills --workspace examples/workspace
+```
+
+For example, create `.fatcat/skills/code-review/SKILL.md` under your chosen workspace:
+
+```markdown
+---
+name: code-review
+description: Review a local code change for correctness and missing verification.
+---
+Inspect the changed code and relevant callers. Report actionable issues with
+file locations. Use references/checklist.md if it is present. Describe checks
+actually performed and separate assumptions from observed facts.
+```
+
+The name must match its directory and contain 1–64 lowercase ASCII letters, digits or hyphens, with no leading, trailing or consecutive hyphens. Description must be nonblank and at most 1024 characters. SKILL.md is limited to 32 KiB; invalid YAML, duplicate keys, aliases and custom tags are rejected. Optional fields such as `allowed-tools` do not grant permissions. Discovery accepts at most 64 Skills; a root with over 128 raw entries is skipped with a diagnostic.
+
+Ask for the task by purpose, or mention the name:
+
+```powershell
+pnpm start --workspace examples/workspace --prompt 'Use $code-review to review the project.'
+```
+
+Use PowerShell single quotes to preserve the literal `$`. Mentions are model guidance, not a local slash command or deterministic instruction injection. The model reads `skill://code-review/SKILL.md` to receive the entire document; partial reads and queries of that file are rejected. References resolve inside the same Skill, such as `skill://code-review/references/checklist.md`, and retain normal text, paging and search limits. Traversal, links, hidden resource paths and unsupported files are rejected.
+
+Skill metadata and loaded contents can be sent to your selected model provider. Skills guide the task but do not grant write or shell access. Bundled scripts are not automatically executed; any proposed shell command uses the same separate authorization. Successful turns preserve loaded instructions in the Session and protect them from old-read omission. Failure discards new loads, and `/reset` clears the instruction history while retaining the startup catalog and execution records. Restart after adding Skills or changing their metadata; there is no catalog hot reload. See [Skills architecture](ARCHITECTURE/SKILLS.md) for exact boundaries.
 
 ## Read a workspace
 
@@ -145,7 +200,7 @@ pnpm start --workspace examples/workspace --prompt "Read project-notes.txt and r
 pnpm start --chat --workspace examples/workspace
 ```
 
-`--workspace` works with a single prompt or `--chat`; it cannot be used alone or with help/configuration checks. Without it, the parent has `sum` and `delegate_task`; children have only `sum`. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
+`--workspace` works with a single prompt, `--chat`, or the local `--listSkills` command; it cannot be used alone or with help/configuration checks. Without it, the parent has `sum` and `delegate_task`; children have `sum`, plus `read` for both when user Skills were discovered. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
 
 The workspace exposes general-purpose `read`, `write`, and `shell` tools, with each write requiring approval by default. The `read` tool accepts files or directories. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
 
@@ -166,7 +221,7 @@ Files must be supported UTF-8 text, at most 1 MiB. Each content page has a 16 Ki
 
 Each page is a fresh read, not a snapshot; changes between calls can shift offsets. Streaming access to larger files is not implemented. Both `/` and Windows `\` separators are supported. Absolute paths, parent traversal, Windows device/data-stream paths, dot-prefixed names (including `.env` and `.git`), `node_modules`, symbolic links, junctions, and file hard links are rejected. Listings omit unsupported files. Supported text extensions are listed in [Tools architecture](ARCHITECTURE/TOOLS.md).
 
-When the model reads a file, its contents enter the conversation and are sent to DeepSeek. Choose a directory appropriate for that use; path and extension checks do not redact secrets stored in ordinary text files. These are application-level scope checks, not an operating-system sandbox against another process changing files concurrently.
+When the model reads a file, its contents enter the conversation and are sent to the selected provider. Choose a directory appropriate for that use; path and extension checks do not redact secrets stored in ordinary text files. These are application-level scope checks, not an operating-system sandbox against another process changing files concurrently.
 
 File errors return structured tool results that the model can correct or explain. Read logs omit file contents and path arguments. Local files are treated as data and cannot change tool permissions. Reading does not write or execute workspace content.
 
@@ -289,7 +344,7 @@ pnpm start --chat --workspace examples/workspace
 
 Parent-only guidance favors direct work for simple questions, arithmetic, and single file operations, and focused delegation for independent investigations or reviews. Children receive concrete context supplied by the parent. Short reviews can still be handled directly; this is model judgment, not a fixed classifier or a guarantee of optimal task splitting. No child requests are made unless the model invokes the tool. Read-only mode still permits delegation while denying writes and commands.
 
-The parent supplies a self-contained `task` string of 1 to 4000 characters. A child starts with fresh history and the same DeepSeek configuration and basic tools, including the selected workspace and its permission. Parent and child share the same write and command journals and approval callbacks; a child cannot elevate access, and its committed writes remain visible even if its turn fails. It cannot see the parent conversation or delegate further. Its final answer returns as tool data; its internal messages stay out of the parent history. Answers longer than 12000 characters return an error rather than a successful partial answer.
+The parent supplies a self-contained `task` string of 1 to 4000 characters. A child starts with fresh history and the same provider configuration and basic tools, including the selected workspace, its permission, and the Skill catalog. A child must load relevant Skill instructions for its own task; it does not inherit the parent's loaded documents. Parent and child share the same write and command journals and approval callbacks; a child cannot elevate access, and its committed writes remain visible even if its turn fails. It cannot see the parent conversation or delegate further. Its final answer returns as tool data; its internal messages stay out of the parent history. Answers longer than 12000 characters return an error rather than a successful partial answer.
 
 Each user turn may start at most two child tasks, including failed attempts. Each child gets at most three model requests, further capped by HARNESS_MAX_ITERATIONS. The parent's own request limit is unchanged: with the default limit of 8, the total upper bound is 14 requests per user turn. Tasks run sequentially. A new user turn gets a fresh allowance.
 
@@ -304,7 +359,7 @@ pnpm run typecheck
 pnpm test
 ```
 
-Automated tests use fake credentials and injected transports; they do not load `.env` or call a model service.
+Automated tests use fake credentials and injected transports; they do not load `.env` or call a model service. They include local Skill loading and SDK request contracts for all four providers. The Kimi, MiMo and Qwen additions use this offline verification only in the current increment; no online API calls are needed for their acceptance. Offline passing tests do not establish real credentials, connectivity or model task behavior.
 
 With a real local key, explicitly run:
 
@@ -321,6 +376,18 @@ pnpm run verify:coding
 ```
 
 It creates a temporary nested source module, a caller and a fixed test, verifies the initial failure, then asks DeepSeek to locate the implementation through a read query, inspect and edit it, and run `node --test check.test.mjs`. Only that command and the designated source file are authorized. The script checks that search returned the implementation path and that the caller and test were unchanged, independently reruns the test, and cleans up the fixture. It now uses the same default agent assembly and report observer as the CLI, checks report IDs against the command journal, requires a successful command with no later write attempt, and verifies request-size observations and valid provider token usage for every actual model call. It permits at most eight parent requests plus two children of at most three requests (14 total), and consumes API credits. It does not use or modify `examples/workspace`.
+
+For a two-turn coding task with multiple edited modules, run:
+
+```powershell
+pnpm run verify:workflow
+```
+
+This separate check creates a temporary synthetic pricing project and reuses one Session for both turns. The first turn must locate and inspect the relevant files, repair two source modules, and run the fixed `node --test check.test.mjs` command. The follow-up adds a discount requirement, new checks, and a user note; it requires fresh reads of both modules, preservation of the note, and an edit to receipt only. Both prompts ask the model to reproduce a failure before editing and rerun the checks afterwards. Only designated source edits and the fixed command are authorized; tests, unrelated source files, and the follow-up's subtotal module must remain unchanged.
+
+For each turn, the script checks new write/command journal IDs against its execution report, requires a failed check and final successful verification after the last write, checks request sizes and valid provider token usage, independently reruns the fixed test, and verifies protected file bytes. It does not separately assert that the failure preceded the first edit. A previous turn's successful command cannot satisfy the follow-up. Offline tests inject a simulated Model and synthetic request/usage observations while using real temporary files and PowerShell; these tests check acceptance conditions without contacting DeepSeek. These are fixture-specific assertions; ordinary CLI reports still use `taskVerification: not_assessed`.
+
+The check allows at most eight parent requests plus two children of three requests per turn: at most 28 real requests across both turns. It consumes API credits, reports failed expectations without automatic retries, and removes its temporary directory afterwards. It does not use `examples/workspace`, require delegation, or replace `verify:coding` or `verify:context`. See PROGRESS.md for actual validation status; this small task does not establish general coding success rates or cost improvements.
 
 To verify default task selection with isolated temporary read-only fixtures:
 
@@ -340,7 +407,7 @@ This separate live check uses three turns in a temporary read-only workspace. Th
 
 The check deliberately overrides the local request budget to 26000 bytes and caps each parent turn at three requests; default bounded delegation remains available. With up to two children of three requests per turn, the total upper bound is 27 real requests. It consumes API credits and reports failed expectations without automatic retries. This is a small behavioral check, not a task-success or token-cost benchmark.
 
-The provider protocol follows the [DeepSeek API documentation](https://api-docs.deepseek.com/) using openai 7.18.0 as a compatibility client. Thinking and streaming are explicitly disabled for this first loop. SDK client usage was checked against [official OpenAI documentation](https://developers.openai.com/api/docs/libraries) and the installed SDK.
+Provider protocols use openai 7.18.0 as a compatibility client, with thinking and streaming disabled. Exact endpoints, provider-specific fields, official sources, and the rules for developing a provider are documented in [PROVIDERS.md](ARCHITECTURE/PROVIDERS.md). Existing live verification scripts retain their explicit DeepSeek scope; do not treat their past results as validation of the three new providers or Skills.
 
 ## Project documents
 
@@ -354,6 +421,8 @@ The provider protocol follows the [DeepSeek API documentation](https://api-docs.
 - [Subagent architecture](ARCHITECTURE/SUBAGENT.md)
 - [Execution reports](ARCHITECTURE/EXECUTION_REPORT.md)
 - [Context architecture](ARCHITECTURE/CONTEXT.md)
+- [Skills architecture](ARCHITECTURE/SKILLS.md)
+- [Provider architecture and development rules](ARCHITECTURE/PROVIDERS.md)
 - [Development guidelines](../AGENTS.md)
 
 All repository text outside docs/ must be English. Chinese is allowed only under docs/. Runtime user input and model output may use any language.

@@ -47,7 +47,9 @@
 
 ## 请求容量与用量（2D-7 已实现）
 
-父子 DeepSeek 客户端从同一 Config 获取 maxRequestBytes，分别检查各自包含工具、提示和执行事实的完整 JSON 请求体。子超限不会发送该请求，仍占已启动的子任务额度，并按既有 SUBAGENT_FAILED / MODEL_CONTEXT_LIMIT 回传父模型；父模型可继续解释失败。预算不提供额外权限，不改变三次子请求上限。
+父子客户端从同一 Config 获取所选供应商和 maxRequestBytes，分别检查各自包含工具、提示和执行事实的完整 JSON 请求体。子超限不会发送该请求，仍占已启动的子任务额度，并按既有 SUBAGENT_FAILED / MODEL_CONTEXT_LIMIT 回传父模型；父模型可继续解释失败。预算不提供额外权限，不改变三次子请求上限。
+
+2D-10 的父子模型复用同一 provider profile，子任务不切换厂商。基础工具若带有 Skills 包装，子任务获得同一精简目录与 read URI 能力，但不继承父已加载的 Skill 正文；需要在自己的独立历史中读取。Skill 内容不能提高子任务权限或请求上限。详见 [SKILLS.md](SKILLS.md) 与 [PROVIDERS.md](PROVIDERS.md)。
 
 子 model_input / model_usage 通过既有 subagent_event 关联，报告将其与父请求分开；没有为了统计把子内部历史合并到父历史。用量未知不记成零，子失败之前收到的统计仍保留。
 

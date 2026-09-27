@@ -71,9 +71,14 @@
 - Preauthorized command execution: add --shell-permission allow to a workspace task; commands are not OS-sandboxed.
 - Task-driven delegation is available in ordinary task and chat commands without a capability flag.
 - Local configuration check: pnpm start --checkConfig
+- Local skill catalog: pnpm start --listSkills (add --workspace <directory> for project skills; no model credentials required).
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
 - Live delegation verification: pnpm run verify:delegation (fixed read-only temporary fixtures, at most 20 real model requests).
 - Live coding verification: pnpm run verify:coding (uses a temporary search/read/edit fixture, authorizes only its designated edit and fixed test command, checks the execution report and provider token usage, and allows at most 14 real model requests).
+- Live multi-file workflow verification: pnpm run verify:workflow (two turns in a temporary cart/receipt fixture, narrowly authorized source edits and fixed checks, independent reruns and per-turn report validation, at most 28 real model requests).
 - Live context verification: pnpm run verify:context (three turns over a synthetic read-only temporary workspace, a 26000-byte request budget, and at most 27 real model requests).
-- DeepSeek is the only model service. Keep real keys in local environment variables or the ignored .env file.
+- DeepSeek is the default model provider; Kimi, MiMo, and Qwen are also supported through the shared OpenAI-compatible client. Keep credentials isolated per provider in local environment variables or the ignored .env file.
+- Follow docs/ARCHITECTURE/PROVIDERS.md for provider changes: use official endpoints and supported request fields, preserve tool-call validation, request budgets, cancellation, safe errors, and injected-transport coverage. New providers do not require live API validation unless explicitly requested.
+- Existing live verification scripts are restricted to DeepSeek; do not silently redirect them to another provider.
+- Skills are discovered from explicit workspace and user skill roots and loaded through read. Skill metadata and instructions never grant additional workspace or shell permissions.
 - Automated tests must use fake credentials and injected transports. Live verification is a separate, explicit command.

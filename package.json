@@ -16,6 +16,7 @@
     "test": "pnpm run build && node --test dist/tests/*.test.js",
     "verify:delegation": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-delegation.js",
     "verify:coding": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-coding.js",
+    "verify:context": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-context.js",
     "verify:live": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-live.js"
   },
   "devDependencies": {

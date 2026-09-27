@@ -30,7 +30,7 @@ async function fixture(workspace: string, userHome: string) {
   await mkdir(join(root, "references"), { recursive: true });
   await writeFile(join(root, "SKILL.md"), skillBody);
   await writeFile(join(root, "references", "checklist.md"), "CHECKLIST_RESOURCE\n");
-  return discoverSkills({ workspace, userHome });
+  return discoverSkills({ workspace, userHome, builtinRoot: false });
 }
 
 test("skill activation follows successful Session history, failure isolation and reset", async (t) => {

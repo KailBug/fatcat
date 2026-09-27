@@ -3,11 +3,14 @@ import { link, mkdir, readFile, rename, symlink, writeFile } from "node:fs/promi
 import { join } from "node:path";
 import test from "node:test";
 import type { TestContext } from "node:test";
-import { discoverSkills, skillCatalogPrompt, withSkills } from "../src/skills.js";
+import { discoverSkills as discoverAllSkills, skillCatalogPrompt, withSkills } from "../src/skills.js";
 import type { SkillCatalog } from "../src/skills.js";
 import { createTools, defaultTools } from "../src/tools.js";
 import type { Tools, ToolResult } from "../src/tools.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
+
+// Keep local-root boundary fixtures independent of the installed built-in catalog.
+const discoverSkills = (options: Parameters<typeof discoverAllSkills>[0]) => discoverAllSkills({ ...options, builtinRoot: false });
 
 function document(name: string, description = "Use for a controlled example.", body = "Follow these skill instructions.") {
   return `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n${body}\n`;

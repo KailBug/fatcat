@@ -54,7 +54,7 @@ test("skill listing is local, bounded metadata and works without model credentia
   await writeFile(join(skill, "SKILL.md"), "---\nname: review-fixture\ndescription: Review the fixture.\n---\nPRIVATE_SKILL_BODY\n");
   const result = run(["--listSkills", "--workspace", workspace]);
   assert.equal(result.status, 0, result.stderr);
-  const catalog = JSON.parse(result.stdout).skills;
+  const catalog = JSON.parse(result.stdout).skills.filter((skill: { scope: string }) => skill.scope === "workspace");
   assert.equal(catalog.length, 1);
   assert.equal(catalog[0].name, "review-fixture");
   assert.equal(catalog[0].uri, "skill://review-fixture/SKILL.md");

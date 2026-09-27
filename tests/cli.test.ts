@@ -13,7 +13,9 @@ function run(args: string[], overrides: NodeJS.ProcessEnv = {}, input?: string) 
   return spawnSync(process.execPath, [...(input === undefined ? [] : ["--import", transport]), cli, ...args], {
     encoding: "utf8",
     ...(input === undefined ? {} : { input }),
-    env: { ...process.env, DEEPSEEK_API_KEY: "", DEEPSEEK_MODEL: "deepseek-flash", HARNESS_MAX_ITERATIONS: "8",
+    env: { ...process.env, HARNESS_PROVIDER: "deepseek", DEEPSEEK_API_KEY: "", DEEPSEEK_MODEL: "deepseek-flash", HARNESS_MAX_ITERATIONS: "8",
+      USERPROFILE: fileURLToPath(new URL("./fixtures/empty-skill-home", import.meta.url)),
+      HOME: fileURLToPath(new URL("./fixtures/empty-skill-home", import.meta.url)),
       HARNESS_REQUEST_TIMEOUT_MS: "60000", HARNESS_MAX_REQUEST_BYTES: "262144", ...overrides },
     timeout: 5000,
   });
@@ -41,8 +43,49 @@ test("usage errors and missing credentials have distinct exit codes", () => {
 test("local config checks do not contact the model or expose credentials", () => {
   const result = run(["--checkConfig"], { DEEPSEEK_API_KEY: "offline-credential-only" });
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /DeepSeek was not contacted/);
+  assert.match(result.stdout, /no model provider was contacted/);
   assert.ok(!(result.stdout + result.stderr).includes("offline-credential-only"));
+});
+
+test("skill listing is local, bounded metadata and works without model credentials", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  const skill = join(workspace, ".agents", "skills", "review-fixture");
+  await mkdir(skill, { recursive: true });
+  await writeFile(join(skill, "SKILL.md"), "---\nname: review-fixture\ndescription: Review the fixture.\n---\nPRIVATE_SKILL_BODY\n");
+  const result = run(["--listSkills", "--workspace", workspace]);
+  assert.equal(result.status, 0, result.stderr);
+  const catalog = JSON.parse(result.stdout).skills;
+  assert.equal(catalog.length, 1);
+  assert.equal(catalog[0].name, "review-fixture");
+  assert.equal(catalog[0].uri, "skill://review-fixture/SKILL.md");
+  assert.ok(!result.stdout.includes("PRIVATE_SKILL_BODY"));
+  assert.ok(!result.stdout.includes(workspace));
+  for (const flags of [["--chat"], ["--checkConfig"], ["--prompt", "hello"], ["--permission", "workspace-write"]]) {
+    assert.equal(run(["--listSkills", "--workspace", workspace, ...flags]).status, 2);
+  }
+});
+
+test("CLI discovers skills for ordinary tasks and reset clears loaded instructions", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  const skill = join(workspace, ".fatcat", "skills", "review-fixture");
+  await mkdir(skill, { recursive: true });
+  await writeFile(join(skill, "SKILL.md"), "---\nname: review-fixture\ndescription: Review the fixture.\n---\nPRIVATE_SKILL_BODY\n");
+  const result = run(["--chat", "--workspace", workspace, "--permission", "read-only"],
+    { DEEPSEEK_API_KEY: "offline-skill-only" }, "skill load\nskill recall\n/reset\nskill recall\n/exit\n");
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.trim().split("\n"), ["SKILL_LOADED", "SKILL_PRESENT", "SKILL_ABSENT"]);
+  assert.ok(!result.stderr.includes("PRIVATE_SKILL_BODY"));
+  assert.ok(!result.stderr.includes(workspace));
+});
+
+test("new provider config checks select only their own credential without making requests", () => {
+  for (const [provider, key] of [["kimi", "MOONSHOT_API_KEY"], ["mimo", "MIMO_API_KEY"], ["qwen", "DASHSCOPE_API_KEY"]]) {
+    const result = run(["--checkConfig"], { HARNESS_PROVIDER: provider!, [key!]: "offline-provider-only" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, new RegExp(`Provider: ${provider}`));
+    assert.ok(!(result.stdout + result.stderr).includes("offline-provider-only"));
+    assert.match(result.stdout, /no model provider was contacted/);
+  }
 });
 
 

@@ -11,12 +11,15 @@ import { runAgent } from "./loop.js";
 import { createTurnReporter } from "./execution-report.js";
 import { createAgent } from "./agent.js";
 import { createTools } from "./tools.js";
+import { discoverSkills } from "./skills.js";
+import type { SkillCatalog } from "./skills.js";
 
 const help = `Fatcat - minimal Agent Harness
 
 Usage:
   pnpm start --help
   pnpm start --checkConfig
+  pnpm start --listSkills
   pnpm start --chat
   pnpm start --chat --workspace examples/workspace
   pnpm start "Use the sum tool to add 17 and 25."
@@ -28,6 +31,9 @@ The agent can delegate focused independent tasks when useful; simple tasks stay 
 At most two child tasks may start per user turn (up to six additional model requests).
 Each child uses at most three additional model requests and cannot delegate.
 Use --workspace <directory> to expose read, write, and shell. Writes and commands ask for yes/no in the terminal.
+Built-in skills are available by default; workspace and user .fatcat/skills or .agents/skills override matching names.
+Use --listSkills to inspect the local catalog without credentials. Mention $name or describe a task to use a skill.
+Skill instructions and bundled resources are loaded on demand through read; scripts still need shell authorization.
 Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
 Shell authorization is separate: --shell-permission ask (default), deny, or allow for unattended commands.
 Shell uses Windows PowerShell with current-user access, not an operating-system sandbox.
@@ -35,7 +41,8 @@ Each task emits an execution_report with request sizes, reported token usage, wr
 HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 262144 bytes); older read outputs may be replaced by explicit markers to fit.
 Current and recent turns, user instructions, and execution facts are preserved; full history remains in memory.
 An answer or a zero exit code alone does not certify the task; inspect the recorded evidence.
-Selected file contents are sent to DeepSeek when the model reads them.
+HARNESS_PROVIDER selects deepseek (default), kimi, mimo, or qwen for the entire session.
+Selected file and skill contents are sent to the configured provider when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
 Logs go to stderr; the final answer goes to stdout. Press Ctrl+C to cancel.`;
 
@@ -52,6 +59,7 @@ async function main(args: string[]): Promise<number> {
         options: {
           help: { type: "boolean", short: "h" },
           checkConfig: { type: "boolean" },
+          listSkills: { type: "boolean" },
           prompt: { type: "string" },
           chat: { type: "boolean" },
           workspace: { type: "string" },
@@ -67,22 +75,23 @@ async function main(args: string[]): Promise<number> {
     const { values, positionals } = parsed;
     const modes = Number(Boolean(values.help))
       + Number(Boolean(values.checkConfig))
+      + Number(Boolean(values.listSkills))
       + Number(Boolean(values.chat))
       + Number(values.prompt !== undefined || positionals.length > 0);
 
     //start parsing if
     if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
-      throw new HarnessError("USAGE", "Choose one mode: help, config check, chat, or one prompt.");
+      throw new HarnessError("USAGE", "Choose one mode: help, config check, skill listing, chat, or one prompt.");
     }
     if (values.workspace !== undefined && (!values.workspace.trim() || values.help || values.checkConfig
-      || (!values.chat && values.prompt === undefined && positionals.length === 0))) {
-      throw new HarnessError("USAGE", "Use --workspace with a prompt or --chat and a non-empty directory.");
+      || (!values.chat && !values.listSkills && values.prompt === undefined && positionals.length === 0))) {
+      throw new HarnessError("USAGE", "Use --workspace with a prompt, --chat, or --listSkills and a non-empty directory.");
     }
-    if (values.permission !== undefined && (values.workspace === undefined
+    if (values.permission !== undefined && (values.workspace === undefined || values.listSkills
       || !["ask", "read-only", "workspace-write"].includes(values.permission))) {
       throw new HarnessError("USAGE", "Use --permission ask, read-only, or workspace-write with --workspace and a task.");
     }
-    if (values["shell-permission"] !== undefined && (values.workspace === undefined
+    if (values["shell-permission"] !== undefined && (values.workspace === undefined || values.listSkills
       || !["ask", "deny", "allow"].includes(values["shell-permission"])
       || (values.permission === "read-only" && values["shell-permission"] !== "deny"))) {
       throw new HarnessError("USAGE", "Use --shell-permission ask, deny, or allow with a workspace task; read-only permits only deny.");
@@ -91,9 +100,18 @@ async function main(args: string[]): Promise<number> {
       console.log(help);
       return 0;
     }
+    if (values.listSkills) {
+      await createTools(values.workspace);
+      const skills = await discoverSkills(values.workspace === undefined ? {} : { workspace: values.workspace });
+      reportSkillWarnings(skills);
+      console.log(JSON.stringify({ skills: skills.skills }, null, 2));
+      return 0;
+    }
     if (values.checkConfig) {
       const config = loadConfig();
-      console.log("Local configuration is valid (DeepSeek was not contacted).");
+      console.log("Local configuration is valid (no model provider was contacted).");
+      console.log(`Provider: ${config.provider}`);
+      console.log(`Region: ${config.region}`);
       console.log(`Model: ${config.model}`);
       console.log(`Maximum model iterations: ${config.maxIterations}`);
       console.log(`Request timeout: ${config.requestTimeoutMs} ms`);
@@ -117,7 +135,9 @@ async function main(args: string[]): Promise<number> {
       permission: values.workspace === undefined ? "deny" : shellPermission,
       ...(terminal ? { approve: terminal.approveShell } : {}),
     });
-    const agent = createAgent(config, baseTools);
+    const skills = await discoverSkills({ ...(values.workspace === undefined ? {} : { workspace: values.workspace }), signal });
+    reportSkillWarnings(skills);
+    const agent = createAgent(config, baseTools, undefined, skills);
     if (values.chat) {
       return await runChat(new Session(agent), {
         input: process.stdin, output: process.stdout, error: process.stderr, signal, terminal: terminal!,
@@ -140,6 +160,10 @@ async function main(args: string[]): Promise<number> {
     terminal?.close();
     process.off("SIGINT", cancel);
   }
+}
+
+function reportSkillWarnings(catalog: SkillCatalog): void {
+  for (const message of catalog.warnings) console.error(JSON.stringify({ type: "skill_warning", message }));
 }
 
 process.exitCode = await main(process.argv.slice(2));

@@ -7,8 +7,8 @@ import { createDeepSeekModel } from "../src/model.js";
 import { parseTokenUsage } from "../src/model-usage.js";
 import type { TokenUsage } from "../src/model-usage.js";
 import { Session } from "../src/session.js";
-import { createTuiTelemetry } from "../src/tui/telemetry.js";
-import type { TuiTelemetry } from "../src/tui/telemetry.js";
+import { createTuiTelemetry } from "../tui/telemetry.js";
+import type { TuiTelemetry } from "../tui/telemetry.js";
 import type { WriteRecord } from "../src/tools/write.js";
 
 const counts = { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 };

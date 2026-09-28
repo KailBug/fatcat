@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
-import { FatcatView, sanitizeTerminalText, type TuiViewState } from "../src/tui/view.js";
+import { FatcatView, sanitizeTerminalText, type TuiViewState } from "../tui/view.js";
 
 function fixture(): TuiViewState {
   return {

@@ -12,7 +12,7 @@ function allowedName(name: string): boolean {
     && !/^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\.|$)/i.test(name);
 }
 
-/** Resolve allowed workspace paths without exposing the absolute root to the model. */
+/** Resolve a fixed workspace root and enforce relative tool paths within it. */
 export async function createWorkspace(workspace: string) {
   let root: string;
   try {
@@ -62,7 +62,7 @@ export async function createWorkspace(workspace: string) {
     throw new HarnessError("WRITE_CONFLICT", "The new file already exists; read it and use an exact edit instead.");
   }
 
-  return { resolvePath, resolveNewFile };
+  return { root, resolvePath, resolveNewFile };
 }
 
 export type Workspace = Awaited<ReturnType<typeof createWorkspace>>;

@@ -13,21 +13,25 @@
 | `src/tools.ts` | createTools(workspace?, permission = "read-only", approveWrite?, shellOptions?) 创建实际工具集合；统一 JSON 解析、名称查找、异步执行、取消和安全错误转换 |
 | `src/tools/types.ts` | 工具定义、执行类型与 JSON 可序列化 ToolResult |
 | `src/tools/sum.ts` | 纯计算示例工具的 Schema、校验与有限数求和 |
-| `src/tools/workspace.ts` | createWorkspace(workspace) 固定工作目录；resolvePath(path, signal?) 检查边界，返回内部绝对路径、规范化相对路径及文件状态；resolveNewFile 验证已有父目录并拒绝覆盖 |
+| `src/tools/workspace.ts` | createWorkspace(workspace) 通过 realpath 固定规范工作目录；resolvePath(path, signal?) 检查边界，返回内部绝对路径、规范化相对路径及文件状态；resolveNewFile 验证已有父目录并拒绝覆盖 |
 | `src/tools/read.ts` | createReadTool(workspace) 提供 read 定义、参数校验、目录与文本读取、分页及 query 分发 |
 | `src/tools/search.ts` | 有界子树遍历、文本匹配、搜索分页与扫描覆盖标记 |
 | `src/tools/text-file.ts` | read、search 与 write 共享有界 UTF-8 读取、文件身份核对、扩展名与编码限制 |
 | `src/tools/write.ts` | createWriteTool 实现创建、精确替换、暂存与发布；持有写权限和进程内记录 |
 | `src/tools/shell.ts` | 命令参数、独立权限、cwd 检查、命令记录及结果协议 |
 | `src/tools/process.ts` | Windows PowerShell 启动、有限输出、超时、取消和 taskkill 进程树清理 |
-| `src/cli.ts` | 默认 ask，解析 --workspace / --permission 并注入终端确认回调；不承担具体文件规则 |
+| `src/cli.ts` | 任务、chat、TUI 与技能列表默认选择启动目录，--workspace 可覆盖；默认 ask，解析权限并注入终端确认回调；不承担具体文件规则 |
 | `src/terminal.ts` | 持有单一 readline 输入，隔离任务与确认答案，显示有界写入预览或完整命令预览，并返回单次批准/拒绝 |
 
-Tools 包含 definitions 和 execute(name, argumentsJson, signal?, callId?)。可选 forTurn(onEvent?) 由委派包装器使用，隔离每回合次数与事件；基础 collectTools 保留内部命名 execute 函数。可选 getWrites() 返回深复制的 WriteRecord[]，由工作目录工具持有，Loop 只消费事实并记录事件。模型客户端和 Loop/Session 使用同一工具集合，结果按 tool_call_id 关联。
+Tools 包含 definitions 和 execute(name, argumentsJson, signal?, callId?)。工作目录工具另带 workspaceRoot，值来自 createWorkspace 的规范 realpath，供请求指导与 TUI 使用；不增加模型工具或绝对路径读写权限。可选 forTurn(onEvent?) 由委派包装器使用，隔离每回合次数与事件；基础 collectTools 保留内部命名 execute 函数。可选 getWrites() 返回深复制的 WriteRecord[]，由工作目录工具持有，Loop 只消费事实并记录事件。模型客户端和 Loop/Session 使用同一工具集合，结果按 tool_call_id 关联。
 
-基础 createTools 没有工作目录时只提供 sum；CLI 经 createAgent 包装后另提供 delegate_task；显式 --workspace 增加 read、write 和 shell。CLI 默认 ask，write 在参数、路径与内容校验后请求终端确认。显式 read-only 无条件拒绝写入；workspace-write 仅预授权文件写入，不授权 shell。程序化 createTools 仍默认只读，ask 需要由调用方提供 approveWrite 回调。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和写入记录；委派由 agent.ts 默认装配，无需 --subagent 开关。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
+CLI 的普通任务、--chat 和 --tui 默认把 process.cwd() 传给 createTools，--workspace 显式覆盖该目录；因此 read、write 和 shell 默认作为同级工具提供，经 createAgent 包装后父集合另有 delegate_task。pnpm start 先由 scripts/start.ts 恢复调用命令时的目录，因此默认目录和相对 --workspace 均基于调用位置；直接执行 CLI 则使用自身 cwd，不读取 INIT_CWD。默认 write / shell 策略仍为 ask，write 在参数、路径与内容校验后请求终端确认，shell 使用独立命令确认。--permission 与 --shell-permission 可直接用于默认工作目录任务，不要求额外的 --workspace；帮助、配置检查及技能列表不接受执行权限选项。显式 read-only 无条件拒绝写入和命令；workspace-write 仅预授权文件写入，不授权 shell。
 
-CLI 另外调用 discoverSkills，并把目录传入 createAgent，由后者调用 withSkills。发现用户技能后，即使没有 workspace，也可添加只接受 `skill://` 的 read；有 workspace 时沿用单个 read 定义并按 URI 或普通路径分发。只有已发现的技能可读，不能据此读取任意用户主目录文件。包装器透传写入和命令事实，不改变父子权限、回合额度和取消。普通工作目录路径仍按下述规则校验。
+程序化 createTools(undefined) 仍只提供 sum，不自行选择 cwd；显式传入目录时仍默认只读和 shell deny，ask 需要由调用方提供确认回调。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和执行记录；委派由 agent.ts 默认装配，无需 --subagent 开关。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
+
+CLI 另外使用同一工作目录调用 discoverSkills，并把目录传入 createAgent，由后者调用 withSkills。程序化调用者发现技能后，即使没有 workspace，也可添加只接受 `skill://` 的 read；有 workspace 时沿用单个 read 定义并按 URI 或普通路径分发。只有已发现的技能可读，不能据此读取任意用户主目录文件。包装器透传 workspaceRoot、写入和命令事实，不改变父子权限、回合额度和取消。普通工作目录路径仍按下述规则校验。
+
+agent.ts 在父子模型每次请求的消息副本中加入 JSON 引号包围的规范工作目录及相对路径规则，支持直接回答当前目录或名称；该上下文不写入 Session 历史，不依靠目录列表推断，也不新增查询工具或授予权限。
 
 旧模型工具名称 list_directory 和 read_file 已移除，调用返回 UNKNOWN_TOOL。项目尚无持久历史，不增加旧名称兼容层。内部 createWorkspaceTools 已替换为职责分离的 createWorkspace 与 createReadTool。
 
@@ -82,11 +86,11 @@ read.ts 负责统一参数入口和搜索分发；search.ts 只组合现有 Work
 
 ## 工作目录与访问边界
 
-- 工作目录显式授权并在初始化时 realpath 解析为固定根目录。
+- 工作目录由 CLI 默认选择启动目录或 --workspace 覆盖；程序化调用者显式传入目录。初始化时通过 realpath 解析为固定根目录，写入和命令授权分别检查。
 - 拒绝父目录跳转、绝对路径、Windows 盘符/UNC/设备路径、NTFS 数据流及不支持的名称。
 - 拒绝点开头路径段（包括 .env、.git）与 node_modules；“隐藏”是名称规则，不代表 Windows 隐藏属性。
 - 逐级 lstat 拒绝符号链接、junction、特殊文件和文件硬链接；realpath 后再次检查目录包含关系和名称。目录条目复用相同路径检查。
-- 打开文件后核对类型、硬链接计数、dev/ino。结果只暴露相对路径；不回传绝对根目录或原始文件系统错误。
+- 打开文件后核对类型、硬链接计数、dev/ino。文件工具结果的路径字段仍使用相对路径，不回传原始文件系统错误；绝对根目录另由 agent.ts 加入父子模型请求指导，TUI 使用同一规范路径。
 
 这些检查不是操作系统沙箱，不能保证抵御恶意本机进程并发替换路径或内容。用户选择的文本会经工具结果发送给当前模型供应商；名称和扩展名过滤不等于内容脱敏。read 不写入；write 仅在授权后修改支持的文本，不执行文件。
 

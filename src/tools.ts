@@ -13,6 +13,7 @@ import type { Tool, ToolResult } from "./tools/types.js";
 export type { ToolResult } from "./tools/types.js";
 export type Tools = {
   definitions: Tool["definition"][];
+  readonly workspaceRoot?: string;
   getWrites?: () => WriteRecord[];
   getCommands?: () => CommandRecord[];
   execute: (name: string, argumentsJson: string, signal?: AbortSignal, callId?: string) => Promise<ToolResult>;
@@ -76,7 +77,7 @@ export async function createTools(workspace?: string, permission: WorkspacePermi
   const writer = createWriteTool(scope, permission, undefined, approveWrite);
   const commands = createShellTool(scope, shell);
   return { ...collectTools([sumTool, createReadTool(scope), writer.tool, commands.tool]),
-    getWrites: writer.getWrites, getCommands: commands.getCommands };
+    workspaceRoot: scope.root, getWrites: writer.getWrites, getCommands: commands.getCommands };
 }
 
 export const toolDefinitions = defaultTools.definitions;

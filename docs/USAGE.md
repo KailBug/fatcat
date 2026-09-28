@@ -2,7 +2,7 @@
 
 [Back to Fatcat](../README.md)
 
-Run all commands below from the repository root.
+Run commands below from the repository root unless an example changes directories.
 
 A TypeScript Agent Harness that runs natively on Windows.
 
@@ -10,7 +10,7 @@ The near-term goal is a local coding agent that reads projects, makes controlled
 
 ## Current capabilities
 
-The CLI runs a single task or an in-memory conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. The model can answer directly, call the pure `sum` tool, load local Skills, inspect text files in an explicitly selected workspace, propose a write, or run a command after terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
+The CLI runs a single task or an in-memory conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. Tasks, chat, and TUI use the launch directory as the workspace unless `--workspace` selects another directory. The model can answer directly, call the pure `sum` tool, load local Skills, inspect workspace text files, propose a write, or run a command after terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
 The implementation includes isolated in-memory sessions, continuous chat, an optional terminal interface with configuration and usage panels, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or Web UI.
 
@@ -31,7 +31,7 @@ pnpm install --frozen-lockfile
 pnpm start --help
 ```
 
-If PowerShell blocks `pnpm.ps1`, use `pnpm.cmd` instead. The start and test scripts build before execution. Building compiles TypeScript, validates the built-in Skill assets, and refreshes their copy under `dist/src/skill`.
+If PowerShell blocks `pnpm.ps1`, use `pnpm.cmd` instead. The start and test scripts build before execution. Building compiles TypeScript, validates the built-in Skill assets, and refreshes their copy under `dist/src/skill`. When `pnpm start` is invoked from a repository subdirectory, the build and `.env` loading still use the package root; the launcher then restores the directory where you invoked the command before starting Fatcat.
 
 ## Configuration
 
@@ -98,7 +98,7 @@ node --env-file-if-exists=.env dist/src/cli.js --prompt "Use the sum tool to add
 
 Press Ctrl+C to cancel. A single-task invocation starts fresh history. No arguments displays help; use `--chat` for a continuous conversation or `--tui` for the interactive terminal interface.
 
-The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. Workspace files require an explicit `--workspace` selection; discovered Skills have a separate, read-only `skill://` scope. Writing asks for yes/no in an interactive terminal by default; shell uses separate authorization; there is no dedicated network tool.
+The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. `read`, `write`, and `shell` are available as peer workspace tools by default; discovered Skills also have a separate, read-only `skill://` scope. Each write and command asks for yes/no in an interactive terminal by default. Tool availability does not preauthorize these operations; there is no dedicated network tool.
 
 Each model request counts as one iteration; each new user turn receives a fresh iteration budget. If the last allowed request still asks for tools, the harness stops without executing those calls. Timeouts and transport failures stop the run; automatic SDK retries are disabled.
 
@@ -166,13 +166,13 @@ These are instructions for Fatcat to work on your coding tasks. They follow the 
 
 The search order is:
 
-1. `<workspace>/.fatcat/skills/<name>/SKILL.md`, when `--workspace` is supplied.
+1. `<workspace>/.fatcat/skills/<name>/SKILL.md`, using the launch directory unless `--workspace` overrides it.
 2. `<workspace>/.agents/skills/<name>/SKILL.md`.
 3. `<user-home>/.fatcat/skills/<name>/SKILL.md`.
 4. `<user-home>/.agents/skills/<name>/SKILL.md`.
 5. Built-in assets beside the running module, at `dist/src/skill/<subsystem>/<name>/SKILL.md` in this repository's build.
 
-The first valid occurrence of a name wins, so workspace or user Skills can override a built-in with the same name. Local roots contain one level of Skill directories; built-ins add a subsystem grouping level. Fatcat does not search ancestor repositories, download Skills, or install them. Without `--workspace`, it still discovers user and built-in Skills. Built-in paths are relative to the running module rather than the launch directory, so starting the compiled CLI from another directory retains them. Ordinary workspace read still rejects hidden paths.
+The first valid occurrence of a name wins, so workspace or user Skills can override a built-in with the same name. Local roots contain one level of Skill directories; built-ins add a subsystem grouping level. Fatcat does not search ancestor repositories, download Skills, or install them. Tasks, chat, TUI, and `--listSkills` discover workspace Skills from the launch directory by default, as well as user and built-in Skills. Built-in paths are relative to the running module rather than the launch directory, so starting the compiled CLI from another directory retains them. Ordinary workspace read still rejects hidden paths.
 
 To list discovered metadata and diagnostics locally, without a provider key or network request:
 
@@ -217,16 +217,20 @@ Built-in source files live under `src/skill/<subsystem>/<name>/SKILL.md`; run `p
 
 ## Read a workspace
 
-Select the directory whose text files you want the model to use:
+The launch directory is the default workspace. Use `--workspace` to select another directory:
 
 ```powershell
 pnpm start --workspace examples/workspace --prompt "Read project-notes.txt and report its verification phrase."
 pnpm start --chat --workspace examples/workspace
 ```
 
-`--workspace` works with a single prompt, `--chat`, or the local `--listSkills` command; it cannot be used alone or with help/configuration checks. Without it, the parent has `sum` and `delegate_task`; children have `sum`, and both have `read` for discovered user or built-in Skills. This does not grant access to ordinary workspace paths. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`.
+`--workspace` works with a single prompt, `--chat`, `--tui`, or the local `--listSkills` command; it cannot be used alone or with help/configuration checks. Without it, Fatcat uses the directory where you invoked `pnpm start`, even though pnpm runs package scripts from the package root. An explicit absolute workspace overrides that directory; a relative workspace resolves from it. For example, from `D:\fatcat\examples`, `pnpm start --chat` uses `D:\fatcat\examples`, and `pnpm start --chat --workspace workspace` uses `D:\fatcat\examples\workspace`.
 
-The workspace exposes general-purpose `read`, `write`, and `shell` tools, with each write requiring approval by default. The `read` tool accepts files or directories. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
+The parent has `sum`, `read`, `write`, `shell`, and `delegate_task`; children share the same workspace tools and permissions without recursive delegation. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`. Directly running the compiled `dist/src/cli.js` uses that Node process's current directory and ignores inherited `INIT_CWD`; only the package start launcher restores pnpm's invocation directory.
+
+The canonical workspace root is included in parent and child model request guidance, so the model can answer which directory it is using without executing a command or inferring the path from a listing. Tool paths still use workspace-relative paths. The TUI displays the same canonical root. Help and configuration checks do not create a workspace or accept workspace/permission options.
+
+The workspace exposes general-purpose `read`, `write`, and `shell` tools, with each write and command requiring approval by default. The `read` tool accepts files or directories. It replaces `list_directory` and `read_file`; the old names are no longer accepted.
 
 | Input | Behavior |
 | --- | --- |
@@ -291,7 +295,7 @@ The default CLI policy is `ask`; there is no need to restart with an additional 
 | --permission read-only | Refuse every write without asking. |
 | --permission workspace-write | Preauthorize writes for this invocation, including unattended scripts. |
 
-`--permission` requires a workspace plus a task or chat. Non-interactive input cannot approve writes: a piped `yes` is not authorization, and writes fail promptly unless explicitly preauthorized. Programmatic createTools callers still default to read-only; ask mode requires an approval callback. Single-task invocations support the same terminal confirmation.
+`--permission` and `--shell-permission` work with a task, chat, or TUI using either the default or an explicit workspace; neither requires `--workspace`. For example, `pnpm start --chat --permission read-only` inspects the launch directory while refusing writes and commands. Non-interactive input cannot approve writes: a piped `yes` is not authorization, and writes fail promptly unless explicitly preauthorized. Programmatic `createTools()` remains sum-only with no workspace access; callers selecting a workspace still default to read-only with shell denied, and ask mode requires an approval callback. Single-task invocations support the same terminal confirmation.
 
 Use a disposable workspace when experimenting. Approval previews go to the terminal's stderr and may contain file text; JSON event records still omit file bodies. Preview text is escaped to prevent terminal controls and each preview is capped at 1200 characters with an explicit truncation marker. This is not a full-file diff viewer.
 
@@ -368,7 +372,7 @@ pnpm start --tui --workspace D:\your-project
 pnpm start --tui --workspace D:\your-project --permission read-only
 ```
 
-Replace `D:\your-project` with the project you want Fatcat to access. The TUI uses the same provider settings, Skills, tools, delegation limits, and workspace permissions as the CLI. `--permission workspace-write` preauthorizes file edits only; commands still ask unless `--shell-permission allow` is supplied. Without `--workspace`, the screen does not imply authorization to read or edit the launch directory.
+Replace `D:\your-project` with the project you want Fatcat to access, or run `pnpm start --tui` to use the launch directory. The TUI uses the same provider settings, Skills, tools, delegation limits, and workspace permissions as the CLI and displays the canonical workspace root used by the tools. `--permission workspace-write` preauthorizes file edits only; commands still ask unless `--shell-permission allow` is supplied.
 
 The cyan and purple interface combines Markdown conversation output, a status area, a metrics panel, and a Unicode input editor. At 110 columns or wider, conversation and metrics appear side by side; narrower terminals use a stacked layout. `/status` shows full values when the screen cannot fit them. `NO_COLOR` disables theme colors. `--tui` is an exclusive interactive mode; do not combine it with `--chat`, a prompt, `--help`, `--checkConfig`, or `--listSkills`. Redirected input/output and `TERM=dumb` are rejected with usage exit code 2; use the existing CLI modes for pipes.
 

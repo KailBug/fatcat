@@ -21,7 +21,7 @@ Usage:
   pnpm start --checkConfig
   pnpm start --listSkills
   pnpm start --chat
-  pnpm start --tui --workspace .
+  pnpm start --tui
   pnpm start --chat --workspace examples/workspace
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
@@ -32,7 +32,8 @@ A prompt runs one task. History stays in memory.
 The agent can delegate focused independent tasks when useful; simple tasks stay direct.
 At most two child tasks may start per user turn (up to six additional model requests).
 Each child uses at most three additional model requests and cannot delegate.
-Use --workspace <directory> to expose read, write, and shell. Writes and commands ask for yes/no in the terminal.
+Tasks use the current directory as the workspace and expose read, write, and shell.
+Use --workspace <directory> to select another directory. Writes and commands ask for yes/no in the terminal.
 Built-in skills are available by default; workspace and user .fatcat/skills or .agents/skills override matching names.
 Use --listSkills to inspect the local catalog without credentials. Mention $name or describe a task to use a skill.
 Skill instructions and bundled resources are loaded on demand through read; scripts still need shell authorization.
@@ -91,11 +92,12 @@ async function main(args: string[]): Promise<number> {
       || (!values.chat && !values.tui && !values.listSkills && values.prompt === undefined && positionals.length === 0))) {
       throw new HarnessError("USAGE", "Use --workspace with a prompt, --chat, --tui, or --listSkills and a non-empty directory.");
     }
-    if (values.permission !== undefined && (values.workspace === undefined || values.listSkills
+    const hasTask = Boolean(values.chat || values.tui || values.prompt !== undefined || positionals.length > 0);
+    if (values.permission !== undefined && (!hasTask
       || !["ask", "read-only", "workspace-write"].includes(values.permission))) {
-      throw new HarnessError("USAGE", "Use --permission ask, read-only, or workspace-write with --workspace and a task.");
+      throw new HarnessError("USAGE", "Use --permission ask, read-only, or workspace-write with a prompt, --chat, or --tui.");
     }
-    if (values["shell-permission"] !== undefined && (values.workspace === undefined || values.listSkills
+    if (values["shell-permission"] !== undefined && (!hasTask
       || !["ask", "deny", "allow"].includes(values["shell-permission"])
       || (values.permission === "read-only" && values["shell-permission"] !== "deny"))) {
       throw new HarnessError("USAGE", "Use --shell-permission ask, deny, or allow with a workspace task; read-only permits only deny.");
@@ -105,8 +107,8 @@ async function main(args: string[]): Promise<number> {
       return 0;
     }
     if (values.listSkills) {
-      await createTools(values.workspace);
-      const skills = await discoverSkills(values.workspace === undefined ? {} : { workspace: values.workspace });
+      const tools = await createTools(values.workspace ?? process.cwd());
+      const skills = await discoverSkills({ workspace: tools.workspaceRoot! });
       reportSkillWarnings(skills);
       console.log(JSON.stringify({ skills: skills.skills }, null, 2));
       return 0;
@@ -131,22 +133,23 @@ async function main(args: string[]): Promise<number> {
 
     //start config
     const config = loadConfig();
+    const workspace = values.workspace ?? process.cwd();
     const permission = (values.permission ?? "ask") as WorkspacePermission;
     const shellPermission = (values["shell-permission"] ?? (permission === "read-only" ? "deny" : "ask")) as ShellPermission;
     if (values.tui) {
       const { runTui } = await import("./tui/index.js");
-      return await runTui(config, values.workspace, permission, shellPermission);
+      return await runTui(config, workspace, permission, shellPermission);
     }
     process.on("SIGINT", cancel);
-    if (values.chat || (values.workspace !== undefined && (permission === "ask" || shellPermission === "ask"))) {
+    if (values.chat || permission === "ask" || shellPermission === "ask") {
       terminal = createTerminalInput(process.stdin, process.stderr, controller.signal);
     }
     const signal = terminal?.signal ?? controller.signal;
-    const baseTools = await createTools(values.workspace, permission, terminal?.approveWrite, {
-      permission: values.workspace === undefined ? "deny" : shellPermission,
+    const baseTools = await createTools(workspace, permission, terminal?.approveWrite, {
+      permission: shellPermission,
       ...(terminal ? { approve: terminal.approveShell } : {}),
     });
-    const skills = await discoverSkills({ ...(values.workspace === undefined ? {} : { workspace: values.workspace }), signal });
+    const skills = await discoverSkills({ workspace: baseTools.workspaceRoot!, signal });
     reportSkillWarnings(skills);
     const agent = createAgent(config, baseTools, undefined, skills);
     if (values.chat) {

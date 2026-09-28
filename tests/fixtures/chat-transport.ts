@@ -6,7 +6,21 @@ globalThis.fetch = async (input, init) => {
   const request = new Request(input, init);
   assert.equal(request.url, "https://api.deepseek.com/chat/completions");
   const { messages, tools } = await request.json() as { messages: Message[]; tools: { function: { name: string } }[] };
+  if (process.env.FATCAT_TEST_WORKSPACE_ROOT !== undefined) {
+    const rootPrefix = "Workspace root (JSON string): ";
+    const rootLines = String(messages[0]?.content).split("\n").filter((line) => line.startsWith(rootPrefix));
+    assert.deepEqual(rootLines, [rootPrefix + JSON.stringify(process.env.FATCAT_TEST_WORKSPACE_ROOT)]);
+    assert.ok(messages.slice(1).every((message) => !String(message.content).includes(rootPrefix)));
+  }
   const prompt = messages.findLast((message) => message.role === "user")?.content;
+  if (prompt === "workspace location") {
+    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
+    const prefix = "Workspace root (JSON string): ";
+    const rootLines = String(messages[0]?.content).split("\n").filter((line) => line.startsWith(prefix));
+    assert.equal(rootLines.length, 1);
+    const root = JSON.parse(rootLines[0]!.slice(prefix.length));
+    return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify(root) } }] });
+  }
   if (prompt === "skill load" || prompt === "skill recall") {
     assert.ok(String(messages[0]?.content).includes("skill://review-fixture/SKILL.md"));
     assert.ok(!String(messages[0]?.content).includes("PRIVATE_SKILL_BODY"));
@@ -46,11 +60,11 @@ globalThis.fetch = async (input, init) => {
     usage: { prompt_tokens: 20, completion_tokens: 4, total_tokens: 24 },
     choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Usage recorded." } }],
   });
-  if (prompt === "shell fixture") {
+  if (prompt === "shell fixture" || prompt === "shell cwd") {
     const last = messages.at(-1);
     if (last?.role === "user") return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
       role: "assistant", content: null, tool_calls: [{ id: "shell-1", type: "function",
-        function: { name: "shell", arguments: JSON.stringify({ command: "'CLI_COMMAND_READY'" }) } }],
+        function: { name: "shell", arguments: JSON.stringify({ command: prompt === "shell cwd" ? "(Get-Location).Path" : "'CLI_COMMAND_READY'" }) } }],
     } }] });
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: String(last?.content) } }] });
   }
@@ -73,11 +87,11 @@ globalThis.fetch = async (input, init) => {
     assert.match(String(record.content), /committed/);
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Earlier write is recorded." } }] });
   }
-  if (prompt === "delegate" || prompt === "delegate write") {
+  if (prompt === "delegate" || prompt === "delegate write" || prompt === "delegate workspace") {
     assert.ok(tools.some((tool) => tool.function.name === "delegate_task"));
     const last = messages.at(-1);
     if (last?.role === "user") {
-      const task = prompt === "delegate write" ? "write fixture" : tools.some((tool) => tool.function.name === "write") ? "workspace" : "add";
+      const task = prompt === "delegate write" ? "write fixture" : prompt === "delegate workspace" ? "workspace" : "add";
       return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
         role: "assistant", content: null, tool_calls: [{ id: "delegated", type: "function",
           function: { name: "delegate_task", arguments: JSON.stringify({ task }) } }],

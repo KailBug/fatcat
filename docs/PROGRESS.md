@@ -4,6 +4,7 @@
 
 ## 当前状态
 
+- 默认工作区修正：CLI 单次任务、chat、TUI 和本地技能列表默认使用调用目录；pnpm start 通过专用启动器恢复该目录，修正子目录启动仍指向包根的遗漏。read / write / shell 同级可用，写入及命令仍逐次确认。273 项离线测试及真实 pnpm 子目录入口检查通过，待 review；模型使用注入传输，没有 API 在线验证。
 - 阶段 0：项目文档基线已完成，文件与内部链接已检查，已核对文档中的范围和状态描述。
 - 阶段 1：最小 Agent Loop 已完成离线与真实 DeepSeek 验收，用户 review 通过。
 - 阶段 2A：内存 Session 与连续对话已完成验证并通过用户 review。
@@ -16,6 +17,56 @@
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；yaml 2.9.1 解析 Skill frontmatter，@earendil-works/pi-tui 0.87.1 支撑可选终端界面。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+
+## 2026-09-27：说明 scripts 目录职责（源码核对）
+
+- 根据当前 scripts 文件和 package.json，核对目录内的启动器、Skills 构建资源复制、五项真实模型验收入口及 fixtures 共用样例，向用户说明用途与调用关系。
+- pnpm start 自动执行构建、Skills 复制及启动器；verify:* 需显式运行，现有脚本限定 DeepSeek。fixtures 提供测试数据、验收断言及真实验证配置校验，不是运行结果存储目录。
+- 本次仅核对源码并补充本进度记录，没有改动运行逻辑或执行验收脚本，没有模型 API 请求；保留当前分支与全部现有修改。后续实现仍以默认工作区修正的 review 为准。
+
+## 2026-09-27：修正 pnpm 从子目录启动时的工作区（已验证，待 review）
+
+### 实际结果
+
+- 用户从 D:\fatcat\examples 执行 pnpm start --chat 后仍得到 D:\fatcat。定位并复现：没有硬编码该路径，而是 pnpm 在包根执行 scripts，初版使用的 process.cwd() 已被切回包根。此前 267 项检查及根目录 TUI 检查没有覆盖真实 pnpm 子目录启动，因此不能证明这一场景正确。
+- 在既有 fix/default-workspace-tools、HEAD 6f7a3ad 上继续同一修正，保留全部未提交改动。新增 scripts/start.ts，package.json 的 start 在原有构建及包根 .env 加载后执行该启动器；启动器用 pnpm 的非空白绝对 INIT_CWD 恢复调用目录，再动态导入既有 CLI。缺失或空白值回退当前 cwd；无效、文件路径或不可访问目录安全失败，不泄漏路径值。
+- 默认工作区与相对 --workspace 现在都以调用位置为基准；绝对 --workspace 仍优先。直接运行 dist/src/cli.js 保持自身 cwd，不读取继承的 INIT_CWD，避免将包管理器语义混入普通 CLI。内置 Skills 仍按模块位置加载，工具权限、审批及模型接口未变，没有新增依赖或修改锁文件。
+- 同步 AGENTS、USAGE、PROJECT、ROADMAP 和相关架构文档。工作期间观察到 examples/workspace/project-notes.txt 被外部暂存删除，未恢复或改动该暂存项；本轮没有执行 Git 暂存、提交、推送或合并。
+
+### 验证结果
+
+- 在真实 D:\fatcat\examples 中运行 pnpm start --chat，使用虚构凭据及注入 fetch：修复前固定 Get-Location 返回 D:\fatcat；修复后模型收到的规范根及实际命令结果均为 D:\fatcat\examples。另用完全相同的 --chat 入口直接返回模型请求中的根目录，确认无需额外参数即使用 examples；--workspace .. 则正确得到 D:\fatcat。
+- 新增 6 项启动器回归，覆盖调用目录文件读取、绝对/相对覆盖、调用目录 Skills、空值回退、无效目录安全错误，以及直接 CLI 忽略继承 INIT_CWD。测试直接启动编译后的启动器，避免在并行测试期间反复构建资源；真实 pnpm 包脚本边界由上述独立检查覆盖。
+- pnpm run typecheck、pnpm run build、启动器专项 6/6 及 pnpm test 全量 273/273 通过，0 失败 / 取消 / 跳过。真实 PowerShell 仅执行固定 Get-Location；模型与用量均为离线夹具，没有真实 API 请求或凭据输出。
+
+### 限制与下一步
+
+- .env 仍从 Fatcat 包根加载，而非自动加载目标工作区配置；直接 Node 入口的 --env-file 路径仍遵循 Node 自身参数。该约定已记录于使用说明和架构。
+- 旧会话需退出后重新运行；下一步 review 此修正。默认工作区正确性不代表模型每次自然语言叙述都准确，也不改变 shell 非 OS 沙箱的边界；阶段 2D 整体仍进行中。
+
+## 2026-09-27：修正默认工作区与基础工具可用性（初版验证，pnpm 子目录遗漏见上节）
+
+### 实际结果
+
+- 根据用户提供的聊天记录定位：未传 --workspace 时 createTools 返回 sum-only，Skills 包装器仅补入读取 skill:// 的 read，shell / write 未注册，模型也不知道工作区。用户确认普通启动应使用当前目录，并保持写入与命令逐次确认。
+- 核对 feat/session-perfection、HEAD 6f7a3ad（PR #12 合入提交）及干净工作区后创建 fix/default-workspace-tools。单次任务、--chat、--tui 和 --listSkills 默认使用 process.cwd()；--workspace 仍显式覆盖。任务权限参数不再依赖显式工作区参数，帮助 / 配置检查 / 技能列表仍拒绝执行权限选项。
+- createWorkspace 将已验证的 realpath 作为 Tools.workspaceRoot 提供，Skills 与委派包装器保留元数据；agent.ts 把 JSON 编码的根目录及相对路径规则加入父子请求副本，使目录问题无需额外命令。该指导不进入保存历史，也不授予权限。TUI 使用同一工具根目录显示与发现技能，避免另行解析产生不同来源。
+- 保留程序化 createTools(undefined) 的无工作目录行为、显式目录调用的 read-only / shell deny 默认值，以及 CLI ask、管道不能批准、只读拒绝命令和父子权限继承。没有新增模型工具、依赖、供应商请求或持久状态。
+- 同步 AGENTS、USAGE、PROJECT、ROADMAP 与受影响架构说明；README 的概括仍准确，无需变更。没有提交、推送或合并。
+
+### 验证结果
+
+- Windows Node.js v24.19.0、pnpm 11.21.0 下 pnpm run typecheck、pnpm run build、pnpm test（267 项，0 失败 / 取消 / 跳过）和 pnpm start --help 通过。模型请求全部使用虚构凭据和注入传输；本地文件与 PowerShell 验证使用真实临时样例。
+- 定向 Agent 测试 5/5、CLI 测试 27/27 通过。覆盖默认目录和显式覆盖的读取及 shell cwd、同级工具定义、父子规范路径上下文、请求指导不累积或污染历史、reset 后继续、默认本地 Skills 发现，以及默认确认、管道拒绝、显式写入预授权、独立命令授权和只读拒绝。
+- 原生 Windows PTY 运行真实 --tui 入口（离线模型）：未传 --workspace，显示 D:\fatcat、write ask / shell ask。固定无副作用命令 'CLI_COMMAND_READY' 首次输入 no 后为 PERMISSION_DENIED、0 条命令；下一回合输入 yes 后实际执行 exitCode=0、success=true、1 条命令，/exit 正常返回 0 并恢复终端。
+- 首轮类型检查发现新增测试使用了不支持的 userHome=false，修正为隔离的不存在路径后通过。首轮全量测试 266/267：旧内置技能测试要求忽略 cwd，与新默认规则冲突；更新为同时验证 cwd 技能及打包技能、正文和绝对路径不进入列表后，全量重跑通过。
+- 最后只读核对了 21 个修改文件的 UTF-8、docs 外英文约定及 79 个本地文档链接；git diff --check 通过，暂存区为空。自动审批拒绝了批量重写换行的 QA 请求，随后改为只读检查完成验证；没有批量改写文件，部分文件保留已有 CRLF 与补丁 LF，不宣称全部统一换行。
+
+### 限制与下一步
+
+- 未调用真实模型 API，离线验证证明工具装配和请求上下文正确，不保证模型每次自然语言回答都正确。旧聊天进程需退出并重新运行 pnpm start --chat 才会加载新行为。
+- shell 仍以当前用户权限执行，不是 OS 沙箱；本次未改变其执行范围、预算或取消策略。默认 Windows 命令沙箱仍遇到 deny-read ACL 初始化错误，使用获准的本机命令入口完成检查，没有产品实现阻塞。
+- 下一步 review 此修正并在日常编码会话中观察实际模型表现；阶段 2D 整体仍进行中。
 
 ## 2026-09-27：阶段 2D-11，可选 TUI 与准确遥测（离线及原生终端已验证，待 review）
 

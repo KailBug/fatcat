@@ -74,9 +74,9 @@ test("built-in skills ship with the build and add only catalogued reads without 
   assert.deepEqual((await discoverSkills({ userHome, builtinRoot: false })).skills, []);
 });
 
-test("credential-free CLI finds packaged skills from an unrelated current directory", async (t) => {
+test("credential-free CLI finds launch-directory and packaged skills outside the installation", async (t) => {
   const { workspace, outside: userHome } = await temporaryWorkspace(t);
-  await install(join(workspace, ".fatcat", "skills"), "cwd-only", "Do not discover an implicit workspace.");
+  await install(join(workspace, ".fatcat", "skills"), "cwd-only", "Discover the launch workspace without loading this body.");
   const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   const result = spawnSync(process.execPath, [cli, "--listSkills"], {
     cwd: workspace,
@@ -88,10 +88,15 @@ test("credential-free CLI finds packaged skills from an unrelated current direct
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, "");
   const listed = (JSON.parse(result.stdout) as { skills: SkillDescriptor[] }).skills;
-  assert.deepEqual(listed.map((entry) => entry.name).sort(), bundled.map((entry) => entry.name).sort());
-  assert.ok(listed.every((entry) => entry.scope === "builtin" && entry.subsystem));
+  assert.deepEqual(listed.map((entry) => entry.name).sort(), [...bundled.map((entry) => entry.name), "cwd-only"].sort());
+  assert.equal(listed.find((entry) => entry.name === "cwd-only")?.scope, "workspace");
+  const builtins = listed.filter((entry) => entry.scope === "builtin");
+  assert.equal(builtins.length, bundled.length);
+  assert.ok(builtins.every((entry) => entry.subsystem));
   assert.ok(!result.stdout.includes(builtRoot));
-  for (const entry of listed) assert.deepEqual(Object.keys(entry).sort(), ["description", "name", "scope", "subsystem", "uri"]);
+  assert.ok(!result.stdout.includes(workspace));
+  assert.ok(!result.stdout.includes("without loading this body"));
+  for (const entry of builtins) assert.deepEqual(Object.keys(entry).sort(), ["description", "name", "scope", "subsystem", "uri"]);
 });
 
 test("workspace and user conventions take precedence over same-named built-in skills", async (t) => {

@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { readdir } from "node:fs/promises";
+import { readdir, realpath } from "node:fs/promises";
+import { join } from "node:path";
 import test from "node:test";
 import { createAgent } from "../src/agent.js";
 import { loadConfig } from "../src/config.js";
-import { runAgent } from "../src/loop.js";
+import { runAgent, runAgentTurn } from "../src/loop.js";
 import { createTools } from "../src/tools.js";
+import { discoverSkills } from "../src/skills.js";
 import type { Message } from "../src/model.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 
@@ -25,6 +27,7 @@ test("default agent construction is idle and direct tasks make no child requests
     requests++;
     const body = await new Request(input, init).json() as RequestBody;
     assert.deepEqual(body.tools.map((tool) => tool.function.name), ["sum", "delegate_task"]);
+    assert.ok(!String(body.messages[0]?.content).includes("Workspace root (JSON string):"));
     return answer("Direct answer");
   });
   assert.equal(requests, 0);
@@ -102,4 +105,45 @@ test("parent delegation guidance does not mutate or accumulate in caller history
   await agent.model(messages);
   assert.deepEqual(messages, before);
   assert.equal(requests, 2);
+});
+
+test("canonical workspace context reaches parent and child without entering saved history", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  const root = await realpath(workspace);
+  const base = await createTools(join(workspace, "."));
+  const skills = await discoverSkills({ workspace, userHome: join(workspace, "missing-home") });
+  const guidance = `Workspace root (JSON string): ${JSON.stringify(root)}`;
+  let parents = 0;
+  let children = 0;
+  const agent = createAgent(config, base, async (input, init) => {
+    const body = await new Request(input, init).json() as RequestBody;
+    const system = String(body.messages[0]?.content);
+    assert.equal(system.split(guidance).length - 1, 1);
+    assert.match(system, /Use relative paths with read, write, and shell cwd/);
+    assert.ok(system.includes("skill://workspace-editing/SKILL.md"));
+    if (body.tools.some((tool) => tool.function.name === "delegate_task")) {
+      parents++;
+      if (body.messages.at(-1)?.role === "user") {
+        return calls({ name: "delegate_task", args: { task: "Identify the workspace from runtime context" }, id: "location" });
+      }
+      return answer("Workspace identified");
+    }
+    children++;
+    return answer("Child received workspace context");
+  }, skills);
+  assert.equal(base.workspaceRoot, root);
+  assert.equal(agent.tools.workspaceRoot, root);
+  assert.equal(agent.tools.forTurn!().workspaceRoot, root);
+  const first = await runAgentTurn("Identify the workspace", [], agent);
+  const before = structuredClone(first.messages);
+  const second = await runAgentTurn("Identify it again", first.messages, agent);
+  assert.deepEqual(first.messages, before);
+  for (const history of [first.messages, second.messages]) {
+    assert.ok(!JSON.stringify(history).includes("Workspace root (JSON string):"));
+  }
+  await runAgent("Identify after a fresh history", agent);
+  assert.equal(parents, 6);
+  assert.equal(children, 3);
+  assert.deepEqual(base.getWrites!(), []);
+  assert.deepEqual(base.getCommands!(), []);
 });

@@ -9,9 +9,10 @@ import { temporaryWorkspace } from "./fixtures/workspace.js";
 
 const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const transport = new URL("./fixtures/chat-transport.js", import.meta.url).href;
-function run(args: string[], overrides: NodeJS.ProcessEnv = {}, input?: string) {
+function run(args: string[], overrides: NodeJS.ProcessEnv = {}, input?: string, cwd?: string) {
   return spawnSync(process.execPath, [...(input === undefined ? [] : ["--import", transport]), cli, ...args], {
     encoding: "utf8",
+    ...(cwd === undefined ? {} : { cwd }),
     ...(input === undefined ? {} : { input }),
     env: { ...process.env, HARNESS_PROVIDER: "deepseek", DEEPSEEK_API_KEY: "", DEEPSEEK_MODEL: "deepseek-flash", HARNESS_MAX_ITERATIONS: "8",
       USERPROFILE: fileURLToPath(new URL("./fixtures/empty-skill-home", import.meta.url)),
@@ -64,14 +65,16 @@ test("skill listing is local, bounded metadata and works without model credentia
   const skill = join(workspace, ".agents", "skills", "review-fixture");
   await mkdir(skill, { recursive: true });
   await writeFile(join(skill, "SKILL.md"), "---\nname: review-fixture\ndescription: Review the fixture.\n---\nPRIVATE_SKILL_BODY\n");
-  const result = run(["--listSkills", "--workspace", workspace]);
-  assert.equal(result.status, 0, result.stderr);
-  const catalog = JSON.parse(result.stdout).skills.filter((skill: { scope: string }) => skill.scope === "workspace");
-  assert.equal(catalog.length, 1);
-  assert.equal(catalog[0].name, "review-fixture");
-  assert.equal(catalog[0].uri, "skill://review-fixture/SKILL.md");
-  assert.ok(!result.stdout.includes("PRIVATE_SKILL_BODY"));
-  assert.ok(!result.stdout.includes(workspace));
+  for (const flags of [[], ["--workspace", workspace]]) {
+    const result = run(["--listSkills", ...flags], {}, undefined, workspace);
+    assert.equal(result.status, 0, result.stderr);
+    const catalog = JSON.parse(result.stdout).skills.filter((skill: { scope: string }) => skill.scope === "workspace");
+    assert.equal(catalog.length, 1);
+    assert.equal(catalog[0].name, "review-fixture");
+    assert.equal(catalog[0].uri, "skill://review-fixture/SKILL.md");
+    assert.ok(!result.stdout.includes("PRIVATE_SKILL_BODY"));
+    assert.ok(!result.stdout.includes(workspace));
+  }
   for (const flags of [["--chat"], ["--checkConfig"], ["--prompt", "hello"], ["--permission", "workspace-write"]]) {
     assert.equal(run(["--listSkills", "--workspace", workspace, ...flags]).status, 2);
   }
@@ -82,8 +85,8 @@ test("CLI discovers skills for ordinary tasks and reset clears loaded instructio
   const skill = join(workspace, ".fatcat", "skills", "review-fixture");
   await mkdir(skill, { recursive: true });
   await writeFile(join(skill, "SKILL.md"), "---\nname: review-fixture\ndescription: Review the fixture.\n---\nPRIVATE_SKILL_BODY\n");
-  const result = run(["--chat", "--workspace", workspace, "--permission", "read-only"],
-    { DEEPSEEK_API_KEY: "offline-skill-only" }, "skill load\nskill recall\n/reset\nskill recall\n/exit\n");
+  const result = run(["--chat", "--permission", "read-only"],
+    { DEEPSEEK_API_KEY: "offline-skill-only" }, "skill load\nskill recall\n/reset\nskill recall\n/exit\n", workspace);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.stdout.trim().split("\n"), ["SKILL_LOADED", "SKILL_PRESENT", "SKILL_ABSENT"]);
   assert.ok(!result.stderr.includes("PRIVATE_SKILL_BODY"));
@@ -143,17 +146,43 @@ test("workspace CLI options require a task and an existing directory", async (t)
   assert.match(missing.stderr, /Workspace must/);
 });
 
-test("single tasks and chat share workspace definitions, results, and safe error handling", async (t) => {
+test("permission options require a task but do not require an explicit workspace", () => {
+  for (const option of [["--permission", "workspace-write"], ["--shell-permission", "allow"]]) {
+    for (const mode of [[], ["--help"], ["--checkConfig"], ["--listSkills"]]) {
+      const args = [...mode, ...option];
+      assert.equal(run(args).status, 2, JSON.stringify(args));
+    }
+  }
+});
+
+test("ordinary prompt and chat expose workspace tools rooted at the launch directory", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "notes.txt"), "launch-directory-text");
+  const env = { DEEPSEEK_API_KEY: "offline-only", FATCAT_TEST_WORKSPACE_ROOT: workspace };
+  const single = run(["--prompt", "workspace"], env, "", workspace);
+  assert.equal(single.status, 0, single.stderr);
+  assert.equal(JSON.parse(single.stdout).result.content, "launch-directory-text");
+  const chat = run(["--chat"], env, "workspace\nhistory\n/reset\nworkspace\n/exit\n", workspace);
+  assert.equal(chat.status, 0, chat.stderr);
+  const answers = chat.stdout.trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(answers[0].result.content, "launch-directory-text");
+  assert.deepEqual(answers[2], answers[0]);
+  assert.ok(!JSON.stringify(answers[1]).includes("Workspace root (JSON string):"));
+  assert.ok(!chat.stderr.includes(workspace));
+});
+
+test("single tasks and chat share workspace definitions, results, and safe error handling", async (t) => {
+  const { workspace, outside } = await temporaryWorkspace(t);
   const folder = join(workspace, "text samples");
   await mkdir(folder);
   await writeFile(join(folder, "notes.txt"), "fixture-only-text");
   await writeFile(join(folder, ".env"), "fixture-secret-not-for-model");
-  const env = { DEEPSEEK_API_KEY: "offline-credential-only" };
-  const single = run(["--workspace", folder, "--prompt", "workspace"], env, "");
+  await writeFile(join(outside, "notes.txt"), "wrong-launch-directory-text");
+  const env = { DEEPSEEK_API_KEY: "offline-credential-only", FATCAT_TEST_WORKSPACE_ROOT: folder };
+  const single = run(["--workspace", folder, "--prompt", "workspace"], env, "", outside);
   assert.equal(single.status, 0, single.stderr);
   assert.deepEqual(JSON.parse(single.stdout), { ok: true, result: { kind: "file", path: "notes.txt", offset: 0, totalLines: 1, startLine: 1, endLine: 1, content: "fixture-only-text", truncated: false, nextOffset: null } });
-  const chat = run(["--chat", "--workspace", folder], env, "workspace\n/reset\nworkspace\nworkspace blocked\n/exit\n");
+  const chat = run(["--chat", "--workspace", folder], env, "workspace\n/reset\nworkspace\nworkspace blocked\n/exit\n", outside);
   assert.equal(chat.status, 0, chat.stderr);
   const answers = chat.stdout.trim().split("\n").map((line) => JSON.parse(line));
   assert.deepEqual(answers[0], answers[1]);
@@ -175,7 +204,8 @@ test("ordinary CLI tasks can delegate without an enabling flag", async (t) => {
   assert.match(sum.stderr, /"type":"subagent_event","callId":"delegated"/);
   const { workspace } = await temporaryWorkspace(t);
   await writeFile(join(workspace, "notes.txt"), "child-workspace-result");
-  const chat = run(["--chat", "--workspace", workspace], env, "delegate\n/reset\ndelegate\n/exit\n");
+  const chat = run(["--chat"], { ...env, FATCAT_TEST_WORKSPACE_ROOT: workspace },
+    "delegate workspace\n/reset\ndelegate workspace\n/exit\n", workspace);
   assert.equal(chat.status, 0, chat.stderr);
   const answers = chat.stdout.trim().split("\n").map((line) => JSON.parse(line));
   assert.deepEqual(answers[0], { ok: true, result: { kind: "file", path: "notes.txt", offset: 0, totalLines: 1, startLine: 1, endLine: 1, content: "child-workspace-result", truncated: false, nextOffset: null } });
@@ -197,16 +227,20 @@ test("the actual CLI follows read pages through the model transport", async (t) 
 
 test("CLI permissions enforce read-only and authorize exact writes explicitly", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
-  for (const args of [["--permission", "workspace-write", "--prompt", "task"],
-    ["--workspace", workspace, "--permission", "unsafe", "--prompt", "task"],
+  for (const args of [["--permission", "unsafe", "--prompt", "task"],
     ["--workspace", workspace, "--permission", "workspace-write", "--help"]]) assert.equal(run(args).status, 2);
   await writeFile(join(workspace, "notes.txt"), "before");
   const env = { DEEPSEEK_API_KEY: "offline-only" };
-  const denied = run(["--workspace", workspace, "--prompt", "write fixture"], env, "");
+  const denied = run(["--prompt", "write fixture"], env, "yes\n", workspace);
   assert.equal(denied.status, 0, denied.stderr);
   assert.match(denied.stdout, /PERMISSION_DENIED/);
   assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
-  const allowed = run(["--workspace", workspace, "--permission", "workspace-write", "--prompt", "write fixture"], env, "");
+  const readOnly = run(["--chat", "--permission", "read-only"], env, "write fixture\nshell fixture\n/exit\n", workspace);
+  assert.equal(readOnly.status, 0, readOnly.stderr);
+  for (const answer of readOnly.stdout.trim().split("\n")) assert.equal(JSON.parse(answer).error.code, "PERMISSION_DENIED");
+  assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
+  assert.ok(!readOnly.stderr.includes("shell_record"));
+  const allowed = run(["--permission", "workspace-write", "--prompt", "write fixture"], env, "", workspace);
   assert.equal(allowed.status, 0, allowed.stderr);
   assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "after");
   assert.match(allowed.stderr, /"type":"write_record"/);
@@ -228,23 +262,32 @@ test("CLI chat retains write facts after a provider failure and reset", async (t
 
 
 test("CLI shell authorization is independent and pipes cannot silently approve commands", { skip: process.platform !== "win32" }, async (t) => {
-  const { workspace } = await temporaryWorkspace(t);
-  for (const args of [["--shell-permission", "allow", "task"],
-    ["--workspace", workspace, "--shell-permission", "bad", "task"],
-    ["--workspace", workspace, "--permission", "read-only", "--shell-permission", "allow", "task"]]) {
+  const { workspace, outside } = await temporaryWorkspace(t);
+  for (const args of [["--shell-permission", "bad", "task"],
+    ["--permission", "read-only", "--shell-permission", "allow", "task"]]) {
     assert.equal(run(args).status, 2);
   }
-  const args = ["--workspace", workspace, "--permission", "workspace-write", "--prompt", "shell fixture"];
-  const denied = run(args, { DEEPSEEK_API_KEY: "offline-only" }, "yes\n");
+  const args = ["--permission", "workspace-write", "--prompt", "shell fixture"];
+  const denied = run(args, { DEEPSEEK_API_KEY: "offline-only" }, "yes\n", workspace);
   assert.equal(denied.status, 0);
   assert.match(denied.stdout, /PERMISSION_DENIED/);
   assert.ok(!denied.stderr.includes("shell_record"));
-  const allowed = run([...args, "--shell-permission", "allow"], { DEEPSEEK_API_KEY: "offline-only" }, "");
+  const allowed = run([...args, "--shell-permission", "allow"], { DEEPSEEK_API_KEY: "offline-only" }, "", workspace);
   assert.equal(allowed.status, 0, allowed.stderr);
   assert.match(allowed.stdout, /CLI_COMMAND_READY/);
   assert.match(allowed.stdout, /"success":true/);
   assert.match(allowed.stderr, /shell_record/);
   assert.ok(!allowed.stderr.includes("CLI_COMMAND_READY"));
+  for (const flags of [[], ["--workspace", outside]]) {
+    const expectedRoot = flags.length === 0 ? workspace : outside;
+    const location = run(["--prompt", "shell cwd", "--shell-permission", "allow", ...flags],
+      { DEEPSEEK_API_KEY: "offline-only", FATCAT_TEST_WORKSPACE_ROOT: expectedRoot }, "", workspace);
+    assert.equal(location.status, 0, location.stderr);
+    const outcome = JSON.parse(location.stdout);
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.result.success, true);
+    assert.equal(outcome.result.stdout.trim(), expectedRoot);
+  }
 });
 
 

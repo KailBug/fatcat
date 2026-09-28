@@ -9,9 +9,9 @@ import type { Model, Message } from "../src/model.js";
 import { Session } from "../src/session.js";
 import { createSubagentTools } from "../src/subagent.js";
 import { createTools } from "../src/tools.js";
-import { TuiApp } from "../src/tui/app.js";
-import { metricSections, statusText } from "../src/tui/metrics.js";
-import { createTuiTelemetry } from "../src/tui/telemetry.js";
+import { TuiApp } from "../tui/app.js";
+import { metricSections, statusText } from "../tui/metrics.js";
+import { createTuiTelemetry } from "../tui/telemetry.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 
 class FakeTerminal implements Terminal {

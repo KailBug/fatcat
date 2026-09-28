@@ -14,7 +14,7 @@ CLI 单次任务 / chat 每个用户回合创建观察器 → 传入 Loop / Sess
 
 `ReportEvent` 是交互侧的 LoopEvent 或 execution_report 联合，不把报告加入核心 LoopEvent。低层 runAgent / Session 默认仍只产生原事件；程序化调用者可接入同一观察器。真实编码脚本也复用 CLI 的 createAgent 和观察器。
 
-2D-11 的可选 TUI 复用同一观察器，将报告用于屏幕而不是输出 JSON。TUI 另在 `src/tui/telemetry.ts` 从原始事件维护本轮与进程累计、最近父请求及 provider 缓存覆盖，不从报告累计值重复加总。有效 `TokenUsage.cachedPromptTokens` 可随 model_usage 到达；本报告的 tokenUsage.totals 仍仅包含三个基础 token 字段，不把部分缓存数据混入原总量定义。具体口径见 [TUI.md](TUI.md)。
+2D-11 的可选 TUI 复用同一观察器，将报告用于屏幕而不是输出 JSON。TUI 另在 `tui/telemetry.ts` 从原始事件维护本轮与进程累计、最近父请求及 provider 缓存覆盖，不从报告累计值重复加总。有效 `TokenUsage.cachedPromptTokens` 可随 model_usage 到达；本报告的 tokenUsage.totals 仍仅包含三个基础 token 字段，不把部分缓存数据混入原总量定义。具体口径见 [TUI.md](TUI.md)。
 
 ## 已实现的汇总规则
 

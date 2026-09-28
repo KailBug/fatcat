@@ -137,7 +137,7 @@ async function main(args: string[]): Promise<number> {
     const permission = (values.permission ?? "ask") as WorkspacePermission;
     const shellPermission = (values["shell-permission"] ?? (permission === "read-only" ? "deny" : "ask")) as ShellPermission;
     if (values.tui) {
-      const { runTui } = await import("./tui/index.js");
+      const { runTui } = await import("../tui/index.js");
       return await runTui(config, workspace, permission, shellPermission);
     }
     process.on("SIGINT", cancel);

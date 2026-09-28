@@ -9,8 +9,9 @@
 | 模块 | 当前职责与接口 |
 | --- | --- |
 | `src/system-prompt.ts` | 父子 Loop 共用的英文 systemPrompt：CLI 编码协作、沟通、工具边界和证据化交付 |
-| `src/agent.ts` | `createAgent(config, baseTools?, transport?, skills?)` 装配父子模型与工具，内部包装 Skill read，返回 model / tools / maxIterations；委派与 Skill 指导不进入保存历史 |
+| `src/agent.ts` | `createAgent(config, baseTools?, transport?, skills?)` 装配父子模型与工具，内部包装 Skill read，返回 model / tools / maxIterations；工作目录、委派与 Skill 指导不进入保存历史 |
 | `src/cli.ts` | 解析任务文本、`--prompt`、`--chat`、`--listSkills`、帮助与配置检查；发现本地 Skills；管理 Ctrl+C；选择入口并输出退出码 |
+| `scripts/start.ts` | pnpm start 专用启动器：在导入 CLI 前根据 INIT_CWD 恢复调用目录；不承担工具装配、配置加载或权限规则 |
 | `src/chat.ts`、`src/session.ts` | 连续输入和跨回合历史管理，详见 Session 文档 |
 | `src/terminal.ts` | 统一终端输入，隔离聊天、写入及命令确认，管理提示颜色及终端取消 |
 | `src/config.ts` | `loadConfig(env = process.env): Config` 校验 Key、模型、迭代上限、单次请求超时与请求体字节上限 |
@@ -19,7 +20,7 @@
 | `src/skills.ts` | 本地 Skill 元数据发现与校验、模型目录、read 包装与按需加载；详见 SKILLS.md |
 | `src/context.ts` | `prepareRequestContext(body, limitBytes, signal?)` 测量完整请求，仅超预算时省略受保护范围外的旧 read 内容；不修改历史，详见 CONTEXT.md |
 | `src/model-usage.ts` | 严格校验供应商 token 计数并转换为 TokenUsage；非法或缺失时为 null |
-| `src/tools.ts`、`src/tools/` | 创建内置工具集合，提供定义和异步执行；默认 sum，显式工作目录额外提供 read / write / shell，执行处落实各自权限，详见 TOOLS.md |
+| `src/tools.ts`、`src/tools/` | 创建内置工具集合，提供定义和异步执行；程序化省略工作目录时只有 sum，传入工作目录额外提供 read / write / shell 与规范 workspaceRoot；CLI 默认传入启动目录，执行处落实各自权限，详见 TOOLS.md |
 | `src/loop.ts` | `runAgentTurn(prompt, history, options)` 在副本上执行一轮用户任务，返回答案及完整历史；`runAgent(prompt, options): Promise<string>` 保持单次任务入口 |
 | `src/subagent.ts` | CLI 默认装配的单层委派包装器，复用空历史 Loop，限制子任务次数及轮次 |
 | `src/execution-report.ts` | CLI/chat 的每回合事件观察器，转发原事件并在根回合结束时发出独立 execution_report，详见 EXECUTION_REPORT.md |
@@ -31,7 +32,9 @@
 
 `Model(messages, signal?, observe?)` 接收 SDK 消息数组，返回已校验模型回合；可选 observe 接收 ModelObservation 元数据，服务于当前 Loop 和离线测试。旧的双参数注入模型仍可用，但不提供新元数据。供应商选择通过小型 profile 实现，没有模型注册表、动态插件体系或模型路由。
 
-可注入的 `transport` 仅用于在 SDK 请求边界验证实际 JSON 与错误行为；生产客户端使用所选 profile 的固定厂商/区域地址，见 PROVIDERS.md。CLI 先创建带权限和记录的基础 Tools，发现本地 Skills 并以第四参传给 createAgent，由后者包装 Skill read、装配父子模型与委派工具；父模型和 Loop/Session 共用含委派的 Tools，子模型与子 Loop 共用带 Skill read 的基础 Tools。createAgent 默认基础工具为 sum，父集合增加 delegate_task；低层 createTools 和 runAgent 省略 tools 时仍只提供 sum，程序化调用者需显式注入 Skills。装配本身不发送网络请求。
+可注入的 `transport` 仅用于在 SDK 请求边界验证实际 JSON 与错误行为；生产客户端使用所选 profile 的固定厂商/区域地址，见 PROVIDERS.md。CLI 任务、chat 与 TUI 默认用 process.cwd()，--workspace 可覆盖；创建带权限和记录的基础 Tools，发现同一工作目录的本地 Skills 并以第四参传给 createAgent，由后者包装 Skill read、装配父子模型与委派工具。--listSkills 沿用同一默认目录，帮助与配置检查不装配工作目录工具。父模型和 Loop/Session 共用含委派的 Tools，子模型与子 Loop 共用带 Skill read 的基础 Tools。createAgent 默认基础工具为 sum，父集合增加 delegate_task；低层 createTools 省略工作目录和 runAgent 省略 tools 时仍只提供 sum，程序化调用者需显式注入 Skills。装配本身不发送网络请求。
+
+pnpm 在包根运行 scripts，因此 start 命令先在包根构建并由 Node 加载该处的 .env，再运行 dist/scripts/start.js。启动器仅对非空白 INIT_CWD 检查绝对路径并 chdir，然后动态导入 CLI；缺失或空白值保持当前 cwd，非法或不可访问目录以安全 CONFIG 错误结束。CLI 本身仍只使用 --workspace 或 process.cwd()，相对 --workspace 基于恢复后的调用目录解析；直接执行 dist/src/cli.js 不读取继承的 INIT_CWD。工作目录改变不影响按模块位置发现的内置 Skill 资产，不改变低层 Tools 的默认权限。
 
 ## 数据流与内存历史
 
@@ -46,7 +49,7 @@
 
 ## System prompt（当前实现）
 
-`src/system-prompt.ts` 集中维护基础提示词，Loop 创建新历史时作为第一条 system 消息使用；单次任务、Session 新历史及子任务共用。已有内存历史保留其原 system；开发修改后需重新启动进程使用新构建。`agent.ts` 在父模型请求副本中追加委派指导，并为父子请求追加相同 Skill 目录及使用指导；不向子模型加入委派能力，不改变预算或权限，也不改写保存历史。
+`src/system-prompt.ts` 集中维护基础提示词，Loop 创建新历史时作为第一条 system 消息使用；单次任务、Session 新历史及子任务共用。已有内存历史保留其原 system；开发修改后需重新启动进程使用新构建。`agent.ts` 在父模型请求副本中追加委派指导，并为父子请求追加相同 Skill 目录及使用指导；基础 Tools 有 workspaceRoot 时，还加入 JSON 引号包围的规范根路径及相对路径规则，让模型直接知道当前目录。根路径由 createWorkspace 的 realpath 得到，TUI 显示同一值；不新增模型工具，不向子模型加入委派能力，不改变预算或权限，也不改写保存历史。
 
 本轮按用户要求参考 Claude Code 的公开工作流方向，以 Fatcat 当前能力重新编写：简洁直接、跟随用户语言、实现请求执行读改测、先了解相关代码、保持改动聚焦、只在关键歧义时提问，并据实际结果报告验证与限制。保留 Fatcat 身份，不再默认扮演猫；用户明确要求时才使用角色化表达。提示词只描述实际暴露的工具，适配 Windows PowerShell、分页读取、独立命令授权和现有权限边界。
 
@@ -74,7 +77,7 @@
 
 sum 成功结果为 `{ ok: true, result: number }`；目录和文件工具的 result 为 JSON 对象，包含相对路径及条目或正文。各工具的详细协议与限制见 [TOOLS.md](TOOLS.md)。非法 JSON / 参数、未知工具、求和溢出返回 `{ ok: false, error: { code, message } }`，关联到原调用并回传模型，由模型在剩余轮次内纠正或解释。
 
-sum 使用 JavaScript number 运算，浮点精度遵循 JavaScript 语义，不是任意精度计算器。sum 不访问网络、文件、时钟或进程；普通文件工具只访问显式指定的工作目录，Skill read 另限于已发现的技能目录，write 默认由终端逐次确认，也可显式只读或预授权；shell 独立授权后以当前用户权限执行 Windows PowerShell，不是操作系统沙箱；没有专用网络工具。
+sum 使用 JavaScript number 运算，浮点精度遵循 JavaScript 语义，不是任意精度计算器。sum 不访问网络、文件、时钟或进程；普通文件工具只访问所选工作目录（CLI 默认启动目录），Skill read 另限于已发现的技能目录，write 默认由终端逐次确认，也可显式只读或预授权；shell 独立授权后以当前用户权限执行 Windows PowerShell，不是操作系统沙箱；没有专用网络工具。
 
 ## 终止与日志
 

@@ -186,6 +186,14 @@ CLI 的父 Agent 默认具有 delegate_task，由模型判断任务是否值得�
 
 不增加多会话管理、持久化、流式 API、思考协议、provider 热切换、Graph 或 Web UI；阶段 2D 整体仍未完成。系统边界见 [TUI.md](ARCHITECTURE/TUI.md)。
 
+### 同阶段修正：默认工作目录与工具可用性
+
+在 `fix/default-workspace-tools` 修正未传 --workspace 时普通 --chat 缺少 shell / write 的入口行为。任务、--chat、--tui 与 --listSkills 默认选择启动目录，--workspace 可覆盖；read / write / shell 默认同级可用，写入和命令仍分别确认，权限选项可直接作用于默认工作目录。程序化 createTools 仍保留显式目录与 read-only / deny 默认值。
+
+入口修正还覆盖 pnpm 将脚本 cwd 切至包根的行为：专用启动器在包根构建和 .env 加载后恢复调用目录，默认目录及相对 --workspace 以该位置为准；直接执行 CLI 不读取 INIT_CWD。补充验收范围为真实 pnpm 子目录启动、绝对/相对覆盖、技能发现、无效启动目录及直接 Node 入口隔离，实际结果仍以 PROGRESS.md 为准。
+
+工作目录由 createWorkspace 规范化，Tools.workspaceRoot 供父子模型请求指导与 TUI 共用；模型无需通过额外工具猜测当前目录。该指导不修改 Session 历史、相对路径限制或权限。验收范围为默认与覆盖目录、工具定义、确认/拒绝、子任务继承、技能发现、模式参数校验以及请求指导与 TUI 路径一致性；实际结果记录在 PROGRESS.md，不沿用以上 TUI 基线验收代替本修正的验证，也不标记阶段 2D 完成。
+
 ## 后移与按需引入
 
 Channel、Web UI、App 待核心任务能力稳定后再考虑；TUI 因用户本轮明确要求提前到 2D-11。Hooks 与 MCP 在明确扩展场景出现时引入；后台任务与 Cron 依赖任务状态、取消和恢复边界。LoopX / OpenViking 能力对标是长期方向，先完成，再逐步完善。

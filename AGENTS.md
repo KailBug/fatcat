@@ -64,15 +64,16 @@
 - Build: pnpm run build
 - Test: pnpm test
 - Help: pnpm start --help
-- Continuous chat: pnpm start --chat
-- Interactive TUI: pnpm start --tui (add --workspace <directory> for project access; requires a terminal).
-- Workspace chat with per-write and per-command terminal approval: pnpm start --chat --workspace examples/workspace
+- Continuous chat: pnpm start --chat (uses the launch directory with read/write/shell; writes and commands require per-operation approval).
+- Interactive TUI: pnpm start --tui (uses the launch directory; requires a terminal).
+- Select another workspace for a task, chat, or TUI with --workspace <directory>, for example pnpm start --chat --workspace examples/workspace.
+- pnpm start preserves the directory where it was invoked; relative --workspace paths resolve there. Its launcher restores INIT_CWD after the package-root build and .env load. Direct dist/src/cli.js execution uses its own cwd and ignores INIT_CWD.
 - Explicit read-only workspace chat: pnpm start --chat --workspace examples/workspace --permission read-only
 - Preauthorized workspace editing (does not preauthorize commands): pnpm start --chat --workspace examples/workspace --permission workspace-write
 - Preauthorized command execution: add --shell-permission allow to a workspace task; commands are not OS-sandboxed.
 - Task-driven delegation is available in ordinary task and chat commands without a capability flag.
 - Local configuration check: pnpm start --checkConfig
-- Local skill catalog: pnpm start --listSkills (add --workspace <directory> for project skills; no model credentials required).
+- Local skill catalog: pnpm start --listSkills (includes launch-directory skills; --workspace <directory> selects another directory; no model credentials required).
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
 - Live delegation verification: pnpm run verify:delegation (fixed read-only temporary fixtures, at most 20 real model requests).
 - Live coding verification: pnpm run verify:coding (uses a temporary search/read/edit fixture, authorizes only its designated edit and fixed test command, checks the execution report and provider token usage, and allows at most 14 real model requests).
@@ -82,5 +83,6 @@
 - Follow docs/ARCHITECTURE/PROVIDERS.md for provider changes: use official endpoints and supported request fields, preserve tool-call validation, request budgets, cancellation, safe errors, and injected-transport coverage. New providers do not require live API validation unless explicitly requested.
 - Existing live verification scripts are restricted to DeepSeek; do not silently redirect them to another provider.
 - Built-in Skills live in src/skill/<subsystem>/<skill-name>/SKILL.md and ship with the build. Add task guidance only for implemented subsystems; do not create empty placeholders or copy runtime permission enforcement into prompts.
-- Skills are discovered from explicit workspace and user skill roots, then the built-in catalog, and loaded through read. Local same-name Skills take precedence. Skill metadata and instructions never grant additional workspace or shell permissions.
+- CLI tasks and skill listing use the launch directory by default. --workspace overrides it; --permission and --shell-permission work with tasks without an explicit workspace flag. Programmatic createTools callers retain explicit workspace selection and read-only/deny defaults.
+- Skills are discovered from the selected workspace and user skill roots, then the built-in catalog, and loaded through read. Local same-name Skills take precedence. Skill metadata and instructions never grant additional workspace or shell permissions.
 - Automated tests must use fake credentials and injected transports. Live verification is a separate, explicit command.

@@ -31,7 +31,7 @@
 | 显示项 | 来源与解释 |
 | --- | --- |
 | provider / model / region | 本次启动实际生效的配置；不是模型自述，启动后固定。 |
-| workspace / permissions | 已解析的授权目录与 write / shell 策略；未选择工作目录须明确显示，不将进程 cwd 当成文件工具授权。 |
+| workspace / permissions | Tools.workspaceRoot 的规范 realpath 与 write / shell 策略；CLI 默认选择启动目录，--workspace 覆盖，显示值与实际工具根及模型请求指导一致。 |
 | Skills / budgets | 已发现技能数量、父迭代上限、请求 timeout 与完整 JSON 字节上限；不是已加载技能数或模型服务的 token 窗口。 |
 | 回合 | TUI 当前回合编号、状态及成功保存回合数；只有 Session.run 成功返回后才增加 saved turns，失败或取消时已展示的内容不等于已保存模型历史。 |
 | 请求次数 | 父 / 子模型调用尝试，包含本地预算拒绝；不是已发 HTTP 请求数或计费次数。 |
@@ -50,7 +50,7 @@
 
 ## 输入、审批与取消
 
-`--tui` 是互斥的交互模式，不能和普通 prompt、`--chat`、帮助或本地配置/技能查询混用。要求真实交互终端；重定向及不支持的终端应明确拒绝并提示使用已有 CLI。工作目录、write / shell 权限和 Skill 发现参数仍使用既有选项。
+`--tui` 是互斥的交互模式，不能和普通 prompt、`--chat`、帮助或本地配置/技能查询混用。要求真实交互终端；重定向及不支持的终端应明确拒绝并提示使用已有 CLI。CLI 默认选择启动目录并提供 read / write / shell 与工作目录 Skill 发现，--workspace 可覆盖；write / shell 默认分别询问，权限选项不要求显式 --workspace。目录由 Tools 规范化后用于 TUI 配置，不另行推断或产生第二个根路径。
 
 输入编辑支持 Unicode 与多行；提交一个非空任务后同一 Session 顺序执行，不隐式排队并发回合。`/help` 显示本地命令和快捷键，`/status` 展示配置与当前统计，`/reset` 开始新历史，`/exit` 结束终端界面。未知斜杠命令给出本地提示，不发送给模型。
 

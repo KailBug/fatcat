@@ -17,7 +17,7 @@
 
 `createSubagentTools(baseTools, childModel, maxIterations): Tools` 返回父工具集合。`src/agent.ts` 的 createAgent(config, baseTools?, transport?) 先用基础工具创建 childModel，再包装父 Tools，最后用父 Tools 创建父模型，返回 model / tools / maxIterations 供 CLI 单次任务及 Session 共用；基础工具和子模型均不包含 delegate_task。包装已有委派定义的工具集合会触发配置错误。装配不发送请求；低层 createTools 和 runAgent 的默认工具仍只有 sum。
 
-父模型包装函数在每次请求的消息副本中补充任务选择指导：简单问题和直接操作优先自行完成；独立调查或审查可交给带具体路径、背景和预期结果的子任务。保留既有 system 内容，不修改调用者消息，不写入 Session，不继承到子模型。工具说明同时解释预算、隔离和权限。仅声明能力不会产生子模型请求。
+父模型包装函数在每次请求的消息副本中补充任务选择指导：简单问题和直接操作优先自行完成；独立调查或审查可交给带具体路径、背景和预期结果的子任务。保留既有 system 内容，不修改调用者消息，不写入 Session；委派指导不继承到子模型。基础 Tools 带 workspaceRoot 时，父子请求都获得 JSON 引号包围的规范根路径及相对路径规则，可以直接回答当前目录；该指导不提供新的工具或权限，也不共享父历史。工具说明同时解释预算、隔离和权限。仅声明能力不会产生子模型请求。
 
 `forTurn(onEvent?)` 返回带独立 started 计数的执行对象；每次 runAgentTurn 只调用一次该工厂。未启用委派的工具无需工厂。execute 的可选第四参数 callId 由 Loop 传入，用来关联 subagent_event；直接调用 execute 时使用局部默认标识。程序化调用者每个新用户回合应使用 forTurn，或通过 Loop/Session 自动创建范围。
 

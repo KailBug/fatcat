@@ -4,6 +4,7 @@
 
 ## 当前状态
 
+- TUI 目录整理：界面模块已从 src/tui 移至与 src 同级的 tui，构建产物为 dist/tui；入口和功能保持不变。273 项离线测试及真实 Windows TUI 启动 / 退出检查通过，待 review。
 - 默认工作区修正：CLI 单次任务、chat、TUI 和本地技能列表默认使用调用目录；pnpm start 通过专用启动器恢复该目录，修正子目录启动仍指向包根的遗漏。read / write / shell 同级可用，写入及命令仍逐次确认。273 项离线测试及真实 pnpm 子目录入口检查通过，待 review；模型使用注入传输，没有 API 在线验证。
 - 阶段 0：项目文档基线已完成，文件与内部链接已检查，已核对文档中的范围和状态描述。
 - 阶段 1：最小 Agent Loop 已完成离线与真实 DeepSeek 验收，用户 review 通过。
@@ -17,6 +18,26 @@
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；yaml 2.9.1 解析 Skill frontmatter，@earendil-works/pi-tui 0.87.1 支撑可选终端界面。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+
+## 2026-09-28：将 TUI 移至根目录（已验证，待 review）
+
+### 实际结果
+
+- 按用户要求，将 src/tui 下 app、index、metrics、telemetry、theme、view 六个 TypeScript 文件完整移至根目录 tui，与 src 同级。TUI 通过 ../src 引用既有核心模块，内部相对导入保持原样；src/cli.ts 动态加载 ../tui/index.js，四份 TUI 测试同步导入新路径。
+- 核对 fix/default-workspace-tools、HEAD 0a653e4 后创建 refactor/tui-root-directory。开始前已有的 examples/workspace/project-notes.txt 暂存删除及未跟踪 tests/start.test.ts 均保留；没有暂存、提交、推送或合并。
+- tsconfig.json 增加 tui/**/*.ts，产物落在 dist/tui；package.json、启动器、Skills 资源和依赖保持不变。核对绝对路径、非链接祖先和预期生成文件名后，仅清除旧 dist/src/tui 输出，避免旧产物掩盖导入错误。
+- 同步 TUI、执行报告和架构总览文档，说明同级目录、共享核心与编译路径。当前文档无旧路径引用，历史进度保留原记录；项目范围、路线图阶段及用户命令没有变化。
+
+### 验证结果
+
+- pnpm run typecheck 与 pnpm test（含构建）通过：273 项，0 失败 / 取消 / 跳过。现有 TUI 交互、渲染、遥测、CLI 和启动器回归继续通过，没有为纯目录移动新增重复测试。
+- 逐一比较六个新路径文件与 HEAD 的旧路径内容，除核心模块导入前缀外完全一致；旧 src/tui 和 dist/src/tui 均不存在，dist/tui/index.js 可直接导入。
+- 从 D:\fatcat\examples 在原生 Windows PTY 执行 pnpm start --tui，成功显示工作区 D:\fatcat\examples、write ask / shell ask、4 个 Skills；/exit 返回 0 并恢复终端。使用虚构凭据与离线传输，没有模型 API 请求。
+- git diff --check 通过。目录移动及新产物路径已经验证，无已知实现阻塞。
+
+### 下一步与限制
+
+- review 此目录整理；启动命令仍为 pnpm start --tui。此次没有改变交互行为，也没有进行真实模型服务验证；阶段 2D 整体仍进行中。
 
 ## 2026-09-27：说明 scripts 目录职责（源码核对）
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { metricSections, statusText } from "../src/tui/metrics.js";
-import { createTuiTelemetry } from "../src/tui/telemetry.js";
+import { metricSections, statusText } from "../tui/metrics.js";
+import { createTuiTelemetry } from "../tui/telemetry.js";
 
 const settings = {
   config: { provider: "deepseek" as const, region: "global" as const, model: "offline-model",

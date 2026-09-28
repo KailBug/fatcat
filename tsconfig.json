@@ -21,6 +21,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "tui/**/*.ts",
     "tests/**/*.ts",
     "scripts/**/*.ts"
   ]

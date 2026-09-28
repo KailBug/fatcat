@@ -10,12 +10,14 @@
 
 ## 职责与数据流
 
+终端界面代码位于与 `src/` 同级的 `tui/`，编译到 `dist/tui/`。`src/` 保留 CLI 入口及共享 Agent、Session、Loop、Tools；CLI 在选择 `--tui` 时加载 `tui/index.ts` 对应产物，TUI 通过导入 `src/` 的已有模块复用核心逻辑。目录分离不改变命令入口、权限或运行行为。
+
 | 层 | 所有权与职责 |
 | --- | --- |
-| `src/cli.ts`、`src/tui/index.ts` | 解析互斥入口，加载一次配置、工作目录与 Skill 目录；沿用 createAgent 创建父子模型及工具，把确认回调交给所选交互入口。 |
-| `src/tui/app.ts` | TUI 控制器，拥有终端生命周期、输入编辑、空闲/运行/审批状态和每回合 AbortController；调用 Session.run，处理本地命令及屏幕更新；不执行文件或命令权限规则。 |
-| `src/tui/view.ts`、`src/tui/theme.ts` | 依据配置及统计快照绘制标题、会话、运行信息、状态面板与输入区域；负责尺寸、文字宽度、Markdown、配色和显示内容的控制字符处理，不调用模型。 |
-| `src/tui/telemetry.ts`、`src/tui/metrics.ts` | 观察 Loop / execution_report 事件，保存父子请求、最近输入、有效 usage、缓存覆盖和上下文整理事实；区分本轮与进程累计，生成指标与完整 `/status` 文本，不制造缺失数据。 |
+| `src/cli.ts`、`tui/index.ts` | 解析互斥入口，加载一次配置、工作目录与 Skill 目录；沿用 createAgent 创建父子模型及工具，把确认回调交给所选交互入口。 |
+| `tui/app.ts` | TUI 控制器，拥有终端生命周期、输入编辑、空闲/运行/审批状态和每回合 AbortController；调用 Session.run，处理本地命令及屏幕更新；不执行文件或命令权限规则。 |
+| `tui/view.ts`、`tui/theme.ts` | 依据配置及统计快照绘制标题、会话、运行信息、状态面板与输入区域；负责尺寸、文字宽度、Markdown、配色和显示内容的控制字符处理，不调用模型。 |
+| `tui/telemetry.ts`、`tui/metrics.ts` | 观察 Loop / execution_report 事件，保存父子请求、最近输入、有效 usage、缓存覆盖和上下文整理事实；区分本轮与进程累计，生成指标与完整 `/status` 文本，不制造缺失数据。 |
 | Session / Loop / Tools | 继续拥有成功历史、回合循环和实际工具执行；审批答案不加入模型历史，工具仍复查权限、路径、文件变化、取消和预算。 |
 
 数据流为：编辑提交 → TUI 控制器 → Session.run → Loop / 模型 / 工具 → 事件与报告 → 遥测快照 → 视图。模型最终答案由 Session 返回后显示。审批是 Tools 等待控制器提供一次答复，控制器以独立编辑输入显示预览；视图不能自行授予权限。

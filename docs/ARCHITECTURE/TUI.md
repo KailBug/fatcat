@@ -10,6 +10,8 @@
 
 ## 职责与数据流
 
+2D-12 中 TUI 沿用 CLI 的默认公开 web 工具，并接受 `--web-permission allow|deny`。`runTui` 将同一值传入 createTools 和界面配置，页脚及 `/status` 显示 web 权限；取消仍经每回合 AbortController 传给网络请求。网络规则位于 Tools，详见 [WEB.md](WEB.md)，TUI 不直接执行请求或实现网络授权。
+
 终端界面代码位于与 `src/` 同级的 `tui/`，编译到 `dist/tui/`。`src/` 保留 CLI 入口及共享 Agent、Session、Loop、Tools；CLI 在选择 `--tui` 时加载 `tui/index.ts` 对应产物，TUI 通过导入 `src/` 的已有模块复用核心逻辑。目录分离不改变命令入口、权限或运行行为。
 
 | 层 | 所有权与职责 |

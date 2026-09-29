@@ -4,6 +4,8 @@
 
 ## 当前状态
 
+- 阶段 2D-12：在用户指定的 fix/session-perfection 实现公开 web 搜索/读取、独立网络权限和 web-research / weather-lookup 两个 Skill。类型检查、含构建的 289 项离线测试、锁文件安装及五项真实公网工具检查通过；未调用真实模型 API。更改尚未提交或推送，待 review；详情及限制见本日记录。
+
 - TUI 目录整理：此前迁移被分拆到两个分支，main 只合入了根目录新增；已在基于最新 main 的 fix/complete-tui-migration 补齐旧目录删除与引用修改，源码仅保留与 src 同级的 tui，构建产物为 dist/tui。273 项离线测试及真实 Windows TUI 启动 / 退出检查重新通过；修复仍为本地未提交修改，待 review。
 - 默认工作区修正：CLI 单次任务、chat、TUI 和本地技能列表默认使用调用目录；pnpm start 通过专用启动器恢复该目录，修正子目录启动仍指向包根的遗漏。read / write / shell 同级可用，写入及命令仍逐次确认。273 项离线测试及真实 pnpm 子目录入口检查通过，待 review；模型使用注入传输，没有 API 在线验证。
 - 阶段 0：项目文档基线已完成，文件与内部链接已检查，已核对文档中的范围和状态描述。
@@ -18,6 +20,34 @@
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；yaml 2.9.1 解析 Skill frontmatter，@earendil-works/pi-tui 0.87.1 支撑可选终端界面。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+
+## 2026-09-29：公开联网查询与配套 Skills（已实现，离线及公网工具已验证）
+
+### 实际结果
+
+- 开始时工作区干净，实际分支为 feat/session-perfection，HEAD 为 44bc1e2（Merge pull request #16）。本地没有用户指定的 fix/session-perfection，因此从该提交创建并切换到此分支；未重置、暂存、提交、推送或合并。
+- 新增单个 web 工具，支持 Bing RSS 默认搜索、可选 DuckDuckGo HTML 搜索及公开 HTTP(S) URL 读取。资料与新闻查询返回来源、摘要、实际日期字段和抓取时间；HTML 去除脚本/样式并提取文本/链接，JSON/XML/text 支持有界分页。搜索日期参数只是服务提示，不宣称结果一定在时间范围内。
+- CLI 单任务、chat、TUI 默认提供 web，新增 --web-permission allow|deny，与工作目录读写/shell 权限分离；子 Agent 继承同一配置。程序化 createTools 原默认集合不变，第五个参数可显式加入 web，省略 permission 时 deny。TUI 页脚和 /status 显示网络权限。
+- 新增 web.ts、web-request.ts、web-content.ts，分别承担工具协议、原生网络边界和内容解析。仅标准端口公开 GET；检查 DNS 全部地址，固定连接 IP 并保留主机 TLS 校验，每次跳转重查，限制 3 次跳转、15 秒期限和传输/解压后各 1 MiB；支持取消、压缩流和安全错误。网页标记为不可信数据，不自动携带凭据、Cookie 或私有文件。
+- 新增 src/skill/web/web-research 与 weather-lookup，随原构建发现/加载流程分发；内置共六项。前者覆盖资料、新闻、原文核对和引用，后者通过通用 fetch 查询 Open-Meteo 地理编码/天气，要求核对地点、时区、日期和单位。同步 README、USAGE、PROJECT、ROADMAP、AGENTS 与架构文档，新增 WEB.md。
+- 保持 Node.js 24、pnpm 11.21.0、TypeScript 与模型 SDK，锁定新增 htmlparser2@12.0.0 和 ipaddr.js@2.5.0，分别负责结构解析和特殊地址分类。新增 pnpm run verify:web，五项固定公网检查不加载 .env、不使用模型 Key、零模型请求。
+
+### 验证与修正
+
+- pnpm install --frozen-lockfile、pnpm run typecheck、pnpm test（含构建）通过：289 项全部通过，0 失败/取消/跳过。既有 273 项基线加 16 项新增测试，覆盖搜索/网页/天气 JSON、参数、公开地址/混合 DNS、固定解析、跳转、响应边界、取消/超时、原生本机压缩 HTTP、父子网络权限、实际 Skill 加载及 Session / SDK / CLI 集成；TUI 状态回归也已补充。
+- pnpm start --help 与 pnpm start --listSkills 通过，实际 CLI 列出六个打包 Skill，含新增两项。真实公网 pnpm run verify:web 最终 5/5 通过：资料搜索、最近一周新闻搜索、Node.js 发布页面、Berlin 地理编码及三日天气 JSON。搜索实际跟随重定向到 cn.bing.com；天气检查核对时间、单位和数值，并用实际地理编码坐标构造请求。
+- 两份新增 Skill 均通过 skill-creator 的 quick_validate.py；git diff --check 通过，未进行批量换行改写。
+- 最终只读核对 32 个变动文件的 UTF-8、docs 外新增文本的英文约定及 85 个本地 Markdown 链接，全部通过。首次全文语言检查命中 README 原有的“中文”切换标签；改为检查新增行，保留既有标签。暂存区为空，分支仍为 fix/session-perfection。
+- 首轮仅用 DuckDuckGo 作为默认搜索：两项查询均 WEB_TIMEOUT；本机 DNS 返回异常但仍为公网的地址，不能据此宣称搜索可用。天气两项成功。确认 Bing RSS 可直接连通后改为默认，保留 DuckDuckGo 可选并加离线覆盖，不作无界重试。初版网页 smoke 仅在正文匹配 Example Domain，而该标题位于 title 元数据；改为读取并检查实际 Node.js 发布正文，最终通过。
+- 初次 typecheck 因 ES2023 lib 不含 String.isWellFormed 失败，改用现有 UTF-8 往返校验，未改变编译目标；新增 report 测试修正为读取事件的 report 字段。首轮全量回归的 CLI/launcher 固定工具名单未包含 web，导致注入传输断言失败；更新对应名单后定向 38 项及最终全量通过。期间文档补丁两次因上下文不符未应用，核对状态后重新精确应用。
+- 所有自动模型测试均使用虚构凭据与注入传输；真实公网检查直接调用工具，没有运行 DeepSeek 或其他模型 API。Windows 默认命令沙箱仍遇到 deny-read ACL 初始化错误，通过获准的本机命令入口完成检查。
+
+### 限制与下一步
+
+- 未验证真实模型自主选工具、中文地点消歧或真实研究回答质量。公网检查只证明固定源在检查时可访问；DuckDuckGo 真实查询未通过。Bing RSS / Open-Meteo 免费端点的用途和服务限制已写入文档，不能承诺生产 SLA。
+- 只读取公开静态文本/JSON/XML，不执行网页 JavaScript，不登录，不读取 PDF，不支持环境代理。依赖代理才能访问的站点可能不可用。分页会重新读取；web 历史当前不参与旧 read 投影，连续查询仍可能触发请求预算。
+- web deny 不是 shell 的系统网络沙箱；模型指导禁止绕过，shell 仍遵循已有独立授权。未增加后台抓取、缓存、自动摘要、多会话、Graph 或供应商联网协议。
+- 下一步 review 此增量，再按实际任务观察模型的工具与 Skill 使用；阶段 2D 整体仍进行中。本次不提交或推送。
 
 ## 2026-09-28：补齐分拆提交导致的 TUI 迁移遗漏（本地已验证，未提交）
 

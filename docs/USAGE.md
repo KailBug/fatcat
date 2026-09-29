@@ -98,7 +98,7 @@ node --env-file-if-exists=.env dist/src/cli.js --prompt "Use the sum tool to add
 
 Press Ctrl+C to cancel. A single-task invocation starts fresh history. No arguments displays help; use `--chat` for a continuous conversation or `--tui` for the interactive terminal interface.
 
-The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. `read`, `write`, and `shell` are available as peer workspace tools by default; discovered Skills also have a separate, read-only `skill://` scope. Each write and command asks for yes/no in an interactive terminal by default. Tool availability does not preauthorize these operations; there is no dedicated network tool.
+The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. `read`, `write`, and `shell` are available as peer workspace tools by default; discovered Skills also have a separate, read-only `skill://` scope. Each write and command asks for yes/no in an interactive terminal by default. The `web` tool provides public search and page reading with separate network permission.
 
 Each model request counts as one iteration; each new user turn receives a fresh iteration budget. If the last allowed request still asks for tools, the harness stops without executing those calls. Timeouts and transport failures stop the run; automatic SDK retries are disabled.
 
@@ -108,6 +108,33 @@ Each model request counts as one iteration; each new user turn receives a fresh 
 | 1 | Configuration, model, protocol, or iteration-limit failure; chat also returns 1 if any turn failed |
 | 2 | Invalid CLI usage or empty prompt |
 | 130 | User cancellation |
+
+## Public web research and weather
+
+Ordinary tasks, `--chat`, and `--tui` expose `web` by default. Use normal language; no search API key or capability flag is needed. The configured model key is still needed to run the agent.
+
+```powershell
+pnpm start "查询北京今天和未来三天的天气，注明时间、单位和来源。"
+pnpm start "查找 Node.js 官方资料，解释当前 LTS 发布规则并附来源。"
+pnpm start "查询最近一周的人工智能新闻，核对日期并附原文链接。"
+pnpm start --chat
+pnpm start --tui
+pnpm start --chat --web-permission deny
+```
+
+Search defaults to Bing RSS, with DuckDuckGo HTML available as an alternative. Both are public, best-effort services; they can time out, change format, or challenge requests. Bing RSS is intended for personal, non-commercial use. `recency` is only a service hint; the model must verify dates in the source. Page reading supports static HTML, text, JSON and XML, with source links, retrieval time and bounded pagination. It does not execute JavaScript, log in, or read PDFs. Direct connections are used; environment proxy settings are not consumed by this tool.
+
+Built-in `$web-research` covers source selection, linked-page reading, news dates and citations. `$weather-lookup` uses public geocoding and forecast data, checks place/timezone/units and distinguishes current estimates from forecasts. It uses Open-Meteo's free non-commercial endpoints; commercial use is subject to the [service terms](https://open-meteo.com/en/terms). Both Skills are loaded on demand through `read` and appear in `pnpm start --listSkills`.
+
+`--web-permission allow` is the CLI default, including with `--permission read-only`. `deny` rejects web calls before DNS/HTTP, and children inherit the same policy. This setting is not a firewall for separately authorized shell commands. Search terms go to the selected search service; fetched URLs go to their hosts, and retrieved content enters the selected model's context. Do not include private project content or credentials in queries or URLs. Remote page instructions are untrusted data.
+
+Each call has a 15-second deadline, at most three redirects and a 1 MiB response limit before and after decompression. Only public HTTP(S) addresses on standard ports are allowed, with DNS pinning and redirect revalidation. Fetch text pages are limited to 12000 UTF-8 bytes; continue using `nextOffset`. Every page refetches, and the full model request budget still applies. See [Web architecture](ARCHITECTURE/WEB.md) for errors and limits.
+
+```powershell
+pnpm run verify:web
+```
+
+This explicit network check makes up to five fixed tool calls for research/news search, a public Node.js page, Berlin geocoding and a three-day forecast. It needs no model key, does not load `.env`, and makes zero model requests. `pnpm test` remains offline. Passing this command confirms those sources were reachable at that time, not that every model-driven research task is correct.
 
 ## Review execution evidence
 
@@ -161,8 +188,10 @@ Four built-in Skills are available without installing anything:
 | focused-delegation | subagent | Give bounded independent investigations or reviews to children with self-contained context. |
 | context-recovery | context | Reread current evidence after omitted reads, external changes, failure, or reset. |
 | verification-handoff | execution-report | Assess actual check results and hand back the work with accurate limitations. |
+| web-research | web | Search public sources, read pages, verify news dates and cite supporting URLs. |
+| weather-lookup | web | Resolve places and read weather data with explicit timezone, dates and units. |
 
-These are instructions for Fatcat to work on your coding tasks. They follow the target project's conventions and do not impose Fatcat's own source layout or package manager. The model chooses whether to read them; bundling them does not automatically load their full text or grant permissions.
+These are instructions for Fatcat to work on your coding and public research tasks. They follow the target project's conventions and do not impose Fatcat's own source layout or package manager. The model chooses whether to read them; bundling them does not automatically load their full text or grant permissions.
 
 The search order is:
 

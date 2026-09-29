@@ -30,6 +30,8 @@
 
 ## 基本约束
 
+本轮在用户指定的 `fix/session-perfection` 增加阶段 2D-12 公开联网查询：一个通用 web 工具支持搜索与已知 URL 读取，默认向 CLI / chat / TUI 提供，并配套资料/新闻研究与天气查询 Skills。网络权限独立于文件写入权限，可用 `--web-permission deny` 关闭。功能限公开、有界、可取消的只读 HTTP(S) 请求，继续复用既有 Loop、Session、模型 SDK 和委派边界；不扩展为浏览器、爬虫、Web UI 或新模型供应商。实际实现及离线/在线验证见 PROGRESS.md。
+
 - 主语言为 TypeScript，首版面向 Windows 原生运行，不以 WSL、Docker 或远端服务器为前提。
 - docs/ 之外的仓库文本文件统一使用英文，包括源码、注释、测试、提示、脚本、配置、README.md 和 AGENTS.md；中文只允许出现在 docs/ 下。运行时用户输入与模型输出不受此文件语言约束。
 - 运行时、包管理器和模型 SDK 优先沿用本项目仓库已有选择；如果没有，则在实现开始时选择简单、稳定、适合当前目标的方案，并在 docs/ARCHITECTURE/ 下的相关文档中记录理由。

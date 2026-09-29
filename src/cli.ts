@@ -3,6 +3,7 @@ import { createTerminalInput } from "./terminal.js";
 import type { TerminalInput } from "./terminal.js";
 import type { ShellPermission } from "./tools/shell.js";
 import type { WorkspacePermission } from "./tools/write.js";
+import type { WebPermission } from "./tools/web.js";
 import { runChat } from "./chat.js";
 import { Session } from "./session.js";
 import { loadConfig } from "./config.js";
@@ -40,6 +41,9 @@ Skill instructions and bundled resources are loaded on demand through read; scri
 Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
 Shell authorization is separate: --shell-permission ask (default), deny, or allow for unattended commands.
 Shell uses Windows PowerShell with current-user access, not an operating-system sandbox.
+Public web search and page reading are available by default, including in read-only workspaces.
+Use --web-permission deny to disable the web tool (allow is the default). This is not a network sandbox for shell.
+Search queries go to Bing (default) or DuckDuckGo; fetched URLs go to their hosts. Do not include secrets in either.
 Each task emits an execution_report with request sizes, reported token usage, writes and command outcomes, even on failure.
 HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 262144 bytes); older read outputs may be replaced by explicit markers to fit.
 Current and recent turns, user instructions, and execution facts are preserved; full history remains in memory.
@@ -69,6 +73,7 @@ async function main(args: string[]): Promise<number> {
           workspace: { type: "string" },
           permission: { type: "string" },
           "shell-permission": { type: "string" },
+          "web-permission": { type: "string" },
         },
         allowPositionals: true,
         strict: true,
@@ -93,6 +98,9 @@ async function main(args: string[]): Promise<number> {
       throw new HarnessError("USAGE", "Use --workspace with a prompt, --chat, --tui, or --listSkills and a non-empty directory.");
     }
     const hasTask = Boolean(values.chat || values.tui || values.prompt !== undefined || positionals.length > 0);
+    if (values["web-permission"] !== undefined && (!hasTask || !["allow", "deny"].includes(values["web-permission"]))) {
+      throw new HarnessError("USAGE", "Use --web-permission allow or deny with a prompt, --chat, or --tui.");
+    }
     if (values.permission !== undefined && (!hasTask
       || !["ask", "read-only", "workspace-write"].includes(values.permission))) {
       throw new HarnessError("USAGE", "Use --permission ask, read-only, or workspace-write with a prompt, --chat, or --tui.");
@@ -136,9 +144,10 @@ async function main(args: string[]): Promise<number> {
     const workspace = values.workspace ?? process.cwd();
     const permission = (values.permission ?? "ask") as WorkspacePermission;
     const shellPermission = (values["shell-permission"] ?? (permission === "read-only" ? "deny" : "ask")) as ShellPermission;
+    const webPermission = (values["web-permission"] ?? "allow") as WebPermission;
     if (values.tui) {
       const { runTui } = await import("../tui/index.js");
-      return await runTui(config, workspace, permission, shellPermission);
+      return await runTui(config, workspace, permission, shellPermission, webPermission);
     }
     process.on("SIGINT", cancel);
     if (values.chat || permission === "ask" || shellPermission === "ask") {
@@ -148,7 +157,7 @@ async function main(args: string[]): Promise<number> {
     const baseTools = await createTools(workspace, permission, terminal?.approveWrite, {
       permission: shellPermission,
       ...(terminal ? { approve: terminal.approveShell } : {}),
-    });
+    }, { permission: webPermission });
     const skills = await discoverSkills({ workspace: baseTools.workspaceRoot!, signal });
     reportSkillWarnings(skills);
     const agent = createAgent(config, baseTools, undefined, skills);

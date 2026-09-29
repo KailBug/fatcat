@@ -23,6 +23,8 @@ test("compact metric values carry coverage even when secondary rows are hidden",
   assert.equal(sections[1]?.rows[0]?.value, "25.0% [1/2]");
   assert.match(statusText(telemetry.snapshot(), settings), /Working directory: Disabled/);
   assert.match(statusText(telemetry.snapshot(), settings), /Write permission: disabled/);
+  assert.match(statusText(telemetry.snapshot(), { ...settings, webPermission: "allow" }), /Web permission: allow/);
+  assert.match(statusText(telemetry.snapshot(), { ...settings, webPermission: "deny" }), /Web permission: deny/);
 });
 
 test("local budget rejection remains visible independently of unknown model context capacity", () => {

@@ -27,9 +27,25 @@ test("help works without credentials", () => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Fatcat/);
   assert.match(result.stdout, /--tui/);
+  assert.match(result.stdout, /--web-permission/);
   assert.match(result.stdout, /two child tasks/);
   assert.ok(!result.stdout.includes("--subagent"));
   assert.equal(result.stderr, "");
+});
+
+test("CLI web is available by default, independently denied and rejects invalid options", () => {
+  for (const args of [["--chat", "--web-permission", "ask"], ["--help", "--web-permission", "deny"],
+    ["--checkConfig", "--web-permission", "allow"], ["--listSkills", "--web-permission", "deny"], ["--web-permission", "deny"]]) {
+    assert.equal(run(args).status, 2, JSON.stringify(args));
+  }
+  const env = { DEEPSEEK_API_KEY: "offline-web-cli" };
+  const allowed = run(["--chat", "--permission", "read-only"], env, "web permission\n/exit\n");
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.match(allowed.stdout, /WEB_ALLOWED/);
+  const denied = run(["--chat", "--web-permission", "deny"], env, "web denied\n/exit\n");
+  assert.equal(denied.status, 0, denied.stderr);
+  assert.match(denied.stdout, /WEB_DENIED/);
+  assert.ok(!denied.stderr.includes("public news"));
 });
 
 test("TUI mode rejects pipes and conflicting modes before loading credentials", () => {

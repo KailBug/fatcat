@@ -76,7 +76,7 @@ export class TuiApp {
       model: options.config.model, provider: options.config.provider,
       workspace: options.workspace ?? "No workspace selected", status: "Ready", busy: false,
       messages: [], sections: [], color,
-      footer: `write ${options.workspace === undefined ? "off" : options.permission} | shell ${options.shellPermission} | skills ${options.skills}`,
+      footer: `write ${options.workspace === undefined ? "off" : options.permission} | shell ${options.shellPermission} | web ${options.webPermission ?? "deny"} | skills ${options.skills}`,
     };
     this.view = new FatcatView(this.state, this.terminal.rows - 4);
     const layout = new Container();

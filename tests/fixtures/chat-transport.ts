@@ -5,7 +5,22 @@ import type { Message } from "../../src/model.js";
 globalThis.fetch = async (input, init) => {
   const request = new Request(input, init);
   assert.equal(request.url, "https://api.deepseek.com/chat/completions");
-  const { messages, tools } = await request.json() as { messages: Message[]; tools: { function: { name: string } }[] };
+  const { messages, tools } = await request.json() as { messages: Message[]; tools: { function: { name: string; description: string } }[] };
+  const webPrompt = messages.findLast((message) => message.role === "user")?.content;
+  if (webPrompt === "web permission" || webPrompt === "web denied") {
+    const web = tools.find((tool) => tool.function.name === "web");
+    assert.ok(web);
+    if (webPrompt === "web permission") return Response.json({ choices: [{ finish_reason: "stop", message: {
+      role: "assistant", content: web.function.description.includes("Web permission: allow") ? "WEB_ALLOWED" : "WEB_DENIED",
+    } }] });
+    if (messages.at(-1)?.role === "user") return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
+      role: "assistant", content: null, tool_calls: [{ id: "web-denied", type: "function", function: {
+        name: "web", arguments: JSON.stringify({ action: "search", query: "public news" }),
+      } }],
+    } }] });
+    assert.match(String(messages.at(-1)?.content), /PERMISSION_DENIED/);
+    return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "WEB_DENIED" } }] });
+  }
   if (process.env.FATCAT_TEST_WORKSPACE_ROOT !== undefined) {
     const rootPrefix = "Workspace root (JSON string): ";
     const rootLines = String(messages[0]?.content).split("\n").filter((line) => line.startsWith(rootPrefix));
@@ -14,7 +29,7 @@ globalThis.fetch = async (input, init) => {
   }
   const prompt = messages.findLast((message) => message.role === "user")?.content;
   if (prompt === "workspace location") {
-    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
+    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web"]);
     const prefix = "Workspace root (JSON string): ";
     const rootLines = String(messages[0]?.content).split("\n").filter((line) => line.startsWith(prefix));
     assert.equal(rootLines.length, 1);
@@ -102,7 +117,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: value.result.answer } }] });
   }
   if (prompt === "workspace pages") {
-    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
+    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web"]);
     const last = messages.at(-1);
     const previous = last?.role === "tool" ? JSON.parse(String(last.content)).result : undefined;
     if (previous?.nextOffset === null) {
@@ -135,7 +150,7 @@ globalThis.fetch = async (input, init) => {
     } }] });
   }
   if (prompt === "workspace" || prompt === "workspace blocked") {
-    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
+    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web"]);
     const last = messages.at(-1);
     const list = prompt === "workspace" && last?.role === "user";
     if (last?.role === "user" || (last?.role === "tool" && last.tool_call_id === "list")) {

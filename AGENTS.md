@@ -75,6 +75,9 @@
 - Local configuration check: pnpm start --checkConfig
 - Local skill catalog: pnpm start --listSkills (includes launch-directory skills; --workspace <directory> selects another directory; no model credentials required).
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
+- Public web verification: pnpm run verify:web (five fixed search/page/weather checks, no model credentials or requests; separate from offline tests).
+- CLI tasks, chat and TUI expose public web search and fetch by default. --web-permission deny disables this tool independently of workspace permissions; it is not a network sandbox for shell.
+- Web Skills live under src/skill/web/. Keep public HTTP(S) boundaries, DNS pinning, redirect/size/deadline limits, cancellation and injected-network coverage when changing web access.
 - Live delegation verification: pnpm run verify:delegation (fixed read-only temporary fixtures, at most 20 real model requests).
 - Live coding verification: pnpm run verify:coding (uses a temporary search/read/edit fixture, authorizes only its designated edit and fixed test command, checks the execution report and provider token usage, and allows at most 14 real model requests).
 - Live multi-file workflow verification: pnpm run verify:workflow (two turns in a temporary cart/receipt fixture, narrowly authorized source edits and fixed checks, independent reruns and per-turn report validation, at most 28 real model requests).

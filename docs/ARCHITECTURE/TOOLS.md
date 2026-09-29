@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+公开联网查询由独立的 web 工具提供，详见 [WEB.md](WEB.md)。`createTools` 的第五个可选参数为 WebOptions，未提供则保留本文件的程序化基础集合，提供但省略 permission 时默认 deny。CLI / chat / TUI 显式传 allow（可用 --web-permission deny 关闭）；父子 Agent 共享该配置。网络权限与文件 read-only 相互独立，不改变本文件描述的工作目录、写入与 shell 边界。
+
 阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移和 2D-5 回合报告已通过 review 并合入；2D-6 在 read 中增加字面文本搜索，已通过 review 并合入；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
 
 以上为工作目录工具的基线。2D-10 通过 `src/skills.ts` 的包装器扩展同一个 read 入口，加入已发现 Skill 的只读 URI 范围，不改变现有工作目录读写与命令授权。Skill frontmatter 新增 YAML 解析依赖；具体接口、边界及状态见 [SKILLS.md](SKILLS.md)。

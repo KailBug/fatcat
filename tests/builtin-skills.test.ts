@@ -15,6 +15,8 @@ import type { ToolResult } from "../src/tools.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 
 const bundled = [
+  { subsystem: "web", name: "web-research" },
+  { subsystem: "web", name: "weather-lookup" },
   { subsystem: "tools", name: "workspace-editing" },
   { subsystem: "subagent", name: "focused-delegation" },
   { subsystem: "context", name: "context-recovery" },

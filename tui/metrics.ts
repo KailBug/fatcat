@@ -2,6 +2,7 @@ import type { Config } from "../src/config.js";
 import { getProviderProfile, providerEndpoint } from "../src/providers.js";
 import type { ShellPermission } from "../src/tools/shell.js";
 import type { WorkspacePermission } from "../src/tools/write.js";
+import type { WebPermission } from "../src/tools/web.js";
 import type { TuiTelemetrySnapshot, TuiUsage } from "./telemetry.js";
 import type { TuiSection } from "./view.js";
 
@@ -10,6 +11,7 @@ export type TuiConfig = {
   workspace: string | undefined;
   permission: WorkspacePermission;
   shellPermission: ShellPermission;
+  webPermission?: WebPermission;
   skills: number;
 };
 
@@ -69,6 +71,7 @@ export function statusText(snapshot: TuiTelemetrySnapshot, settings: TuiConfig):
     `Process directory: ${process.cwd()}`,
     `Write permission: ${settings.workspace === undefined ? "disabled" : settings.permission}`,
     `Shell permission: ${settings.shellPermission}`, `Discovered skills: ${settings.skills}`,
+    `Web permission: ${settings.webPermission ?? "deny"} (public HTTP/S only; not a shell network sandbox)`,
     `Parent request limit per turn: ${config.maxIterations}`,
     `Delegation: at most 2 children, ${Math.min(3, config.maxIterations)} requests each`,
     `Request timeout: ${config.requestTimeoutMs} ms`, `Request byte limit: ${config.maxRequestBytes}`,

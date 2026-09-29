@@ -25,6 +25,7 @@
 | `src/subagent.ts` | CLI 默认装配的单层委派包装器，复用空历史 Loop，限制子任务次数及轮次 |
 | `src/execution-report.ts` | CLI/chat 的每回合事件观察器，转发原事件并在根回合结束时发出独立 execution_report，详见 EXECUTION_REPORT.md |
 | `src/errors.ts` | `HarnessError` 携带稳定错误码与可展示的英文提示；共享取消检查 |
+| `src/tools/web.ts`、`web-request.ts`、`web-content.ts` | 2D-12 单个 web 工具的搜索/网页读取、网络权限、公开地址边界、HTTP(S) 及有界解析；CLI / TUI 显式装配，父子共用；详见 WEB.md |
 | `scripts/verify-coding.ts` | 临时多文件故障样例的真实搜索定位、读改测验证，仅允许指定源文件修改和固定测试命令，独立核对结果 |
 | `scripts/verify-context.ts` | 三回合只读临时样例，触发请求整理并验证文件变化后的重读与前文要求保留 |
 | `scripts/verify-delegation.ts` | 复用 CLI 装配的真实模型验证：算术直接完成、隔离上下文审查的默认委派，使用独立只读临时样例 |

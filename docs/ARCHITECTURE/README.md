@@ -38,6 +38,7 @@
 | [SKILLS.md](SKILLS.md) | 本地及按 subsystem 组织的内置技能、构建资源、通用 read、Session 和权限边界 | 2D-10 含内置补充；验证事实见 PROGRESS |
 | [PROVIDERS.md](PROVIDERS.md) | DeepSeek / Kimi / MiMo / Qwen 配置及 provider 开发规范 | 2D-10 新厂商按离线 SDK 合约验收，无新增厂商 API 在线验证 |
 | [TUI.md](TUI.md) | 可选终端界面、审批控制与准确的回合 / 用量 / 缓存遥测 | 2D-11 离线及 Windows ConPTY 已验证，待 review；细节见 PROGRESS |
+| [WEB.md](WEB.md) | 公开搜索、网页读取、DNS / HTTP 边界、网络权限及联网 Skills | 2D-12 已实现；离线和公网验证事实见 PROGRESS |
 
 ## 当前实现
 
@@ -56,6 +57,10 @@
 同阶段修正 CLI 的默认工作目录：普通任务、--chat、--tui 和 --listSkills 默认使用 process.cwd()，--workspace 可覆盖。pnpm start 的专用启动器先根据 INIT_CWD 恢复调用位置，因此默认目录及相对 --workspace 都基于用户调用命令的目录。任务默认提供同级 read / write / shell，write 与 shell 仍分别逐次确认；程序化 createTools 省略目录仍不开放文件访问。Tools.workspaceRoot 来自 createWorkspace 的规范 realpath，agent.ts 将该路径作为父子请求指导，TUI 显示同一值；不会改写 Session 历史或放宽相对路径及权限规则。实现与验证事实见 PROGRESS.md。
 
 ## 已确定的约束与决策
+
+2D-12 新增一个通用 web 工具，CLI / chat / TUI 默认开放公开搜索和页面文本读取，`--web-permission deny` 可独立关闭。程序化 createTools 第五个参数显式选择 web，未传时维持旧工具集合；父子模型共享相同工具边界。web.ts 负责协议、权限与调用期限，web-request.ts 负责公开地址检查、DNS 固定、HTTP(S) 与有界解码，web-content.ts 负责搜索/HTML 解析；Loop、Session 与执行报告的职责不变。新增 web/web-research 与 web/weather-lookup，当前内置 Skill 共六项。细节和未实现边界见 [WEB.md](WEB.md)。
+
+新增锁定依赖 htmlparser2@12.0.0 和 ipaddr.js@2.5.0，分别用于 HTML/XML 结构解析和特殊 IP 范围分类；保留 Node / pnpm / TypeScript / 模型 SDK。`pnpm run verify:web` 是独立公网检查，不加载凭据或调用模型；自动测试仍保持离线。
 
 | 决策 | 理由 |
 | --- | --- |

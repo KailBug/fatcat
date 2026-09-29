@@ -194,6 +194,14 @@ CLI 的父 Agent 默认具有 delegate_task，由模型判断任务是否值得�
 
 工作目录由 createWorkspace 规范化，Tools.workspaceRoot 供父子模型请求指导与 TUI 共用；模型无需通过额外工具猜测当前目录。该指导不修改 Session 历史、相对路径限制或权限。验收范围为默认与覆盖目录、工具定义、确认/拒绝、子任务继承、技能发现、模式参数校验以及请求指导与 TUI 路径一致性；实际结果记录在 PROGRESS.md，不沿用以上 TUI 基线验收代替本修正的验证，也不标记阶段 2D 完成。
 
+## 阶段 2D-12：公开联网查询与 Skills（已实现，验证事实见 PROGRESS）
+
+按用户要求在 `fix/session-perfection` 加入单个 web 工具，提供公开搜索与 URL 文本读取；CLI 单次任务、chat、TUI 默认可用，子 Agent 继承相同网络权限。支持 `--web-permission allow|deny`，保持现有文件和 shell 授权边界。提供 web-research 与 weather-lookup 两个按需加载的内置 Skill，通过通用接口处理资料、新闻和天气。
+
+验收包括：注入网络的搜索/读取与错误处理、地址和 DNS 边界、重定向、响应/输出上限、取消、父子权限及 Skill/Session/CLI 集成；显式 `pnpm run verify:web` 检查固定的公网资料/新闻搜索、网页读取、地理编码与预报。公网服务可用性与真实模型选工具的效果分别记录，不以离线模拟替代真实联网，不因本增量将阶段 2D 整体标为完成。
+
+采用无需搜索 Key 的 Bing RSS 默认入口和可选 DuckDuckGo HTML，后者在本机检查超时；接口均为 best-effort，不承诺服务可用性或结果新鲜度。没有代理转发、浏览器执行、登录、PDF 阅读、后台抓取、自动多引擎重试、会话持久化或新模型协议。设计见 [WEB.md](ARCHITECTURE/WEB.md)。
+
 ## 后移与按需引入
 
 Channel、Web UI、App 待核心任务能力稳定后再考虑；TUI 因用户本轮明确要求提前到 2D-11。Hooks 与 MCP 在明确扩展场景出现时引入；后台任务与 Cron 依赖任务状态、取消和恢复边界。LoopX / OpenViking 能力对标是长期方向，先完成，再逐步完善。

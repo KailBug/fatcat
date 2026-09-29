@@ -18,6 +18,7 @@
     "verify:coding": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-coding.js",
     "verify:workflow": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-workflow.js",
     "verify:context": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-context.js",
+    "verify:web": "pnpm run build && node dist/scripts/verify-web.js",
     "verify:live": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-live.js"
   },
   "devDependencies": {
@@ -26,6 +27,8 @@
   },
   "dependencies": {
     "@earendil-works/pi-tui": "0.87.1",
+    "htmlparser2": "12.0.0",
+    "ipaddr.js": "2.5.0",
     "openai": "7.18.0",
     "yaml": "2.9.1"
   }

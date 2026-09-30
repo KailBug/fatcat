@@ -23,18 +23,21 @@ Usage:
   pnpm start --listSkills
   pnpm start --chat
   pnpm start --tui
+  pnpm start --webui
   pnpm start --chat --workspace examples/workspace
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
 
 Use --chat for a continuous conversation with /help, /reset, and /exit.
 Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
+Use --webui for the local browser interface at 127.0.0.1:3210; --port <1-65535> selects another port.
+Open the private link printed at startup. Web UI write and command approvals appear in the browser.
 A prompt runs one task. History stays in memory.
 The agent can delegate focused independent tasks when useful; simple tasks stay direct.
 At most two child tasks may start per user turn (up to six additional model requests).
 Each child uses at most three additional model requests and cannot delegate.
 Tasks use the current directory as the workspace and expose read, write, and shell.
-Use --workspace <directory> to select another directory. Writes and commands ask for yes/no in the terminal.
+Use --workspace <directory> to select another directory. Writes and commands ask for approval in the active interface.
 Built-in skills are available by default; workspace and user .fatcat/skills or .agents/skills override matching names.
 Use --listSkills to inspect the local catalog without credentials. Mention $name or describe a task to use a skill.
 Skill instructions and bundled resources are loaded on demand through read; scripts still need shell authorization.
@@ -51,7 +54,7 @@ An answer or a zero exit code alone does not certify the task; inspect the recor
 HARNESS_PROVIDER selects deepseek (default), kimi, mimo, or qwen for the entire session.
 Selected file and skill contents are sent to the configured provider when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
-Logs go to stderr; the final answer goes to stdout. Press Ctrl+C to cancel.`;
+In CLI task mode, logs go to stderr and the final answer goes to stdout. Press Ctrl+C to cancel.`;
 
 async function main(args: string[]): Promise<number> {
   let terminal: TerminalInput | undefined;
@@ -70,6 +73,8 @@ async function main(args: string[]): Promise<number> {
           prompt: { type: "string" },
           chat: { type: "boolean" },
           tui: { type: "boolean" },
+          webui: { type: "boolean" },
+          port: { type: "string" },
           workspace: { type: "string" },
           permission: { type: "string" },
           "shell-permission": { type: "string" },
@@ -87,23 +92,27 @@ async function main(args: string[]): Promise<number> {
       + Number(Boolean(values.listSkills))
       + Number(Boolean(values.chat))
       + Number(Boolean(values.tui))
+      + Number(Boolean(values.webui))
       + Number(values.prompt !== undefined || positionals.length > 0);
 
     //start parsing if
     if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
-      throw new HarnessError("USAGE", "Choose one mode: help, config check, skill listing, chat, TUI, or one prompt.");
+      throw new HarnessError("USAGE", "Choose one mode: help, config check, skill listing, chat, TUI, Web UI, or one prompt.");
     }
     if (values.workspace !== undefined && (!values.workspace.trim() || values.help || values.checkConfig
-      || (!values.chat && !values.tui && !values.listSkills && values.prompt === undefined && positionals.length === 0))) {
-      throw new HarnessError("USAGE", "Use --workspace with a prompt, --chat, --tui, or --listSkills and a non-empty directory.");
+      || (!values.chat && !values.tui && !values.webui && !values.listSkills && values.prompt === undefined && positionals.length === 0))) {
+      throw new HarnessError("USAGE", "Use --workspace with a prompt, --chat, --tui, --webui, or --listSkills and a non-empty directory.");
     }
-    const hasTask = Boolean(values.chat || values.tui || values.prompt !== undefined || positionals.length > 0);
+    if (values.port !== undefined && (!values.webui || !/^[1-9]\d*$/.test(values.port) || Number(values.port) > 65535)) {
+      throw new HarnessError("USAGE", "Use --port with --webui and an integer from 1 to 65535.");
+    }
+    const hasTask = Boolean(values.chat || values.tui || values.webui || values.prompt !== undefined || positionals.length > 0);
     if (values["web-permission"] !== undefined && (!hasTask || !["allow", "deny"].includes(values["web-permission"]))) {
-      throw new HarnessError("USAGE", "Use --web-permission allow or deny with a prompt, --chat, or --tui.");
+      throw new HarnessError("USAGE", "Use --web-permission allow or deny with a prompt, --chat, --tui, or --webui.");
     }
     if (values.permission !== undefined && (!hasTask
       || !["ask", "read-only", "workspace-write"].includes(values.permission))) {
-      throw new HarnessError("USAGE", "Use --permission ask, read-only, or workspace-write with a prompt, --chat, or --tui.");
+      throw new HarnessError("USAGE", "Use --permission ask, read-only, or workspace-write with a prompt, --chat, --tui, or --webui.");
     }
     if (values["shell-permission"] !== undefined && (!hasTask
       || !["ask", "deny", "allow"].includes(values["shell-permission"])
@@ -134,7 +143,7 @@ async function main(args: string[]): Promise<number> {
       return 0;
     }
     const prompt = values.prompt ?? positionals.join(" ");
-    if (!values.chat && !values.tui && !prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
+    if (!values.chat && !values.tui && !values.webui && !prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
     if (values.tui && (!process.stdin.isTTY || !process.stdout.isTTY || process.env.TERM === "dumb")) {
       throw new HarnessError("USAGE", "TUI requires an interactive terminal. Use --chat for pipes or TERM=dumb.");
     }
@@ -145,6 +154,10 @@ async function main(args: string[]): Promise<number> {
     const permission = (values.permission ?? "ask") as WorkspacePermission;
     const shellPermission = (values["shell-permission"] ?? (permission === "read-only" ? "deny" : "ask")) as ShellPermission;
     const webPermission = (values["web-permission"] ?? "allow") as WebPermission;
+    if (values.webui) {
+      const { runWebUi } = await import("../webui/index.js");
+      return await runWebUi(config, workspace, permission, shellPermission, webPermission, Number(values.port ?? "3210"));
+    }
     if (values.tui) {
       const { runTui } = await import("../tui/index.js");
       return await runTui(config, workspace, permission, shellPermission, webPermission);

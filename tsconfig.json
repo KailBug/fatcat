@@ -4,7 +4,9 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": [
-      "ES2023"
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
     ],
     "types": [
       "node"
@@ -22,6 +24,7 @@
   "include": [
     "src/**/*.ts",
     "tui/**/*.ts",
+    "webui/**/*.ts",
     "tests/**/*.ts",
     "scripts/**/*.ts"
   ]

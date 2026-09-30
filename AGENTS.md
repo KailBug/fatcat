@@ -10,7 +10,7 @@
 
 ## Development direction and organization
 
-- Prioritize a working local coding workflow: inspect, modify, verify, and deliver reviewable results. Keep the existing CLI and an optional TUI for this workflow; defer channels, Web UI, and app development.
+- Prioritize a working local coding workflow: inspect, modify, verify, and deliver reviewable results. Keep the CLI, optional TUI, and local Web UI on the same Session, Loop, and tool boundaries; defer channels and app development.
 - Prefer a small set of general-purpose, composable tools such as read, write, and shell execution. Do not add a separate model-facing tool for every development operation. Native Windows support must not require Bash.
 - Target task-driven tool selection and delegation. Users should not need to enable internal capabilities per task; the harness still enforces workspace access, permissions, budgets, and cancellation. The CLI makes bounded delegation available by default; the model chooses whether to use it.
 - Keep interaction, loop control, model communication, tool execution, and state ownership clear. Favor readable modules and narrow interfaces; avoid monolithic handlers and speculative frameworks.
@@ -66,6 +66,7 @@
 - Help: pnpm start --help
 - Continuous chat: pnpm start --chat (uses the launch directory with read/write/shell; writes and commands require per-operation approval).
 - Interactive TUI: pnpm start --tui (uses the launch directory; requires a terminal).
+- Local browser interface: pnpm start --webui (uses the launch directory; open the private link printed in the terminal; defaults to 127.0.0.1:3210, with --port <number> to override). File and command approvals appear in the browser. One in-memory conversation is shared by tabs; Ctrl+C stops the server.
 - Select another workspace for a task, chat, or TUI with --workspace <directory>, for example pnpm start --chat --workspace examples/workspace.
 - pnpm start preserves the directory where it was invoked; relative --workspace paths resolve there. Its launcher restores INIT_CWD after the package-root build and .env load. Direct dist/src/cli.js execution uses its own cwd and ignores INIT_CWD.
 - Explicit read-only workspace chat: pnpm start --chat --workspace examples/workspace --permission read-only

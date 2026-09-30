@@ -4,6 +4,11 @@
 
 ## 当前状态
 
+- 阶段 2D-13：从最新 origin/main `8885f95` 创建 `feat/webui-dev`，首版本地 Web UI 已实现 `pnpm start --webui`、ChatGPT 风格布局、单会话对话、浏览器审批、停止、基础 Markdown 和回合报告。类型检查、构建、299 项全量离线测试与真实 pnpm 入口下的 Edge 浏览器检查通过。尚未提交或推送，待 review；没有真实模型 API 验证，具体边界见本日记录。
+- 当前基线核对（2026-09-29）：fetch 后 origin/main 为 `8885f95`（PR #17 合并），已包含默认工作区修正、TUI 根目录迁移和 2D-12。以下较早状态中的“本地未提交/待合入”保留当时事实，不再代表当前 main 文件状态。Web UI 按本次要求提前进入 2D-13，Channel / App 继续后移。
+
+### 此前基线状态（保留历史描述，当前合入状态以上述核对为准）
+
 - 阶段 2D-12：在用户指定的 fix/session-perfection 实现公开 web 搜索/读取、独立网络权限和 web-research / weather-lookup 两个 Skill。类型检查、含构建的 289 项离线测试、锁文件安装及五项真实公网工具检查通过；未调用真实模型 API。更改尚未提交或推送，待 review；详情及限制见本日记录。
 
 - TUI 目录整理：此前迁移被分拆到两个分支，main 只合入了根目录新增；已在基于最新 main 的 fix/complete-tui-migration 补齐旧目录删除与引用修改，源码仅保留与 src 同级的 tui，构建产物为 dist/tui。273 项离线测试及真实 Windows TUI 启动 / 退出检查重新通过；修复仍为本地未提交修改，待 review。
@@ -20,6 +25,31 @@
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；yaml 2.9.1 解析 Skill frontmatter，@earendil-works/pi-tui 0.87.1 支撑可选终端界面。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+
+## 2026-09-29：阶段 2D-13，本地 Web UI 首版（离线和浏览器已验证，待 review）
+
+### 实际结果
+
+- 开始时分支 fix/session-perfection，HEAD `8885f9507582a72208d8bdbf8eb64382aa265f10`，工作区干净；git fetch origin main 后确认相同远端基线，从 origin/main 创建并切换 `feat/webui-dev`。没有重置、暂存、提交、推送或合并。
+- `pnpm start --webui` 启动本地 HTTP 服务，默认 `127.0.0.1:3210`，支持 `--port` 和原工作区/权限参数；打开终端打印的带 capability 链接使用，不要求终端 TTY。模型 Key 保留在服务端，不进入页面状态或静态资产。
+- 新增根目录 webui，拆分装配、控制器、HTTP、浏览器 DOM、Markdown 和静态资源。沿用 Node 24 / pnpm 11.21.0 / TypeScript 与原 SDK，不新增依赖、不改锁文件；build 复制 HTML/CSS/SVG，JS 由 tsc 编译。
+- 界面采用侧栏、居中会话、底部输入结构，显示模型、工作区与权限；支持启动建议、Unicode/多行输入、基础 Markdown、深浅主题、移动宽度、活动与回合报告、停止、新对话和会话详情。浏览器可批准或拒绝一次写入/命令；审批 ID、取消、现有工具检查及父子权限边界保持有效。
+- HTTP 仅绑定 loopback，使用随机 capability、Host/Origin 校验、静态资源白名单、CSP、无缓存响应、连接/请求体限制。界面只用 textContent/text node 渲染模型内容；HTML 不执行，非 HTTP(S) Markdown 链接不激活。
+- 更新 AGENTS、README、USAGE、PROJECT、ROADMAP、架构总览/Session，并新增 WEBUI.md；按本次明确需求调整此前 Web UI 后移方向。
+
+### 验证与修正
+
+- Windows 原生 Node v24.19.0、pnpm 11.21.0：pnpm run typecheck、pnpm run build、pnpm test 全量 299/299 通过，0 失败/取消/跳过；较 289 项基线新增 9 项 Web UI 与 1 项 CLI 参数回归。pnpm start --help 显示 --webui / --port，最终 Web UI 专项 9/9 再次通过。
+- 专项覆盖成功历史/快照隔离/reset、失败脱敏、取消后继续、临时文件真实写入及拒绝、审批 ID 重放拒绝、待批取消/关闭不写入、真实固定 PowerShell 命令及退出码、只读拒绝、HTTP 来源/令牌/资源访问/体积/UTF-8 上限、并发冲突、关服取消及真实非 TTY CLI。服务返回的用量和回答来自注入模型，不是在线 API 结果。
+- 使用本机已安装 Edge 和工作区配套 Playwright，经真实 `pnpm start --webui` 启动、虚构凭据、注入 fetch 与独立临时工作区检查：1440×1000 桌面、390×844 窄屏、系统暗色、Unicode、Shift+Enter 草稿、Markdown/代码块、HTML 与危险链接保持文本、刷新恢复、停止后继续、文件先拒绝再批准、New chat、会话详情和侧栏开合；最终无页面/控制台错误、窄屏无水平溢出。截图保留于忽略的 dist/webui-desktop.png、webui-conversation.png、webui-approval.png、webui-mobile.png 和 webui-dark.png，已人工视觉检查。
+- 首次 typecheck 发现 readonly warnings 赋值不兼容，改为复制；初次 CLI 测试清理顺序使 Windows 子进程工作目录尚占用便删除，导致运行未结束，已先停止子进程再清理并改用动态端口。浏览器离线夹具曾错误返回 stop 而非 tool_calls，修正后审批通过；补齐 favicon 消除浏览器 404。中断的测试及预览进程已停止，最终检查通过。
+- 默认命令沙箱和内置浏览器工具均遇到 Windows deny-read ACL 初始化失败；使用获准本机命令和已安装浏览器运行时完成验证，无需用户更改项目运行环境。本轮没有读取或输出真实凭据，没有运行 verify:* 或任何真实模型 API。
+
+### 限制与下一步
+
+- 仅一个进程内会话，多个标签共享；最多显示 100 回合和每回合最近 100 活动项。刷新可恢复服务端状态，草稿不持久化；关闭页面不会停止执行，终端退出才关服。New chat 不回滚文件或命令，也不清除工具 journals；服务重启丢失历史。
+- 模型仍为非流式响应，只有状态轮询；没有会话列表/持久化、远程部署、账号、运行中换模型、附件或完整 Markdown 语法。基础浏览器交互与模拟模型闭环已验证，不宣称真实模型任务质量或完整中文输入法候选窗口已验收。
+- 下一步 review 首版，在实际本地编码任务中验证真实 provider 与布局反馈；按需求再细化会话管理或流式能力。阶段 2D 整体继续进行中。
 
 ## 2026-09-29：公开联网查询与配套 Skills（已实现，离线及公网工具已验证）
 

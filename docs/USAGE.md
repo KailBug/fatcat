@@ -6,13 +6,13 @@ Run commands below from the repository root unless an example changes directorie
 
 A TypeScript Agent Harness that runs natively on Windows.
 
-The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI or optional TUI. Workspace reading, bounded literal text search, and controlled text-file creation and editing are available. Foreground Windows PowerShell execution is available with separate command authorization. Bounded delegation is available by default, with the model choosing whether to use it for the task. Web UI, app, and channel work is deferred. See the [architecture overview](ARCHITECTURE/README.md) and [roadmap](ROADMAP.md).
+The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI, optional TUI, or local Web UI. Workspace reading, bounded literal text search, and controlled text-file creation and editing are available. Foreground Windows PowerShell execution is available with separate command authorization. Bounded delegation is available by default, with the model choosing whether to use it for the task. App and channel work is deferred. See the [architecture overview](ARCHITECTURE/README.md) and [roadmap](ROADMAP.md).
 
 ## Current capabilities
 
-The CLI runs a single task or an in-memory conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. Tasks, chat, and TUI use the launch directory as the workspace unless `--workspace` selects another directory. The model can answer directly, call the pure `sum` tool, load local Skills, inspect workspace text files, propose a write, or run a command after terminal approval; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
+The CLI runs a single task or an in-memory conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. Tasks, chat, TUI, and Web UI use the launch directory as the workspace unless `--workspace` selects another directory. The model can answer directly, call the pure `sum` tool, load local Skills, inspect workspace text files, propose a write, or run a command after approval in the active interface; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, an optional terminal interface with configuration and usage panels, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, Graph engine, or Web UI.
+The implementation includes isolated in-memory sessions, continuous chat, an optional terminal interface with configuration and usage panels, a local browser interface, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, or Graph engine.
 
 The shared system prompt asks Fatcat to respond concisely in your language, inspect relevant code before edits, complete authorized implementation work, and report checks actually performed. It avoids unsolicited edits for review-only questions and keeps assumptions separate from observed facts. This is model guidance, not a guarantee of correctness or an additional permission mechanism. Restart the CLI after changing the prompt source and rebuilding.
 
@@ -81,6 +81,26 @@ pnpm start --checkConfig
 ```
 
 This command checks local fields without contacting a provider. It does not validate credentials or account access. Kimi, MiMo, and Qwen were added using official protocol documentation and offline SDK contract tests; no API online validation is required or performed for those additions in this increment.
+
+## Local Web UI
+
+After configuring your provider, start the local browser interface:
+
+```powershell
+pnpm start --webui
+pnpm start --webui --workspace examples/workspace
+pnpm start --webui --port 3211 --permission read-only --web-permission deny
+```
+
+Open the complete private link printed in the terminal, including its `#token=...` fragment. The server binds only to `127.0.0.1` on port 3210 by default. Keep the terminal running; Ctrl+C cancels the active turn and stops the server. The launch directory and `.env` loading follow the same rules as CLI chat. `--webui` is exclusive with task, chat, TUI, help, config check, and skill listing; `--port` is only valid with Web UI and accepts 1–65535. A port already in use produces a safe startup error.
+
+The page includes a workspace sidebar, starter prompts, a conversation view, a multiline composer, session details, recent activity, and expandable execution reports. Enter sends; Shift+Enter inserts a line break; IME composition does not submit a message. Stop cancels the active turn and leaves the conversation usable. Basic Markdown headings, lists, bold text, code blocks, and HTTP(S) links are supported. HTML is displayed as text. Layout adapts to narrow screens and the system color theme.
+
+Writes and commands use the existing independent permission policies. With the default `ask`, the browser shows the exact file change or PowerShell command and requires **Allow once** or **Deny**. Approval is tied to the pending operation; a stale response cannot authorize another action. `--permission workspace-write` preauthorizes file writes only; `--shell-permission allow` separately preauthorizes commands. Shell runs with current-user access, not an OS sandbox. `--web-permission deny` disables public research independently of the local UI server.
+
+One in-memory conversation is shared by all tabs using this server link. Refreshing the same tab reconnects to its state, including pending approval; closing the tab does not cancel an active turn. New chat clears the conversation and model history after confirmation, but does not undo file changes, commands, or their process-local journals. Failed and cancelled turns remain visible with an explicit history warning. The UI allows up to 100 turns before New chat, messages up to 32768 UTF-8 bytes, and shows the latest 100 activity events per turn.
+
+History is lost when the server stops. Responses appear when the existing non-streaming provider call completes; status updates are polled locally. There is no saved conversation list, account system, remote hosting, or runtime provider switching. API credentials stay on the server. Treat the startup link as private: its random capability permits access to this local session. Reports distinguish valid provider token usage from missing usage and do not certify task correctness. See [Web UI architecture](ARCHITECTURE/WEBUI.md).
 
 ## Run a task
 

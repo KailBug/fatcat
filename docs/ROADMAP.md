@@ -204,7 +204,17 @@ CLI 的父 Agent 默认具有 delegate_task，由模型判断任务是否值得�
 
 ## 后移与按需引入
 
-Channel、Web UI、App 待核心任务能力稳定后再考虑；TUI 因用户本轮明确要求提前到 2D-11。Hooks 与 MCP 在明确扩展场景出现时引入；后台任务与 Cron 依赖任务状态、取消和恢复边界。LoopX / OpenViking 能力对标是长期方向，先完成，再逐步完善。
+Channel、App 待核心任务能力稳定后再考虑；TUI 因用户明确要求提前到 2D-11，本地 Web UI 提前到 2D-13。Hooks 与 MCP 在明确扩展场景出现时引入；后台任务与 Cron 依赖任务状态、取消和恢复边界。LoopX / OpenViking 能力对标是长期方向，先完成，再逐步完善。
+
+## 阶段 2D-13：本地 Web UI（首版已实现，验证事实见 PROGRESS）
+
+按用户要求，从最新 main 创建 `feat/webui-dev`，增加 `pnpm start --webui`。借鉴 ChatGPT 网页的侧栏、居中对话和底部输入布局；提供当前工作区、模型与权限、连续对话、基础 Markdown、执行活动、回合报告、浏览器逐次审批、停止本轮和新对话。
+
+沿用 Node.js 24、pnpm 11.21.0、TypeScript 与既有模型 SDK。原生 HTTP 仅绑定 127.0.0.1，浏览器使用 TypeScript 和 CSS，不增加运行依赖或新的 Agent Loop；通过随机 capability、Host/Origin 校验和静态资源白名单保护本地入口。浏览器与 HTTP 控制器分离，Session、执行报告及 Tools 继续持有原职责。
+
+验收范围：Windows 原生启动命令、参数互斥与端口校验；离线模型下的连续追问、刷新、失败与取消后继续、并发拒绝、读写和命令权限、批准/拒绝、审批重放拒绝、停止服务；浏览器宽窄屏、基本 Markdown、HTML 注入防护、输入及报告查看。自动测试使用虚构凭据，实际模型连通性另记，不以模拟结果替代真实 API 验证。
+
+首版只有一个进程内会话，各标签共享；不实现持久化、多会话列表、模型流式输出、账户、远程部署或通用 Channel。阶段 2D 整体继续进行中。实际边界见 [WEBUI.md](ARCHITECTURE/WEBUI.md)。
 
 ## 阶段推进方式
 

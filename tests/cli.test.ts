@@ -27,6 +27,7 @@ test("help works without credentials", () => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Fatcat/);
   assert.match(result.stdout, /--tui/);
+  assert.match(result.stdout, /--webui/);
   assert.match(result.stdout, /--web-permission/);
   assert.match(result.stdout, /two child tasks/);
   assert.ok(!result.stdout.includes("--subagent"));
@@ -67,6 +68,18 @@ test("usage errors and missing credentials have distinct exit codes", () => {
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /DEEPSEEK_API_KEY/);
   assert.equal(missing.stdout, "");
+});
+
+test("Web UI validates exclusive modes and its port before loading credentials", () => {
+  for (const args of [["--webui", "--chat"], ["--webui", "--tui"], ["--webui", "--help"],
+    ["--webui", "--checkConfig"], ["--webui", "--listSkills"], ["--webui", "task"], ["--webui", "--prompt", "task"],
+    ["--chat", "--port", "3210"], ["--port", "3210"], ["--webui", "--port", "0"],
+    ["--webui", "--port", "65536"], ["--webui", "--port", "1.5"], ["--webui", "--port", "abc"]]) {
+    assert.equal(run(args).status, 2, JSON.stringify(args));
+  }
+  const missing = run(["--webui", "--workspace", ".", "--permission", "read-only", "--web-permission", "deny"]);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /DEEPSEEK_API_KEY/);
 });
 
 test("local config checks do not contact the model or expose credentials", () => {

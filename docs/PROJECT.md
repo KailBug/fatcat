@@ -22,6 +22,10 @@
 
 2D-14 的后续界面增量在 `feat/webui-session-menu` 将 Web UI 会话详情、命名、分支与删除集中到所点会话的右键菜单，把工作区移入 composer，并参考 Claude Code Docs 的字体层次。仅增加工作目录内的显式会话删除与目标 ID 操作，沿用原 Manager / Store 锁和权限；不扩展模型工具、持久格式、远程服务或 CLI / TUI 删除命令。
 
+在用户指定的 `feat/webui-dev` 继续改进本地交互：会话变更采用页面中央弹窗，服务启动后自动打开默认浏览器。composer 分为消息和底部工具栏，左侧模式/带框工作区，右侧无框上下文/模型/发送；窄屏按组换行。会话列表仅显示名称，轮次和日期移入悬浮提示。权限菜单展示顺序为 Plan、Manual、Accept edits、Free to go。上下文仅依据最近父请求的实际输入 token 与已核对的模型窗口，不替代请求字节预算或累计模型消费。界面固定英文，多语言切换列为后续计划；不改写运行时用户数据或增加语言框架。验证事实见 PROGRESS。
+
+同分支增加权限模式和独立 `src/permissions/`，与 session 同级集中审批及文件、文本、进程和网络执行 guard。Manual 逐项审批，Accept edits 自动允许受控工作区修改且命令仍审批，Plan 只读规划并禁止写入/命令；Free to go 开放当前用户权限内的工作区外文件及 HTTP(S) 地址/端口，普通命令自动执行，危险/不透明命令经一次审批。CLI / chat / TUI 可从启动选项选定，Web UI 空闲时切换；父子使用同一运行时策略，显式启动 read-only/shell-deny/web-deny 为上限。前三种保持原范围和执行规则，旧 allow 参数不隐式选择 Free；命令判断是保守启发式，不能分析所有脚本内部操作，不提供 OS 沙箱。保持原工具与会话职责，详见 [权限架构](ARCHITECTURE/PERMISSIONS.md)。
+
 2D-10 在同阶段、同分支补充按已有 subsystem 组织的内置 Skills，存放于 `src/skill/<subsystem>/<skill-name>/SKILL.md`，经构建随程序分发并以最低优先级发现。当前提供工作目录编辑、独立委派、上下文恢复、验证交付四种任务指导；用于 Fatcat 帮助用户处理目标项目，不是 Fatcat 自身源码维护规范。继续复用现有加载、Session 和权限边界，后续仅按实际 subsystem 任务扩充内容，不建空目录或搬迁运行时模块。内置补充已通过离线验收，真实模型效果尚未验证。
 
 按用户本轮明确要求，阶段 2D-11 在 `feat/tui-dev` 增加可选 `--tui` 终端界面，提前进入此前后移的 TUI 范围。目标是让模型、工作路径、权限、回合状态、请求预算、实际 token 用量和 provider 返回的缓存命中信息可见；保留原单次 CLI 与 `--chat`。视图、交互控制和统计分开，继续复用 Session、Loop、工具及审批边界。TUI 采用 TypeScript 的 pi-tui 组件，界面参考 pi 与 Charm 的终端布局；没有更换 Node、pnpm 或模型 SDK。实现与验证状态以 PROGRESS.md 为准。

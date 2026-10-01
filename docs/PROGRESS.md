@@ -4,8 +4,14 @@
 
 ## 当前状态
 
-- Web UI 会话菜单（2026-10-01）：在 `feat/webui-session-menu` 实现所点会话的右键详情、命名、分支与确认删除，移除侧栏固定按钮，将工作区移到输入框底部，并参考 Claude Code Docs 的字体层次。类型检查、构建、323 项全量离线测试及本机 Edge 桌面/窄屏/深色操作检查通过；尚未提交、推送，详见本日记录。
-- 当前基线核对（2026-10-01）：本轮开始时 `feat/session-perfection`、HEAD `dd4f2fa`（PR #20 合并提交），工作区干净，已包含会话持久化、src/session/ 目录整理与交互列表命令。由该 HEAD 创建当前界面增量分支；此前“未提交/未合入”记录保留当时事实，不代表本轮基线。阶段 2D 整体仍进行中，Channel / App 继续后移。
+- Web UI 紧凑底栏与列表（2026-10-01）：`feat/webui-dev` 将工作区放在权限模式右侧并加实线边框，上下文圆环/百分比放在模型左侧且无边框；会话只显示名称，轮次/日期移入悬浮提示。菜单顺序调整为 Plan、Manual、Accept edits、Free to go。类型检查、构建、19 项相关 Web UI 回归与六组尺寸/主题的浏览器检查通过；未提交或推送，原暂存状态保留，详情见本日最新记录。
+
+- Free to go（2026-10-01）：在 `feat/webui-dev` 增加第四种权限模式 `freeToGo`；实际支持工作区外/隐藏/依赖/链接本地文本访问及私有 HTTP(S) / 自定义端口，普通命令自动执行，危险或不透明命令一次审批。类型检查、构建、362 项离线测试及隔离 Edge 浏览器检查通过；命令保护为启发式，不是系统沙箱。未提交/推送/合并，原五个暂存文件保持，详情和失败修正见本日最新记录。
+
+- 此前三种权限模式与 composer（2026-10-01）：在 `feat/webui-dev` 提供 Manual、Accept edits、Plan，并将模式、审批及路径/文本/进程/公开网络安全集中到与 session 同级的 `src/permissions/`。输入框加入空闲权限选择，父子工具共享策略和一次审批；当时类型检查、构建、341 项离线测试及 Edge 权限/原会话弹窗回归通过。未提交或推送，保留开始时已有的五个暂存新增文件；第四种 Free 及最新验证以上一项及本日最新记录为准。
+- 此前 Web UI 弹窗与 composer（2026-10-01）：命名/分支/删除中央英文弹窗、自动打开浏览器及上下文/工作区/模型展示已通过当时 331 项离线测试和 Edge 检查。最新权限和布局增量、当前暂存事实以上一项及本日最新记录为准。
+- 较早基线核对（2026-10-01）：前一轮弹窗开发开始时在 `feat/webui-dev`、HEAD `7220dae`（PR #21 合并提交），当时工作区干净，包含会话菜单及原持久化/列表命令。当前权限增量是在该分支既有未提交内容上继续；此前“未提交/未合入”保留当时事实。阶段 2D 整体仍进行中，Channel / App 继续后移。
+- Web UI 会话菜单基线：所点会话的右键详情、命名、分支与确认删除、工作区迁移和字体层次已包含在本轮基线；原 323 项离线测试及浏览器验证的范围与限制见本日较早记录。
 - 本地列表命令：chat / TUI 共用 src/commands.ts 的 /skills 与 /sessions，只展示本地元数据；--listSkills / --listSessions 已移除。该基线增量的 320 项离线测试结果见本日较早记录。
 - 阶段 2D-14：CLI、TUI、Web UI 共用 src/session/ 下的 SessionManager，支持本地持久化、新建、列表、命名、继续/恢复、切换和分支；原 317 项离线测试及跨进程/浏览器检查的范围与限制见 9 月 30 日记录。本轮增加的删除与目标 ID 操作复用这些边界，没有真实模型 API 验证。
 
@@ -30,6 +36,94 @@
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；yaml 2.9.1 解析 Skill frontmatter，@earendil-works/pi-tui 0.87.1 支撑可选终端界面。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+
+## 2026-10-01：紧凑 composer、会话悬浮元数据与菜单排序（已实现并验证，未提交）
+
+- 在用户指定 `feat/webui-dev`、HEAD `7220dae` 上继续已有未提交增量；保留原五个暂存新增文件和其余修改，没有切换分支、重新暂存、提交、推送或合并。
+- `webui/public/index.html` / styles.css 移除工作区独立信息行及两条分隔线，底栏左组为权限模式/工作区路径，两者实线围框且水平对齐；右组为无框 Context 圆环/百分比、模型和发送/停止。桌面同一底栏，窄屏两组整体换行，保留组内水平和长路径省略。
+- `webui/client/app.ts` 不再渲染会话名称下的 small 元数据；轮次/日期放入原生 title 悬浮提示和 aria-description，保留全名/ID、所点 session、右键和 Shift+F10 操作。permission-menu.ts 只调整显示顺序为 Plan、Manual、Accept edits、Free to go，默认模式和服务端授权语义不变。
+- pnpm run typecheck、pnpm run build 通过。现有 webui / webui-context / webui-permissions 共 19 项定向离线测试全部通过，0 失败/取消/跳过；本轮为展示增量，没有新增机械式单元测试或重复全量 362 项验证。上一轮全量结果仍是当时的权限增量事实。
+- 隔离 Edge 使用临时工作区、内存 Session、注入 model/usage，不加载 .env 或真实用户会话。检查 DOM/实际坐标与边框、Context 0.8% 的既有更新、会话无内联副信息/title 和无障碍内容、右键/Shift+F10、四项顺序/Home/End/方向键/Enter、模式切换保留草稿。1440×1000 明/暗、800×800、390×844、320×720、390×240 暗色共六组通过；无横向溢出/native dialog/pageerror/console error，截图已目检。
+- 临时服务/浏览器和经过绝对路径核对的临时根已清理；截图与 QA 夹具保存在忽略的 dist/webui-toolbar-*。git diff --check 通过，依赖/锁文件未修改。同步 USAGE、PROJECT、ROADMAP、架构总览/WEBUI；README 的项目概览仍适用。
+- 悬浮提示由浏览器绘制，显示延迟/样式遵循浏览器；无触摸悬浮的设备仍可从 Session details 查看元数据。未进行真实模型 API 验证，阶段 2D 整体仍进行中；下一步按实际使用反馈继续改进界面。
+
+## 2026-10-01：Free to go 文件/网络范围与危险命令审批（已实现并离线/浏览器验证，未提交）
+
+### 本轮实现
+
+- 基于当前 `feat/webui-dev`、HEAD `7220dae` 上一轮未提交权限/弹窗/composer 内容继续，保留用户已有修改与暂存状态。第四种 `freeToGo` / Free to go 在 CLI / chat / TUI / Web UI 可选；原三种与旧参数的范围保持，workspace-write/allow 旧组合仍为 Custom permissions，不会隐式进入 Free。显式 read-only、shell-deny、web-deny 限制可选模式；Free 与 web-deny 混用在配置前报用法错误。
+- `PermissionPolicy` 增加 fileAccess/networkAccess 操作范围；read/search/write/shell/web 持有快照直到校验、审批、执行和收尾结束。父子每次请求更新 Free 的绝对路径、HTTP(S) 范围及命令保护指导，不写入历史，恢复会话不恢复旧权限。内置 workspace-editing 提示按当前范围允许路径。
+- Free 的 read/write/cwd 实际允许工作区外绝对/相对路径、隐藏文件、node_modules、任意扩展名 UTF-8 文本、junction/符号链接及硬链接。以 realpath 固定实际目标，结果、cwd、write 与临时文件记录使用规范绝对路径；搜索对规范目录/文件去重避免链接循环。保留文件身份、UTF-8/二进制/1 MiB 上限、唯一片段、原子发布、不覆盖、内容冲突和取消清理。原子编辑替换所选规范文件，其他硬链接名称不保证同步改变。
+- web 按同一操作范围校验主机、有效 DNS 地址、跳转及提取链接。默认 public 规则不变，Free 可访问本机/局域网/自定义端口，可跟随指定 HTTP(S) 降级；仍仅 HTTP(S) GET、不带 Cookie/凭据/任意请求头，保留 DNS 固定、TLS 主机校验、重定向/解压/解码/下载/分页大小、期限和取消。
+- 新 `src/permissions/command-risk.ts` 使用有界词法检查，识别删除、清空、格式化/分区、安全控制/服务/进程变更、破坏性 Git 操作等；嵌套/编码解释器、下载后执行、计算语法、未知脚本和工具采取保守审批。普通识别命令自动执行。风险原因由工具产生，schema 禁止模型伪造；即使 shellPermission=allow 仍必须一次批准，无回调/无交互/拒绝/取消无启动和 journal。旧审批 ID 不可复用，批准后继续检查 cwd。
+- 四项 Web UI 菜单和紫色 Free 状态、命令审批原因、详情中的文件/web 工具范围接入原视图和控制器，保持英文、忙碌/断连/提交限制、草稿和 journals。同步 README、AGENTS、USAGE、PROJECT、ROADMAP、权限/Tools/Web/WebUI 和架构总览；没有新依赖或锁文件修改。
+
+### 验证、失败及修正
+
+- pnpm run typecheck、含构建的最终 pnpm test 通过：362 项全部通过，0 失败/取消/跳过。新测试使用实际 PermissionPolicy('freeToGo')，覆盖本地临时范围、工作区回归、真实自有 loopback HTTP 非标准端口/相对跳转、注入私有 DNS/HTTP 降级、无效 URL/DNS、操作锁/取消/期限、HTTP 模式选择/认证/上限、父子指导及 CLI 普通命令免审批/危险命令无交互拒绝。完整输出保留在忽略的 dist/webui-free-test.log。
+- 命令分类夹具覆盖 120 多个普通/危险/不透明形式，包括引号/注释/转义、管道/调用、别名/绝对 executable、Git -C 与危险标志、包 exec 和动态参数。所有危险 shell 用注入 runner；拒绝/无回调/取消/旧 ID 无启动或记录，批准用假执行器验证 fresh approval。外部 cwd 临时目录替换后拒绝。文件权限定向 42/42、分类/命令定向 9/9、网络定向 3/3 均通过后再集成。
+- 自动审批审查拒绝了最初“先启用 Free 的自动 shell，再补保护”的中间补丁，原因是保护尚未实现会暂时放宽执行。随后先实现并定向验证命令保护、文件和网络 hook（测试专用策略，生产仍只有原三模式），再启用完整受保护模式；最终 patch 获准，无未解决审批阻塞。没有通过其他写入方式绕过拒绝。
+- 首次独立 TypeScript 编译因指定文件且存在 tsconfig 缺少 --ignoreConfig 报 TS5112，补足专用编译参数后通过；文件夹具误在原子 rename 已解除硬链接后仍期待硬链接路径拒绝，按实际语义调整边界断言顺序，并保持另一名称原内容不变的断言。首轮全量 361/362，通过保护但 CLI 新断言误在 stderr 寻找无交互审批预览；无交互实际直接返回工具错误给 stdout，修正为检查 PERMISSION_DENIED/message 和无 command record，最终全量通过。风险保护没有放宽。
+- 最终分类审阅修正包 exec 的 `--` 分隔符保留、node --test 必须为初始 runtime 标志及 Git/包/解释器动态参数保守审批。独立只读审阅未发现策略/网络/父子/CLI/WebUI 接线、启动上限、租约与取消的可操作问题。
+- 隔离 Edge 经三个真实 pnpm start 启动，全部 fake 模型传输、临时 workspace/session、浏览器自动打开关闭。验证四项模式/键盘/焦点/草稿、Free 真实外部 sibling 文件读改、自有 HTTP 服务、固定 Write-Output 免审批、Remove-Item 提议英文原因/忙碌禁用/始终 Deny，切回 Manual/Accept edits/Plan 恢复原文件与公共网络范围，新会话保留模式，read-only/web-deny 上限。额外 spawn preload 只允许固定无害命令，危险命令即使 guard 回归也无法执行；删除夹具保持。
+- 1440×1000、390×844、320×720、390×240 和暗色菜单无溢出，短屏能滚动到 Free；无 native dialog/pageerror/非预期 console error。截图已目检，留在忽略的 dist/webui-free-*。独立端口 32206/32207/32208 与临时根已确认清理；危险夹具未实际执行。66 个已变更/新增文本的 UTF-8、docs 外英文约定、103 个本地 Markdown 链接及 git diff --check 通过，暂存区仍只有开始时五个新增文件，依赖与锁文件不变。
+
+### 实际限制与下一步
+
+- Free 不授予账户外 Windows 权限，也不取消文本协议、请求/输出/下载大小、期限、取消和冲突检查。当前 file 工具仍不编辑二进制/超大文件，web 不执行浏览器脚本或新增非 HTTP(S) 协议；普通 shell 可使用当前账户其他能力。
+- 命令风险判断是保守启发式，不是完整 PowerShell parser、程序身份认证或 OS 沙箱。允许的包脚本、构建/测试工具、Git hooks 或可执行文件内部可能有任意副作用；未知/动态命令可能比用户预期更保守地要求批准。没有模型 Auto 审查、用户自定义规则、自动计划执行或后台任务；后续根据实际命令样例调整识别，不能宣称所有危险操作必然被发现。
+- 未运行真实模型 API 或 verify:*，未读取真实凭据/.env、未操作用户保存会话或外部用户文件；不把离线 fake 模型与本机浏览器验证当作真实模型任务验收。未暂存/提交/推送/合并，阶段 2D 整体仍进行中。
+
+## 2026-10-01：权限模式、独立安全目录与 composer 排版（已实现并离线/浏览器验证，未提交）
+
+### 本轮基线与实现
+
+- 开始时位于用户指定 `feat/webui-dev`、HEAD `7220dae`，已有上一轮弹窗/打开器/上下文的未提交修改，且 tests/webui-context.test.ts、tests/webui-launch.test.ts、webui/client/session-dialog.ts、webui/context-usage.ts、webui/open-browser.ts 五个新增文件已暂存。本轮直接继续该分支，保留这些内容和暂存状态，没有切换/重置/清理或重新暂存。
+- 参考 Claude Code 官方模式，在现有工具上实现 default / Manual（write、shell 分别逐项审批）、acceptEdits / Accept edits（受控 write 自动允许，shell 仍审批）、plan / Plan（读取和研究，禁止写入和全部命令）。CLI / chat / TUI / Web UI 可用 --permission-mode 启动；与旧 --permission / --shell-permission 互斥，原低层参数继续保留，其他组合在网页标注 Custom permissions。
+- `src/permissions/` 与 `src/session/` 同级：types/policy/approval/terminal 集中类型、策略、操作锁、一次性审批及终端安全预览；workspace/text-file/process/web-request 迁移原规范路径、编码、PowerShell 环境/期限/取消/树清理和公开网络/DNS/重定向/下载边界。相应源码、测试及验证脚本引用同步修改；原 write/shell 参数、文件发布/冲突检查和 journals 保持工具所有权，没有新依赖或锁文件变更。
+- createTools 第六个参数注入一个共享 PermissionPolicy，每次 write/shell 从当前策略取得快照，直到审批、实际副作用和收尾结束才释放；过程内禁止模式切换。getPermissionState 在父子/Skills 包装中透传，父子每次请求使用当前权限指导，Plan 指导不进入成功历史，实际拒绝仍在工具执行入口落实。
+- Web UI POST /api/permission-mode 沿用 capability、Host/Origin 和严格 JSON 边界；执行、审批、管理或关闭期间拒绝。显式旧参数 read-only / shell deny 作为网页选择上限，不能通过菜单提升；--permission-mode plan 仅决定起始模式，空闲后可切回 Manual / Accept edits。各标签共用策略，模式切换保留草稿、对话、上下文观测和 journals，新建/恢复会话不恢复旧授权。
+- Web UI、Terminal 和 TUI 使用同一个 ApprovalCoordinator 管理唯一 ID、最多一项待批、取消及单次完成，交互入口仍持有按钮/yes-no 路由、编辑器和草稿恢复。composer 分为消息、工作区/上下文信息行和底部模式/模型/发送栏；新 permission-menu 使用中央类型、英文说明、选中/禁用状态、键盘和焦点。同步 AGENTS、USAGE、PROJECT、ROADMAP 和架构总览/TOOLS/WEB/WEBUI，新增实际权限架构文档；README 的简洁项目概览仍适用。
+
+### 验证与修正
+
+- pnpm run typecheck、pnpm run build 和最终 pnpm test 通过：341 项全部通过，0 失败/取消/跳过。新检查覆盖模式/旧参数、真实临时文件、Plan 与子任务拒绝、Accept edits 自动写入但命令审批、策略执行锁、启动上限、HTTP 认证/来源/字段/忙碌、取消及旧审批 ID；原读写、shell、Skills、TUI、持久会话、请求预算和网络安全回归均通过。详尽结果保存在忽略的 dist/webui-permission-test.log。
+- 定向测试发现新增 CLI 夹具最初误在工具返回值查找 journal 状态，随后在已改动文件上继续匹配旧片段；改为检查实际返回/报告并重置该临时文件后，定向及全量通过。新权限测试的取消断言也修正为实际 CANCELLED code，未修改取消行为。中间失败没有真实模型请求或用户数据副作用。
+- Edge 通过三个隔离启动：默认全部模式、显式 read-only 仅 Plan、显式 shell deny 的 Custom permissions 限制；检查实际临时 write 的拒绝/批准/自动允许、草稿/上下文/会话保留、审批时禁用、提交锁、断连与忙碌关闭、方向键/Home/End/Enter/Escape/Tab、外部点击和选中状态。1440×1000 桌面、390×844/320×720 窄屏、390×360 短屏与深色没有横向溢出，没有 native dialog、pageerror 或非预期 console error。
+- 首次浏览器检查发现回复完成后的会话自动滚动会关闭固定 composer 菜单；去除无关会话滚动关闭逻辑，保留 resize、外部点击、Escape、忙碌/断连关闭。另一次 QA 延迟路由脚本因清理早于 continue 完成而中断，修正等待后完整通过；它不是产品接口失败。
+- 最新构建还通过原会话/弹窗/上下文浏览器回归：活动及未活动命名/分支/删除、Cancel/Escape 不发请求、输入校验/重复提交、旧 revision 的预期 409 与弹窗错误、忙碌/断连焦点、上下文清空、桌面/短屏/窄屏/深色和完整短模型名。仅排除两个预期删除冲突 console 记录；无 native dialog/pageerror。截图和 QA 脚本留在忽略的 dist/webui-permission-* / dist/webui-composer-*，全部隔离服务器、浏览器和经绝对路径核对的临时数据已清理。
+- 独立只读审阅没有发现模式/工具连接、启动兼容、父子指导、历史隔离、忙碌保护或审批取消的可操作问题。58 个现有变动/新增文件 UTF-8、docs 外英文新增内容、100 个本地 Markdown 链接及 git diff --check 通过；暂存区仍只有开始时的五个文件，未改锁文件。
+
+### 限制与下一步
+
+- 这是三种可运行模式的当前增量，没有 Auto 分类器、dontAsk 工具规则列表、Bypass、OS 沙箱或自动计划实施。Plan 禁止全部 shell，公开 web 仍由独立 webPermission 控制；Accept edits 只自动批准受控 write，不识别/自动放行 PowerShell 文件命令。权限模式和待批操作只在进程内，重启以本次启动设置为准。
+- 本轮未运行真实模型 API 或 verify:*，没有读取/输出/修改真实凭据、.env 或用户保存会话。自动测试及浏览器使用虚构凭据、注入传输和隔离目录；原生浏览器与本地工具验证不等于真实模型任务验收。未提交/推送/合并，阶段 2D 整体仍进行中；后续按实际任务需求扩展规则或语言切换，不提前建设框架。
+
+## 2026-10-01：页面弹窗、自动打开与模型上下文显示（已实现并离线验证，未提交）
+
+### 实际结果
+
+- 开始时核对用户指定的 `feat/webui-dev`、HEAD `7220dae` 及干净工作区；在原分支实施，没有创建新分支、重置、Git 清理、暂存、提交、推送或合并。
+- Rename、Fork、Delete 均使用页面中央的 HTML dialog 和英文按钮，不再调用系统 window.prompt / confirm。命名预填且校验输入，分支可选名称，删除默认聚焦 Cancel；Cancel / Escape 不发请求。弹窗捕获原目标 ID / revision，等待期间防止重复提交和取消，错误保留在弹窗内；重命名成功按 ID 找到重建后的会话行恢复焦点，分支/活动删除完成后聚焦输入框。
+- `pnpm start --webui` 在服务监听后请求一次默认浏览器打开，保留终端私有链接作为回退。Windows 用隐藏 PowerShell helper 的固定指令与子进程环境携带 URL，5 秒期限、错误不输出令牌；退出取消未完成 helper 并关闭服务，不关闭已打开的浏览器。FATCAT_WEBUI_OPEN_BROWSER=0 可用于自动化跳过打开。
+- 将 Workspace context 替换为 Context 指示器，工作区之后显示模型名称，顶部不再重复。采用最近一次有效父请求 prompt tokens / 官方核对的六个精确模型窗口；不累计父子请求，不计算草稿或最后响应，不改变本地完整 JSON 字节预算。新父请求或成功切换/恢复/分支/活动删除后清空观测；没有观测或未知模型窗口不编造数字/比例。容量来源与核对日期记录在 WEBUI 架构。
+- 当前界面文字与日期/数字格式固定英文，用户会话名、提示、模型回答保持原语言；多语言切换为后续计划，本轮没有实现语言选择或引入框架。长路径省略且模型保留可用宽度；304 重连时清除旧断连提示。新增小型 session-dialog、open-browser、context-usage 模块，继续复用既有控制器/Session/工具/权限/模型事件，没有新依赖或锁文件修改。
+- 同步 AGENTS、USAGE、PROJECT、ROADMAP 及架构总览、WEBUI、CONTEXT、PROVIDERS。README 的简洁概述与 Session 的持久化边界未改变。
+
+### 验证与修正
+
+- pnpm run typecheck、pnpm run build 通过，pnpm test 全量 331 项通过，0 失败/取消/跳过；原 323 项加四项上下文和四项打开器检查，并扩展实际 CLI 的打开 opt-out 和静态白名单回归。覆盖最后父请求与子/累计用量分离、有效零/缺失/非法用量、失败后的真实观测、会话切换/恢复清空与未活动操作保留，以及注入浏览器调用一次、隐藏 helper/令牌边界、失败时继续服务和等待时退出取消。
+- 通过真实 pnpm start --webui、本机 Edge、虚构 DeepSeek 凭据及注入传输检查页面弹窗、Cancel / Escape 零请求、输入校验、活动/未活动目标、可选命名分支、重复提交拒绝、删除冲突的行元数据刷新及弹窗内错误、忙碌/断连保护与焦点、重连提示清除；Context 无观测、有效 20 输入 token / 1048576 窗口与重置后的未知、模型在路径右侧且顶部移除均符合预期。
+- 1440×1000 桌面、390×844 窄屏、390×360 短视口和深色检查通过，长路径仍保留完整 deepseek-flash 名称，无横向溢出；删除/主按钮深色对比度分别约 5.60:1 / 8.32:1。没有原生浏览器弹窗、page error 或非预期 console error，只排除两次故意制造的删除 409 资源提示。截图及脚本保留于忽略的 dist/webui-composer-*；所有会话修改/删除在独立临时工作区与 FATCAT_SESSION_DIR，服务、Edge 与临时数据已清理，检查端口关闭。
+- 独立只读审阅发现重建行后重命名失去焦点、潜在打开 helper 等待退出，以及默认数值 locale；对应修正均已重新验证。中间一次上下文测试构造器参数及一次打开器测试变量位置导致类型检查失败，修正后定向及最终构建/全量通过。浏览器短视口检查曾因列表滚动关闭菜单超时，稳定行位置后通过；一次并发修改期间的追加启动未进入服务，稳定构建后的最终完整检查通过。
+- 模型自动检查均使用虚构凭据/注入传输，没有真实模型 API 或 verify:* 请求，没有检查、输出或修改真实 .env。自动打开器使用注入进程与真实本地 HTTP 服务验证，没有在自动测试中打开用户默认浏览器；浏览器视觉检查则显式创建独立 Edge 实例。默认 Windows 命令沙箱仍受 ACL 初始化限制，使用获准的本机命令入口完成，不改变运行环境要求。
+- 最终 21 个变动文件的 UTF-8 与 docs 外英文新增行检查、10 份 Markdown 的 90 个本地链接及 git diff --check 通过；暂存区为空，pnpm-lock.yaml 未改变，当前分支保持 feat/webui-dev。最后一次完整回归 331/331 通过，0 失败/取消/跳过。
+
+### 限制与下一步
+
+- Context 是最后一次父请求的服务用量观测，不是当前完整历史或未发送草稿的实时 tokenizer 估算；自定义模型没有已核对窗口时不显示比例，恢复后的 token 观测也不持久化。容量映射是本次官方文档快照，后续规格变化需再次核对。
+- 操作系统默认浏览器的实际关联打开未在本轮自动验证中执行；缺少关联或限制启动时，终端链接仍可手动打开。多语言切换、运行时换模型、模型流式协议继续未实现。
+- 下一步 review 此增量；没有已知功能阻塞，保持本地未提交修改，阶段 2D 整体不标记完成。
 
 ## 2026-10-01：Web UI 会话右键菜单、工作区位置与字体（已实现并离线验证，未提交）
 

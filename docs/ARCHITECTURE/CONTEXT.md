@@ -4,6 +4,8 @@
 
 阶段 2D-8 已实现并通过离线与真实多回合验证，随 PR #10 合入 main；详细证据见 [PROGRESS.md](../PROGRESS.md)。目前只有一个小型请求准备模块，不是完整上下文平台。目标是在连续对话累积较早 read 结果后，尽可能让下一次请求满足现有字节预算，同时保留任务要求、工具关联及执行事实。
 
+后续 Web UI 的 context-usage.ts 仅观察最近父请求的有效 prompt tokens，并对照六个已核对精确模型的 token 窗口显示比例；未知用量/窗口不估算，恢复或切换后清空观测。它不计算草稿或最终响应 token，不作为当前完整历史的 token 测量；不改变本模块的完整 JSON 字节预算和省略规则，不增加 tokenizer 或模型请求。指标来源与容量依据见 [WEBUI.md](WEBUI.md)，TUI 的现有预算显示不随之改变。
+
 ## 职责与数据流
 
 `src/context.ts` 导出 `prepareRequestContext(body, limitBytes, signal?)`，接收包含 messages 的完整 JSON 请求体，返回 body、beforeBytes、bytes 和 omittedReadResults。无文件访问、网络请求、缓存或持久状态；使用 Node 的 JSON 序列化和 UTF-8 字节计量。

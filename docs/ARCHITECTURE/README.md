@@ -4,7 +4,7 @@
 
 架构文档统一放在 `docs/ARCHITECTURE/` 下，本文件作为总览和索引，记录整体边界、跨系统关系及共享决策。
 
-- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md` 和 `WEBUI.md`；其他系统文档在需要时建立。
+- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md` 和 `WEBUI.md`；其他系统文档在需要时建立。
 - 系统文档记录该系统的职责、设计决策、接口与数据流，以及分步实现安排和验收方式；按当前需要展开，不要求提前填满所有内容。
 - 每份文档明确区分当前已实现内容和计划设计，具体实现安排也标注状态；验证与完成事实以 [PROGRESS.md](../PROGRESS.md) 为准，避免重复维护进度记录。
 - 新增系统文档时更新本文件的索引。项目阶段目标仍放在 [ROADMAP.md](../ROADMAP.md)，系统内部的实现安排放在对应架构文档中。
@@ -20,6 +20,8 @@
 
 继续保持 CLI / TUI / Web UI、Session、Loop、模型客户端和 Tools 的清晰职责。新增权限判断应覆盖实际执行入口，子任务也应复用同一权限边界；交互层不承担工具执行规则，Loop 不积累各工具的具体逻辑。
 
+本轮已将模式、审批和共用工具安全规则集中到 `src/permissions/`，与 `src/session/` 同级。Manual、Accept edits、Plan 和 Free to go 使用共享策略，网页空闲切换不重建 Tools/Session，不恢复历史授权。前三种保留原工作区/公共网络边界；Free 扩展本地文件及 HTTP(S) 地址范围，普通命令自动、危险/不透明命令一次审批。编码、文件冲突、DNS 固定、PowerShell 期限/取消/输出限制保留；命令检查是启发式而非 OS 沙箱。模式指导在父子模型每次请求副本中更新，read/search/write/shell/web 执行期间锁住权限快照，界面仅负责选择和展示。见 [PERMISSIONS.md](PERMISSIONS.md)。
+
 状态分别回答“发生了什么”（成功对话由 Session 保存，当前写入与命令记录由 Tools 保存）、“当前模型需要看到什么”（Context）、“要完成什么以及完成证据”（Task）。2D-8 的 Context 目前只是独立的请求准备模块，处理旧读取内容的请求投影；Task 以及完整分层上下文仍是组织方向，不提前创建空目录或接口。
 
 优先完成读取、修改、验证和交付闭环，再逐步完善恢复与长期记忆。2D-11 按用户要求加入可选 TUI，2D-13 加入本地 Web UI；App、Channel 继续后移。核心逻辑不依赖终端或 HTTP 输入输出，TUI 与 Web UI 复用现有 Session / Loop / Tools，不建立通用渠道框架。
@@ -32,6 +34,7 @@
 | [AGENT_LOOP.md](AGENT_LOOP.md) | CLI、配置与最小 Loop 的设计和实现安排 | 最小 Loop 已实现、验证并通过 review |
 | [SESSION.md](SESSION.md) | 成功历史、持久化、会话管理与中断回合边界 | 2A 已通过 review；2D-14 离线和浏览器已验证，待 review |
 | [TOOLS.md](TOOLS.md) | 通用 read / write / shell、授权及执行记录 | read / write / shell 基线已合入；2D-6 文本搜索已通过 review 并合入 |
+| [PERMISSIONS.md](PERMISSIONS.md) | 权限模式、一次性审批、启动上限和工具执行安全 | 已实现；验证事实见 PROGRESS |
 | [SUBAGENT.md](SUBAGENT.md) | 默认可用的有界委派、历史隔离及取消 | 2C 已通过 review；2D-4 默认迁移已通过 review 并合入 |
 | [EXECUTION_REPORT.md](EXECUTION_REPORT.md) | 按用户回合汇总真实事件、共享记录去重与命令后写入提示 | 2D-5 / 2D-7 / 2D-8 已合入；2D-9 扩充双回合验收 |
 | [CONTEXT.md](CONTEXT.md) | 请求预算下的旧读取省略、历史所有权及按需重读 | 2D-8 已验证并合入 |
@@ -66,6 +69,8 @@ chat / TUI 通过 `src/commands.ts` 统一分发本地命令，`/skills` 展示�
 2D-13 的 `webui/` 与 `src/`、`tui/` 同级。CLI 选择 --webui 后加载 webui/index.ts，复用 Tools / Skills / createAgent / Session；controller 持有显示状态和待批操作，server 负责本机 HTTP 与 capability，client 持有 DOM 与交互。TypeScript 增加 DOM 类型和 webui 文件；build 复制 HTML/CSS/SVG，JS 直接由 tsc 生成，没有新增依赖或改动锁文件。接口、请求上限及状态边界见 [WEBUI.md](WEBUI.md)。
 
 同阶段会话菜单由 `webui/client/session-menu.ts` 管理定位、键盘导航和焦点，app 将所点 ID 的详情、命名、分支和删除接入原 controller / SessionManager；Store 以工作目录和修订锁保护删除与分支。工作区位置及字体层次仅改变视图，不引入独立会话状态或模型工具。
+
+后续 Web UI 交互由 `session-dialog.ts` 持有页面弹窗，`open-browser.ts` 持有本机启动链接打开，`context-usage.ts` 观察最近父请求输入用量并匹配已核对的模型窗口。composer 分为消息和底部工具栏，左侧模式/带框工作区，右侧无框上下文/模型/发送，窄屏按组换行；`permission-menu.ts` 按 Plan、Manual、Accept edits、Free to go 展示服务端策略并提交选择。会话轮次和日期仅放在悬浮提示与无障碍描述中。这些视图不改变持久历史或原字节预算，界面当前英文，多语言切换仍为计划，见 [WEBUI.md](WEBUI.md)。
 
 2D-12 新增一个通用 web 工具，CLI / chat / TUI 默认开放公开搜索和页面文本读取，`--web-permission deny` 可独立关闭。程序化 createTools 第五个参数显式选择 web，未传时维持旧工具集合；父子模型共享相同工具边界。web.ts 负责协议、权限与调用期限，web-request.ts 负责公开地址检查、DNS 固定、HTTP(S) 与有界解码，web-content.ts 负责搜索/HTML 解析；Loop、Session 与执行报告的职责不变。新增 web/web-research 与 web/weather-lookup，当前内置 Skill 共六项。细节和未实现边界见 [WEB.md](WEB.md)。
 

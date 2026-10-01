@@ -9,6 +9,7 @@ import { createTools } from "../src/tools.js";
 import { discoverSkills } from "../src/skills.js";
 import type { Message } from "../src/model.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
+import { PermissionPolicy } from "../src/permissions/policy.js";
 
 const config = loadConfig({ DEEPSEEK_API_KEY: "offline-agent-only", HARNESS_MAX_ITERATIONS: "3" });
 function answer(content: string) {
@@ -105,6 +106,57 @@ test("parent delegation guidance does not mutate or accumulate in caller history
   await agent.model(messages);
   assert.deepEqual(messages, before);
   assert.equal(requests, 2);
+});
+
+test("mode switches reach parent and child guidance and gates without restoring old session authorization", async (t) => {
+  const { workspace, outside } = await temporaryWorkspace(t);
+  const policy = new PermissionPolicy("plan");
+  let approvals = 0;
+  const base = await createTools(workspace, "read-only", async () => { approvals++; return true; }, { permission: "deny" }, undefined, policy);
+  let expected = "plan";
+  let writes = 0;
+  const agent = createAgent(config, base, async (input, init) => {
+    const body = await new Request(input, init).json() as RequestBody;
+    const system = String(body.messages[0]?.content);
+    assert.equal((system.match(/Current permission mode:/g) ?? []).length, 1);
+    assert.ok(system.includes(`Current permission mode: ${expected}.`));
+    if (expected === "plan") assert.match(system, /Do not write files or run commands/);
+    if (expected === "freeToGo") {
+      assert.match(system, /absolute paths outside this workspace/);
+      assert.match(system, /dangerous commands and opaque forms require user approval/);
+      assert.match(system, /including private hosts and custom ports/);
+      assert.ok(!system.includes("Use relative paths with read, write, and shell cwd."));
+    }
+    if (body.tools.some((tool) => tool.function.name === "delegate_task")) {
+      if (body.messages.at(-1)?.role === "user") return calls({ name: "delegate_task", args: { task: "Try the designated fixture write" }, id: "mode-delegate" });
+      return answer("Reviewed child operation");
+    }
+    if (body.messages.at(-1)?.role === "user") return calls({ name: "write",
+      args: { path: expected === "freeToGo" ? join(outside, "free.txt") : "mode.txt", content: "fixture" }, id: "mode-write" });
+    const result = JSON.parse(String(body.messages.at(-1)?.content));
+    if (expected === "plan") assert.equal(result.error.code, "PERMISSION_DENIED");
+    else { assert.equal(result.ok, true); writes++; }
+    return answer("Operation checked");
+  });
+  const plan = await runAgentTurn("Use a focused child", [], agent);
+  assert.equal(base.getWrites!().length, 0);
+  assert.ok(!JSON.stringify(plan.messages).includes("Current permission mode:"));
+  policy.select("acceptEdits");
+  expected = "acceptEdits";
+  const before = structuredClone(plan.messages);
+  const edit = await runAgentTurn("Use a focused child again", plan.messages, agent);
+  assert.deepEqual(plan.messages, before);
+  assert.ok(!JSON.stringify(edit.messages).includes("Current permission mode:"));
+  assert.equal(writes, 1);
+  assert.equal(approvals, 0);
+  assert.equal(base.getWrites!()[0]?.status, "committed");
+  policy.select("freeToGo");
+  expected = "freeToGo";
+  const free = await runAgentTurn("Use a focused child outside the workspace", edit.messages, agent);
+  assert.ok(!JSON.stringify(free.messages).includes("Current permission mode:"));
+  assert.equal(writes, 2);
+  assert.equal(approvals, 0);
+  assert.equal(base.getWrites!()[1]?.path, join(outside, "free.txt"));
 });
 
 test("canonical workspace context reaches parent and child without entering saved history", async (t) => {

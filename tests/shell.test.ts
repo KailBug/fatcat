@@ -7,8 +7,8 @@ import test from "node:test";
 import { HarnessError } from "../src/errors.js";
 import { createTools } from "../src/tools.js";
 import { createShellTool } from "../src/tools/shell.js";
-import { createWorkspace } from "../src/tools/workspace.js";
-import { commandEnvironment, runPowerShell, outputLimit } from "../src/tools/process.js";
+import { createWorkspace } from "../src/permissions/workspace.js";
+import { commandEnvironment, runPowerShell, outputLimit } from "../src/permissions/process.js";
 import { createTerminalInput } from "../src/terminal.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 

@@ -185,7 +185,7 @@ test("local HTTP boundary protects state and mutations and serves only built UI 
   assert.equal(state.status, 200);
   assert.ok(!(await state.text()).includes(token));
   assert.equal((await fetch(`${server.origin}/api/state`, { headers: { ...headers, "If-None-Match": state.headers.get("etag")! } })).status, 304);
-  for (const path of ["/", "/app.js", "/markdown.js", "/session-menu.js", "/styles.css", "/favicon.svg"]) {
+  for (const path of ["/", "/app.js", "/markdown.js", "/session-menu.js", "/session-dialog.js", "/styles.css", "/favicon.svg"]) {
     const response = await fetch(server.origin + path);
     assert.equal(response.status, 200, path);
     assert.match(response.headers.get("content-security-policy")!, /frame-ancestors 'none'/);
@@ -250,7 +250,7 @@ test("actual CLI Web UI starts without a TTY, uses the launch workspace and keep
     fileURLToPath(new URL("../src/cli.js", import.meta.url)), "--webui", "--port", String(port), "--permission", "read-only"], {
     cwd: workspace, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, HARNESS_PROVIDER: "deepseek", DEEPSEEK_API_KEY: "offline-webui-secret",
       DEEPSEEK_MODEL: "offline-model", HARNESS_MAX_ITERATIONS: "4", HARNESS_REQUEST_TIMEOUT_MS: "10000", HARNESS_MAX_REQUEST_BYTES: "262144",
-      FATCAT_SESSION_DIR: join(base, "sessions") },
+      FATCAT_SESSION_DIR: join(base, "sessions"), FATCAT_WEBUI_OPEN_BROWSER: "0" },
   });
   let output = ""; let errors = "";
   child.stdout!.on("data", (chunk) => { output += String(chunk); }); child.stderr!.on("data", (chunk) => { errors += String(chunk); });

@@ -43,6 +43,7 @@ test("help works without credentials", () => {
   assert.match(result.stdout, /--tui/);
   assert.match(result.stdout, /--webui/);
   assert.match(result.stdout, /--web-permission/);
+  assert.match(result.stdout, /--permission-mode/);
   assert.match(result.stdout, /--continue/);
   assert.match(result.stdout, /\/skills/);
   assert.match(result.stdout, /\/sessions/);
@@ -138,6 +139,56 @@ test("invalid session options are rejected before loading model credentials", ()
     assert.equal(result.status, 2, JSON.stringify(args));
     assert.ok(!result.stderr.includes("DEEPSEEK_API_KEY"));
   }
+});
+
+test("permission modes validate before configuration and preserve the legacy permission flags", async (t) => {
+  for (const args of [["--chat", "--permission-mode", "auto"], ["--permission-mode", "plan"],
+    ["--help", "--permission-mode", "default"], ["--chat", "--permission-mode", "acceptEdits", "--permission", "ask"],
+    ["--chat", "--permission-mode", "plan", "--shell-permission", "allow"],
+    ["--chat", "--permission-mode", "freeToGo", "--web-permission", "deny"]]) {
+    const result = run(args, { HARNESS_PROVIDER: "invalid-provider" });
+    assert.equal(result.status, 2, JSON.stringify(args));
+    assert.match(result.stderr, /Error \[USAGE\]/);
+    assert.ok(!result.stderr.includes("Error [CONFIG]"));
+  }
+  const { workspace } = await temporaryWorkspace(t);
+  const env = { DEEPSEEK_API_KEY: "offline-permissions-only" };
+  await writeFile(join(workspace, "notes.txt"), "before");
+  const plan = run(["--permission-mode", "plan", "--prompt", "write fixture"], env, "", workspace);
+  assert.equal(plan.status, 0, plan.stderr);
+  assert.match(plan.stdout, /PERMISSION_DENIED/);
+  assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
+  const edits = run(["--permission-mode", "acceptEdits", "--prompt", "write fixture"], env, "", workspace);
+  assert.equal(edits.status, 0, edits.stderr);
+  assert.equal(JSON.parse(edits.stdout).ok, true);
+  assert.match(edits.stderr, /"status":"committed"/);
+  assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "after");
+  const commands = run(["--permission-mode", "acceptEdits", "--prompt", "shell fixture"], env, "", workspace);
+  assert.equal(commands.status, 0, commands.stderr);
+  assert.match(commands.stdout, /PERMISSION_DENIED/);
+  await writeFile(join(workspace, "notes.txt"), "before");
+  const manual = run(["--permission-mode", "default", "--prompt", "write fixture"], env, "", workspace);
+  assert.equal(manual.status, 0, manual.stderr);
+  assert.match(manual.stdout, /PERMISSION_DENIED/);
+  assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
+});
+
+test("Free to go runs ordinary CLI commands automatically and refuses dangerous commands without interactive approval", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  const env = { DEEPSEEK_API_KEY: "offline-free-permissions-only" };
+  const ordinary = run(["--permission-mode", "freeToGo", "--prompt", "shell fixture"], env, "", workspace);
+  assert.equal(ordinary.status, 0, ordinary.stderr);
+  assert.equal(JSON.parse(ordinary.stdout).ok, true);
+  assert.match(ordinary.stdout, /CLI_COMMAND_READY/);
+  assert.ok(!ordinary.stderr.includes("Command approval"));
+  // A nested evaluator without arguments is harmless even if the guard regresses.
+  const dangerous = run(["--permission-mode", "freeToGo", "--prompt", "dangerous shell fixture"], env, "", workspace);
+  assert.equal(dangerous.status, 0, dangerous.stderr);
+  const denied = JSON.parse(dangerous.stdout);
+  assert.equal(denied.error.code, "PERMISSION_DENIED");
+  assert.match(denied.error.message, /Run interactively to review this command/);
+  assert.ok(!(dangerous.stdout + dangerous.stderr).includes("--shell-permission allow"));
+  assert.ok(!dangerous.stderr.includes('"type":"shell_record"'));
 });
 
 test("removed listing flags are rejected before configuration or startup", () => {

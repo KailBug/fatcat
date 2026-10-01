@@ -12,7 +12,7 @@ export type ProcessResult = {
 };
 export const outputLimit = 16 * 1024;
 
-/** Forward only runtime/OS settings, never the harness's provider credentials. */
+/** Limit command inheritance to runtime/OS settings, excluding provider credentials. */
 export function commandEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const allowed = new Set(["systemroot", "windir", "comspec", "path", "pathext", "temp", "tmp",
     "userprofile", "homedrive", "homepath", "appdata", "localappdata", "programfiles", "programfiles(x86)",

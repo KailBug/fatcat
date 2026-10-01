@@ -6,6 +6,9 @@ import { Readable, Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import ipaddr from "ipaddr.js";
 import { HarnessError } from "../errors.js";
+import type { PermissionState } from "./types.js";
+
+export type NetworkAccess = PermissionState["networkAccess"];
 
 export const maxResponseBytes = 1024 * 1024;
 export type Address = { address: string; family: number };
@@ -24,17 +27,21 @@ export function isPublicAddress(address: string): boolean {
   return parsed.range() === "unicast";
 }
 
-export function publicUrl(value: string): URL {
+export function webUrl(value: string, access: NetworkAccess = "public"): URL {
   let url: URL;
   try { url = new URL(value); } catch { return denied(); }
-  if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.port
-    || value.length > 2048 || /[\x00-\x20\x7f]/.test(value)) denied();
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password
+    || value.length > 2048 || /[\x00-\x20\x7f]/.test(value)) {
+    throw new HarnessError("WEB_URL_NOT_ALLOWED", "Use an HTTP(S) URL without embedded credentials or control characters, at most 2048 characters long.");
+  }
   const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (isIP(host) ? !isPublicAddress(host) : !host.includes(".")
-    || /(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion)\.?$/i.test(host)) denied();
+  if (access === "public" && (url.port || (isIP(host) ? !isPublicAddress(host) : !host.includes(".")
+    || /(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion)\.?$/i.test(host)))) denied();
   url.hash = "";
   return url;
 }
+
+export function publicUrl(value: string): URL { return webUrl(value, "public"); }
 
 export const resolveWebHost: WebResolver = (hostname) => lookup(hostname, { all: true, verbatim: true });
 
@@ -50,12 +57,18 @@ export async function abortable<T>(operation: Promise<T>, signal: AbortSignal): 
   } finally { signal.removeEventListener("abort", onAbort); }
 }
 
-export async function publicAddress(url: URL, resolver: WebResolver, signal: AbortSignal): Promise<Address> {
+export async function webAddress(url: URL, resolver: WebResolver, signal: AbortSignal,
+  access: NetworkAccess = "public"): Promise<Address> {
   const host = url.hostname.replace(/^\[|\]$/g, "");
   const addresses = isIP(host) ? [{ address: host, family: isIP(host) }]
     : await abortable(resolver(host), signal);
-  if (!addresses.length || addresses.some(({ address, family }) => !isPublicAddress(address) || isIP(address) !== family)) denied();
+  if (!addresses.length || addresses.some(({ address, family }) => !isIP(address) || isIP(address) !== family
+    || access === "public" && !isPublicAddress(address))) denied();
   return addresses[0]!;
+}
+
+export function publicAddress(url: URL, resolver: WebResolver, signal: AbortSignal): Promise<Address> {
+  return webAddress(url, resolver, signal, "public");
 }
 
 /** Pin the validated address; preserve the URL hostname for HTTP Host and TLS verification. */

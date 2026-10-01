@@ -1,6 +1,7 @@
-import { lstat, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
+import { lstat, realpath, stat } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
+import type { PermissionPolicy } from "./policy.js";
 
 function denied(): never {
   throw new HarnessError("PATH_NOT_ALLOWED", "Use an allowed relative path inside the selected workspace.");
@@ -12,8 +13,8 @@ function allowedName(name: string): boolean {
     && !/^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\.|$)/i.test(name);
 }
 
-/** Resolve a fixed workspace root and enforce relative tool paths within it. */
-export async function createWorkspace(workspace: string) {
+/** Keep one default root while applying the live policy to each filesystem operation. */
+export async function createWorkspace(workspace: string, permissionPolicy?: PermissionPolicy) {
   let root: string;
   try {
     if (!workspace.trim()) throw new Error();
@@ -22,8 +23,25 @@ export async function createWorkspace(workspace: string) {
   } catch {
     throw new HarnessError("CONFIG", "Workspace must be an existing accessible directory.");
   }
-  //check the path and permission
+  function unrestricted(): boolean { return permissionPolicy?.snapshot().fileAccess === "unrestricted"; }
+
   async function resolvePath(path: string, signal?: AbortSignal) {
+    const lease = permissionPolicy?.beginOperation();
+    try { return await resolveExisting(path, signal); }
+    finally { lease?.release(); }
+  }
+
+  async function resolveExisting(path: string, signal?: AbortSignal) {
+    checkCancellation(signal);
+    if (unrestricted()) {
+      const canonical = await realpath(resolve(root, path));
+      const identity = await stat(canonical);
+      if (!identity.isFile() && !identity.isDirectory()) {
+        throw new HarnessError("UNSUPPORTED_FILE", "Only regular files and directories can be accessed.");
+      }
+      checkCancellation(signal);
+      return { absolute: canonical, relative: canonical, stat: identity, unrestricted: true };
+    }
     if (isAbsolute(path) || win32.isAbsolute(path)) denied();
     const parts = path.replaceAll("\\", "/").split("/").filter((part) => part !== "" && part !== ".");
     if (parts.some((part) => !allowedName(part))) denied();
@@ -40,10 +58,34 @@ export async function createWorkspace(workspace: string) {
     // Check canonical names as well, including Windows short-name aliases.
     if (within && within.split(sep).some((part) => !allowedName(part))) denied();
     checkCancellation(signal);
-    return { absolute: canonical, relative: parts.join("/") || ".", stat: await lstat(canonical) };
+    return { absolute: canonical, relative: parts.join("/") || ".", stat: await lstat(canonical), unrestricted: false };
   }
 
   async function resolveNewFile(path: string, signal?: AbortSignal) {
+    const lease = permissionPolicy?.beginOperation();
+    try { return await resolveNew(path, signal); }
+    finally { lease?.release(); }
+  }
+
+  async function resolveNew(path: string, signal?: AbortSignal) {
+    checkCancellation(signal);
+    if (unrestricted()) {
+      const requested = resolve(root, path);
+      const parent = await resolveExisting(dirname(requested), signal);
+      if (!parent.stat.isDirectory()) {
+        throw new HarnessError("UNSUPPORTED_FILE", "A new file requires an existing parent directory.");
+      }
+      const absolute = join(parent.absolute, basename(requested));
+      try { await lstat(absolute); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          checkCancellation(signal);
+          return { absolute, relative: absolute, parent, unrestricted: true };
+        }
+        throw error;
+      }
+      throw new HarnessError("WRITE_CONFLICT", "The new file already exists; read it and use an exact edit instead.");
+    }
     if (isAbsolute(path) || win32.isAbsolute(path)) denied();
     const parts = path.replaceAll("\\", "/").split("/").filter((part) => part !== "" && part !== ".");
     if (!parts.length || parts.some((part) => !allowedName(part))) denied();
@@ -55,14 +97,14 @@ export async function createWorkspace(workspace: string) {
       await lstat(absolute);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return { absolute, relative: [...parts, name].join("/"), parent };
+        return { absolute, relative: [...parts, name].join("/"), parent, unrestricted: false };
       }
       throw error;
     }
     throw new HarnessError("WRITE_CONFLICT", "The new file already exists; read it and use an exact edit instead.");
   }
 
-  return { root, resolvePath, resolveNewFile };
+  return { root, resolvePath, resolveNewFile, permissionPolicy };
 }
 
 export type Workspace = Awaited<ReturnType<typeof createWorkspace>>;

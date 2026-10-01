@@ -3,12 +3,14 @@ import { createTerminalInput } from "./terminal.js";
 import type { TerminalInput } from "./terminal.js";
 import type { Readable, Writable } from "node:stream";
 import { checkCancellation, formatError } from "./errors.js";
-import type { Session } from "./session.js";
+import { SessionManager } from "./session/manager.js";
+import { runSessionCommand, sessionCommandHelp, sessionLabel } from "./session/commands.js";
+import type { Conversation } from "./session/commands.js";
 
-const commands = "/help: show commands; /reset: clear history; /exit: end chat.";
+const commands = `/help: show commands; /exit: end chat. ${sessionCommandHelp}`;
 
 export async function runChat(
-  session: Session,
+  session: Conversation,
   options: {
     input: Readable & { isTTY?: boolean };
     output: Writable;
@@ -24,7 +26,12 @@ export async function runChat(
   let turn = 0;
   let failed = false;
   try {
-    error.write(`Chat started. History stays in memory. ${commands}\n`);
+    error.write(`Chat started. ${session instanceof SessionManager
+      ? `Session: ${sessionLabel(session.current)}. ${session.persistent ? "History is saved locally." : "Persistence is disabled."}`
+      : "History stays in memory."} ${commands}\n`);
+    if (session instanceof SessionManager && session.current.interrupted) {
+      error.write("The last turn was interrupted. Inspect workspace files before repeating operations.\n");
+    }
     terminal.prompt();
     while (true) {
       const line = await terminal.readTask();
@@ -34,11 +41,15 @@ export async function runChat(
       if (prompt === "/exit") break;
       if (prompt === "/help") {
         error.write(`${commands}\n`);
-      } else if (prompt === "/reset") {
-        session.reset();
-        error.write('History cleared.\n{"type":"session_reset"}\n');
       } else if (prompt.startsWith("/")) {
-        error.write("Unknown command. Use /help.\n");
+        try {
+          const result = await runSessionCommand(session, prompt);
+          error.write(result ? `${result.text}\n` : "Unknown command. Use /help.\n");
+          if (result?.switched) error.write('{"type":"session_reset"}\n');
+        } catch (cause) {
+          checkCancellation(signal);
+          error.write(`${formatError(cause)}\n`);
+        }
       } else if (prompt) {
         turn++;
         try {

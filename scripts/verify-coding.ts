@@ -10,7 +10,7 @@ import type { ExecutionReport } from "../src/execution-report.js";
 import { createTools } from "../src/tools.js";
 import type { Tools } from "../src/tools.js";
 import { failure } from "../src/tools/types.js";
-import { runPowerShell } from "../src/tools/process.js";
+import { runPowerShell } from "../src/permissions/process.js";
 
 const command = "node --test check.test.mjs";
 const sourcePath = "src/math/add.mjs";

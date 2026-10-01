@@ -9,7 +9,7 @@ import type { ExecutionReport } from "../src/execution-report.js";
 import { Session } from "../src/session/session.js";
 import { createTools } from "../src/tools.js";
 import type { Tools } from "../src/tools.js";
-import { runPowerShell } from "../src/tools/process.js";
+import { runPowerShell } from "../src/permissions/process.js";
 import { assertWorkflowTurn, captureWorkflowStart, createWorkflowFixture, editablePaths,
   prepareWorkflowFollowup, workflowCommand } from "./fixtures/coding-workflow.js";
 import type { WorkflowEvidence } from "./fixtures/coding-workflow.js";

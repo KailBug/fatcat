@@ -75,11 +75,12 @@ globalThis.fetch = async (input, init) => {
     usage: { prompt_tokens: 20, completion_tokens: 4, total_tokens: 24 },
     choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Usage recorded." } }],
   });
-  if (prompt === "shell fixture" || prompt === "shell cwd") {
+  if (prompt === "shell fixture" || prompt === "shell cwd" || prompt === "dangerous shell fixture") {
     const last = messages.at(-1);
     if (last?.role === "user") return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
       role: "assistant", content: null, tool_calls: [{ id: "shell-1", type: "function",
-        function: { name: "shell", arguments: JSON.stringify({ command: prompt === "shell cwd" ? "(Get-Location).Path" : "'CLI_COMMAND_READY'" }) } }],
+        function: { name: "shell", arguments: JSON.stringify({ command: prompt === "shell cwd" ? "(Get-Location).Path"
+          : prompt === "dangerous shell fixture" ? "Invoke-Expression" : "'CLI_COMMAND_READY'" }) } }],
     } }] });
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: String(last?.content) } }] });
   }

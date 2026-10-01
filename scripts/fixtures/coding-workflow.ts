@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExecutionReport } from "../../src/execution-report.js";
 import type { Tools } from "../../src/tools.js";
-import { runPowerShell } from "../../src/tools/process.js";
+import { runPowerShell } from "../../src/permissions/process.js";
 
 export const workflowCommand = "node --test check.test.mjs";
 export const editablePaths = ["src/cart/subtotal.mjs", "src/receipt.mjs"] as const;

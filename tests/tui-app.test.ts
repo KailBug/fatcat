@@ -6,7 +6,9 @@ import type { Terminal } from "@earendil-works/pi-tui";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { HarnessError } from "../src/errors.js";
 import type { Model, Message } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
+import { SessionManager } from "../src/session/manager.js";
+import { SessionStore } from "../src/session/store.js";
 import { createSubagentTools } from "../src/subagent.js";
 import { createTools } from "../src/tools.js";
 import { TuiApp } from "../tui/app.js";
@@ -90,6 +92,59 @@ test("TUI preserves real session history, local commands, reported consumption a
   assert.equal(process.listenerCount("SIGINT"), sigintBefore);
   assert.ok(terminal.output.includes("\x1b[?1049h"));
   assert.ok(terminal.output.includes("\x1b[?1049l"));
+});
+
+test("TUI switches saved sessions, restores conversation counts and keeps usage process local", async (t) => {
+  const { base, workspace } = await temporaryWorkspace(t);
+  const terminal = new FakeTerminal();
+  const requests: Message[][] = [];
+  const model: Model = async (messages, _signal, observe) => {
+    requests.push(structuredClone(messages));
+    observe?.({ type: "model_usage", usage: { promptTokens: 8, completionTokens: 2, totalTokens: 10 } });
+    return answer("Saved fixture answer.");
+  };
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const initial = await SessionManager.open({ model, maxIterations: 8 }, { workspace, store, selection: { name: "first" } });
+  await initial.run("Before restart");
+  const manager = await SessionManager.open({ model, maxIterations: 8 }, { workspace, store, selection: { resume: "first" } });
+  const app = new TuiApp({ ...settings, workspace, terminal, color: false });
+  const done = app.run(manager);
+  try {
+    assert.equal(app.telemetry.snapshot().conversation.completedTurns, 1);
+    assert.equal(app.telemetry.snapshot().session.tokenUsage.total.totals, null);
+    await until(() => terminal.plain.includes("Before restart"));
+    terminal.submit("/new second");
+    await until(() => manager.current.name === "second" && app.telemetry.snapshot().conversation.completedTurns === 0);
+    terminal.submit("Second task");
+    await until(() => app.telemetry.snapshot().turn.status === "answered");
+    assert.equal(requests.at(-1)?.length, 2);
+    assert.equal(app.telemetry.snapshot().session.tokenUsage.total.totals?.totalTokens, 10);
+    terminal.submit("/resume first");
+    await until(() => manager.current.name === "first" && app.telemetry.snapshot().turn.status === "idle");
+    assert.equal(app.telemetry.snapshot().conversation.completedTurns, 1);
+    assert.equal(app.telemetry.snapshot().session.tokenUsage.total.totals?.totalTokens, 10);
+    terminal.submit("/rename renamed");
+    await until(() => manager.current.name === "renamed");
+    terminal.submit("/fork copied");
+    await until(() => manager.current.name === "copied");
+    assert.equal(app.telemetry.snapshot().conversation.completedTurns, 1);
+    terminal.submit("Follow-up");
+    await until(() => app.telemetry.snapshot().session.answered === 2);
+    assert.equal(requests.at(-1)?.length, 4);
+    assert.equal(app.telemetry.snapshot().session.tokenUsage.total.totals?.totalTokens, 20);
+    terminal.submit("/clear");
+    await until(() => manager.current.name === null && app.telemetry.snapshot().conversation.completedTurns === 0);
+    assert.equal(app.telemetry.snapshot().session.tokenUsage.total.totals?.totalTokens, 20);
+    const sessions = await manager.list();
+    assert.equal(sessions.find((session) => session.name === "renamed")?.turnCount, 1);
+    assert.equal(sessions.find((session) => session.name === "copied")?.turnCount, 2);
+    assert.equal(requests.length, 3);
+    terminal.submit("/exit");
+    assert.equal(await done, 0);
+  } finally {
+    terminal.input("\x04");
+    await done;
+  }
 });
 
 test("TUI approvals require fresh input and keep pending draft separate from yes/no", async () => {

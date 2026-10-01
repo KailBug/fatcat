@@ -3,7 +3,7 @@ import test from "node:test";
 import { HarnessError } from "../src/errors.js";
 import type { LoopEvent } from "../src/loop.js";
 import type { Message, Model, ModelTurn } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 
 function answer(content = "Ready"): ModelTurn {
   return { message: { role: "assistant", content }, toolCalls: [] };

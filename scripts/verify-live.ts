@@ -9,7 +9,7 @@ import { loadLiveConfig } from "./fixtures/live-config.js";
 import { HarnessError } from "../src/errors.js";
 import { runAgent } from "../src/loop.js";
 import { createDeepSeekModel } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { createSubagentTools } from "../src/subagent.js";
 import type { LoopEvent } from "../src/loop.js";
 

@@ -5,7 +5,7 @@ import test from "node:test";
 import { loadConfig } from "../src/config.js";
 import { createDeepSeekModel } from "../src/model.js";
 import type { Message, Model } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { createTools } from "../src/tools.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 

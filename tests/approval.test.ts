@@ -7,7 +7,7 @@ import test from "node:test";
 import { runChat } from "../src/chat.js";
 import { HarnessError } from "../src/errors.js";
 import type { Model, ModelTurn } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { createSubagentTools } from "../src/subagent.js";
 import { createTerminalInput } from "../src/terminal.js";
 import { createTools } from "../src/tools.js";

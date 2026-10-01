@@ -9,7 +9,7 @@ import type { ExecutionReport, ReportEvent } from "../src/execution-report.js";
 import { runAgent } from "../src/loop.js";
 import { createDeepSeekModel } from "../src/model.js";
 import type { Message, ModelObservation } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { createTools } from "../src/tools.js";
 import type { Tools } from "../src/tools.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";

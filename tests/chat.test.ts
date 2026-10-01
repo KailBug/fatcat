@@ -4,7 +4,7 @@ import test from "node:test";
 import { runChat } from "../src/chat.js";
 import { HarnessError } from "../src/errors.js";
 import type { Model } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 
 function capture() {
   const stream = new PassThrough();

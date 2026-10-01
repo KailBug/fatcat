@@ -4,9 +4,10 @@
 
 ## 当前状态
 
+- 本地列表命令（2026-10-01）：在 `feat/session-perfection` 删除 --listSkills / --listSessions 启动参数；chat / TUI 通过共享 src/commands.ts 增加 /skills，并保留 /sessions。仅展示本地元数据，不请求模型、加载完整 Skill 正文或修改历史；类型检查、构建和本轮全量 320/320 离线测试通过，尚未提交，详见本日记录。
 - Session 目录整理（2026-09-30）：按用户后续要求，在同一 `feat/session-perfection` 保留未提交的 2D-14 功能，将会话源码集中到 `src/session/`，与 tools/skill 同级；类型检查及含构建的 317 项全量离线测试通过，旧源路径、产物和活动引用均已核查。只改变文件位置及导入路径，尚未提交、推送或合并，结果见本日目录整理记录。
 - 阶段 2D-14：按用户要求在 `feat/session-perfection` 实现本地 Session 持久化、创建、列表、命名、继续/恢复、切换和分支；CLI、TUI、Web UI 共用 SessionManager。类型检查、构建、317 项全量离线测试、真实 CLI 跨进程恢复、强制结束后的工具收据恢复以及 Edge 桌面/窄屏会话操作与服务重启检查通过。未提交、推送或合并，待 review；没有真实模型 API 验证，具体限制见本日记录。
-- 当前基线核对（2026-09-30）：任务开始时已在用户指定 `feat/session-perfection`，HEAD 为 `b333039967b6ba4f3f8a00ac18d8e911bc301b76`（PR #18 合并），工作区干净，已包含 2D-13 Web UI。保留以下记录作为当时事实；其中“未提交/未合入”不再代表本轮开始时的基线状态。阶段 2D 整体仍进行中，Channel / App 继续后移。
+- 当前基线核对（2026-10-01）：任务开始时已在用户指定 `feat/session-perfection`，HEAD 为 `68e3bfa`，工作区干净，已包含会话持久化和 src/session/ 目录整理。保留以下记录作为当时事实；其中 9 月 30 日及更早的“未提交/未合入”不再代表本轮开始时的基线状态。阶段 2D 整体仍进行中，Channel / App 继续后移。
 
 ### 此前基线状态（保留历史描述，当前合入状态以上述核对为准）
 
@@ -29,6 +30,15 @@
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；yaml 2.9.1 解析 Skill frontmatter，@earendil-works/pi-tui 0.87.1 支撑可选终端界面。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+
+## 2026-10-01：本地技能/会话列表收敛到交互命令（已实现并离线验证）
+
+- 开始时 `feat/session-perfection`、HEAD `68e3bfa`，工作区干净。按用户新要求移除 --listSkills 和 --listSessions 启动参数，技能列表改为 chat / TUI 的 /skills；会话列表沿用已有 /sessions。没有提交、推送或合并。
+- 新增共享 `src/commands.ts`，由 chat / TUI 在本地分发：/skills 使用启动已发现的 descriptor 列表，展示名称、scope、描述及读取 URI；会话操作委托 `src/session/commands.ts`。/skills 不接受参数，不加载完整 SKILL.md、不发起模型请求或修改对话历史，也不刷新目录或授予工具权限。
+- CLI 仍使用正常 provider 配置启动 chat / TUI；移除独立列表入口不等同于提供无需 Key 的交互模式。bare --resume 继续保留无凭据的终端选择/管道列表行为，Web UI 原会话侧栏保持，不宣称支持其 /skills 命令。
+- 已同步仓库 AGENTS、USAGE、PROJECT、ROADMAP 及 Agent Loop / Session / Skills / TUI / 架构总览的当前命令说明；README 的 demo 概述与用户行为范围仍准确，无需调整。历史 PROGRESS 中的旧参数记录保留当时事实，不能作为当前使用说明。
+- pnpm run typecheck 退出码 0；pnpm test 包含成功构建及六项内置 Skill 复制，本轮全量 320/320 全部通过，0 失败/取消/跳过/todo，用时 33.69 秒。此前 19 项 chat / TUI 定向离线检查通过；独立只读复核未发现功能问题。以上为本轮执行证据，不沿用上次 317 项测试作为本次通过依据。
+- 十个修改文档的 UTF-8 和 95 个本地 Markdown 链接检查通过，git diff --check 通过；当前 AGENTS、使用/架构文档、运行时代码和脚本中的旧启动参数引用已移除，PROGRESS 保留历史事实与本次移除记录。本轮没有真实模型 API 或新的浏览器/ConPTY 检查。没有剩余已知阻塞，改动尚未提交、推送或合并，交付 review。
 
 ## 2026-09-30：Session 目录整理（本地已验证，未提交）
 

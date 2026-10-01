@@ -112,7 +112,7 @@ export class SessionStore {
     const canonical = await canonicalWorkspace(workspace);
     if (idPattern.test(selector)) return this.read(canonical, selector);
     const records = (await this.records(canonical)).filter((record) => record.name === selector || record.title === selector);
-    if (!records.length) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use --listSessions or /sessions.");
+    if (!records.length) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
     if (records.length > 1) throw new HarnessError("SESSION_AMBIGUOUS", "More than one session matches. Resume with the exact session ID.");
     return records[0]!;
   }
@@ -197,7 +197,7 @@ export class SessionStore {
     } catch (error) {
       if (error instanceof HarnessError) throw error;
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use --listSessions or /sessions.");
+        throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
       }
       throw new HarnessError("SESSION_STORAGE", "Could not read the saved session.");
     } finally { await handle?.close(); }

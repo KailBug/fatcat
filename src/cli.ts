@@ -21,8 +21,6 @@ const help = `Fatcat - minimal Agent Harness
 Usage:
   pnpm start --help
   pnpm start --checkConfig
-  pnpm start --listSkills
-  pnpm start --listSessions
   pnpm start --chat
   pnpm start --continue
   pnpm start --resume <id-or-name>
@@ -32,7 +30,7 @@ Usage:
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
 
-Use --chat for a continuous conversation with /help, /new, /sessions, /resume, /rename, /fork, and /exit.
+Use --chat for a continuous conversation with /help, /skills, /new, /sessions, /resume, /rename, /fork, and /exit.
 Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
 Use --webui for the local browser interface at 127.0.0.1:3210; --port <1-65535> selects another port.
 Open the private link printed at startup. Web UI write and command approvals appear in the browser.
@@ -40,7 +38,7 @@ A prompt runs one task. Successful history is saved locally for the selected wor
 Use --continue (-c) to continue the latest session, or --resume (-r) <id-or-name> to select one.
 Bare --resume shows a session picker in a terminal or a local list for pipes, without model credentials.
 Use --name (-n) <name> to name a session; --fork-session with --continue or --resume copies history into a new session.
-Use --listSessions to list workspace sessions without credentials; --no-session-persistence keeps a new session in memory.
+Use /sessions in chat or TUI to list saved workspace sessions; --no-session-persistence keeps a new session in memory.
 Session storage defaults to ~/.fatcat/sessions; FATCAT_SESSION_DIR selects another local store.
 Restored sessions use the current launch's provider, workspace and permission settings.
 The agent can delegate focused independent tasks when useful; simple tasks stay direct.
@@ -49,7 +47,7 @@ Each child uses at most three additional model requests and cannot delegate.
 Tasks use the current directory as the workspace and expose read, write, and shell.
 Use --workspace <directory> to select another directory. Writes and commands ask for approval in the active interface.
 Built-in skills are available by default; workspace and user .fatcat/skills or .agents/skills override matching names.
-Use --listSkills to inspect the local catalog without credentials. Mention $name or describe a task to use a skill.
+Use /skills in chat or TUI to inspect the local catalog. Mention $name or describe a task to use a skill.
 Skill instructions and bundled resources are loaded on demand through read; scripts still need shell authorization.
 Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
 Shell authorization is separate: --shell-permission ask (default), deny, or allow for unattended commands.
@@ -79,8 +77,6 @@ async function main(args: string[]): Promise<number> {
         options: {
           help: { type: "boolean", short: "h" },
           checkConfig: { type: "boolean" },
-          listSkills: { type: "boolean" },
-          listSessions: { type: "boolean" },
           continue: { type: "boolean", short: "c" },
           resume: { type: "string", short: "r" },
           name: { type: "string", short: "n" },
@@ -104,23 +100,21 @@ async function main(args: string[]): Promise<number> {
     }
     const { values, positionals } = parsed;
     const hasSelection = Boolean(values.continue || values.resume !== undefined || values.name !== undefined);
-    if (hasSelection && !values.help && !values.checkConfig && !values.listSkills && !values.listSessions
+    if (hasSelection && !values.help && !values.checkConfig
       && !values.tui && !values.webui && values.prompt === undefined && positionals.length === 0) values.chat = true;
     const modes = Number(Boolean(values.help))
       + Number(Boolean(values.checkConfig))
-      + Number(Boolean(values.listSkills))
-      + Number(Boolean(values.listSessions))
       + Number(Boolean(values.chat))
       + Number(Boolean(values.tui))
       + Number(Boolean(values.webui))
       + Number(values.prompt !== undefined || positionals.length > 0);
 
     if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
-      throw new HarnessError("USAGE", "Choose one mode: help, config check, skill/session listing, chat, TUI, Web UI, or one prompt.");
+      throw new HarnessError("USAGE", "Choose one mode: help, config check, chat, TUI, Web UI, or one prompt.");
     }
     if (values.workspace !== undefined && (!values.workspace.trim() || values.help || values.checkConfig
-      || (!values.chat && !values.tui && !values.webui && !values.listSkills && !values.listSessions && values.prompt === undefined && positionals.length === 0))) {
-      throw new HarnessError("USAGE", "Use --workspace with a task or local listing and a non-empty directory.");
+      || (!values.chat && !values.tui && !values.webui && values.prompt === undefined && positionals.length === 0))) {
+      throw new HarnessError("USAGE", "Use --workspace with a task and a non-empty directory.");
     }
     if (values.port !== undefined && (!values.webui || !/^[1-9]\d*$/.test(values.port) || Number(values.port) > 65535)) {
       throw new HarnessError("USAGE", "Use --port with --webui and an integer from 1 to 65535.");
@@ -150,17 +144,10 @@ async function main(args: string[]): Promise<number> {
       console.log(help);
       return 0;
     }
-    if (values.listSkills) {
-      const tools = await createTools(values.workspace ?? process.cwd());
-      const skills = await discoverSkills({ workspace: tools.workspaceRoot! });
-      reportSkillWarnings(skills);
-      console.log(JSON.stringify({ skills: skills.skills }, null, 2));
-      return 0;
-    }
-    if (values.listSessions || (values.resume === "" && (!process.stdin.isTTY || !process.stderr.isTTY))) {
+    if (values.resume === "" && (!process.stdin.isTTY || !process.stderr.isTTY)) {
       const tools = await createTools(values.workspace ?? process.cwd());
       const sessions = await new SessionStore().list(tools.workspaceRoot!);
-      console.log(values.listSessions ? JSON.stringify({ sessions }, null, 2) : formatSessionList(sessions));
+      console.log(formatSessionList(sessions));
       return 0;
     }
     if (values.checkConfig) {
@@ -231,7 +218,7 @@ async function main(args: string[]): Promise<number> {
     const session = await SessionManager.open(agent, { ...sessionOptions, workspace: baseTools.workspaceRoot! });
     if (values.chat) {
       return await runChat(session, {
-        input: process.stdin, output: process.stdout, error: process.stderr, signal, terminal: terminal!,
+        input: process.stdin, output: process.stdout, error: process.stderr, signal, terminal: terminal!, skills: skills.skills,
       });
     }
     const answer = await session.run(prompt, {

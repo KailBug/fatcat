@@ -144,7 +144,7 @@ pnpm start --chat --web-permission deny
 
 Search defaults to Bing RSS, with DuckDuckGo HTML available as an alternative. Both are public, best-effort services; they can time out, change format, or challenge requests. Bing RSS is intended for personal, non-commercial use. `recency` is only a service hint; the model must verify dates in the source. Page reading supports static HTML, text, JSON and XML, with source links, retrieval time and bounded pagination. It does not execute JavaScript, log in, or read PDFs. Direct connections are used; environment proxy settings are not consumed by this tool.
 
-Built-in `$web-research` covers source selection, linked-page reading, news dates and citations. `$weather-lookup` uses public geocoding and forecast data, checks place/timezone/units and distinguishes current estimates from forecasts. It uses Open-Meteo's free non-commercial endpoints; commercial use is subject to the [service terms](https://open-meteo.com/en/terms). Both Skills are loaded on demand through `read` and appear in `pnpm start --listSkills`.
+Built-in `$web-research` covers source selection, linked-page reading, news dates and citations. `$weather-lookup` uses public geocoding and forecast data, checks place/timezone/units and distinguishes current estimates from forecasts. It uses Open-Meteo's free non-commercial endpoints; commercial use is subject to the [service terms](https://open-meteo.com/en/terms). Both Skills are loaded on demand through `read` and appear in `/skills` in chat or TUI.
 
 `--web-permission allow` is the CLI default, including with `--permission read-only`. `deny` rejects web calls before DNS/HTTP, and children inherit the same policy. This setting is not a firewall for separately authorized shell commands. Search terms go to the selected search service; fetched URLs go to their hosts, and retrieved content enters the selected model's context. Do not include private project content or credentials in queries or URLs. Remote page instructions are untrusted data.
 
@@ -221,16 +221,16 @@ The search order is:
 4. `<user-home>/.agents/skills/<name>/SKILL.md`.
 5. Built-in assets beside the running module, at `dist/src/skill/<subsystem>/<name>/SKILL.md` in this repository's build.
 
-The first valid occurrence of a name wins, so workspace or user Skills can override a built-in with the same name. Local roots contain one level of Skill directories; built-ins add a subsystem grouping level. Fatcat does not search ancestor repositories, download Skills, or install them. Tasks, chat, TUI, and `--listSkills` discover workspace Skills from the launch directory by default, as well as user and built-in Skills. Built-in paths are relative to the running module rather than the launch directory, so starting the compiled CLI from another directory retains them. Ordinary workspace read still rejects hidden paths.
+The first valid occurrence of a name wins, so workspace or user Skills can override a built-in with the same name. Local roots contain one level of Skill directories; built-ins add a subsystem grouping level. Fatcat does not search ancestor repositories, download Skills, or install them. Tasks, chat and TUI discover workspace Skills from the launch directory by default, as well as user and built-in Skills. Built-in paths are relative to the running module rather than the launch directory, so starting the compiled CLI from another directory retains them. Ordinary workspace read still rejects hidden paths.
 
-To list discovered metadata and diagnostics locally, without a provider key or network request:
+To inspect discovered metadata locally, start chat or TUI and enter `/skills`:
 
 ```powershell
-pnpm start --listSkills
-pnpm start --listSkills --workspace examples/workspace
+pnpm start --chat
+pnpm start --chat --workspace examples/workspace
 ```
 
-Built-in entries have `scope: "builtin"` and a `subsystem` field. All sources share the same URI format, for example `skill://workspace-editing/SKILL.md`; the subsystem is not part of the URI. You can use a built-in immediately:
+The local `/skills` command lists the catalog discovered at startup; it makes no model request, loads no instruction body, and leaves conversation history unchanged. Starting chat/TUI still requires configured provider credentials. Rows show the name, scope, description, and read URI. Built-in Skills appear with `[builtin]`. All sources share the same URI format, for example `skill://workspace-editing/SKILL.md`; the subsystem is not part of the URI. You can use a built-in immediately:
 
 ```powershell
 pnpm start --workspace examples/workspace --prompt 'Use $workspace-editing to inspect the project and make the requested change.'
@@ -273,7 +273,7 @@ pnpm start --workspace examples/workspace --prompt "Read project-notes.txt and r
 pnpm start --chat --workspace examples/workspace
 ```
 
-`--workspace` works with a single prompt, `--chat`, `--tui`, or the local `--listSkills` command; it cannot be used alone or with help/configuration checks. Without it, Fatcat uses the directory where you invoked `pnpm start`, even though pnpm runs package scripts from the package root. An explicit absolute workspace overrides that directory; a relative workspace resolves from it. For example, from `D:\fatcat\examples`, `pnpm start --chat` uses `D:\fatcat\examples`, and `pnpm start --chat --workspace workspace` uses `D:\fatcat\examples\workspace`.
+`--workspace` works with a single prompt, `--chat`, `--tui` or `--webui`; it cannot be used alone or with help/configuration checks. Without it, Fatcat uses the directory where you invoked `pnpm start`, even though pnpm runs package scripts from the package root. An explicit absolute workspace overrides that directory; a relative workspace resolves from it. For example, from `D:\fatcat\examples`, `pnpm start --chat` uses `D:\fatcat\examples`, and `pnpm start --chat --workspace workspace` uses `D:\fatcat\examples\workspace`.
 
 The parent has `sum`, `read`, `write`, `shell`, and `delegate_task`; children share the same workspace tools and permissions without recursive delegation. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`. Directly running the compiled `dist/src/cli.js` uses that Node process's current directory and ignores inherited `INIT_CWD`; only the package start launcher restores pnpm's invocation directory.
 
@@ -401,8 +401,8 @@ pnpm start --tui --continue
 pnpm start --webui --resume auth-refactor
 pnpm start --resume auth-refactor --prompt "Review the previous changes."
 pnpm start --continue --fork-session --name alternative-approach
-pnpm start --listSessions
-pnpm start --listSessions --workspace D:\your-project
+pnpm start --resume
+pnpm start --chat --workspace D:\your-project
 pnpm start --chat --no-session-persistence
 ```
 
@@ -413,10 +413,9 @@ pnpm start --chat --no-session-persistence
 | `--resume`, `-r` | List sessions and ask for an ID or name in an interactive terminal. With redirected input or stderr, print the list and exit without model credentials. |
 | `--name <name>`, `-n <name>` | Name a new session, rename a resumed one, or name the new branch with `--fork-session`. |
 | `--fork-session` | Combine with continue or resume to copy history into a new session and preserve the source. |
-| `--listSessions` | Print workspace session metadata as JSON without a model key or network request. |
 | `--no-session-persistence` | Keep new sessions only in this process. Startup resume, continue and fork selection cannot be combined with it. |
 
-Continue, resume or name without another mode opens ordinary chat. Selection also works with an explicit prompt, `--chat`, `--tui` or `--webui`; continue and resume are mutually exclusive. Listing is a separate local mode and does not accept execution permissions. Names are trimmed, non-empty, limited to 120 characters and cannot contain control characters; duplicate explicit names in a workspace are rejected. Unnamed sessions use a title taken locally from the first prompt, without a model title request. Titles can repeat; the UUID always identifies one session.
+Continue, resume or name without another mode opens ordinary chat. Selection also works with an explicit prompt, `--chat`, `--tui` or `--webui`; continue and resume are mutually exclusive. Use `/sessions` inside chat/TUI for local listing. The former skill/session listing startup flags have been removed; bare `--resume` retains its credential-free picker or pipe listing path. Names are trimmed, non-empty, limited to 120 characters and cannot contain control characters; duplicate explicit names in a workspace are rejected. Unnamed sessions use a title taken locally from the first prompt, without a model title request. Titles can repeat; the UUID always identifies one session.
 
 The default location is `<user-home>/.fatcat/sessions/<workspace-hash>/<session-id>.json`. Set a different storage root in the launching PowerShell session if needed:
 
@@ -444,6 +443,7 @@ Enter one task per line. For example, ask `Use the sum tool to add 17 and 25.`, 
 | Command | Behavior |
 | --- | --- |
 | /help | Show local chat commands |
+| /skills | List discovered Skill metadata locally, without loading instructions or calling the model |
 | /new [name] | Create a new session, retaining the old one |
 | /clear, /reset | Start a new unnamed session |
 | /sessions, /resume | List workspace sessions |
@@ -472,7 +472,7 @@ pnpm start --tui --workspace D:\your-project --permission read-only
 
 Replace `D:\your-project` with the project you want Fatcat to access, or run `pnpm start --tui` to use the launch directory. The TUI uses the same provider settings, Skills, tools, delegation limits, and workspace permissions as the CLI and displays the canonical workspace root used by the tools. `--permission workspace-write` preauthorizes file edits only; commands still ask unless `--shell-permission allow` is supplied.
 
-The cyan and purple interface combines Markdown conversation output, a status area, a metrics panel, and a Unicode input editor. At 110 columns or wider, conversation and metrics appear side by side; narrower terminals use a stacked layout. `/status` shows full values when the screen cannot fit them. `NO_COLOR` disables theme colors. `--tui` is an exclusive interactive mode; do not combine it with `--chat`, a prompt, `--help`, `--checkConfig`, or `--listSkills`. Redirected input/output and `TERM=dumb` are rejected with usage exit code 2; use the existing CLI modes for pipes.
+The cyan and purple interface combines Markdown conversation output, a status area, a metrics panel, and a Unicode input editor. At 110 columns or wider, conversation and metrics appear side by side; narrower terminals use a stacked layout. `/status` shows full values when the screen cannot fit them. `NO_COLOR` disables theme colors. `--tui` is an exclusive interactive mode; do not combine it with `--chat`, a prompt, `--help` or `--checkConfig`. Redirected input/output and `TERM=dumb` are rejected with usage exit code 2; use the existing CLI modes for pipes.
 
 Enter sends the prompt; Alt+Enter inserts a newline. Up/Down recalls prompts, and PageUp/PageDown scrolls. You can draft the next prompt during a running turn, but it is not submitted or queued automatically. Pasted text also requires explicit submission.
 
@@ -480,6 +480,7 @@ Enter sends the prompt; Alt+Enter inserts a newline. Up/Down recalls prompts, an
 | --- | --- |
 | /help | Show local commands and editor shortcuts. |
 | /status | Show effective configuration and current telemetry. |
+| /skills | List discovered Skill metadata without a model request or history change. |
 | /new [name], /clear, /reset | Start a new session; retain the old history, consumed usage and execution records. |
 | /sessions, /resume | List workspace sessions. |
 | /resume <id-or-name> | Switch to an existing session. |

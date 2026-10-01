@@ -55,9 +55,11 @@
 
 2D-11 的可选 `--tui` 将视图、输入/审批控制和事件统计分开。启动配置由 CLI 解析并沿用 createAgent；界面读取 Loop / execution_report 的事实，并在 Session.run 成功返回后累计保存回合数，不把屏幕内容或遥测写入模型历史。标准 token 用量与 provider 缓存字段在 model-usage 边界校验，父子请求及进程累计由交互侧汇总。本地请求字节预算、最近父请求的 prompt tokens 和未知的模型 token 窗口分别标注；取消本轮与退出界面有独立生命周期。详见 [TUI.md](TUI.md)。
 
-同阶段修正 CLI 的默认工作目录：普通任务、--chat、--tui 和 --listSkills 默认使用 process.cwd()，--workspace 可覆盖。pnpm start 的专用启动器先根据 INIT_CWD 恢复调用位置，因此默认目录及相对 --workspace 都基于用户调用命令的目录。任务默认提供同级 read / write / shell，write 与 shell 仍分别逐次确认；程序化 createTools 省略目录仍不开放文件访问。Tools.workspaceRoot 来自 createWorkspace 的规范 realpath，agent.ts 将该路径作为父子请求指导，TUI 显示同一值；不会改写 Session 历史或放宽相对路径及权限规则。实现与验证事实见 PROGRESS.md。
+同阶段修正 CLI 的默认工作目录：普通任务、--chat、--tui 默认使用 process.cwd()，--workspace 可覆盖。pnpm start 的专用启动器先根据 INIT_CWD 恢复调用位置，因此默认目录及相对 --workspace 都基于用户调用命令的目录。任务默认提供同级 read / write / shell，write 与 shell 仍分别逐次确认；程序化 createTools 省略目录仍不开放文件访问。Tools.workspaceRoot 来自 createWorkspace 的规范 realpath，agent.ts 将该路径作为父子请求指导，TUI 显示同一值；不会改写 Session 历史或放宽相对路径及权限规则。实现与验证事实见 PROGRESS.md。
 
 ## 已确定的约束与决策
+
+chat / TUI 通过 `src/commands.ts` 统一分发本地命令，`/skills` 展示已发现的目录元数据，`/sessions` 委托 `src/session/commands.ts` 读取会话列表。列表操作不请求模型、不读取 Skill 正文或修改成功历史；交互进程启动仍要求正常 provider 配置。技能与会话列表不再提供独立启动参数，bare `--resume` 的无凭据选择/管道列表路径保留；Web UI 继续使用原会话侧栏，没有接入 `/skills`。
 
 2D-14 的会话代码集中在 `src/session/`，与 `src/tools/`、`src/skill/` 同级；`session.ts`、`manager.ts`、`store.ts`、`history.ts` 和 `commands.ts` 分别持有成功历史、活动会话管理、持久存储、恢复校验及共享本地命令，编译到 `dist/src/session/`。各入口直接导入具体模块，不增加 barrel 或旧路径兼容包装。CLI / TUI / Web UI 复用一个活动会话管理边界，Store 按规范工作目录保存带版本和修订号的原子 JSON，history 验证模块拒绝不完整成功对话和非法工具关联；共享本地命令不会进入模型历史。Loop 提供异步回合检查点，成功历史与最近未完成消息分开保存。恢复使用本次启动的配置、权限和 systemPrompt，不重放操作或恢复旧授权；程序化 Session 仍支持内存入口。没有新增依赖，实际失败/并发/入口验收见 PROGRESS 与 [SESSION.md](SESSION.md)。
 

@@ -18,6 +18,7 @@
 | `src/session/manager.ts` | 当前 Session 身份与持久状态；新建、列表、恢复、命名、分支及清空为新会话；处理最近未完成回合与恢复提示。 |
 | `src/loop.ts` | 执行一个用户回合，调用模型和工具，返回答案与完整历史；向持久化边界提供已发生消息的检查点，不负责选择会话或文件位置。 |
 | `src/agent.ts` | 按本次配置装配父子模型、Tools 和 Skills；不从会话文件恢复凭据或授权。 |
+| `src/commands.ts` | chat / TUI 的共享本地命令分发；/skills 展示启动目录元数据，会话命令委托 session/commands，不请求模型或修改历史。 |
 | `src/cli.ts`、`src/chat.ts`、`src/terminal.ts` | 入口选择、恢复参数、本地命令、终端提示与审批；chat 输入和单次确认由一个 readline 所有者隔离。 |
 | `tui/` | 同一 SessionManager 上的终端交互、审批、显示与进程遥测。 |
 | `webui/` | 同一 SessionManager 上的浏览器会话列表、操作与状态快照；HTTP 与审批边界不变。 |
@@ -52,7 +53,7 @@ Manager 暂存根 Loop 的 completed / stopped，待持久化成功或停止处�
 
 ## 入口与会话命令
 
-正常任务、`--chat`、`--tui`、`--webui` 默认新建持久会话；继续已有对话需要显式选择。`--continue` / `-c` 使用当前工作目录最近会话，`--resume` / `-r` 按 ID 或名称恢复，`--name` / `-n` 命名，`--fork-session` 在恢复后创建独立分支。`--listSessions` 是无需模型 Key 的本地列表，`--no-session-persistence` 使用临时进程内历史。具体参数互斥和交互命令见 [USAGE.md](../USAGE.md)。
+正常任务、`--chat`、`--tui`、`--webui` 默认新建持久会话；继续已有对话需要显式选择。`--continue` / `-c` 使用当前工作目录最近会话，`--resume` / `-r` 按 ID 或名称恢复，`--name` / `-n` 命名，`--fork-session` 在恢复后创建独立分支。`/sessions` 在 chat / TUI 内本地列表，命令不调用模型，但交互启动仍要求正常 provider 配置；bare `--resume` 保留无需凭据的终端选择/管道列表路径。`--no-session-persistence` 使用临时进程内历史。具体参数互斥和交互命令见 [USAGE.md](../USAGE.md)。
 
 chat 与 TUI 的 `/new`、`/clear`、`/reset` 开始新会话并保留原会话，`/sessions` 列表，`/resume` 切换，`/rename` 命名，`/fork` 分支。未知斜杠命令只提示，不发给模型。新建不撤销操作或清除工具事实；同一进程切换会话仍保持启动时的 workspace、provider、Skills 与权限。
 

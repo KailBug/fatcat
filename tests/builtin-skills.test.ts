@@ -9,7 +9,6 @@ import { loadConfig } from "../src/config.js";
 import type { Message } from "../src/model.js";
 import { Session } from "../src/session/session.js";
 import { discoverSkills, withSkills } from "../src/skills.js";
-import type { SkillDescriptor } from "../src/skills.js";
 import { defaultTools } from "../src/tools.js";
 import type { ToolResult } from "../src/tools.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
@@ -76,29 +75,35 @@ test("built-in skills ship with the build and add only catalogued reads without 
   assert.deepEqual((await discoverSkills({ userHome, builtinRoot: false })).skills, []);
 });
 
-test("credential-free CLI finds launch-directory and packaged skills outside the installation", async (t) => {
+test("chat /skills finds launch-directory and packaged skills outside the installation without model requests", async (t) => {
   const { workspace, outside: userHome } = await temporaryWorkspace(t);
   await install(join(workspace, ".fatcat", "skills"), "cwd-only", "Discover the launch workspace without loading this body.");
   const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
-  const result = spawnSync(process.execPath, [cli, "--listSkills"], {
+  const transport = new URL("./fixtures/chat-transport.js", import.meta.url).href;
+  const result = spawnSync(process.execPath, ["--import", transport, cli, "--chat", "--no-session-persistence"], {
     cwd: workspace,
     encoding: "utf8",
+    input: "/skills\n/exit\n",
     timeout: 5000,
     env: { ...process.env, HOME: userHome, USERPROFILE: userHome, HARNESS_PROVIDER: "deepseek",
-      DEEPSEEK_API_KEY: "", MOONSHOT_API_KEY: "", MIMO_API_KEY: "", DASHSCOPE_API_KEY: "" },
+      DEEPSEEK_API_KEY: "offline-builtin-catalog-only", DEEPSEEK_MODEL: "deepseek-flash", HARNESS_MAX_ITERATIONS: "8",
+      HARNESS_REQUEST_TIMEOUT_MS: "60000", HARNESS_MAX_REQUEST_BYTES: "262144",
+      MOONSHOT_API_KEY: "", MIMO_API_KEY: "", DASHSCOPE_API_KEY: "" },
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stderr, "");
-  const listed = (JSON.parse(result.stdout) as { skills: SkillDescriptor[] }).skills;
-  assert.deepEqual(listed.map((entry) => entry.name).sort(), [...bundled.map((entry) => entry.name), "cwd-only"].sort());
-  assert.equal(listed.find((entry) => entry.name === "cwd-only")?.scope, "workspace");
-  const builtins = listed.filter((entry) => entry.scope === "builtin");
+  assert.equal(result.stdout, "");
+  const listed = result.stderr.split("\n").filter((line) => line.startsWith("$"));
+  assert.deepEqual(listed.map((line) => /^\$([a-z0-9-]+)/.exec(line)?.[1]).sort(), [...bundled.map((entry) => entry.name), "cwd-only"].sort());
+  assert.ok(listed.includes('$cwd-only [workspace] | "A controlled offline fixture." | "skill://cwd-only/SKILL.md"'));
+  const builtins = listed.filter((line) => line.includes(" [builtin] | "));
   assert.equal(builtins.length, bundled.length);
-  assert.ok(builtins.every((entry) => entry.subsystem));
-  assert.ok(!result.stdout.includes(builtRoot));
-  assert.ok(!result.stdout.includes(workspace));
-  assert.ok(!result.stdout.includes("without loading this body"));
-  for (const entry of builtins) assert.deepEqual(Object.keys(entry).sort(), ["description", "name", "scope", "subsystem", "uri"]);
+  for (const expected of bundled) assert.ok(builtins.some((line) => line.startsWith(`$${expected.name} [builtin] | `)
+    && line.endsWith(JSON.stringify(`skill://${expected.name}/SKILL.md`))));
+  assert.ok(!result.stderr.includes(builtRoot));
+  assert.ok(!result.stderr.includes(workspace));
+  assert.ok(!result.stderr.includes("without loading this body"));
+  assert.ok(!result.stderr.includes("offline-builtin-catalog-only"));
+  for (const event of ["model_request", "tool_result", "execution_report"]) assert.ok(!result.stderr.includes(`"type":"${event}"`));
 });
 
 test("workspace and user conventions take precedence over same-named built-in skills", async (t) => {

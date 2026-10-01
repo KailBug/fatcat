@@ -4,10 +4,12 @@ import type { TerminalInput } from "./terminal.js";
 import type { Readable, Writable } from "node:stream";
 import { checkCancellation, formatError } from "./errors.js";
 import { SessionManager } from "./session/manager.js";
-import { runSessionCommand, sessionCommandHelp, sessionLabel } from "./session/commands.js";
+import { runInteractiveCommand, interactiveCommandHelp } from "./commands.js";
+import { sessionLabel } from "./session/commands.js";
 import type { Conversation } from "./session/commands.js";
+import type { SkillDescriptor } from "./skills.js";
 
-const commands = `/help: show commands; /exit: end chat. ${sessionCommandHelp}`;
+const commands = `/help: show commands; /exit: end chat. ${interactiveCommandHelp}`;
 
 export async function runChat(
   session: Conversation,
@@ -17,6 +19,7 @@ export async function runChat(
     error: Writable & { isTTY?: boolean };
     signal?: AbortSignal;
     terminal?: TerminalInput;
+    skills?: readonly SkillDescriptor[];
   },
 ): Promise<number> {
   const { input, output, error } = options;
@@ -43,7 +46,7 @@ export async function runChat(
         error.write(`${commands}\n`);
       } else if (prompt.startsWith("/")) {
         try {
-          const result = await runSessionCommand(session, prompt);
+          const result = await runInteractiveCommand(session, prompt, options.skills);
           error.write(result ? `${result.text}\n` : "Unknown command. Use /help.\n");
           if (result?.switched) error.write('{"type":"session_reset"}\n');
         } catch (cause) {

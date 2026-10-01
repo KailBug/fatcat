@@ -14,11 +14,11 @@ const transport = new URL("./fixtures/chat-transport.js", import.meta.url).href;
 const skillHome = fileURLToPath(new URL("./fixtures/empty-skill-home", import.meta.url));
 
 function run(args: string[], cwd: string, initCwd: string | undefined, direct = false,
-  overrides: NodeJS.ProcessEnv = {}) {
+  overrides: NodeJS.ProcessEnv = {}, input = "") {
   const sessionDirectory = overrides.FATCAT_SESSION_DIR ?? mkdtempSync(join(tmpdir(), "fatcat-start-sessions-"));
   try {
     return spawnSync(process.execPath, ["--import", transport, direct ? cli : launcher, ...args], {
-    cwd, encoding: "utf8", input: "", timeout: 5000,
+    cwd, encoding: "utf8", input, timeout: 5000,
     env: { ...process.env, INIT_CWD: initCwd, HARNESS_PROVIDER: "deepseek",
       DEEPSEEK_API_KEY: "offline-start-only", DEEPSEEK_MODEL: "deepseek-flash",
       HARNESS_MAX_ITERATIONS: "8", HARNESS_REQUEST_TIMEOUT_MS: "60000", HARNESS_MAX_REQUEST_BYTES: "262144",
@@ -58,17 +58,26 @@ test("package launcher resolves relative and absolute workspace overrides from t
   }
 });
 
-test("package launcher discovers invocation-local skills without credentials", async (t) => {
+test("package launcher /skills uses the invocation directory and honors workspace overrides locally", async (t) => {
   const { workspace, outside } = await temporaryWorkspace(t);
-  const skill = join(workspace, ".agents", "skills", "launch-fixture");
-  await mkdir(skill, { recursive: true });
-  await writeFile(join(skill, "SKILL.md"), "---\nname: launch-fixture\ndescription: Inspect the launch fixture.\n---\nPRIVATE_LAUNCH_SKILL\n");
-  const result = run(["--listSkills"], outside, workspace, false, { DEEPSEEK_API_KEY: "" });
-  assert.equal(result.status, 0, result.stderr);
-  const skills = JSON.parse(result.stdout).skills.filter((entry: { scope: string }) => entry.scope === "workspace");
-  assert.deepEqual(skills.map((entry: { name: string }) => entry.name), ["launch-fixture"]);
-  assert.ok(!result.stdout.includes("PRIVATE_LAUNCH_SKILL"));
-  assert.ok(!result.stdout.includes(workspace));
+  const nested = join(workspace, "nested workspace");
+  for (const [root, name] of [[workspace, "launch-fixture"], [outside, "package-fixture"], [nested, "nested-fixture"]]) {
+    const skill = join(root!, ".agents", "skills", name!);
+    await mkdir(skill, { recursive: true });
+    await writeFile(join(skill, "SKILL.md"), `---\nname: ${name}\ndescription: Inspect the launch fixture.\n---\nPRIVATE_LAUNCH_SKILL\n`);
+  }
+  for (const [flags, name] of [[[], "launch-fixture"], [["--workspace", outside], "package-fixture"],
+    [["--workspace", "nested workspace"], "nested-fixture"]] as const) {
+    const result = run(["--chat", ...flags], outside, workspace, false, {}, "/skills\n/exit\n");
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "");
+    const skills = result.stderr.split("\n").filter((line) => /^\$.* \[workspace\] \|/.test(line));
+    assert.deepEqual(skills, [`$${name} [workspace] | "Inspect the launch fixture." | "skill://${name}/SKILL.md"`]);
+    assert.ok(!result.stderr.includes("PRIVATE_LAUNCH_SKILL"));
+    assert.ok(!result.stderr.includes(workspace));
+    assert.ok(!result.stderr.includes("offline-start-only"));
+    assert.ok(!result.stderr.includes('"type":"model_request"'));
+  }
 });
 
 test("package launcher falls back to its current directory when INIT_CWD is missing or blank", async (t) => {

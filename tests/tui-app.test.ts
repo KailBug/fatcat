@@ -9,6 +9,7 @@ import type { Model, Message } from "../src/model.js";
 import { Session } from "../src/session/session.js";
 import { SessionManager } from "../src/session/manager.js";
 import { SessionStore } from "../src/session/store.js";
+import type { SkillDescriptor } from "../src/skills.js";
 import { createSubagentTools } from "../src/subagent.js";
 import { createTools } from "../src/tools.js";
 import { TuiApp } from "../tui/app.js";
@@ -92,6 +93,51 @@ test("TUI preserves real session history, local commands, reported consumption a
   assert.equal(process.listenerCount("SIGINT"), sigintBefore);
   assert.ok(terminal.output.includes("\x1b[?1049h"));
   assert.ok(terminal.output.includes("\x1b[?1049l"));
+});
+
+test("TUI skills shows catalog metadata locally and keeps the conversation usable after invalid arguments", async () => {
+  const terminal = new FakeTerminal();
+  terminal.rows = 60;
+  const skillCatalog: SkillDescriptor[] = [
+    { name: "fixture-review", description: "Review the local fixture.", uri: "skill://fixture-review/SKILL.md", scope: "workspace" },
+    { name: "workspace-editing", description: "Edit workspace files.", uri: "skill://workspace-editing/SKILL.md", scope: "builtin", subsystem: "tools" },
+  ];
+  const prompts: string[] = [];
+  const session = new Session({ maxIterations: 1, model: async (messages) => {
+    prompts.push(String(messages.at(-1)?.content));
+    assert.ok(!JSON.stringify(messages).includes("/skills"));
+    return answer("Saved answer.");
+  } });
+  await session.run("Before the interface");
+  const saved = session.messages;
+  const app = new TuiApp({ ...settings, skills: skillCatalog.length, skillCatalog, terminal, color: false });
+  const done = app.run(session);
+  try {
+    terminal.submit("/skills");
+    await until(() => terminal.plain.includes("Review the local fixture."));
+    assert.deepEqual(prompts, ["Before the interface"]);
+    assert.deepEqual(session.messages, saved);
+    assert.equal(app.telemetry.snapshot().session.turns, 0);
+    for (const skill of skillCatalog) {
+      assert.ok(terminal.plain.includes(skill.name));
+      assert.ok(terminal.plain.includes(skill.description));
+      assert.ok(terminal.plain.includes(skill.uri));
+      assert.ok(terminal.plain.includes(skill.scope));
+    }
+    terminal.submit("/skills unexpected");
+    await until(() => terminal.plain.includes("Error [USAGE]"));
+    assert.deepEqual(session.messages, saved);
+    assert.equal(app.telemetry.snapshot().session.turns, 0);
+    terminal.submit("Continue");
+    await until(() => app.telemetry.snapshot().turn.status === "answered");
+    assert.deepEqual(prompts, ["Before the interface", "Continue"]);
+    assert.equal(session.messages.length, saved.length + 2);
+    terminal.submit("/exit");
+    assert.equal(await done, 0);
+  } finally {
+    terminal.input("\x04");
+    await done;
+  }
 });
 
 test("TUI switches saved sessions, restores conversation counts and keeps usage process local", async (t) => {

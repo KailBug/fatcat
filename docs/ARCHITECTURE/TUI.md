@@ -56,7 +56,7 @@
 
 `--tui` 是互斥的交互模式，不能和普通 prompt、`--chat`、帮助或本地配置/技能查询混用。要求真实交互终端；重定向及不支持的终端应明确拒绝并提示使用已有 CLI。CLI 默认选择启动目录并提供 read / write / shell 与工作目录 Skill 发现，--workspace 可覆盖；write / shell 默认分别询问，权限选项不要求显式 --workspace。目录由 Tools 规范化后用于 TUI 配置，不另行推断或产生第二个根路径。
 
-输入编辑支持 Unicode 与多行；提交一个非空任务后同一 Session 顺序执行，不隐式排队并发回合。`/help` 显示本地命令和快捷键，`/status` 展示配置与当前统计，`/new` / `/clear` / `/reset` 创建新会话并保留原对话，`/sessions` / `/resume` 列表和切换，`/rename` 命名，`/fork` 创建独立会话分支，`/exit` 结束终端界面。未知斜杠命令给出本地提示，不发送给模型。
+输入编辑支持 Unicode 与多行；提交一个非空任务后同一 Session 顺序执行，不隐式排队并发回合。`/help` 显示本地命令和快捷键，`/status` 展示配置与当前统计，`/skills` 通过 src/commands.ts 展示启动发现的技能元数据（不读取正文、请求模型或修改历史），`/new` / `/clear` / `/reset` 创建新会话并保留原对话，`/sessions` / `/resume` 列表和切换，`/rename` 命名，`/fork` 创建独立会话分支，`/exit` 结束终端界面。未知斜杠命令给出本地提示，不发送给模型。
 
 Enter 提交，Alt+Enter 换行，Up / Down 回看输入历史，PageUp / PageDown 滚动显示。运行时可编辑下一条草稿，但不会自动提交或排队；粘贴不会自动提交。Escape 或 Ctrl+C 取消正在运行的回合，空闲 Ctrl+C 退出，Ctrl+D 取消并退出。退出码沿用交互进程的错误状态：正常退出为 0，出现失败或取消回合后最终退出为 1；本地未启动回合的退出不制造执行报告。
 

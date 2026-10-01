@@ -15,6 +15,7 @@ import { createAgent } from "./agent.js";
 import { createTools } from "./tools.js";
 import { discoverSkills } from "./skills.js";
 import type { SkillCatalog } from "./skills.js";
+import { PermissionPolicy, isPermissionMode } from "./permissions/policy.js";
 
 const help = `Fatcat - minimal Agent Harness
 
@@ -33,7 +34,7 @@ Usage:
 Use --chat for a continuous conversation with /help, /skills, /new, /sessions, /resume, /rename, /fork, and /exit.
 Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
 Use --webui for the local browser interface at 127.0.0.1:3210; --port <1-65535> selects another port.
-Open the private link printed at startup. Web UI write and command approvals appear in the browser.
+The default browser opens automatically. Web UI write and command approvals appear in the browser.
 A prompt runs one task. Successful history is saved locally for the selected workspace.
 Use --continue (-c) to continue the latest session, or --resume (-r) <id-or-name> to select one.
 Bare --resume shows a session picker in a terminal or a local list for pipes, without model credentials.
@@ -50,6 +51,10 @@ Built-in skills are available by default; workspace and user .fatcat/skills or .
 Use /skills in chat or TUI to inspect the local catalog. Mention $name or describe a task to use a skill.
 Skill instructions and bundled resources are loaded on demand through read; scripts still need shell authorization.
 Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
+Use --permission-mode default (Manual), acceptEdits (automatic file edits), plan (read-only planning), or freeToGo (Free to go).
+Free to go allows local files and HTTP(S) networks beyond the workspace/public boundary; ordinary commands run automatically.
+Clearly dangerous commands and opaque shell forms still require approval. This command check is not an OS sandbox.
+Permission modes replace --permission and --shell-permission; the Web UI can switch modes while idle.
 Shell authorization is separate: --shell-permission ask (default), deny, or allow for unattended commands.
 Shell uses Windows PowerShell with current-user access, not an operating-system sandbox.
 Public web search and page reading are available by default, including in read-only workspaces.
@@ -89,6 +94,7 @@ async function main(args: string[]): Promise<number> {
           port: { type: "string" },
           workspace: { type: "string" },
           permission: { type: "string" },
+          "permission-mode": { type: "string" },
           "shell-permission": { type: "string" },
           "web-permission": { type: "string" },
         },
@@ -139,6 +145,13 @@ async function main(args: string[]): Promise<number> {
       || !["ask", "deny", "allow"].includes(values["shell-permission"])
       || (values.permission === "read-only" && values["shell-permission"] !== "deny"))) {
       throw new HarnessError("USAGE", "Use --shell-permission ask, deny, or allow with a workspace task; read-only permits only deny.");
+    }
+    if (values["permission-mode"] !== undefined && (!hasTask || !isPermissionMode(values["permission-mode"])
+      || values.permission !== undefined || values["shell-permission"] !== undefined)) {
+      throw new HarnessError("USAGE", "Use --permission-mode default, acceptEdits, plan, or freeToGo with a task, without --permission or --shell-permission.");
+    }
+    if (values["permission-mode"] === "freeToGo" && values["web-permission"] === "deny") {
+      throw new HarnessError("USAGE", "Free to go cannot be combined with --web-permission deny.");
     }
     if (values.help || args.length === 0) {
       console.log(help);
@@ -192,26 +205,31 @@ async function main(args: string[]): Promise<number> {
     const sessionOptions = { selection, persistence: !values["no-session-persistence"] };
     const config = loadConfig();
     const workspace = values.workspace ?? process.cwd();
-    const permission = (values.permission ?? "ask") as WorkspacePermission;
-    const shellPermission = (values["shell-permission"] ?? (permission === "read-only" ? "deny" : "ask")) as ShellPermission;
+    const launchPermission = (values.permission ?? "ask") as WorkspacePermission;
+    const launchShellPermission = (values["shell-permission"] ?? (launchPermission === "read-only" ? "deny" : "ask")) as ShellPermission;
+    const permissionPolicy = new PermissionPolicy(isPermissionMode(values["permission-mode"])
+      ? values["permission-mode"] : { permission: launchPermission, shellPermission: launchShellPermission },
+    { readOnly: values.permission === "read-only", shellDenied: values["shell-permission"] === "deny",
+      webDenied: values["web-permission"] === "deny" });
+    const { permission, shellPermission } = permissionPolicy.snapshot();
     const webPermission = (values["web-permission"] ?? "allow") as WebPermission;
     if (values.webui) {
       const { runWebUi } = await import("../webui/index.js");
-      return await runWebUi(config, workspace, permission, shellPermission, webPermission, Number(values.port ?? "3210"), sessionOptions);
+      return await runWebUi(config, workspace, permission, shellPermission, webPermission, Number(values.port ?? "3210"), sessionOptions, undefined, permissionPolicy);
     }
     if (values.tui) {
       const { runTui } = await import("../tui/index.js");
-      return await runTui(config, workspace, permission, shellPermission, webPermission, sessionOptions);
+      return await runTui(config, workspace, permission, shellPermission, webPermission, sessionOptions, permissionPolicy);
     }
     if (!terminal) process.on("SIGINT", cancel);
-    if (!terminal && (values.chat || permission === "ask" || shellPermission === "ask")) {
+    if (!terminal && (values.chat || permission === "ask" || shellPermission === "ask" || permissionPolicy.snapshot().mode === "freeToGo")) {
       terminal = createTerminalInput(process.stdin, process.stderr, controller.signal);
     }
     const signal = terminal?.signal ?? controller.signal;
     const baseTools = await createTools(workspace, permission, terminal?.approveWrite, {
       permission: shellPermission,
       ...(terminal ? { approve: terminal.approveShell } : {}),
-    }, { permission: webPermission });
+    }, { permission: webPermission }, permissionPolicy);
     const skills = await discoverSkills({ workspace: baseTools.workspaceRoot!, signal });
     reportSkillWarnings(skills);
     const agent = createAgent(config, baseTools, undefined, skills);

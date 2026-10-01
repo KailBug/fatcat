@@ -1,8 +1,8 @@
 import { opendir } from "node:fs/promises";
-import { extname } from "node:path";
+import { extname, join } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
-import { readTextFile, textExtensions } from "./text-file.js";
-import type { Workspace } from "./workspace.js";
+import { readTextFile, textExtensions } from "../permissions/text-file.js";
+import type { Workspace } from "../permissions/workspace.js";
 
 type Target = Awaited<ReturnType<Workspace["resolvePath"]>>;
 type Match = { path: string; line: number; text: string };
@@ -14,7 +14,15 @@ const maxPageBytes = 16 * 1024;
 /** Search a bounded, freshly validated subtree; never return partial traversal as complete. */
 export async function searchText(workspace: Workspace, target: Target,
   options: { query: string; offset: number; limit: number }, signal?: AbortSignal) {
+  const lease = workspace.permissionPolicy?.beginOperation();
+  try { return await search(workspace, target, options, signal); }
+  finally { lease?.release(); }
+}
+
+async function search(workspace: Workspace, target: Target,
+  options: { query: string; offset: number; limit: number }, signal?: AbortSignal) {
   const paths: string[] = [];
+  const visited = new Set<string>();
   let entries = 0;
   const recursive = target.stat.isDirectory();
 
@@ -23,24 +31,29 @@ export async function searchText(workspace: Workspace, target: Target,
   }
   async function collect(directory: Target, depth: number): Promise<void> {
     checkCancellation(signal);
+    if (visited.has(directory.absolute)) return;
+    visited.add(directory.absolute);
     if (depth > maxDepth) limitExceeded();
     const handle = await opendir(directory.absolute);
     for await (const entry of handle) {
       checkCancellation(signal);
       if (++entries > maxEntries) limitExceeded();
-      if (entry.isSymbolicLink() || (!entry.isFile() && !entry.isDirectory())) continue;
-      if (entry.isFile() && !textExtensions.has(extname(entry.name).toLowerCase())) continue;
+      if (!target.unrestricted && (entry.isSymbolicLink() || (!entry.isFile() && !entry.isDirectory()))) continue;
+      if (!target.unrestricted && entry.isFile() && !textExtensions.has(extname(entry.name).toLowerCase())) continue;
       let child: Target;
       try {
-        child = await workspace.resolvePath(`${directory.relative}/${entry.name}`, signal);
+        child = await workspace.resolvePath(directory.unrestricted ? join(directory.absolute, entry.name)
+          : `${directory.relative}/${entry.name}`, signal);
       } catch (error) {
         if (error instanceof HarnessError && error.code === "PATH_NOT_ALLOWED") continue;
+        if (target.unrestricted && ((error as NodeJS.ErrnoException).code === "ENOENT"
+          || error instanceof HarnessError && error.code === "UNSUPPORTED_FILE")) continue;
         throw error;
       }
       if (child.stat.isDirectory()) {
         await collect(child, depth + 1);
-      } else if (textExtensions.has(extname(child.relative).toLowerCase())) {
-        paths.push(child.relative);
+      } else if (target.unrestricted || textExtensions.has(extname(child.relative).toLowerCase())) {
+        if (!paths.includes(child.relative)) paths.push(child.relative);
         if (paths.length > maxFiles) limitExceeded();
       }
     }

@@ -4,8 +4,8 @@ import { gzipSync } from "node:zlib";
 import { createServer } from "node:http";
 import { createWebTool } from "../src/tools/web.js";
 import type { WebOptions } from "../src/tools/web.js";
-import { isPublicAddress, publicUrl, readWebBody, requestWeb } from "../src/tools/web-request.js";
-import type { WebTransport } from "../src/tools/web-request.js";
+import { isPublicAddress, publicUrl, readWebBody, requestWeb } from "../src/permissions/web-request.js";
+import type { WebTransport } from "../src/permissions/web-request.js";
 import type { ToolResult } from "../src/tools.js";
 
 const publicResolver = async () => [{ address: "93.184.216.34", family: 4 }];

@@ -3,6 +3,9 @@ import { renderMarkdown } from "./markdown.js";
 import type { SessionSummary } from "../../src/session/store.js";
 import { SessionMenu } from "./session-menu.js";
 import type { SessionAction } from "./session-menu.js";
+import { SessionDialog } from "./session-dialog.js";
+import type { SessionMutation } from "./session-dialog.js";
+import { PermissionMenu } from "./permission-menu.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -37,6 +40,12 @@ let detailsSessionId: string | undefined;
 const rendered = new Map<string, { signature: string; element: HTMLElement }>();
 const sessionMenu = new SessionMenu(element("session-menu"), (action, session) => { void sessionAction(action, session); },
   () => connected && !sending && !state?.busy);
+const sessionDialog = new SessionDialog(sessionMutation, () => connected && !sending && !state?.busy);
+const permissionMenu = new PermissionMenu(element<HTMLButtonElement>("permission-mode"), element("permission-menu"),
+  (mode) => { void api("permission-mode", { mode }); });
+const sessionDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+const tokenCount = new Intl.NumberFormat("en-US");
+const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
 function controls(): void {
@@ -47,6 +56,8 @@ function controls(): void {
   stop.disabled = !connected || sending;
   newChat.disabled = !connected || sending || busy;
   if (state) sessionMenu.update(displaySessions(state));
+  sessionDialog.update();
+  permissionMenu.update(state?.permissionMode, !connected || sending || busy || Boolean(state?.approval));
 }
 function connection(ok: boolean): void {
   connected = ok;
@@ -70,7 +81,7 @@ async function api(path: string, body: unknown): Promise<boolean> {
 async function refresh(force = false): Promise<void> {
   try {
     const response = await fetch("/api/state", { headers: { Authorization: `Bearer ${token}`, ...(!force && etag ? { "If-None-Match": etag } : {}) }, signal: AbortSignal.timeout(10_000) });
-    if (response.status === 304) { connection(true); return; }
+    if (response.status === 304) { if (!connected) notice.hidden = true; connection(true); return; }
     if (!response.ok) throw new Error((await response.json() as { error: string }).error);
     const next = await response.json() as WebUiState;
     if (!state || next.revision >= state.revision) {
@@ -118,9 +129,10 @@ function renderApproval(approval: Approval | null): void {
   if (approval.kind === "shell") {
     panel.append(node("p", `PowerShell · ${approval.request.cwd} · ${approval.request.timeoutMs / 1000}s timeout`));
     panel.append(node("pre", approval.request.command));
+    if (approval.request.approvalReason) panel.append(node("p", approval.request.approvalReason, "approval-reason"));
     panel.append(node("p", "Commands run with your Windows user permissions and can access files and the network outside this workspace. This is not an OS sandbox."));
   } else {
-    panel.append(node("p", `${approval.request.operation} · ${approval.request.path} · ${approval.request.bytes.toLocaleString()} bytes`));
+    panel.append(node("p", `${approval.request.operation} · ${approval.request.path} · ${approval.request.bytes.toLocaleString("en-US")} bytes`));
     if (approval.request.oldText !== undefined) panel.append(node("p", "Replace this exact text:"), node("pre", approval.request.oldText));
     panel.append(node("p", approval.request.oldText !== undefined ? "With:" : "New file content:"), node("pre", approval.request.newText));
   }
@@ -142,6 +154,8 @@ function render(next: WebUiState): void {
   state = next;
   element("welcome").hidden = next.turns.length > 0;
   element("model").textContent = next.info.model;
+  element("model").title = `${next.info.provider} · ${next.info.model}`;
+  renderContextUsage(next);
   element("workspace").textContent = next.info.workspace;
   element("workspace").title = `${next.info.workspace}\nWrite ${next.info.permission} · Shell ${next.info.shellPermission} · Web ${next.info.webPermission}`;
   renderSessions(next);
@@ -170,6 +184,24 @@ function render(next: WebUiState): void {
   controls();
 }
 
+function renderContextUsage(next: WebUiState): void {
+  const { promptTokens, capacityTokens } = next.contextUsage;
+  const chip = element("context-usage");
+  const known = promptTokens !== null && capacityTokens !== null;
+  const percentage = known ? promptTokens / capacityTokens * 100 : 0;
+  const percentageLabel = percentage === 0 ? "0%" : percentage < 0.1 ? "<0.1%" : `${Math.round(percentage * 10) / 10}%`;
+  element("context-label").textContent = known ? `Context ${percentageLabel}`
+    : promptTokens === null ? "Context —" : `Context ${compactTokens.format(promptTokens)} tokens`;
+  const usage = promptTokens === null ? "No input token usage is available yet."
+    : `Last request input: ${tokenCount.format(promptTokens)} tokens.`;
+  const capacity = capacityTokens === null ? "This model's context capacity is unknown."
+    : `Model context capacity: ${tokenCount.format(capacityTokens)} tokens.`;
+  chip.title = `${usage}\n${capacity}\nProvider-reported input for the latest parent request. Draft text and the latest reply are not counted.`;
+  chip.setAttribute("aria-label", `${element("context-label").textContent}. ${usage} ${capacity}`);
+  chip.dataset.known = String(known);
+  chip.style.setProperty("--context-percent", `${Math.min(100, Math.max(0, percentage))}%`);
+}
+
 function renderDetails(next: WebUiState): void {
   if (!detailsSessionId) return;
   const selected = displaySessions(next).find((session) => session.id === detailsSessionId);
@@ -182,7 +214,12 @@ function renderDetails(next: WebUiState): void {
     "Created": selected.createdAt, "Updated": selected.updatedAt,
     "Forked from": selected.forkedFrom ?? "None", "Interrupted turn": selected.interrupted ? "Yes" : "No",
     "Write permission": next.info.permission, "Shell permission": next.info.shellPermission, "Public web": next.info.webPermission,
+    "Permission mode": next.permissionMode.mode === "default" ? "Manual" : next.permissionMode.mode === "acceptEdits" ? "Accept edits" : next.permissionMode.mode === "plan" ? "Plan" : next.permissionMode.mode === "freeToGo" ? "Free to go" : "Custom permissions",
+    "File access scope": next.permissionMode.fileAccess === "unrestricted" ? "Local files, including outside the workspace" : "Selected workspace",
+    "Web tool network scope": next.info.webPermission === "deny" ? "Disabled at launch" : next.permissionMode.networkAccess === "unrestricted" ? "Local and public HTTP(S)" : "Public HTTP(S) only",
     "Parent iteration limit": next.info.maxIterations, "Request budget (bytes)": next.info.maxRequestBytes, "Available skills": next.info.skills,
+    "Model context capacity (tokens)": next.contextUsage.capacityTokens === null ? "Unknown" : tokenCount.format(next.contextUsage.capacityTokens),
+    "Last parent request input (tokens)": selected.id !== next.current.id || next.contextUsage.promptTokens === null ? "Unavailable" : tokenCount.format(next.contextUsage.promptTokens),
     "Skill warnings": next.info.warnings.join("\n") || "None" })) content.append(node("dt", key), node("dd", String(value)));
 }
 
@@ -200,13 +237,14 @@ function renderSessions(next: WebUiState): void {
     const button = node("button", undefined, "conversation");
     const selected = session.id === next.current.id;
     button.setAttribute("aria-current", String(selected));
-    button.title = `${session.name ?? session.title}\n${session.id}`;
+    const metadata = `${session.turnCount} ${session.turnCount === 1 ? "turn" : "turns"} · ${sessionDate.format(new Date(session.updatedAt))}`;
+    button.title = `${session.name ?? session.title}\n${metadata}\n${session.id}`;
+    button.setAttribute("aria-description", metadata);
     button.dataset.sessionId = session.id;
     button.setAttribute("aria-haspopup", "menu");
     button.append(node("span", selected ? "◉" : "◌"));
     const copy = node("span", undefined, "session-copy");
-    copy.append(node("span", session.name ?? session.title, "session-name"),
-      node("small", `${session.turnCount} turns · ${new Date(session.updatedAt).toLocaleDateString()}`));
+    copy.append(node("span", session.name ?? session.title, "session-name"));
     button.append(copy);
     button.addEventListener("click", () => {
       sessionMenu.close();
@@ -235,7 +273,7 @@ function closeSidebar(): void {
   element("toggle-sidebar").setAttribute("aria-expanded", "false");
 }
 
-function sessionChanged(): void { prompt.value = ""; resize(); prompt.focus(); closeSidebar(); }
+function sessionChanged(): void { prompt.value = ""; resize(); requestAnimationFrame(() => prompt.focus()); closeSidebar(); }
 
 async function sessionAction(action: SessionAction, session: SessionSummary): Promise<void> {
   if (action === "details") {
@@ -246,16 +284,22 @@ async function sessionAction(action: SessionAction, session: SessionSummary): Pr
     return;
   }
   if (!connected || sending || state?.busy) return;
+  sessionDialog.open(action, session);
+}
+
+async function sessionMutation(action: SessionMutation, session: SessionSummary, name?: string): Promise<string | undefined> {
+  let accepted = false;
   if (action === "rename") {
-    const name = window.prompt("Session name", session.name ?? session.title);
-    if (name !== null) await api("session/rename", { id: session.id, name });
+    accepted = await api("session/rename", { id: session.id, name });
   } else if (action === "fork") {
-    if (await api("session/fork", { id: session.id })) sessionChanged();
+    accepted = await api("session/fork", { id: session.id, ...(name ? { name } : {}) });
+    if (accepted) sessionChanged();
   } else if (action === "delete") {
-    if (!window.confirm(`Delete "${session.name ?? session.title}" and its saved conversation? This cannot be undone. Files and commands stay in effect.`)) return;
     const currentId = state?.current.id;
-    if (await api("session/delete", { id: session.id, revision: session.revision }) && state?.current.id !== currentId) sessionChanged();
+    accepted = await api("session/delete", { id: session.id, revision: session.revision });
+    if (accepted && state?.current.id !== currentId) sessionChanged();
   }
+  return accepted ? undefined : notice.textContent || "The session could not be changed. Try again.";
 }
 
 function resize(): void { prompt.style.height = "auto"; prompt.style.height = `${Math.min(prompt.scrollHeight, 180)}px`; controls(); }
@@ -285,7 +329,7 @@ element("toggle-sidebar").addEventListener("click", () => {
   element("toggle-sidebar").setAttribute("aria-expanded", String(open));
 });
 document.addEventListener("click", (event) => {
-  if (event.target instanceof Element && !event.target.closest("aside, #toggle-sidebar, #session-menu")) {
+  if (event.target instanceof Element && !event.target.closest("aside, #toggle-sidebar, #session-menu, #session-action-dialog")) {
     document.body.classList.remove("sidebar-open"); element("toggle-sidebar").setAttribute("aria-expanded", "false");
   }
 });

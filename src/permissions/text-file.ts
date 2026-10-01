@@ -3,6 +3,7 @@ import { extname } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
 import type { Workspace } from "./workspace.js";
 
+/** Bound text access before reads, replacements and publication. */
 export const maxFileBytes = 1024 * 1024;
 export const textExtensions = new Set([
   ".txt", ".md", ".json", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
@@ -12,14 +13,14 @@ export const textExtensions = new Set([
 type Target = Awaited<ReturnType<Workspace["resolvePath"]>>;
 
 export async function readTextFile(target: Target, signal?: AbortSignal) {
-  if (!textExtensions.has(extname(target.absolute).toLowerCase())) {
+  if (!target.unrestricted && !textExtensions.has(extname(target.absolute).toLowerCase())) {
     throw new HarnessError("UNSUPPORTED_FILE", "Only supported text file extensions can be read.");
   }
   const file = await open(target.absolute, "r");
   try {
     const opened = await file.stat();
-    if (!opened.isFile() || opened.nlink > 1 || opened.dev !== target.stat.dev || opened.ino !== target.stat.ino) {
-      throw new HarnessError("PATH_NOT_ALLOWED", "The workspace file changed during path validation.");
+    if (!opened.isFile() || (!target.unrestricted && opened.nlink > 1) || opened.dev !== target.stat.dev || opened.ino !== target.stat.ino) {
+      throw new HarnessError("PATH_NOT_ALLOWED", "The file changed during path validation.");
     }
     if (opened.size > maxFileBytes) throw new HarnessError("FILE_TOO_LARGE", "Text files must not exceed 1048576 bytes.");
     // One extra byte detects growth while keeping memory use bounded.

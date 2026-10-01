@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { HarnessError, checkCancellation } from "../errors.js";
-import { runPowerShell } from "./process.js";
-import type { ProcessResult } from "./process.js";
+import { runPowerShell } from "../permissions/process.js";
+import type { ProcessResult } from "../permissions/process.js";
+import { shellDecision } from "../permissions/policy.js";
+import { classifyCommandRisk } from "../permissions/command-risk.js";
+import type { PermissionPolicy } from "../permissions/policy.js";
+import type { ShellOptions, ShellPermission, ShellRequest } from "../permissions/types.js";
 import type {Tool, ToolResult} from "./types.js";
-import type { Workspace } from "./workspace.js";
+import type { Workspace } from "../permissions/workspace.js";
 
-export type ShellPermission = "ask" | "deny" | "allow";
-export type ShellRequest = { command: string; cwd: string; timeoutMs: number };
-export type ApproveShell = (request: ShellRequest, signal?: AbortSignal) => Promise<boolean>;
-export type ShellOptions = { permission?: ShellPermission; approve?: ApproveShell };
+export type { ApproveShell, ShellPermission, ShellOptions, ShellRequest } from "../permissions/types.js";
 export type CommandRecord = ShellRequest & ProcessResult & { id: string; outputSummaryTruncated: boolean };
 export type CommandEventRecord = Omit<CommandRecord, "command" | "stdout" | "stderr">;
 
@@ -24,12 +25,12 @@ function parseArguments(args: unknown): ShellRequest {
   const timeoutMs = "timeoutMs" in args ? args.timeoutMs : 30000;
   if (typeof cwd !== "string" || !cwd.trim() || cwd.length > 1024
     || typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120000) {
-    throw new HarnessError("INVALID_ARGUMENTS", "cwd must be a relative directory; timeoutMs must be an integer from 100 to 120000.");
+    throw new HarnessError("INVALID_ARGUMENTS", "cwd must be a directory path; timeoutMs must be an integer from 100 to 120000.");
   }
   return { command: args.command, cwd, timeoutMs };
 }
 
-export function createShellTool(workspace: Workspace, options: ShellOptions = {}, runner = runPowerShell) {
+export function createShellTool(workspace: Workspace, options: ShellOptions = {}, runner = runPowerShell, policy?: PermissionPolicy) {
   const permission = options.permission ?? "deny";
   if (!["ask", "deny", "allow"].includes(permission)) throw new HarnessError("CONFIG", "Shell permission must be ask, deny, or allow.");
   const records: CommandRecord[] = [];
@@ -38,9 +39,19 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
 
   async function execute(args:unknown, signal?:AbortSignal):Promise<ToolResult> {
     checkCancellation(signal);
-    if (permission === "deny") throw new HarnessError("PERMISSION_DENIED", "Shell execution is denied for this run.");
+    const lease = policy?.beginOperation();
+    try { return await executeAuthorized(args, lease?.shellPermission ?? permission, signal, lease?.mode === "freeToGo"); }
+    finally { lease?.release(); }
+  }
+
+  async function executeAuthorized(args: unknown, currentPermission: ShellPermission,
+    signal?: AbortSignal, freeToGo = false): Promise<ToolResult> {
+    const decision = shellDecision(currentPermission, Boolean(options.approve));
+    if (decision === "deny") throw new HarnessError("PERMISSION_DENIED", "Shell execution is denied for this run.");
     if (process.platform !== "win32") throw new HarnessError("UNSUPPORTED_PLATFORM", "Shell execution currently requires native Windows PowerShell.");
     const request = parseArguments(args);
+    const approvalReason = freeToGo ? classifyCommandRisk(request.command) : null;
+    if (approvalReason) request.approvalReason = approvalReason;
     if (busy) throw new HarnessError("SHELL_BUSY", "A shell request is already running or awaiting approval.");
     if (cleanupFailed) throw new HarnessError("SHELL_CLEANUP", "A prior process tree could not be confirmed stopped. Inspect it before starting a new run.");
     if (records.length >= 20) throw new HarnessError("SHELL_LIMIT", "The process-local command journal has reached 20 attempts. Review it before starting a new run.");
@@ -49,7 +60,7 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
       const target = await workspace.resolvePath(request.cwd, signal);
       if (!target.stat.isDirectory()) throw new HarnessError("INVALID_ARGUMENTS", "Shell cwd must be an existing directory.");
       request.cwd = target.relative;
-      if (permission === "ask") {
+      if (decision === "ask" || approvalReason) {
         if (!options.approve || !await options.approve({ ...request }, signal)) {
           throw new HarnessError("PERMISSION_DENIED", "The command was not approved. No process was started.");
         }
@@ -86,7 +97,8 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
   const tool: Tool = {
     definition: { type: "function", function: {
       name: "shell",
-      description: "Run a foreground command in Windows PowerShell (not Bash), in a fresh non-interactive process. cwd defaults to the workspace root. Requires separate command authorization. No OS sandbox: commands can access files and network with current-user permissions. Do not launch background processes or interactive programs. Output is capped at 16 KiB combined; exceeding it stops the process tree. Check success, exitCode, status and truncated before claiming verification passed. Earlier side effects are never rolled back. Native nonzero exit codes and PowerShell errors are failures.",
+      description: "Run a foreground command in Windows PowerShell (not Bash), in a fresh non-interactive process. cwd defaults to the workspace root. Requires separate command authorization. No OS sandbox: commands can access files and network with current-user permissions. Do not launch background processes or interactive programs. Output is capped at 16 KiB combined; exceeding it stops the process tree. Check success, exitCode, status and truncated before claiming verification passed. Earlier side effects are never rolled back. Native nonzero exit codes and PowerShell errors are failures."
+        + (policy ? " Current permission is supplied in request guidance and checked at execution." : ""),
       parameters: {
         type: "object",
         properties: {

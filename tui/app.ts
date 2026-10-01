@@ -8,8 +8,8 @@ import { interactiveCommandHelp, runInteractiveCommand } from "../src/commands.j
 import { sessionLabel } from "../src/session/commands.js";
 import type { Conversation } from "../src/session/commands.js";
 import type { SkillDescriptor } from "../src/skills.js";
-import type { ApproveWrite } from "../src/tools/write.js";
-import type { ApproveShell } from "../src/tools/shell.js";
+import { ApprovalCoordinator } from "../src/permissions/approval.js";
+import type { ApproveShell, ApproveWrite } from "../src/permissions/types.js";
 import { metricSections, statusText } from "./metrics.js";
 import type { TuiConfig } from "./metrics.js";
 import { createTuiTelemetry } from "./telemetry.js";
@@ -64,7 +64,15 @@ export class TuiApp {
   private session?: Conversation;
   private turnController: AbortController | undefined;
   private activeTurn?: Promise<void>;
-  private approval: { finish: (allowed: boolean) => void; draft: string } | undefined;
+  private approval: { id: string; draft: string; label: string; answer?: boolean } | undefined;
+  private readonly approvals = new ApprovalCoordinator<{ confirmation: { label: string; details: string } }>(() => {
+    if (this.approvals.snapshot() || !this.approval) return;
+    const { draft, label, answer } = this.approval;
+    this.approval = undefined;
+    this.editor.setText(draft);
+    this.editor.disableSubmit = true;
+    this.message("system", answer ? "Approved." : "Denied.", label);
+  });
   private resolveExit?: (code: number) => void;
   private closing = false;
   private started = false;
@@ -146,7 +154,7 @@ export class TuiApp {
     } finally {
       this.closing = true;
       this.turnController?.abort();
-      this.approval?.finish(false);
+      this.approvals.deny();
       try {
         await this.activeTurn;
       } finally {
@@ -171,8 +179,9 @@ export class TuiApp {
   ].join("\n"), signal);
 
   readonly approveShell: ApproveShell = (request, signal) => this.confirm("COMMAND APPROVAL", [
-    `Workspace: ${this.options.workspace ?? "disabled"}`, `Relative directory: ${JSON.stringify(request.cwd)}`,
+    `Workspace: ${this.options.workspace ?? "disabled"}`, `Working directory: ${JSON.stringify(request.cwd)}`,
     `Timeout: ${request.timeoutMs} ms`, "PowerShell runs with your user permissions, including outside the workspace and on the network.",
+    ...(request.approvalReason ? [`Approval reason: ${JSON.stringify(request.approvalReason)}`] : []),
     `Command: ${JSON.stringify(request.command)}`,
   ].join("\n"), signal);
 
@@ -188,25 +197,15 @@ export class TuiApp {
     }
     const waiting = signal ? AbortSignal.any([signal, this.turnController.signal]) : this.turnController.signal;
     checkCancellation(waiting);
-    const allowed = await new Promise<boolean>((resolve) => {
-      const draft = this.editor.getExpandedText();
-      const finish = (answer: boolean) => {
-        waiting.removeEventListener("abort", abort);
-        this.approval = undefined;
-        this.editor.setText(draft);
-        this.editor.disableSubmit = true;
-        this.message("system", answer ? "Approved." : "Denied.", label);
-        resolve(answer);
-      };
-      const abort = () => finish(false);
-      this.approval = { finish, draft };
-      this.editor.setText("");
-      this.editor.disableSubmit = false;
-      waiting.addEventListener("abort", abort, { once: true });
-      this.message("system", details, label);
-      this.activity = "Approval required";
-      this.refresh();
-    });
+    const draft = this.editor.getExpandedText();
+    const pending = this.approvals.request("confirmation", { label, details }, waiting);
+    this.approval = { id: this.approvals.snapshot()!.id, draft, label };
+    this.editor.setText("");
+    this.editor.disableSubmit = false;
+    this.message("system", details, label);
+    this.activity = "Approval required";
+    this.refresh();
+    const allowed = await pending;
     checkCancellation(waiting);
     this.activity = "Running tool";
     this.refresh();
@@ -218,7 +217,10 @@ export class TuiApp {
     const prompt = value.trim();
     if (this.approval) {
       const answer = prompt.toLowerCase();
-      if (answer === "yes" || answer === "no") this.approval.finish(answer === "yes");
+      if (answer === "yes" || answer === "no") {
+        this.approval.answer = answer === "yes";
+        this.approvals.approve(this.approval.id, this.approval.answer);
+      }
       else {
         this.editor.setText("");
         this.message("system", "Type yes or no to answer this approval request.");
@@ -377,7 +379,7 @@ export class TuiApp {
   private exit(): void {
     this.closing = true;
     this.turnController?.abort();
-    this.approval?.finish(false);
+    this.approvals.deny();
     if (!this.turnController) this.resolveExit?.(this.failed ? 1 : 0);
   }
 }

@@ -8,7 +8,7 @@ import { runAgent } from "../src/loop.js";
 import { createTools } from "../src/tools.js";
 import type { Tools, ToolResult } from "../src/tools.js";
 import { createReadTool } from "../src/tools/read.js";
-import { createWorkspace } from "../src/tools/workspace.js";
+import { createWorkspace } from "../src/permissions/workspace.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 
 type SearchResult = { kind: string; path: string; query: string; offset: number; totalMatches: number;

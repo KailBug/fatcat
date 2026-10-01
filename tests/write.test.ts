@@ -6,7 +6,7 @@ import test from "node:test";
 import { HarnessError } from "../src/errors.js";
 import { createTools } from "../src/tools.js";
 import type { ToolResult } from "../src/tools.js";
-import { createWorkspace } from "../src/tools/workspace.js";
+import { createWorkspace } from "../src/permissions/workspace.js";
 import { createWriteTool } from "../src/tools/write.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 

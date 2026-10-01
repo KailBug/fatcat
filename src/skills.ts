@@ -6,11 +6,11 @@ import { isAlias, isMap, isNode, parseDocument, visit } from "yaml";
 import { checkCancellation, HarnessError } from "./errors.js";
 import type { Tools, ToolResult } from "./tools.js";
 import { createReadTool } from "./tools/read.js";
-import { readTextFile } from "./tools/text-file.js";
+import { readTextFile } from "./permissions/text-file.js";
 import { failure } from "./tools/types.js";
 import type { JsonValue, Tool } from "./tools/types.js";
-import { createWorkspace } from "./tools/workspace.js";
-import type { Workspace } from "./tools/workspace.js";
+import { createWorkspace } from "./permissions/workspace.js";
+import type { Workspace } from "./permissions/workspace.js";
 
 const maxSkillBytes = 32 * 1024;
 const maxRootEntries = 128;

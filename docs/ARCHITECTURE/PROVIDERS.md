@@ -8,6 +8,8 @@
 
 ## 模块职责
 
+Web UI 的后续上下文指示器在独立 webui/context-usage.ts 中维护六个已核对精确模型的窗口数字，未知名称不猜测；只观察既有父 model_usage，不新增供应商请求字段、远程发现或配置。容量依据及时间见 [WEBUI.md](WEBUI.md)，本地 maxRequestBytes 仍是独立完整 JSON 字节预算。
+
 `src/providers.ts` 定义小型供应商 profile：配置字段、固定地址、默认模型和厂商专用请求字段。`src/config.ts` 只读取所选供应商的凭据/模型/区域与共享预算。`src/model.ts` 的 `createModel(config, transport?, tools?)` 创建共享客户端，负责请求容量、deadline、取消、SDK 调用、响应校验、用量观察和安全错误。原 `createDeepSeekModel` 保留兼容入口；CLI/createAgent 使用通用入口。
 
 `Model`、Loop、Session、Tools、执行报告和上下文投影继续使用共同协议。供应商差异保持在配置和完整请求体构造处，不把特定厂商字段散入业务循环或各工具。注入 transport 只用于测试，不开放任意生产 base URL。

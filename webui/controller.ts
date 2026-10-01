@@ -7,15 +7,19 @@ import type { SessionManager } from "../src/session/manager.js";
 import type { SessionSummary } from "../src/session/store.js";
 import type { ShellRequest } from "../src/tools/shell.js";
 import type { WriteApprovalRequest } from "../src/tools/write.js";
+import { ApprovalCoordinator } from "../src/permissions/approval.js";
+import { PermissionPolicy } from "../src/permissions/policy.js";
+import type { PermissionMode } from "../src/permissions/policy.js";
+import { WebContextUsage } from "./context-usage.js";
+import type { ContextUsage } from "./context-usage.js";
 
 export type WebUiInfo = {
   provider: string; model: string; workspace: string;
   permission: string; shellPermission: string; webPermission: string;
   maxIterations: number; maxRequestBytes: number; skills: number; warnings: string[];
 };
-export type Approval = { id: string } & (
-  { kind: "write"; request: WriteApprovalRequest } | { kind: "shell"; request: ShellRequest }
-);
+export type { PendingApproval as Approval } from "../src/permissions/approval.js";
+import type { PendingApproval as Approval } from "../src/permissions/approval.js";
 export type WebTurn = {
   id: string; prompt: string; answer?: string; error?: string;
   status: "running" | "answered" | "stopped";
@@ -25,6 +29,8 @@ export type WebUiState = {
   revision: number; info: WebUiInfo; turns: WebTurn[]; busy: boolean;
   approval: Approval | null; status: string;
   current: SessionSummary; sessions: SessionSummary[]; persistent: boolean;
+  contextUsage: ContextUsage;
+  permissionMode: ReturnType<PermissionPolicy["snapshot"]>;
 };
 
 /** Browser tabs share one selected session, active turn and pending approval. */
@@ -32,25 +38,50 @@ export class WebUiController {
   private turns: WebTurn[] = [];
   private revision = 0;
   private active: { abort: AbortController; done: Promise<void> } | undefined;
-  private pending: { approval: Approval; finish: (allowed: boolean) => void } | undefined;
+  private readonly approvals: ApprovalCoordinator;
   private status = "Ready";
   private closed = false;
   private changing: Promise<void> | undefined;
   private sessions: SessionSummary[] = [];
+  private readonly contextUsage: WebContextUsage;
 
-  private constructor(readonly info: WebUiInfo, private readonly session: SessionManager) {}
+  private constructor(readonly info: WebUiInfo, private readonly session: SessionManager,
+    private readonly permissionPolicy?: PermissionPolicy) {
+    this.contextUsage = new WebContextUsage(info.provider, info.model);
+    this.approvals = new ApprovalCoordinator(() => {
+      this.status = this.approvals.snapshot() ? "Awaiting approval" : "Working";
+      this.revision++;
+    });
+  }
 
-  static async create(info: WebUiInfo, session: SessionManager): Promise<WebUiController> {
-    const controller = new WebUiController(info, session);
+  static async create(info: WebUiInfo, session: SessionManager, permissionPolicy?: PermissionPolicy): Promise<WebUiController> {
+    const controller = new WebUiController(info, session, permissionPolicy);
     controller.turns = restoredTurns(session.history, session.current.id);
     controller.sessions = await session.list();
     return controller;
   }
 
   snapshot(): WebUiState {
+    // A controller without an injected tool policy cannot authorize a mode change.
+    const permissionMode = this.permissionPolicy?.snapshot() ?? {
+      mode: "custom" as const, permission: this.info.permission as "ask" | "read-only" | "workspace-write",
+      shellPermission: this.info.shellPermission as "ask" | "deny" | "allow", availableModes: [] as PermissionMode[],
+      fileAccess: "workspace" as const, networkAccess: "public" as const,
+    };
     return structuredClone({ revision: this.revision, info: this.info, turns: this.turns,
-      busy: Boolean(this.active || this.changing), approval: this.pending?.approval ?? null, status: this.status,
-      current: this.session.current, sessions: this.sessions, persistent: this.session.persistent });
+      busy: Boolean(this.active || this.changing), approval: this.approvals.snapshot(), status: this.status,
+      current: this.session.current, sessions: this.sessions, persistent: this.session.persistent,
+      contextUsage: this.contextUsage.snapshot(), permissionMode });
+  }
+
+  selectPermissionMode(mode: PermissionMode): void {
+    this.requireIdle();
+    if (!this.permissionPolicy) throw new HarnessError("PERMISSION_DENIED", "Permission selection is not available for this tool configuration.");
+    this.permissionPolicy.select(mode);
+    const permissions = this.permissionPolicy.snapshot();
+    this.info.permission = permissions.permission;
+    this.info.shellPermission = permissions.shellPermission;
+    this.revision++;
   }
 
   submit(prompt: string): void {
@@ -75,7 +106,7 @@ export class WebUiController {
         turn.status = "stopped";
         this.status = abort.signal.aborted ? "Stopped" : "Turn failed";
       } finally {
-        this.pending?.finish(false);
+        this.approvals.deny();
         try { this.sessions = await this.session.list(); }
         catch { this.status = "Session list could not be refreshed"; }
         this.active = undefined;
@@ -115,7 +146,10 @@ export class WebUiController {
     const done = Promise.resolve().then(async () => {
       try {
         await change();
-        if (restore) this.turns = restoredTurns(this.session.history, this.session.current.id);
+        if (restore) {
+          this.turns = restoredTurns(this.session.history, this.session.current.id);
+          this.contextUsage.reset();
+        }
         this.sessions = await this.session.list();
         this.status = "Ready";
       } catch (error) {
@@ -135,7 +169,7 @@ export class WebUiController {
 
   stop(): void {
     this.active?.abort.abort();
-    this.pending?.finish(false);
+    this.approvals.deny();
     if (this.active) this.status = "Stopping";
     this.revision++;
   }
@@ -147,32 +181,16 @@ export class WebUiController {
   }
 
   approve(id: string, allowed: boolean): void {
-    if (this.pending?.approval.id !== id) throw new HarnessError("STALE_APPROVAL", "This approval is no longer pending.");
-    this.pending.finish(allowed);
+    this.approvals.approve(id, allowed);
   }
 
   requestApproval(kind: "write", request: WriteApprovalRequest, signal?: AbortSignal): Promise<boolean>;
   requestApproval(kind: "shell", request: ShellRequest, signal?: AbortSignal): Promise<boolean>;
   requestApproval(kind: "write" | "shell", request: WriteApprovalRequest | ShellRequest, signal?: AbortSignal): Promise<boolean> {
     if (this.closed || !this.active || signal?.aborted || this.active.abort.signal.aborted) return Promise.resolve(false);
-    if (this.pending) throw new HarnessError("APPROVAL_BUSY", "Another operation is awaiting approval.");
-    return new Promise((resolve) => {
-      const activeSignal = this.active!.abort.signal;
-      const cancel = () => finish(false);
-      const finish = (allowed: boolean) => {
-        signal?.removeEventListener("abort", cancel);
-        activeSignal.removeEventListener("abort", cancel);
-        this.pending = undefined;
-        this.status = "Working";
-        this.revision++;
-        resolve(allowed);
-      };
-      this.pending = { approval: structuredClone({ id: randomUUID(), kind, request }) as Approval, finish };
-      signal?.addEventListener("abort", cancel, { once: true });
-      activeSignal.addEventListener("abort", cancel, { once: true });
-      this.status = "Awaiting approval";
-      this.revision++;
-    });
+    const waitingSignal = signal ? AbortSignal.any([signal, this.active.abort.signal]) : this.active.abort.signal;
+    return kind === "write" ? this.approvals.request(kind, request as WriteApprovalRequest, waitingSignal)
+      : this.approvals.request(kind, request as ShellRequest, waitingSignal);
   }
 
   private requireIdle(): void {
@@ -182,6 +200,7 @@ export class WebUiController {
 
   private observe(turn: WebTurn, event: ReportEvent, child = false): void {
     if (event.type === "subagent_event") { this.observe(turn, event.event, true); return; }
+    if (!child) this.contextUsage.observe(event);
     if (event.type === "execution_report") turn.report = event.report;
     let message: string | undefined;
     const source = child ? "Subagent · " : "";

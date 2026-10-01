@@ -4,7 +4,7 @@
 
 架构文档统一放在 `docs/ARCHITECTURE/` 下，本文件作为总览和索引，记录整体边界、跨系统关系及共享决策。
 
-- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md` 和 `TUI.md`；其他系统文档在需要时建立。
+- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md` 和 `WEBUI.md`；其他系统文档在需要时建立。
 - 系统文档记录该系统的职责、设计决策、接口与数据流，以及分步实现安排和验收方式；按当前需要展开，不要求提前填满所有内容。
 - 每份文档明确区分当前已实现内容和计划设计，具体实现安排也标注状态；验证与完成事实以 [PROGRESS.md](../PROGRESS.md) 为准，避免重复维护进度记录。
 - 新增系统文档时更新本文件的索引。项目阶段目标仍放在 [ROADMAP.md](../ROADMAP.md)，系统内部的实现安排放在对应架构文档中。
@@ -64,6 +64,8 @@ chat / TUI 通过 `src/commands.ts` 统一分发本地命令，`/skills` 展示�
 2D-14 的会话代码集中在 `src/session/`，与 `src/tools/`、`src/skill/` 同级；`session.ts`、`manager.ts`、`store.ts`、`history.ts` 和 `commands.ts` 分别持有成功历史、活动会话管理、持久存储、恢复校验及共享本地命令，编译到 `dist/src/session/`。各入口直接导入具体模块，不增加 barrel 或旧路径兼容包装。CLI / TUI / Web UI 复用一个活动会话管理边界，Store 按规范工作目录保存带版本和修订号的原子 JSON，history 验证模块拒绝不完整成功对话和非法工具关联；共享本地命令不会进入模型历史。Loop 提供异步回合检查点，成功历史与最近未完成消息分开保存。恢复使用本次启动的配置、权限和 systemPrompt，不重放操作或恢复旧授权；程序化 Session 仍支持内存入口。没有新增依赖，实际失败/并发/入口验收见 PROGRESS 与 [SESSION.md](SESSION.md)。
 
 2D-13 的 `webui/` 与 `src/`、`tui/` 同级。CLI 选择 --webui 后加载 webui/index.ts，复用 Tools / Skills / createAgent / Session；controller 持有显示状态和待批操作，server 负责本机 HTTP 与 capability，client 持有 DOM 与交互。TypeScript 增加 DOM 类型和 webui 文件；build 复制 HTML/CSS/SVG，JS 直接由 tsc 生成，没有新增依赖或改动锁文件。接口、请求上限及状态边界见 [WEBUI.md](WEBUI.md)。
+
+同阶段会话菜单由 `webui/client/session-menu.ts` 管理定位、键盘导航和焦点，app 将所点 ID 的详情、命名、分支和删除接入原 controller / SessionManager；Store 以工作目录和修订锁保护删除与分支。工作区位置及字体层次仅改变视图，不引入独立会话状态或模型工具。
 
 2D-12 新增一个通用 web 工具，CLI / chat / TUI 默认开放公开搜索和页面文本读取，`--web-permission deny` 可独立关闭。程序化 createTools 第五个参数显式选择 web，未传时维持旧工具集合；父子模型共享相同工具边界。web.ts 负责协议、权限与调用期限，web-request.ts 负责公开地址检查、DNS 固定、HTTP(S) 与有界解码，web-content.ts 负责搜索/HTML 解析；Loop、Session 与执行报告的职责不变。新增 web/web-research 与 web/weather-lookup，当前内置 Skill 共六项。细节和未实现边界见 [WEB.md](WEB.md)。
 

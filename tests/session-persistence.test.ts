@@ -102,7 +102,79 @@ test("memory-only management never creates session files", async (t) => {
   await manager.fork("copy");
   assert.equal((await manager.list()).length, 3);
   assert.equal(manager.current.turnCount, 1);
+  const fork = manager.current.id;
+  await manager.delete(id);
+  assert.equal(manager.current.id, fork);
+  await manager.delete(fork);
+  assert.notEqual(manager.current.id, fork);
+  assert.equal(manager.current.turnCount, 0);
+  assert.equal((await manager.list()).length, 2);
   await assert.rejects(readdir(root), { code: "ENOENT" });
+});
+
+test("selected session rename, fork and deletion retain independent active history", async (t) => {
+  const { base, workspace } = await temporaryWorkspace(t);
+  const store = new SessionStore({ root: join(base, "sessions") });
+  let calls = 0;
+  const manager = await SessionManager.open({ maxIterations: 1, model: async () => { calls++; return answer(); } }, { workspace, store });
+  await manager.run("Source history");
+  const source = manager.current.id;
+  await manager.newSession("Active session");
+  await manager.run("Active history");
+  const active = manager.current.id;
+  const history = manager.history;
+  await manager.rename("Renamed source", source);
+  assert.equal(manager.current.id, active);
+  assert.deepEqual(manager.history, history);
+  assert.equal((await store.load(workspace, source)).name, "Renamed source");
+  await manager.fork("Source branch", source);
+  const fork = manager.current.id;
+  assert.equal(manager.current.forkedFrom, source);
+  assert.equal(manager.history[1]?.content, "Source history");
+  assert.ok(!JSON.stringify(manager.history).includes("Active history"));
+  await manager.delete(fork, manager.current.revision);
+  const fresh = manager.current.id;
+  assert.notEqual(fresh, fork);
+  assert.equal(manager.current.turnCount, 0);
+  assert.equal(manager.current.interrupted, false);
+  assert.equal(manager.current.forkedFrom, null);
+  assert.deepEqual(manager.history, []);
+  await assert.rejects(store.load(workspace, fork), expectCode("SESSION_NOT_FOUND"));
+  await manager.delete(source);
+  assert.equal(manager.current.id, fresh);
+  assert.deepEqual((await manager.list()).map((item) => item.id).sort(), [active, fresh].sort());
+  await assert.rejects(manager.delete(source), expectCode("SESSION_NOT_FOUND"));
+  assert.equal(calls, 2);
+});
+
+test("session deletion checks workspace, revision and active owners before removing data", async (t) => {
+  const { base, workspace, outside } = await temporaryWorkspace(t);
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const agent = { maxIterations: 1, model: async () => answer() };
+  const manager = await SessionManager.open(agent, { workspace, store });
+  const id = manager.current.id;
+  const foreign = await SessionManager.open(agent, { workspace: outside, store });
+  await assert.rejects(manager.delete(foreign.current.id), expectCode("SESSION_NOT_FOUND"));
+  await assert.rejects(store.delete(outside, id, manager.current.revision), expectCode("SESSION_NOT_FOUND"));
+  await assert.rejects(store.delete(workspace, "../outside", manager.current.revision), expectCode("SESSION_NOT_FOUND"));
+  const stale = await SessionManager.open(agent, { workspace, store, selection: { resume: id } });
+  await manager.rename("Updated elsewhere");
+  await assert.rejects(stale.delete(id), expectCode("SESSION_CONFLICT"));
+  await assert.rejects(stale.fork(), expectCode("SESSION_CONFLICT"));
+  assert.equal(stale.current.id, id);
+  assert.equal((await store.list(workspace)).length, 1);
+  await assert.rejects(manager.delete(id, manager.current.revision - 1), expectCode("SESSION_CONFLICT"));
+  const record = await store.load(workspace, id);
+  const running = await store.save({ ...record, attempt: { prompt: "Pending operation", startedAt: record.updatedAt,
+    updatedAt: record.updatedAt, ownerPid: process.pid, status: "running", code: null, messages: [] } }, record.revision);
+  await assert.rejects(store.delete(workspace, id, running.revision), expectCode("SESSION_BUSY"));
+  const reader = await SessionManager.open(agent, { workspace, store });
+  await assert.rejects(reader.delete(id), expectCode("SESSION_BUSY"));
+  await assert.rejects(reader.rename("Busy rename", id), expectCode("SESSION_BUSY"));
+  await assert.rejects(reader.fork("Busy fork", id), expectCode("SESSION_BUSY"));
+  await assert.rejects(foreign.delete(id), expectCode("SESSION_NOT_FOUND"));
+  assert.equal((await store.load(workspace, id)).attempt?.status, "running");
+  assert.equal((await store.list(outside)).length, 1);
 });
 
 test("failed and cancelled partial attempts keep prior success and provide recovery data", async (t) => {
@@ -157,6 +229,7 @@ test("busy lifecycle and stale revisions reject work before contacting the model
   await assert.rejects(active.rename("busy"), expectCode("SESSION_BUSY"));
   await assert.rejects(active.fork(), expectCode("SESSION_BUSY"));
   await assert.rejects(active.resume(first.current.id), expectCode("SESSION_BUSY"));
+  await assert.rejects(active.delete(first.current.id), expectCode("SESSION_BUSY"));
   await assert.rejects(SessionManager.open({ maxIterations: 1, model: async () => answer() },
     { workspace, store, selection: { resume: first.current.id } }), expectCode("SESSION_BUSY"));
   finish(answer());

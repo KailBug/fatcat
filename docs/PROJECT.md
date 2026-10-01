@@ -20,6 +20,8 @@
 
 按本轮用户要求，阶段 2D-14 在 `feat/session-perfection` 实现本地 Session 持久化，以及新建、列表、命名、切换、继续最近会话和会话分支。参考 Claude Code 的公开会话功能定义，按 Fatcat 当前模块与权限边界实现；CLI、TUI、Web UI 共享 SessionManager，磁盘保存完整成功对话与最近未完成回合记录。恢复仅恢复对话，不恢复权限授权、旧模型配置或文件状态，也不自动重放未完成操作。实际实现和验证以 PROGRESS.md 为准，系统设计见 [SESSION.md](ARCHITECTURE/SESSION.md)。
 
+2D-14 的后续界面增量在 `feat/webui-session-menu` 将 Web UI 会话详情、命名、分支与删除集中到所点会话的右键菜单，把工作区移入 composer，并参考 Claude Code Docs 的字体层次。仅增加工作目录内的显式会话删除与目标 ID 操作，沿用原 Manager / Store 锁和权限；不扩展模型工具、持久格式、远程服务或 CLI / TUI 删除命令。
+
 2D-10 在同阶段、同分支补充按已有 subsystem 组织的内置 Skills，存放于 `src/skill/<subsystem>/<skill-name>/SKILL.md`，经构建随程序分发并以最低优先级发现。当前提供工作目录编辑、独立委派、上下文恢复、验证交付四种任务指导；用于 Fatcat 帮助用户处理目标项目，不是 Fatcat 自身源码维护规范。继续复用现有加载、Session 和权限边界，后续仅按实际 subsystem 任务扩充内容，不建空目录或搬迁运行时模块。内置补充已通过离线验收，真实模型效果尚未验证。
 
 按用户本轮明确要求，阶段 2D-11 在 `feat/tui-dev` 增加可选 `--tui` 终端界面，提前进入此前后移的 TUI 范围。目标是让模型、工作路径、权限、回合状态、请求预算、实际 token 用量和 provider 返回的缓存命中信息可见；保留原单次 CLI 与 `--chat`。视图、交互控制和统计分开，继续复用 Session、Loop、工具及审批边界。TUI 采用 TypeScript 的 pi-tui 组件，界面参考 pi 与 Charm 的终端布局；没有更换 Node、pnpm 或模型 SDK。实现与验证状态以 PROGRESS.md 为准。

@@ -14,7 +14,7 @@ type AgentOptions = Pick<LoopOptions, "model" | "maxIterations" | "tools">;
 
 function available(record: SessionRecord): void {
   if (record.attempt?.status === "running" && processAlive(record.attempt.ownerPid)) {
-    throw new HarnessError("SESSION_BUSY", "That session is running in another process. Wait for it to finish before resuming or forking.");
+    throw new HarnessError("SESSION_BUSY", "That session is running in another process. Wait for it to finish before managing it.");
   }
 }
 
@@ -69,10 +69,7 @@ export class SessionManager {
 
   async newSession(name?: string): Promise<void> {
     await this.change(async () => {
-      const now = new Date().toISOString();
-      const record = await this.persist({ version: 1, id: randomUUID(), workspace: this.workspace,
-        name: name === undefined ? null : sessionName(name), title: name === undefined ? "New session" : sessionName(name),
-        createdAt: now, updatedAt: now, revision: 0, forkedFrom: null, history: [], attempt: null });
+      const record = await this.persist(this.emptyRecord(name));
       this.activate(record);
     });
   }
@@ -94,20 +91,46 @@ export class SessionManager {
     });
   }
 
-  async rename(name: string): Promise<void> {
+  async rename(name: string, id?: string): Promise<void> {
     await this.change(async () => {
+      const selected = await this.selectedRecord(id);
+      available(selected);
       const validated = sessionName(name);
-      this.activate(await this.persist({ ...this.record, name: validated, title: validated, updatedAt: new Date().toISOString() }));
+      const renamed = await this.persist({ ...selected, name: validated, title: validated, updatedAt: new Date().toISOString() });
+      if (renamed.id === this.record.id) this.activate(renamed);
     });
   }
 
-  async fork(name?: string): Promise<void> {
+  async fork(name?: string, id?: string): Promise<void> {
     await this.change(async () => {
+      const selected = await this.selectedRecord(id);
+      available(selected);
       const now = new Date().toISOString();
-      const record = await this.persist({ ...structuredClone(this.record), id: randomUUID(), name: name === undefined ? null : sessionName(name),
-        title: name === undefined ? `${this.record.title.slice(0, 110)} (fork)` : sessionName(name),
-        forkedFrom: this.record.id, createdAt: now, updatedAt: now, revision: 0 });
+      const record = await this.persist({ ...selected, id: randomUUID(), name: name === undefined ? null : sessionName(name),
+        title: name === undefined ? `${selected.title.slice(0, 110)} (fork)` : sessionName(name),
+        forkedFrom: selected.id, createdAt: now, updatedAt: now, revision: 0 }, selected);
       this.activate(record);
+    });
+  }
+
+  async delete(id: string, expectedRevision?: number): Promise<void> {
+    await this.change(async () => {
+      const selected = expectedRevision !== undefined && this.persistent
+        ? await this.store.load(this.workspace, id) : await this.selectedRecord(id);
+      if (selected.id !== id) throw new HarnessError("SESSION_NOT_FOUND", "No matching session ID exists in this workspace.");
+      if (expectedRevision !== undefined && selected.revision !== expectedRevision) {
+        throw new HarnessError("SESSION_CONFLICT", "The saved session changed. Refresh it before deleting.");
+      }
+      available(selected);
+      const active = id === this.record.id;
+      let replacement: SessionRecord | undefined;
+      if (this.persistent) replacement = await this.store.delete(this.workspace, id, selected.revision,
+        active ? this.emptyRecord() : undefined);
+      else {
+        if (active) replacement = await this.persist(this.emptyRecord());
+        this.memory.delete(id);
+      }
+      if (replacement) this.activate(replacement);
     });
   }
 
@@ -155,14 +178,29 @@ export class SessionManager {
     return answer;
   }
 
-  private async persist(record: SessionRecord): Promise<SessionRecord> {
-    if (this.persistent) return this.store.save(record, record.revision);
+  private async persist(record: SessionRecord, forkSource?: Pick<SessionRecord, "id" | "revision">): Promise<SessionRecord> {
+    if (this.persistent) return this.store.save(record, record.revision, forkSource);
     if (record.name && [...this.memory.values()].some((item) => item.id !== record.id && item.name === record.name)) {
       throw new HarnessError("SESSION_NAME", "That session name is already used. Choose another name.");
     }
     const saved = structuredClone({ ...record, revision: record.revision + 1 });
     this.memory.set(saved.id, saved);
     return saved;
+  }
+
+  private emptyRecord(name?: string): SessionRecord {
+    const now = new Date().toISOString();
+    const validated = name === undefined ? null : sessionName(name);
+    return { version: 1, id: randomUUID(), workspace: this.workspace, name: validated,
+      title: validated ?? "New session", createdAt: now, updatedAt: now, revision: 0,
+      forkedFrom: null, history: [], attempt: null };
+  }
+
+  private async selectedRecord(id?: string): Promise<SessionRecord> {
+    if (id === undefined || id === this.record.id) return structuredClone(this.record);
+    const record = this.persistent ? await this.store.load(this.workspace, id) : this.memory.get(id);
+    if (!record || record.id !== id) throw new HarnessError("SESSION_NOT_FOUND", "No matching session ID exists in this workspace.");
+    return structuredClone(record);
   }
 
   private activate(record: SessionRecord): void {

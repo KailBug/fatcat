@@ -117,16 +117,25 @@ export class SessionStore {
     return records[0]!;
   }
 
-  async save(record: SessionRecord, expectedRevision: number): Promise<SessionRecord> {
+  async save(record: SessionRecord, expectedRevision: number, forkSource?: Pick<SessionRecord, "id" | "revision">): Promise<SessionRecord> {
     const workspace = await canonicalWorkspace(record.workspace);
     if (!idPattern.test(record.id)) return invalidSession();
     const directory = this.directory(workspace);
     let release: (() => Promise<void>) | undefined;
-    let temporary: string | undefined;
     try {
       await mkdir(directory, { recursive: true, mode: 0o700 });
       release = await this.lock(directory);
       let previous: SessionRecord | undefined;
+      if (forkSource) {
+        if (!idPattern.test(forkSource.id)) return invalidSession();
+        const source = await this.read(workspace, forkSource.id);
+        if (source.revision !== forkSource.revision) {
+          throw new HarnessError("SESSION_CONFLICT", "The source session changed in another process. Resume it again before forking.");
+        }
+        if (source.attempt?.status === "running" && processAlive(source.attempt.ownerPid)) {
+          throw new HarnessError("SESSION_BUSY", "That session is running in another process. Wait for it to finish before forking.");
+        }
+      }
       try { previous = await this.read(workspace, record.id); }
       catch (error) { if (!(error instanceof HarnessError && error.code === "SESSION_NOT_FOUND")) throw error; }
       if ((previous?.revision ?? 0) !== expectedRevision) {
@@ -137,21 +146,67 @@ export class SessionStore {
         throw new HarnessError("SESSION_NAME", "That session name is already used in this workspace. Choose another name.");
       }
       const saved = decode({ ...record, revision: expectedRevision + 1 }, workspace, record.id);
-      const json = JSON.stringify(saved);
-      if (Buffer.byteLength(json) > maxFileBytes) throw new HarnessError("SESSION_LIMIT", "Session data exceeds the 64 MiB storage limit. Start a new session.");
-      temporary = join(directory, `${record.id}.${randomUUID()}.tmp`);
-      const handle = await open(temporary, "wx", 0o600);
-      try { await handle.writeFile(json, "utf8"); await handle.sync(); } finally { await handle.close(); }
-      await rename(temporary, join(directory, `${record.id}.json`));
-      temporary = undefined;
+      await this.publish(directory, saved);
       return structuredClone(saved);
     } catch (error) {
       if (error instanceof HarnessError) throw error;
       throw new HarnessError("SESSION_STORAGE", "Could not save session data. Check the local session directory and available disk space.");
     } finally {
-      if (temporary) await unlink(temporary).catch(() => {});
       await release?.();
     }
+  }
+
+  /** Remove only an exact workspace ID, optionally publishing an empty replacement first. */
+  async delete(workspace: string, id: string, expectedRevision: number, replacement?: SessionRecord): Promise<SessionRecord | undefined> {
+    const canonical = await canonicalWorkspace(workspace);
+    if (!idPattern.test(id)) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
+    const directory = this.directory(canonical);
+    let release: (() => Promise<void>) | undefined;
+    let published: SessionRecord | undefined;
+    try {
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      release = await this.lock(directory);
+      const previous = await this.read(canonical, id);
+      if (previous.revision !== expectedRevision) {
+        throw new HarnessError("SESSION_CONFLICT", "The saved session changed in another process. Refresh it before deleting.");
+      }
+      if (previous.attempt?.status === "running" && processAlive(previous.attempt.ownerPid)) {
+        throw new HarnessError("SESSION_BUSY", "That session is running in another process. Wait for it to finish before deleting.");
+      }
+      if (replacement) {
+        if (replacement.revision !== 0 || replacement.id === id || !idPattern.test(replacement.id)
+          || workspaceKey(replacement.workspace) !== workspaceKey(canonical)
+          || replacement.name !== null || replacement.history.length || replacement.attempt !== null) return invalidSession();
+        try {
+          await this.read(canonical, replacement.id);
+          throw new HarnessError("SESSION_CONFLICT", "The replacement session already exists. Try deleting again.");
+        } catch (error) {
+          if (!(error instanceof HarnessError && error.code === "SESSION_NOT_FOUND")) throw error;
+        }
+        published = decode({ ...replacement, revision: 1 }, canonical, replacement.id);
+        await this.publish(directory, published);
+      }
+      try { await unlink(join(directory, `${id}.json`)); }
+      catch (error) {
+        if (published) await unlink(join(directory, `${published.id}.json`)).catch(() => {});
+        throw error;
+      }
+      return published && structuredClone(published);
+    } catch (error) {
+      if (error instanceof HarnessError) throw error;
+      throw new HarnessError("SESSION_STORAGE", "Could not delete session data. Check the local session directory.");
+    } finally { await release?.(); }
+  }
+
+  private async publish(directory: string, record: SessionRecord): Promise<void> {
+    const json = JSON.stringify(record);
+    if (Buffer.byteLength(json) > maxFileBytes) throw new HarnessError("SESSION_LIMIT", "Session data exceeds the 64 MiB storage limit. Start a new session.");
+    const temporary = join(directory, `${record.id}.${randomUUID()}.tmp`);
+    try {
+      const handle = await open(temporary, "wx", 0o600);
+      try { await handle.writeFile(json, "utf8"); await handle.sync(); } finally { await handle.close(); }
+      await rename(temporary, join(directory, `${record.id}.json`));
+    } finally { await unlink(temporary).catch(() => {}); }
   }
 
   private directory(workspace: string): string { return join(this.root, workspaceKey(workspace)); }

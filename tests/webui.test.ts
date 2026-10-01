@@ -14,7 +14,7 @@ import { SessionManager } from "../src/session/manager.js";
 import { SessionStore } from "../src/session/store.js";
 import { createTools } from "../src/tools.js";
 import { WebUiController } from "../webui/controller.js";
-import type { WebUiInfo } from "../webui/controller.js";
+import type { WebUiInfo, WebUiState } from "../webui/controller.js";
 import { startWebUiServer } from "../webui/server.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 
@@ -57,6 +57,7 @@ test("Web UI preserves successful history, isolates snapshots and creates new se
   const creating = controller.reset();
   assert.throws(() => controller.submit("During session change"), /current turn/);
   assert.throws(() => controller.rename("Concurrent rename"), /current turn/);
+  assert.throws(() => controller.deleteSession(controller.snapshot().current.id), /current turn/);
   await creating; controller.submit("Fresh"); await until(() => !controller.snapshot().busy);
   assert.equal(requests[2]?.length, 2);
   assert.equal(controller.snapshot().turns.length, 1);
@@ -99,6 +100,7 @@ test("browser approvals enforce real workspace writes, reject replay and retain 
   t.after(() => controller.close());
   controller.submit("Deny"); await until(() => Boolean(controller.snapshot().approval));
   const denied = controller.snapshot().approval!;
+  assert.throws(() => controller.deleteSession(controller.snapshot().current.id), /current turn/);
   await assert.rejects(readFile(join(workspace, "result.txt")));
   assert.throws(() => controller.approve("wrong", true), /no longer pending/);
   controller.approve(denied.id, false);
@@ -183,7 +185,7 @@ test("local HTTP boundary protects state and mutations and serves only built UI 
   assert.equal(state.status, 200);
   assert.ok(!(await state.text()).includes(token));
   assert.equal((await fetch(`${server.origin}/api/state`, { headers: { ...headers, "If-None-Match": state.headers.get("etag")! } })).status, 304);
-  for (const path of ["/", "/app.js", "/markdown.js", "/styles.css", "/favicon.svg"]) {
+  for (const path of ["/", "/app.js", "/markdown.js", "/session-menu.js", "/styles.css", "/favicon.svg"]) {
     const response = await fetch(server.origin + path);
     assert.equal(response.status, 200, path);
     assert.match(response.headers.get("content-security-policy")!, /frame-ancestors 'none'/);
@@ -226,6 +228,7 @@ test("HTTP concurrent submissions conflict and shutdown cancels an active model 
   assert.equal((await post("session/resume", { id: controller.snapshot().current.id })).status, 409);
   assert.equal((await post("session/rename", { name: "Busy" })).status, 409);
   assert.equal((await post("session/fork", {})).status, 409);
+  assert.equal((await post("session/delete", { id: controller.snapshot().current.id })).status, 409);
   await server.close();
   assert.equal(cancelled, true);
   assert.equal(controller.snapshot().busy, false);
@@ -341,7 +344,10 @@ test("session HTTP routes validate bodies and preserve old history when creating
   const post = (path: string, body: unknown) => fetch(`${server.origin}/api/${path}`, { method: "POST", headers, body: JSON.stringify(body) });
   for (const [path, body] of [["session/new", { permission: "allow" }], ["session/new", { name: 4 }],
     ["session/resume", {}], ["session/resume", { id: 4 }], ["session/resume", { id: "a", extra: true }],
-    ["session/rename", { name: 4 }], ["session/fork", { name: false }]] as const) {
+    ["session/rename", { name: 4 }], ["session/rename", { id: 4, name: "Invalid" }],
+    ["session/fork", { name: false }], ["session/fork", { id: "" }], ["session/delete", {}],
+    ["session/delete", { id: 4 }], ["session/delete", { id: "" }], ["session/delete", { id: "a", revision: 0 }],
+    ["session/delete", { id: "a", revision: "1" }], ["session/delete", { id: "a", extra: true }]] as const) {
     assert.equal((await post(path, body)).status, 400);
   }
   const first = controller.snapshot().current.id;
@@ -366,4 +372,79 @@ test("session HTTP routes validate bodies and preserve old history when creating
   assert.equal((await post("session/rename", { name: "Stale rename" })).status, 409);
   assert.equal((await post("session/resume", { id: branch })).status, 202);
   assert.equal(controller.snapshot().current.name, "External rename");
+});
+
+test("session menu HTTP routes operate on selected sessions and reject stale deletion", async (t) => {
+  const { workspace, base, outside } = await temporaryWorkspace(t);
+  const store = new SessionStore({ root: join(base, "sessions") });
+  let calls = 0;
+  const agent = { maxIterations: 1, model: async () => { calls++; return answer(); } };
+  const manager = await SessionManager.open(agent, { workspace, store });
+  const controller = await WebUiController.create({ ...info, workspace }, manager);
+  const server = await startWebUiServer(controller, 0);
+  t.after(() => server.close());
+  const token = new URLSearchParams(new URL(server.url).hash.slice(1)).get("token")!;
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const post = (path: string, body: unknown, custom: Record<string, string> = headers) => fetch(`${server.origin}/api/${path}`, {
+    method: "POST", headers: custom, body: JSON.stringify(body) });
+  const source = controller.snapshot().current.id;
+  controller.submit("Source history"); await until(() => !controller.snapshot().busy);
+  await controller.newSession();
+  const active = controller.snapshot().current.id;
+  controller.submit("Active history"); await until(() => !controller.snapshot().busy);
+  const activeTurns = controller.snapshot().turns;
+  assert.equal((await post("session/rename", { id: source, name: "Selected source" })).status, 202);
+  assert.equal(controller.snapshot().current.id, active);
+  assert.deepEqual(controller.snapshot().turns, activeTurns);
+  assert.equal((await store.load(workspace, source)).name, "Selected source");
+  assert.equal((await post("session/fork", { id: source, name: "Source branch" })).status, 202);
+  const fork = controller.snapshot().current.id;
+  assert.equal(controller.snapshot().current.forkedFrom, source);
+  assert.deepEqual(controller.snapshot().turns.map((turn) => turn.prompt), ["Source history"]);
+  const forkTurns = controller.snapshot().turns;
+  assert.equal((await post("session/delete", { id: active })).status, 202);
+  assert.equal(controller.snapshot().current.id, fork);
+  assert.deepEqual(controller.snapshot().turns, forkTurns);
+  const revision = controller.snapshot().current.revision;
+  assert.equal((await post("session/delete", { id: fork, revision })).status, 202);
+  const fresh = controller.snapshot().current.id;
+  assert.notEqual(fresh, fork);
+  assert.equal(controller.snapshot().turns.length, 0);
+  assert.equal(controller.snapshot().current.turnCount, 0);
+  assert.deepEqual(controller.snapshot().sessions.map((item) => item.id).sort(), [source, fresh].sort());
+  assert.equal((await post("session/delete", { id: source }, { ...headers, Authorization: "Bearer wrong" })).status, 401);
+  assert.equal((await post("session/delete", { id: source }, { ...headers, Origin: "https://example.com" })).status, 403);
+  const foreign = await SessionManager.open(agent, { workspace: outside, store });
+  assert.equal((await post("session/delete", { id: foreign.current.id })).status, 400);
+  assert.equal((await post("session/delete", { id: "../outside" })).status, 400);
+  const sourceRevision = controller.snapshot().sessions.find((item) => item.id === source)!.revision;
+  const other = await SessionManager.open(agent, { workspace, store, selection: { resume: source } });
+  await other.rename("Changed outside browser");
+  assert.equal((await post("session/delete", { id: source, revision: sourceRevision })).status, 409);
+  const refreshed = await (await fetch(`${server.origin}/api/state`, { headers })).json() as WebUiState;
+  const changedSource = refreshed.sessions.find((item) => item.id === source)!;
+  assert.ok(changedSource.revision > sourceRevision);
+  assert.equal(changedSource.name, "Changed outside browser");
+  assert.equal(controller.snapshot().current.id, fresh);
+  assert.equal((await store.load(workspace, source)).name, "Changed outside browser");
+  assert.equal((await post("session/delete", { id: source, revision: changedSource.revision })).status, 202);
+  assert.equal(controller.snapshot().current.id, fresh);
+  controller.submit("Active retry history"); await until(() => !controller.snapshot().busy);
+  const beforeConflict = controller.snapshot();
+  const externalActive = await SessionManager.open(agent, { workspace, store, selection: { resume: fresh } });
+  await externalActive.rename("Externally updated active session");
+  assert.equal((await post("session/delete", { id: fresh, revision: beforeConflict.current.revision })).status, 409);
+  const afterConflict = await (await fetch(`${server.origin}/api/state`, { headers })).json() as WebUiState;
+  assert.deepEqual(afterConflict.turns, beforeConflict.turns);
+  assert.deepEqual(afterConflict.current, beforeConflict.current);
+  assert.equal(afterConflict.approval, null);
+  const changedActive = afterConflict.sessions.find((item) => item.id === fresh)!;
+  assert.ok(changedActive.revision > beforeConflict.current.revision);
+  assert.equal(changedActive.name, "Externally updated active session");
+  assert.equal((await post("session/delete", { id: fresh, revision: changedActive.revision })).status, 202);
+  assert.notEqual(controller.snapshot().current.id, fresh);
+  assert.equal(controller.snapshot().turns.length, 0);
+  assert.equal(controller.snapshot().sessions.length, 1);
+  assert.equal((await store.list(outside)).length, 1);
+  assert.equal(calls, 3);
 });

@@ -1,5 +1,7 @@
 :root {
-  font-family:Inter,"Segoe UI",Arial,sans-serif;
+  --font-body:"Anthropic Sans",Arial,"Helvetica Neue","Segoe UI",sans-serif;
+  --font-heading:"Anthropic Serif Display",Georgia,"Times New Roman",Times,serif;
+  font-family:var(--font-body);
   color:#252923;
   background:#fff;
   font-synthesis:none;
@@ -66,6 +68,7 @@ aside {
 }
 
 .brand {
+  font-family:var(--font-heading);
   display:flex;
   align-items:center;
   gap:10px;
@@ -95,6 +98,7 @@ aside {
 }
 
 .local-tag {
+  font-family:var(--font-body);
   font-size:9px;
   letter-spacing:1.5px;
   font-weight:600;
@@ -179,45 +183,9 @@ aside {
   font-size:10px
 }
 
-.session-actions {
-  display:flex;
-  gap:8px;
-  padding:12px 0 18px
-}
-
-.session-actions button {
-  border:1px solid var(--border);
-  border-radius:7px;
-  padding:7px 10px;
-  font-size:11px
-}
-
-.session-note {
-  font-size:12px;
-  line-height:1.8;
-  color:#979c91;
-  margin:26px 13px
-}
-
 .sidebar-bottom {
-  margin-top:auto
-}
-
-.workspace-card {
-  border:1px solid var(--border);
-  border-radius:10px;
-  padding:14px 12px;
-  background:var(--surface)
-}
-
-.workspace-label {
-  display:flex;
-  align-items:center;
-  gap:7px;
-  font-size:9px;
-  letter-spacing:1px;
-  color:var(--muted);
-  font-weight:600
+  margin-top:auto;
+  padding-top:18px
 }
 
 .status-dot {
@@ -227,32 +195,6 @@ aside {
   background:#7a9566;
   display:inline-block;
   flex-shrink:0
-}
-
-.workspace-card p {
-  font:12px/1.6 Consolas,monospace;
-  overflow-wrap:anywhere;
-  margin:9px 0
-}
-
-.permission-line {
-  font-size:10px;
-  color:var(--muted);
-  line-height:1.6
-}
-
-.settings-button {
-  display:flex;
-  width:100%;
-  align-items:center;
-  gap:10px;
-  padding:18px 9px;
-  font-size:12px
-}
-
-.settings-button span:last-child {
-  margin-left:auto;
-  color:var(--muted)
 }
 
 .profile {
@@ -386,9 +328,11 @@ main {
 }
 
 h1 {
-  font-weight:500;
+  font-family:var(--font-heading);
+  font-weight:400;
   font-size:clamp(25px,2.6vw,36px);
-  letter-spacing:-1.2px;
+  letter-spacing:0;
+  word-spacing:.1em;
   margin:0 0 17px;
   line-height:1.2
 }
@@ -487,7 +431,7 @@ textarea::placeholder {
 .composer-toolbar {
   display:flex;
   align-items:center;
-  gap:12px;
+  gap:10px;
   margin-top:8px
 }
 
@@ -499,13 +443,34 @@ textarea::placeholder {
   border-radius:6px;
   font-size:10px;
   color:var(--muted);
-  padding:4px 7px
+  padding:4px 7px;
+  flex-shrink:0;
+  white-space:nowrap
+}
+
+.composer-context {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+  flex:1
+}
+
+.composer-workspace {
+  min-width:0;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--muted);
+  font-size:11px
 }
 
 .composer-shortcut {
   margin-left:auto;
   font-size:10px;
-  color:#a1a59d
+  color:#a1a59d;
+  flex-shrink:0
 }
 
 .send-button {
@@ -598,9 +563,13 @@ textarea::placeholder {
 }
 
 .answer h2,.answer h3,.answer h4 {
+  font-family:var(--font-heading);
+  font-weight:400;
+  letter-spacing:0;
+  word-spacing:.1em;
   line-height:1.4;
   margin:24px 0 10px;
-  font-size:18px
+  font-size:22px
 }
 
 .answer a {
@@ -688,7 +657,9 @@ details ul {
 }
 
 .approval h2 {
-  font-size:16px;
+  font-family:var(--font-heading);
+  font-weight:400;
+  font-size:22px;
   margin:0 0 8px
 }
 
@@ -762,8 +733,48 @@ dialog::backdrop {
 }
 
 .dialog-heading h2 {
-  font-size:19px;
-  font-weight:550
+  font-family:var(--font-heading);
+  font-size:24px;
+  font-weight:400
+}
+
+.session-menu {
+  position:fixed;
+  z-index:10;
+  width:210px;
+  max-width:calc(100vw - 16px);
+  max-height:calc(100dvh - 16px);
+  overflow-y:auto;
+  padding:6px;
+  border:1px solid var(--border);
+  border-radius:11px;
+  background:var(--surface);
+  box-shadow:0 8px 28px #0002
+}
+
+.session-menu-title {
+  padding:8px 10px;
+  color:var(--muted);
+  font-size:11px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
+}
+
+.session-menu button {
+  display:block;
+  width:100%;
+  padding:10px;
+  border-radius:6px;
+  font-size:13px;
+  text-align:left
+}
+
+.session-menu button[data-action="delete"] {
+  color:#a84b41;
+  margin-top:5px;
+  border-top:1px solid var(--border);
+  border-radius:0 0 6px 6px
 }
 
 dl {
@@ -912,8 +923,15 @@ dd {
   .app-name {
     display:none
   }
-  .session-note {
-    display:none
+  .composer-context {
+    gap:7px
+  }
+  .workspace-chip {
+    font-size:9px;
+    padding:4px 5px
+  }
+  .composer-workspace {
+    font-size:10px
   }
 }
 
@@ -961,5 +979,8 @@ dd {
   .avatar {
     background:#454335;
     color:#dcd3b2
+  }
+  .session-menu button[data-action="delete"] {
+    color:#efbba8
   }
 }

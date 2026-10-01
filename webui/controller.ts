@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { HarnessError, formatError } from "../src/errors.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import type { ExecutionReport, ReportEvent } from "../src/execution-report.js";
-import type { Session } from "../src/session.js";
+import type { Message } from "../src/model.js";
+import type { SessionManager } from "../src/session/manager.js";
+import type { SessionSummary } from "../src/session/store.js";
 import type { ShellRequest } from "../src/tools/shell.js";
 import type { WriteApprovalRequest } from "../src/tools/write.js";
 
@@ -22,9 +24,10 @@ export type WebTurn = {
 export type WebUiState = {
   revision: number; info: WebUiInfo; turns: WebTurn[]; busy: boolean;
   approval: Approval | null; status: string;
+  current: SessionSummary; sessions: SessionSummary[]; persistent: boolean;
 };
 
-/** One process-local session shared by browser tabs, with one active turn and approval. */
+/** Browser tabs share one selected session, active turn and pending approval. */
 export class WebUiController {
   private turns: WebTurn[] = [];
   private revision = 0;
@@ -32,12 +35,22 @@ export class WebUiController {
   private pending: { approval: Approval; finish: (allowed: boolean) => void } | undefined;
   private status = "Ready";
   private closed = false;
+  private changing: Promise<void> | undefined;
+  private sessions: SessionSummary[] = [];
 
-  constructor(readonly info: WebUiInfo, private readonly session: Session) {}
+  private constructor(readonly info: WebUiInfo, private readonly session: SessionManager) {}
+
+  static async create(info: WebUiInfo, session: SessionManager): Promise<WebUiController> {
+    const controller = new WebUiController(info, session);
+    controller.turns = restoredTurns(session.history, session.current.id);
+    controller.sessions = await session.list();
+    return controller;
+  }
 
   snapshot(): WebUiState {
     return structuredClone({ revision: this.revision, info: this.info, turns: this.turns,
-      busy: Boolean(this.active), approval: this.pending?.approval ?? null, status: this.status });
+      busy: Boolean(this.active || this.changing), approval: this.pending?.approval ?? null, status: this.status,
+      current: this.session.current, sessions: this.sessions, persistent: this.session.persistent });
   }
 
   submit(prompt: string): void {
@@ -63,6 +76,8 @@ export class WebUiController {
         this.status = abort.signal.aborted ? "Stopped" : "Turn failed";
       } finally {
         this.pending?.finish(false);
+        try { this.sessions = await this.session.list(); }
+        catch { this.status = "Session list could not be refreshed"; }
         this.active = undefined;
         this.revision++;
       }
@@ -71,12 +86,44 @@ export class WebUiController {
     this.revision++;
   }
 
-  reset(): void {
+  reset(): Promise<void> { return this.newSession(); }
+
+  newSession(name?: string): Promise<void> {
+    return this.changeSession(() => this.session.newSession(name));
+  }
+
+  resume(selector: string): Promise<void> {
+    return this.changeSession(() => this.session.resume(selector));
+  }
+
+  rename(name: string): Promise<void> {
+    return this.changeSession(() => this.session.rename(name), false);
+  }
+
+  fork(name?: string): Promise<void> {
+    return this.changeSession(() => this.session.fork(name));
+  }
+
+  private changeSession(change: () => Promise<unknown>, restore = true): Promise<void> {
     this.requireIdle();
-    this.session.reset();
-    this.turns = [];
-    this.status = "Ready";
+    this.status = "Loading session";
+    const done = Promise.resolve().then(async () => {
+      try {
+        await change();
+        if (restore) this.turns = restoredTurns(this.session.history, this.session.current.id);
+        this.sessions = await this.session.list();
+        this.status = "Ready";
+      } catch (error) {
+        this.status = "Session change failed";
+        throw error;
+      } finally {
+        this.changing = undefined;
+        this.revision++;
+      }
+    });
+    this.changing = done;
     this.revision++;
+    return done;
   }
 
   stop(): void {
@@ -89,7 +136,7 @@ export class WebUiController {
   async close(): Promise<void> {
     this.closed = true;
     this.stop();
-    await this.active?.done;
+    await Promise.allSettled([this.active?.done, this.changing]);
   }
 
   approve(id: string, allowed: boolean): void {
@@ -123,7 +170,7 @@ export class WebUiController {
 
   private requireIdle(): void {
     if (this.closed) throw new HarnessError("CLOSED", "The Web UI is shutting down.");
-    if (this.active) throw new HarnessError("SESSION_BUSY", "Stop or finish the current turn first.");
+    if (this.active || this.changing) throw new HarnessError("SESSION_BUSY", "Stop or finish the current turn first.");
   }
 
   private observe(turn: WebTurn, event: ReportEvent, child = false): void {
@@ -142,4 +189,18 @@ export class WebUiController {
     }
     this.revision++;
   }
+}
+
+/** Recover user text and final answers; approval state and UI telemetry are process-local. */
+function restoredTurns(history: readonly Message[], sessionId: string): WebTurn[] {
+  const turns: WebTurn[] = [];
+  let prompt: string | undefined;
+  for (const message of history) {
+    if (message.role === "user" && typeof message.content === "string") prompt = message.content;
+    if (message.role === "assistant" && !message.tool_calls?.length && typeof message.content === "string" && prompt !== undefined) {
+      turns.push({ id: `${sessionId}:${turns.length}`, prompt, answer: message.content, status: "answered", activity: [] });
+      prompt = undefined;
+    }
+  }
+  return turns;
 }

@@ -12,6 +12,9 @@ const prompt = element<HTMLTextAreaElement>("prompt");
 const send = element<HTMLButtonElement>("send");
 const stop = element<HTMLButtonElement>("stop");
 const newChat = element<HTMLButtonElement>("new-chat");
+const renameChat = element<HTMLButtonElement>("rename-chat");
+const forkChat = element<HTMLButtonElement>("fork-chat");
+const sessionList = element("sessions");
 const scroll = element("scroll-area");
 const messages = element("messages");
 const notice = element("notice");
@@ -28,6 +31,7 @@ let etag = "";
 let connected = false;
 let sending = false;
 let approvalId: string | undefined;
+let sessionSignature = "";
 const rendered = new Map<string, { signature: string; element: HTMLElement }>();
 
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
@@ -38,6 +42,11 @@ function controls(): void {
   send.disabled = !connected || sending || !prompt.value.trim();
   stop.disabled = !connected || sending;
   newChat.disabled = !connected || sending || busy;
+  renameChat.disabled = !connected || sending || busy;
+  forkChat.disabled = !connected || sending || busy;
+  sessionList.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+    button.disabled = !connected || sending || busy;
+  });
 }
 function connection(ok: boolean): void {
   connected = ok;
@@ -129,13 +138,16 @@ function renderApproval(approval: Approval | null): void {
 }
 
 function render(next: WebUiState): void {
-  const follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140 || next.turns.length !== state?.turns.length || next.approval?.id !== state?.approval?.id;
+  const follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140 || next.turns.length !== state?.turns.length || next.approval?.id !== state?.approval?.id || next.current.id !== state?.current.id;
   state = next;
   element("welcome").hidden = next.turns.length > 0;
   element("model").textContent = next.info.model;
   element("workspace").textContent = next.info.workspace;
   element("permissions").textContent = `Write ${next.info.permission} · Shell ${next.info.shellPermission} · Web ${next.info.webPermission}`;
-  element("chat-title").textContent = next.turns[0]?.prompt ?? "New conversation";
+  renderSessions(next);
+  const warning = element("session-warning");
+  warning.hidden = !next.current.interrupted || next.busy;
+  warning.textContent = "A turn in this session was interrupted. Model history contains only successful turns. Check current files and commands before retrying; completed operations were not undone.";
   element("run-status").textContent = next.busy ? next.status : "";
   for (const [id, previous] of rendered) {
     if (!next.turns.some((turn) => turn.id === id)) { previous.element.remove(); rendered.delete(id); }
@@ -155,12 +167,47 @@ function render(next: WebUiState): void {
   renderApproval(next.approval);
   const content = element("details-content"); content.replaceChildren();
   for (const [key, value] of Object.entries({ Provider: next.info.provider, Model: next.info.model, Workspace: next.info.workspace,
+    "Session ID": next.current.id, "Session name": next.current.name ?? next.current.title,
+    "Saved locally": next.persistent ? "Yes" : "No", "Successful turns": next.current.turnCount,
+    "Created": next.current.createdAt, "Updated": next.current.updatedAt,
+    "Forked from": next.current.forkedFrom ?? "None",
     "Write permission": next.info.permission, "Shell permission": next.info.shellPermission, "Public web": next.info.webPermission,
     "Parent iteration limit": next.info.maxIterations, "Request budget (bytes)": next.info.maxRequestBytes, "Available skills": next.info.skills,
     "Skill warnings": next.info.warnings.join("\n") || "None" })) content.append(node("dt", key), node("dd", String(value)));
   if (follow) requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight; });
   controls();
 }
+
+function renderSessions(next: WebUiState): void {
+  const sessions = next.sessions.some((session) => session.id === next.current.id) ? next.sessions : [next.current, ...next.sessions];
+  const signature = JSON.stringify([next.current.id, sessions]);
+  if (signature === sessionSignature) return;
+  sessionSignature = signature;
+  sessionList.replaceChildren();
+  for (const session of sessions) {
+    const button = node("button", undefined, "conversation");
+    const selected = session.id === next.current.id;
+    button.setAttribute("aria-current", String(selected));
+    button.title = `${session.name ?? session.title}\n${session.id}`;
+    button.append(node("span", selected ? "◉" : "◌"));
+    const copy = node("span", undefined, "session-copy");
+    copy.append(node("span", session.name ?? session.title, "session-name"),
+      node("small", `${session.turnCount} turns · ${new Date(session.updatedAt).toLocaleDateString()}`));
+    button.append(copy);
+    button.addEventListener("click", () => {
+      if (selected) { scroll.scrollTop = scroll.scrollHeight; closeSidebar(); return; }
+      void api("session/resume", { id: session.id }).then((accepted) => { if (accepted) sessionChanged(); });
+    });
+    sessionList.append(button);
+  }
+}
+
+function closeSidebar(): void {
+  document.body.classList.remove("sidebar-open");
+  element("toggle-sidebar").setAttribute("aria-expanded", "false");
+}
+
+function sessionChanged(): void { prompt.value = ""; resize(); prompt.focus(); closeSidebar(); }
 
 function resize(): void { prompt.style.height = "auto"; prompt.style.height = `${Math.min(prompt.scrollHeight, 180)}px`; controls(); }
 element<HTMLFormElement>("composer").addEventListener("submit", (event) => {
@@ -180,10 +227,15 @@ prompt.addEventListener("keydown", (event) => {
 });
 stop.addEventListener("click", () => { void api("stop", {}); });
 newChat.addEventListener("click", () => {
-  if (state?.turns.length && !confirm("Clear this conversation? Files and commands will not be undone.")) return;
-  void api("reset", {}).then((accepted) => { if (accepted) { prompt.value = ""; resize(); prompt.focus(); document.body.classList.remove("sidebar-open"); } });
+  void api("session/new", {}).then((accepted) => { if (accepted) sessionChanged(); });
 });
-element("conversation").addEventListener("click", () => { scroll.scrollTop = scroll.scrollHeight; document.body.classList.remove("sidebar-open"); });
+renameChat.addEventListener("click", () => {
+  const name = window.prompt("Session name", state?.current.name ?? state?.current.title ?? "");
+  if (name !== null) void api("session/rename", { name });
+});
+forkChat.addEventListener("click", () => {
+  void api("session/fork", {}).then((accepted) => { if (accepted) sessionChanged(); });
+});
 element("settings").addEventListener("click", () => dialog.showModal());
 element("close-details").addEventListener("click", () => dialog.close());
 element("toggle-sidebar").addEventListener("click", () => {

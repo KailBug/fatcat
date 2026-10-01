@@ -140,7 +140,7 @@ aside {
   align-items:center;
   gap:10px;
   border-radius:8px;
-  background:#e9eee3;
+  background:none;
   padding:12px;
   font-size:13px;
   text-align:left;
@@ -148,10 +148,48 @@ aside {
   min-width:0
 }
 
-.conversation span:last-child {
+.conversation .session-name {
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap
+}
+
+.conversation[aria-current="true"] {
+  background:#e9eee3
+}
+
+.session-list {
+  overflow-y:auto;
+  min-height:44px;
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:4px
+}
+
+.session-copy {
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:0
+}
+
+.session-copy small {
+  color:var(--muted);
+  font-size:10px
+}
+
+.session-actions {
+  display:flex;
+  gap:8px;
+  padding:12px 0 18px
+}
+
+.session-actions button {
+  border:1px solid var(--border);
+  border-radius:7px;
+  padding:7px 10px;
+  font-size:11px
 }
 
 .session-note {
@@ -900,7 +938,7 @@ dd {
     --surface:#20261d;
     color-scheme:dark
   }
-  .cat-mark,.welcome-icon,.conversation {
+  .cat-mark,.welcome-icon,.conversation[aria-current="true"] {
     background:#35452b;
     color:#ccdfbb
   }

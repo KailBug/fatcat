@@ -13,9 +13,9 @@
   <aside id="sidebar" aria-label="Workspace sidebar">
     <a class="brand" href="/" aria-label="Fatcat home"><span class="cat-mark" aria-hidden="true">f.</span>fatcat<span class="local-tag">LOCAL</span></a>
     <button class="new-chat" id="new-chat"><span aria-hidden="true">＋</span> New chat <span class="button-hint">↗</span></button>
-    <div class="section-label">THIS SESSION</div>
-    <button id="conversation" class="conversation"><span aria-hidden="true">◌</span><span id="chat-title">New conversation</span></button>
-    <p class="session-note">A little curiosity.<br>A lot of possibility.</p>
+    <div class="section-label">WORKSPACE SESSIONS</div>
+    <nav id="sessions" class="session-list" aria-label="Saved sessions"></nav>
+    <div class="session-actions"><button id="rename-chat">Rename</button><button id="fork-chat">Fork session</button></div>
     <div class="sidebar-bottom">
       <section class="workspace-card" aria-label="Workspace">
         <div class="workspace-label"><span class="status-dot"></span> LOCAL WORKSPACE</div>
@@ -49,6 +49,7 @@
     </div>
     <div class="composer-area">
       <div id="notice" class="notice" role="alert" hidden></div>
+      <div id="session-warning" class="notice" role="status" hidden></div>
       <div class="run-status" id="run-status" role="status" aria-live="polite"></div>
       <form id="composer" class="composer">
         <label class="sr-only" for="prompt">Message Fatcat</label>
@@ -58,6 +59,6 @@
       <p class="footnote">Fatcat can make mistakes. Review changes and check the execution report.</p>
     </div>
   </main>
-  <dialog id="details"><div class="dialog-heading"><h2>Session details</h2><button id="close-details" class="icon-button" aria-label="Close session details">×</button></div><dl id="details-content"></dl><p class="dialog-note">One conversation per server. New chat clears model history, but does not undo files or commands. History is lost when the server stops.</p></dialog>
+  <dialog id="details"><div class="dialog-heading"><h2>Session details</h2><button id="close-details" class="icon-button" aria-label="Close session details">×</button></div><dl id="details-content"></dl><p class="dialog-note">Switching sessions restores successful conversation history. Approvals, failed turns and execution reports are not restored. Files and commands stay in effect.</p></dialog>
 </body>
 </html>

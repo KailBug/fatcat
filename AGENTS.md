@@ -64,9 +64,13 @@
 - Build: pnpm run build
 - Test: pnpm test
 - Help: pnpm start --help
-- Continuous chat: pnpm start --chat (uses the launch directory with read/write/shell; writes and commands require per-operation approval).
+- Continuous chat: pnpm start --chat (uses the launch directory with read/write/shell and a new saved session; writes and commands require per-operation approval).
+- Session continuation: pnpm start --continue or pnpm start --resume <id-or-name> (uses the selected workspace and current launch provider/permissions; resumes chat unless another mode or prompt is given).
+- Session listing: pnpm start --listSessions (local workspace metadata; no model credentials required). --name <name> names a session; --fork-session with --continue/--resume branches completed history; --no-session-persistence keeps a new run in memory.
+- Chat and TUI session commands: /new [name], /clear and /reset retain the old session and create a new one; /sessions lists, /resume <id-or-name> switches, /rename <name> names, and /fork [name] branches. Session changes do not undo tools or reset process journals and usage.
+- Session storage defaults to the user home .fatcat/sessions directory, isolated by canonical workspace. FATCAT_SESSION_DIR overrides the root. Saved tool results and prompts are plaintext local data; never serialize credentials or restore permissions from them. Interrupted operations require current-state inspection and are never automatically replayed.
 - Interactive TUI: pnpm start --tui (uses the launch directory; requires a terminal).
-- Local browser interface: pnpm start --webui (uses the launch directory; open the private link printed in the terminal; defaults to 127.0.0.1:3210, with --port <number> to override). File and command approvals appear in the browser. One in-memory conversation is shared by tabs; Ctrl+C stops the server.
+- Local browser interface: pnpm start --webui (uses the launch directory; open the private link printed in the terminal; defaults to 127.0.0.1:3210, with --port <number> to override). File and command approvals appear in the browser. Tabs share one active saved session and its workspace list; Ctrl+C stops the server.
 - Select another workspace for a task, chat, or TUI with --workspace <directory>, for example pnpm start --chat --workspace examples/workspace.
 - pnpm start preserves the directory where it was invoked; relative --workspace paths resolve there. Its launcher restores INIT_CWD after the package-root build and .env load. Direct dist/src/cli.js execution uses its own cwd and ignores INIT_CWD.
 - Explicit read-only workspace chat: pnpm start --chat --workspace examples/workspace --permission read-only

@@ -9,15 +9,15 @@
 | 模块 | 职责 |
 | --- | --- |
 | `src/cli.ts` | 模式互斥、`--webui` / `--port` 参数、已有配置和权限选项；动态加载 Web UI。 |
-| `webui/index.ts` | 创建相同的 Tools、Skills、Agent 和 Session，注入浏览器审批回调；SIGINT/SIGTERM 停止服务与活动回合。配置只向浏览器暴露显式白名单字段。 |
-| `webui/controller.ts` | 单活动回合、显示用 transcript、当前状态、最多一项待批操作及版本号；停止/关闭时取消模型与审批；生成独立报告。 |
+| `webui/index.ts` | 创建相同的 Tools、Skills、Agent 和 SessionManager，注入浏览器审批回调；SIGINT/SIGTERM 停止服务与活动回合。配置只向浏览器暴露显式白名单字段。 |
+| `webui/controller.ts` | 单活动回合、显示用 transcript、当前状态、最多一项待批操作及版本号；2D-14 复用 SessionManager 持有会话列表与新建/切换/命名/分支；停止/关闭时取消模型与审批；生成独立报告。 |
 | `webui/server.ts` | 原生 Node HTTP、loopback 监听、随机 capability、来源校验、请求体上限、静态资源白名单及 JSON 路由。 |
-| `webui/client/app.ts` | DOM 视图、草稿、多行输入、轮询、重连、审批按钮、新对话确认、窄屏侧栏及会话详情；不执行工具或保存模型历史。 |
+| `webui/client/app.ts` | DOM 视图、草稿、多行输入、轮询、重连、审批按钮、会话列表与操作、窄屏侧栏及会话详情；不执行工具或保存模型历史。 |
 | `webui/client/markdown.ts` | 小型 Markdown 子集，以 DOM textContent/text node 渲染不可信内容；不启用 HTML，不使用 innerHTML。 |
 | `webui/public/`、`scripts/copy-webui.ts` | HTML/CSS 资源与构建复制；TypeScript 直接编译到 dist/webui/client，不引入打包器。 |
 | Session / Loop / Tools / execution-report | 保留成功模型历史、循环、工具校验/执行、独立 journals 和可核对的回合事实。 |
 
-浏览器提交 → HTTP 校验 → 控制器 → Session.run → 既有 Loop / 模型 / 工具 → 事件与执行报告 → 状态快照 → 浏览器显示。工具待批时通过已有回调等待一次性决定，浏览器批准后仍由原工具复查权限、路径、文件冲突和取消。
+浏览器提交 → HTTP 校验 → 控制器 → SessionManager.run → Session / Loop / 模型 / 工具 → 事件与执行报告 → 状态快照 → 浏览器显示。工具待批时通过已有回调等待一次性决定，浏览器批准后仍由原工具复查权限、路径、文件冲突和取消。
 
 ## HTTP 和本地访问边界
 
@@ -27,12 +27,13 @@
 - 静态 GET 仅 `/`、`/styles.css`、`/app.js`、`/markdown.js`、`/favicon.svg`，不映射任意磁盘目录。JSON 请求体最多 64 KiB，prompt 最多 32768 UTF-8 字节；仅接受指定字段和类型。连接数最多 32，header/request 限时 10 秒，连接空闲限时 15 秒。
 - `GET /api/state` 返回显示快照并支持 ETag/304。前台每约 700ms、后台每约 3 秒轮询；这是状态更新，不是 provider token 流。
 - `POST /api/message`、`/api/stop`、`/api/reset` 和 `/api/approval` 处理回合与审批。运行中提交或 reset 返回 409；approval ID 不匹配或重复使用返回 409。有效写入/命令仍受原 permission 和 shellPermission 限制。
+- 2D-14 的 `/api/session/new`、`/api/session/resume`、`/api/session/rename` 和 `/api/session/fork` 复用同一 capability、来源与 JSON 参数校验。state 包含当前会话与工作目录列表；管理操作期间使用忙碌保护，运行或审批中拒绝切换和新建。
 
 这不是多用户或远程服务器。链接持有者可查看当前会话并操作授权范围；本机其他用户与程序的隔离不由此应用提供。浏览器页面关闭不会自动停止模型或拒绝审批，用户可以重新打开带令牌的链接继续；终端 Ctrl+C 才关闭服务。
 
 ## 状态和交互
 
-控制器只保存显示状态；Session 仍仅保存成功回合。失败/取消的提示和错误可见，但明确标识未进入模型历史。工具事实独立保存，New chat 清空显示与 Session 历史，不撤销修改/命令、不重置 journals 上限。单会话最多 100 个显示回合，需要 New chat 后继续；每回合活动保留最近 100 项，完整报告保留写入、命令和父子请求事实。
+控制器保存显示状态，SessionManager 持有活动会话并保存完整成功历史及最近未完成回合。失败/取消的提示和错误可见，但不替换成功模型历史。New chat 创建新的持久会话，原会话仍在列表；切换、命名、分支通过同一 Manager，运行/审批中拒绝操作。工具事实独立保存，不撤销修改/命令、不重置 journals 上限。单会话最多 100 个显示回合，需要 New chat 后继续；每回合活动保留最近 100 项，完整报告保留写入、命令和父子请求事实。
 
 审批展示完整旧/新文本或命令、cwd、timeout；独立按钮只允许一次操作，普通聊天输入不能成为批准。命令明确提示非 OS 沙箱。拒绝、取消和关服均结束待批 Promise；取消信号继续传播给父子模型与工具。取消后的回合必须真正完成收尾才能提交下一轮。
 
@@ -42,8 +43,8 @@ Enter 提交，Shift+Enter 换行，composition 期间不提交；执行时允�
 
 ## 技术选择与限制
 
-沿用 Node 24 / pnpm 11.21.0 / TypeScript 和 openai SDK；Node HTTP、浏览器原生 DOM 与 CSS 足以承载此单页/单 Session 增量，因此没有增加前端框架、HTTP 框架、打包器或依赖，不修改 pnpm-lock.yaml。tsconfig 加入 DOM 类型及 webui 源文件，build 复制固定 HTML/CSS 文件。
+沿用 Node 24 / pnpm 11.21.0 / TypeScript 和 openai SDK；Node HTTP、浏览器原生 DOM 与 CSS 足以承载此单页及单活动 Session 增量，因此没有增加前端框架、HTTP 框架、打包器或依赖，不修改 pnpm-lock.yaml。tsconfig 加入 DOM 类型及 webui 源文件，build 复制固定 HTML/CSS 文件。
 
-会话、审批、统计与历史均在进程内；服务停止后丢失。不支持历史会话列表、多用户账户、远程发布、运行中换模型、流式答案、思考协议、附件、完整 Markdown 表格/嵌套语法或持久恢复。浏览器状态不等于模型输入历史，也不保证任何自然语言任务结果正确。
+2D-14 的会话历史保存在本地 Store，可从当前工作目录列表或启动参数恢复；各标签共享一个活动会话。审批、活动报告、统计和实时 Tools journals 仍在进程内，服务停止后不恢复。没有多用户账户、远程发布、运行中换模型、流式答案、思考协议、附件、完整 Markdown 表格/嵌套语法、文件检查点或工具重放。浏览器状态不等于模型输入历史，也不保证任何自然语言任务结果正确。
 
 测试覆盖控制器、实际 HTTP 与 CLI、真实临时文件/固定 PowerShell；模型与用量使用注入夹具。浏览器验证及真实模型验证分别记入 PROGRESS，不沿用其他入口的历史 API 验证宣称本轮已在线验收。

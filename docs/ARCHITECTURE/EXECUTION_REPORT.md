@@ -12,6 +12,8 @@
 
 CLI 单次任务 / chat 每个用户回合创建观察器 → 传入 Loop / Session 的 onEvent → 转发原始事件并累积本回合数据 → 根 completed / stopped 后额外发出 execution_report → stderr。stdout 及 Loop / Session 的返回值不变。命令和写入的日志仍由 Tools 所有；观察器不改变它们。
 
+2D-14 的日常入口在观察器与 Session 之间使用 SessionManager：根 completed / stopped 暂存至持久化边界，成功快照确认发布后才报告 answered；回合检查点或最终提交写盘失败报告 stopped / SESSION_STORAGE。开始记录失败也发出 stopped，此时请求计数为零；此前已观察到的请求、用量和工具事实仍保留。子任务终止事件继续透传但不结束父报告，普通程序化 Session / Loop 的时机保持原样。报告本身仍不持久保存或进入模型历史。
+
 `ReportEvent` 是交互侧的 LoopEvent 或 execution_report 联合，不把报告加入核心 LoopEvent。低层 runAgent / Session 默认仍只产生原事件；程序化调用者可接入同一观察器。真实编码脚本也复用 CLI 的 createAgent 和观察器。
 
 2D-11 的可选 TUI 复用同一观察器，将报告用于屏幕而不是输出 JSON。TUI 另在 `tui/telemetry.ts` 从原始事件维护本轮与进程累计、最近父请求及 provider 缓存覆盖，不从报告累计值重复加总。有效 `TokenUsage.cachedPromptTokens` 可随 model_usage 到达；本报告的 tokenUsage.totals 仍仅包含三个基础 token 字段，不把部分缓存数据混入原总量定义。具体口径见 [TUI.md](TUI.md)。
@@ -39,7 +41,7 @@ CLI 单次任务 / chat 每个用户回合创建观察器 → 传入 Loop / Sess
 
 ## 失败、边界与限制
 
-模型错误、迭代耗尽和正常取消时，Loop 在 stopped 前报告新增事实，因此回合摘要保留已经发生的副作用。配置/参数/工作目录错误等发生在 Loop 之前的失败不产生报告。进程崩溃、强制结束、输出流异常及自定义事件回调抛错不提供可靠最终报告保证。
+模型错误、迭代耗尽和正常取消时，Loop 在 stopped 前报告新增事实，因此回合摘要保留已经发生的副作用。配置/参数/工作目录错误等发生在 SessionManager.run 之前的失败不产生报告；Manager.run 内的开始记录或提交失败有独立 stopped 报告。进程崩溃、强制结束、输出流异常及自定义事件回调抛错不提供可靠最终报告保证。
 
 报告仅解释所观察到的事件。laterWriteAttempt=false 不证明文件当前未变：shell、编辑器或其他进程可以修改文件；它没有文件版本绑定、快照或依赖分析。相反，失败暂存或不相关文件的写入也会保守设置标记。某个命令退出 0 不能说明它是测试、覆盖充分或任务完成。
 

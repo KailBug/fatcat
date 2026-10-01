@@ -10,9 +10,9 @@ The near-term goal is a local coding agent that reads projects, makes controlled
 
 ## Current capabilities
 
-The CLI runs a single task or an in-memory conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. Tasks, chat, TUI, and Web UI use the launch directory as the workspace unless `--workspace` selects another directory. The model can answer directly, call the pure `sum` tool, load local Skills, inspect workspace text files, propose a write, or run a command after approval in the active interface; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
+The CLI runs a single task or a persistent conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. Tasks, chat, TUI, and Web UI use the launch directory as the workspace unless `--workspace` selects another directory. The model can answer directly, call the pure `sum` tool, load local Skills, inspect workspace text files, propose a write, or run a command after approval in the active interface; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated in-memory sessions, continuous chat, an optional terminal interface with configuration and usage panels, a local browser interface, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no persistent sessions, plugins, channels, long-term memory, recovery checkpoints, or Graph engine.
+The implementation includes isolated persistent sessions with local listing, naming, resume and branching, continuous chat, an optional terminal interface with configuration and usage panels, a local browser interface, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no plugins, channels, long-term memory, file recovery checkpoints, or Graph engine.
 
 The shared system prompt asks Fatcat to respond concisely in your language, inspect relevant code before edits, complete authorized implementation work, and report checks actually performed. It avoids unsolicited edits for review-only questions and keeps assumptions separate from observed facts. This is model guidance, not a guarantee of correctness or an additional permission mechanism. Restart the CLI after changing the prompt source and rebuilding.
 
@@ -98,9 +98,9 @@ The page includes a workspace sidebar, starter prompts, a conversation view, a m
 
 Writes and commands use the existing independent permission policies. With the default `ask`, the browser shows the exact file change or PowerShell command and requires **Allow once** or **Deny**. Approval is tied to the pending operation; a stale response cannot authorize another action. `--permission workspace-write` preauthorizes file writes only; `--shell-permission allow` separately preauthorizes commands. Shell runs with current-user access, not an OS sandbox. `--web-permission deny` disables public research independently of the local UI server.
 
-One in-memory conversation is shared by all tabs using this server link. Refreshing the same tab reconnects to its state, including pending approval; closing the tab does not cancel an active turn. New chat clears the conversation and model history after confirmation, but does not undo file changes, commands, or their process-local journals. Failed and cancelled turns remain visible with an explicit history warning. The UI allows up to 100 turns before New chat, messages up to 32768 UTF-8 bytes, and shows the latest 100 activity events per turn.
+All tabs using this server link share one active session. The sidebar lists sessions for the selected workspace and supports switching; New chat creates a session and retains the previous conversation. Sessions can be named and branched through the same manager used by CLI and TUI. Refreshing the same tab reconnects to server state, including pending approval; closing the tab does not cancel an active turn. Session changes do not undo file changes, commands, or their process-local journals. Failed and cancelled turns remain visible with an explicit history warning. Messages are limited to 32768 UTF-8 bytes, and the display shows the latest 100 activity events per turn.
 
-History is lost when the server stops. Responses appear when the existing non-streaming provider call completes; status updates are polled locally. There is no saved conversation list, account system, remote hosting, or runtime provider switching. API credentials stay on the server. Treat the startup link as private: its random capability permits access to this local session. Reports distinguish valid provider token usage from missing usage and do not certify task correctness. See [Web UI architecture](ARCHITECTURE/WEBUI.md).
+Successful conversation history is saved locally by default and can be resumed after restart; old activity reports, approvals, process usage and live tool journals are not restored. Start with `--continue` or `--resume <id-or-name>`, or choose a saved session in the sidebar. Responses appear when the existing non-streaming provider call completes; status updates are polled locally. There is no account system, remote hosting, or runtime provider switching. API credentials stay on the server. Treat the startup link as private: its random capability permits access to this local server's session list and active conversation. Reports distinguish valid provider token usage from missing usage and do not certify task correctness. See [Web UI architecture](ARCHITECTURE/WEBUI.md).
 
 ## Run a task
 
@@ -116,7 +116,7 @@ pnpm run build
 node --env-file-if-exists=.env dist/src/cli.js --prompt "Use the sum tool to add 17 and 25."
 ```
 
-Press Ctrl+C to cancel. A single-task invocation starts fresh history. No arguments displays help; use `--chat` for a continuous conversation or `--tui` for the interactive terminal interface.
+Press Ctrl+C to cancel. A single-task invocation starts a new saved session unless `--continue` or `--resume` selects existing history. No arguments displays help; use `--chat` for a continuous conversation or `--tui` for the interactive terminal interface.
 
 The `sum` tool accepts 2 to 32 finite numbers and returns a finite JavaScript-number sum. Invalid arguments, unknown tools, and arithmetic overflow return structured errors to the model so it can correct its next call. `read`, `write`, and `shell` are available as peer workspace tools by default; discovered Skills also have a separate, read-only `skill://` scope. Each write and command asks for yes/no in an interactive terminal by default. The `web` tool provides public search and page reading with separate network permission.
 
@@ -158,7 +158,7 @@ This explicit network check makes up to five fixed tool calls for research/news 
 
 ## Review execution evidence
 
-Each started single-task or `--chat` CLI task emits one `execution_report` JSON event to stderr when the root loop answers or stops. Chat reports include the user-turn number. Stdout remains the model answer. TUI observes the same report for display instead of interleaving JSON with the screen. Help, configuration checks, local chat commands, and failures before the loop starts do not produce a report. Low-level `runAgent`/Session callers can opt into the same observer with `createTurnReporter`; their return values are unchanged.
+Each started single-task or `--chat` CLI task emits one `execution_report` JSON event to stderr when the managed turn answers or stops. The root outcome waits for session persistence: a failed checkpoint or final save reports stopped, even if the model produced an answer; a failed pre-work session write reports zero model requests. Chat reports include the user-turn number. Stdout remains the model answer. TUI observes the same report for display instead of interleaving JSON with the screen. Help, configuration checks, local chat commands, and failures before starting a managed turn do not produce a report. Low-level `runAgent`/Session callers can opt into the same observer with `createTurnReporter`; their return values and original event timing are unchanged.
 
 The report is computed from observed events, including child events, independently of the model's final wording:
 
@@ -188,7 +188,7 @@ If the complete body is too large, Fatcat first replaces eligible older successf
 
 Each marker retains the result kind and path and states that the content is unavailable in this request. The model can repeat the original or a narrower read when needed; that reads the current file under the same permissions, not an archived snapshot. Full Session history is unchanged. Every request is prepared again from that history, so a shorter later request may include previously omitted contents. There is no model-generated summary or persisted reduction.
 
-A request that is still oversized stops with MODEL_CONTEXT_LIMIT before transport. In chat, the previous successful history remains. Use a smaller task or `/reset` to clear conversation history. Already committed edits and commands remain; their records survive reset and still count toward the next request. If those records alone exceed the limit, inspect them before starting a new process or explicitly raising the configured limit. A new process loses its in-memory history and journals.
+A request that is still oversized stops with MODEL_CONTEXT_LIMIT before transport. In chat, the previous successful history remains. Use a smaller task or `/new` to start fresh history while retaining the old session. Already committed edits and commands remain; their records survive session changes and still count toward the next request. If those records alone exceed the limit, inspect them before starting a new process or explicitly raising the configured limit. A new process loses live journals and process telemetry; saved conversation history remains available through resume.
 
 The context_reduction event records beforeBytes, afterBytes and omittedReadResults only when a projection changes the body; it contains no paths or contents. The model_input event contains the final bytes, limitBytes and accepted, plus the iteration; accepted means it passed the local size check, not that the server accepted it. The model_usage event reports valid provider token counts or null. Missing, malformed or inconsistent counters stay unknown and do not invalidate an otherwise valid answer. Received counts are retained even if the answer is truncated or fails protocol validation; transport errors or early cancellation may have no usage report.
 
@@ -200,7 +200,7 @@ Provider cache counters are validated separately from the base token totals. Sup
 
 Fatcat discovers local and built-in Skills automatically at startup. A Skill is a directory containing a UTF-8 `SKILL.md` with YAML metadata and task instructions. Only metadata, including name, description, source scope and a read URI, is initially shown to the model; the full document is loaded when needed through the existing `read` tool.
 
-Four built-in Skills are available without installing anything:
+Six built-in Skills are available without installing anything:
 
 | Skill | Subsystem | Use |
 | --- | --- | --- |
@@ -260,7 +260,7 @@ pnpm start --workspace examples/workspace --prompt 'Use $code-review to review t
 
 Use PowerShell single quotes to preserve the literal `$`. Mentions are model guidance, not a local slash command or deterministic instruction injection. The model reads `skill://code-review/SKILL.md` to receive the entire document; partial reads and queries of that file are rejected. References resolve inside the same Skill, such as `skill://code-review/references/checklist.md`, and retain normal text, paging and search limits. Traversal, links, hidden resource paths and unsupported files are rejected.
 
-Skill metadata and loaded contents can be sent to your selected model provider. Skills guide the task but do not grant write or shell access. Bundled scripts are not automatically executed; any proposed shell command uses the same separate authorization. Successful turns preserve loaded instructions in the Session and protect them from old-read omission. Failure discards new loads, and `/reset` clears the instruction history while retaining the startup catalog and execution records. Restart after adding Skills or changing their metadata; there is no catalog hot reload.
+Skill metadata and loaded contents can be sent to your selected model provider. Skills guide the task but do not grant write or shell access. Bundled scripts are not automatically executed; any proposed shell command uses the same separate authorization. Successful turns preserve loaded instructions in the saved Session and protect them from old-read omission. Failure keeps newly loaded text only in the latest partial attempt. `/reset` starts a new session without loaded instruction history and retains the old conversation, startup catalog and execution records. Restart after adding Skills or changing their metadata; there is no catalog hot reload.
 
 Built-in source files live under `src/skill/<subsystem>/<name>/SKILL.md`; run `pnpm run build` after changing them. Keep `dist/src/skill` with the compiled application when copying build outputs. A missing built-in installation produces a diagnostic; rebuilding restores the assets. Build refresh affects that generated directory only, not your workspace or user Skills. Normal CLI use needs no capability flag. The four built-in workflows have offline loading and integration coverage; their effect on real model task performance has not been validated online. See [Skills architecture](ARCHITECTURE/SKILLS.md) for exact boundaries.
 
@@ -389,6 +389,50 @@ Commands inherit an allowlist of OS/runtime environment variables, excluding the
 
 Command records survive failed turns and `/reset`, and are shared with children. Each keeps the command, cwd, outcome, and at most 1000 Unicode code points per output stream with an explicit summary-truncation flag. After 20 launch attempts, further commands are rejected without dropping old facts. Records disappear on process exit and describe historical runs, not proof that current files still pass verification.
 
+## Saved sessions
+
+Tasks, chat, TUI and Web UI save sessions by default. Starting without a selection creates a new session; earlier conversations remain available. Sessions belong to the canonical workspace directory, so use the same `--workspace` or launch directory when resuming.
+
+```powershell
+pnpm start --chat --name auth-refactor
+pnpm start --continue
+pnpm start --resume auth-refactor
+pnpm start --tui --continue
+pnpm start --webui --resume auth-refactor
+pnpm start --resume auth-refactor --prompt "Review the previous changes."
+pnpm start --continue --fork-session --name alternative-approach
+pnpm start --listSessions
+pnpm start --listSessions --workspace D:\your-project
+pnpm start --chat --no-session-persistence
+```
+
+| Option | Behavior |
+| --- | --- |
+| `--continue`, `-c` | Resume the most recently updated session in this workspace. No prior session is an error. |
+| `--resume <id-or-name>`, `-r <id-or-name>` | Resume an exact session ID, explicit name or local title. Ambiguous matches require an ID. |
+| `--resume`, `-r` | List sessions and ask for an ID or name in an interactive terminal. With redirected input or stderr, print the list and exit without model credentials. |
+| `--name <name>`, `-n <name>` | Name a new session, rename a resumed one, or name the new branch with `--fork-session`. |
+| `--fork-session` | Combine with continue or resume to copy history into a new session and preserve the source. |
+| `--listSessions` | Print workspace session metadata as JSON without a model key or network request. |
+| `--no-session-persistence` | Keep new sessions only in this process. Startup resume, continue and fork selection cannot be combined with it. |
+
+Continue, resume or name without another mode opens ordinary chat. Selection also works with an explicit prompt, `--chat`, `--tui` or `--webui`; continue and resume are mutually exclusive. Listing is a separate local mode and does not accept execution permissions. Names are trimmed, non-empty, limited to 120 characters and cannot contain control characters; duplicate explicit names in a workspace are rejected. Unnamed sessions use a title taken locally from the first prompt, without a model title request. Titles can repeat; the UUID always identifies one session.
+
+The default location is `<user-home>/.fatcat/sessions/<workspace-hash>/<session-id>.json`. Set a different storage root in the launching PowerShell session if needed:
+
+```powershell
+$env:FATCAT_SESSION_DIR = 'D:\fatcat-session-data'
+pnpm start --chat
+```
+
+The root contains separate SHA-256 directories for canonical workspaces. Files are versioned atomic JSON snapshots, limited to 64 MiB each. History includes prompts, answers, tool calls/results, read file and web content, and loaded Skill instructions. Data is local plaintext and has no automatic retention cleanup. The harness does not serialize provider credentials, permission policies or approval answers; user or tool content can still contain sensitive data. `--no-session-persistence` disables disk saving for the current run and allows in-process new/list/resume/rename/fork.
+
+Resuming restores full completed model history using the current launch's provider, Skills catalog, workspace and permissions. It does not restore old authorization grants, file contents, pending approvals, tool processes, live journals, activity reports or process token totals. The latest failed, cancelled or abandoned turn retains partial messages separately and displays an interrupted warning; the next model request receives a bounded recovery notice to inspect current state before repeating operations. Nothing runs automatically on resume, and the warning clears after the next successful turn. This is not a permanent failure audit log or a file rollback feature.
+
+Session updates check revisions before work, preventing a stale process from overwriting newer history. A running session cannot be resumed by another process; busy, changed or damaged sessions produce explicit errors. Use `/sessions` and resume again after the other process finishes. A fork has independent history and an origin ID; it does not create a Git branch or copy workspace files. See [Session architecture](ARCHITECTURE/SESSION.md) for storage and failure boundaries. The functionality draws on [Claude Code's public session definitions](https://code.claude.com/docs/en/sessions); Fatcat does not import its transcript format or implement all of its recovery features.
+
+A crashed transaction owner can be recovered after its PID is confirmed gone. An incomplete lock or a crashed lock-recovery operation is conservatively blocked; the error explains which lock may need manual removal after confirming no session store operation is running. A disk failure after model work is reported as stopped rather than as saved success, and it cannot undo completed tool effects.
+
 ## Continuous chat
 
 ```powershell
@@ -400,16 +444,21 @@ Enter one task per line. For example, ask `Use the sum tool to add 17 and 25.`, 
 | Command | Behavior |
 | --- | --- |
 | /help | Show local chat commands |
-| /reset | Clear the completed conversation history |
+| /new [name] | Create a new session, retaining the old one |
+| /clear, /reset | Start a new unnamed session |
+| /sessions, /resume | List workspace sessions |
+| /resume <id-or-name> | Switch to a saved session |
+| /rename <name> | Rename the active session |
+| /fork [name] | Copy completed history into a new session |
 | /exit | End the chat |
 
 Blank lines are ignored. Lines beginning with `/` are reserved for local commands; unknown commands print a hint without calling the model. Commands must occupy their own line. The `--chat` flag cannot be combined with a prompt, help, or configuration check.
 
 Answers go to stdout. Terminal prompts, approval previews, command feedback, and event logs go to stderr. `You>` is bright green in an interactive terminal; `NO_COLOR`, TERM=dumb, or redirected input/output disables that color. Input and stderr must both be terminals for approval. Earlier queued chat lines cannot approve a later request. Chat events include a user-turn number; reset does not rewind that number. Standard input can also supply lines through a pipe. At end-of-input the harness finishes queued lines and exits; `/exit` skips later queued lines. Press Ctrl+C to cancel the active turn and exit with code 130. On Windows, `/exit` is the simplest way to finish from the terminal.
 
-Successful turns keep the full user, assistant, and tool messages in memory. Failed or cancelled turns do not enter the saved history. A model failure displays an error and lets you continue; the eventual chat exit code is 1 if any turn failed. This discards conversation messages only; file changes and process-local write records remain, and API requests already made may still consume credits.
+Successful turns save the full user, assistant, and tool messages locally. Failed or cancelled turns do not replace completed history; the latest partial attempt is recorded separately for recovery. A model failure displays an error and lets you continue; the eventual chat exit code is 1 if any turn failed. File changes and process-local write records remain, and API requests already made may still consume credits.
 
-Saved history is lost on exit and is not automatically trimmed or summarized. Only outgoing requests may omit eligible older read contents as described above. Long conversations can still hit the local request-body budget or provider context limits; use `/reset` to clear conversation history while retaining execution records. There is no session storage or recovery in this increment.
+Saved history remains after exit and is not automatically trimmed or summarized. Only outgoing requests may omit eligible older read contents as described above. Long conversations can still hit the local request-body budget or provider context limits; use `/new` or `/reset` to start fresh history while retaining the old session and process execution records. With `--no-session-persistence`, conversations are lost when the process exits.
 
 ## Interactive TUI
 
@@ -431,7 +480,11 @@ Enter sends the prompt; Alt+Enter inserts a newline. Up/Down recalls prompts, an
 | --- | --- |
 | /help | Show local commands and editor shortcuts. |
 | /status | Show effective configuration and current telemetry. |
-| /reset | Clear conversation history; keep consumed usage and execution records. |
+| /new [name], /clear, /reset | Start a new session; retain the old history, consumed usage and execution records. |
+| /sessions, /resume | List workspace sessions. |
+| /resume <id-or-name> | Switch to an existing session. |
+| /rename <name> | Rename the active session. |
+| /fork [name] | Branch the completed conversation into a new session. |
 | /exit | Restore the terminal and exit. |
 
 Blank input is ignored, and unknown slash commands stay local. Write and shell approvals open a separate yes/no input with the current operation's preview. Only a fresh answer to that approval can authorize it; ordinary task text is not approval. The shell preview retains the warning that commands run with your user permissions, including file and network access beyond the selected directory.
@@ -452,7 +505,7 @@ Escape or Ctrl+C cancels a running TUI turn, propagates to the parent, children,
 | Context reduction | Actual omitted read-result counts and JSON bytes saved, not token savings. |
 | Execution state | Current model/tool activity and observed report outcomes; an answer does not certify task acceptance. |
 
-The model APIs remain non-streaming: activity and elapsed time can update while waiting, but complete answers and usage arrive with the response. The local request-byte gauge is not a token-context percentage. Missing usage and cache data remain unknown; partial coverage is shown explicitly. The interface does not estimate fees, service cache capacity, or unreported tokens. Session history, display records, and statistics are process-local and lost on exit. Implementation details and terminal verification limits are recorded in [TUI architecture](ARCHITECTURE/TUI.md) and [PROGRESS.md](PROGRESS.md).
+The model APIs remain non-streaming: activity and elapsed time can update while waiting, but complete answers and usage arrive with the response. The local request-byte gauge is not a token-context percentage. Missing usage and cache data remain unknown; partial coverage is shown explicitly. The interface does not estimate fees, service cache capacity, or unreported tokens. Session history persists by default; old display activity and statistics are process-local and lost on exit. Restored user/assistant messages do not fabricate old telemetry. Implementation details and terminal verification limits are recorded in [TUI architecture](ARCHITECTURE/TUI.md) and [PROGRESS.md](PROGRESS.md).
 
 ## Delegate a task
 

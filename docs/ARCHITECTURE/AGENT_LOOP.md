@@ -12,7 +12,8 @@
 | `src/agent.ts` | `createAgent(config, baseTools?, transport?, skills?)` 装配父子模型与工具，内部包装 Skill read，返回 model / tools / maxIterations；工作目录、委派与 Skill 指导不进入保存历史 |
 | `src/cli.ts` | 解析任务文本、`--prompt`、`--chat`、`--listSkills`、帮助与配置检查；发现本地 Skills；管理 Ctrl+C；选择入口并输出退出码 |
 | `scripts/start.ts` | pnpm start 专用启动器：在导入 CLI 前根据 INIT_CWD 恢复调用目录；不承担工具装配、配置加载或权限规则 |
-| `src/chat.ts`、`src/session.ts` | 连续输入和跨回合历史管理，详见 Session 文档 |
+| `src/chat.ts`、`src/session/session.ts` | 连续输入与单会话成功历史，详见 Session 文档 |
+| `src/session/manager.ts`、`store.ts`、`history.ts`、`commands.ts` | 2D-14 共享会话选择、磁盘持久化、恢复校验和本地命令；会话文件集中在 src/session，与 tools/skill 同级，不授予工具权限，详见 Session 文档 |
 | `src/terminal.ts` | 统一终端输入，隔离聊天、写入及命令确认，管理提示颜色及终端取消 |
 | `src/config.ts` | `loadConfig(env = process.env): Config` 校验 Key、模型、迭代上限、单次请求超时与请求体字节上限 |
 | `src/providers.ts` | 四家供应商的配置描述、固定 endpoint 与专有请求参数；详见 PROVIDERS.md |
@@ -42,7 +43,7 @@ pnpm 在包根运行 scripts，因此 start 命令先在包根构建并由 Node 
 1. CLI 从参数获得单个任务，或由 `--chat` 逐行交给 Session，加载本地配置。
 2. Loop 为单次任务建立新的 system 消息；Session 则提供此前成功历史。Loop 复制历史并追加新 user 消息，在副本上执行本轮任务。
 3. Loop 在开始回合时调用可选 tools.forTurn，为委派初始化独立额度；每次请求通过 getWrites / getCommands 获取独立写入和命令记录，作为临时数据消息提供给模型，不保存进 Session 历史。模型客户端组装包含 Skill 元数据目录的完整请求体，交由 context.ts 在需要时省略旧读取内容，校验最终字节预算后，携带请求消息和工具定义请求所选供应商；已收到的用量在答案解析前观察。
-4. 最终回答时，Loop 返回内容与完整历史。单次任务输出后结束；Session 保存本轮历史，连续对话等待下一条输入。失败则不保存本轮历史。
+4. 最终回答时，Loop 返回内容与完整历史。Session 保存本轮成功历史，SessionManager 完成原子提交后交给界面；单次任务输出后结束，连续对话等待下一条输入。Loop 在模型/工具工作前后等待可选 onCheckpoint 保存最近未完成回合；失败不替换成功历史。底层 runAgent 仍支持不持久的单次调用。
 5. 工具调用时，先保留 assistant 消息，再顺序等待每个异步工具调用，执行后先报告新增或变化的执行记录，再检查取消；工具结果写成 role=tool 消息，保留原始 tool_call_id。
 6. 将包含关联结果的历史提交给下一轮模型，直到得到最终回答或明确失败。
 
@@ -50,7 +51,7 @@ pnpm 在包根运行 scripts，因此 start 命令先在包根构建并由 Node 
 
 ## System prompt（当前实现）
 
-`src/system-prompt.ts` 集中维护基础提示词，Loop 创建新历史时作为第一条 system 消息使用；单次任务、Session 新历史及子任务共用。已有内存历史保留其原 system；开发修改后需重新启动进程使用新构建。`agent.ts` 在父模型请求副本中追加委派指导，并为父子请求追加相同 Skill 目录及使用指导；基础 Tools 有 workspaceRoot 时，还加入 JSON 引号包围的规范根路径及相对路径规则，让模型直接知道当前目录。根路径由 createWorkspace 的 realpath 得到，TUI 显示同一值；不新增模型工具，不向子模型加入委派能力，不改变预算或权限，也不改写保存历史。
+`src/system-prompt.ts` 集中维护基础提示词，Loop 创建新历史时作为第一条 system 消息使用；单次任务、Session 新历史及子任务共用。2D-14 恢复校验将持久历史首条 system 归一为当前 systemPrompt；开发修改后需重新启动进程使用新构建。`agent.ts` 在父模型请求副本中追加委派指导，并为父子请求追加相同 Skill 目录及使用指导；基础 Tools 有 workspaceRoot 时，还加入 JSON 引号包围的规范根路径及相对路径规则，让模型直接知道当前目录。根路径由 createWorkspace 的 realpath 得到，TUI 显示同一值；不新增模型工具，不向子模型加入委派能力，不改变预算或权限，也不改写保存历史。
 
 本轮按用户要求参考 Claude Code 的公开工作流方向，以 Fatcat 当前能力重新编写：简洁直接、跟随用户语言、实现请求执行读改测、先了解相关代码、保持改动聚焦、只在关键歧义时提问，并据实际结果报告验证与限制。保留 Fatcat 身份，不再默认扮演猫；用户明确要求时才使用角色化表达。提示词只描述实际暴露的工具，适配 Windows PowerShell、分页读取、独立命令授权和现有权限边界。
 
@@ -111,4 +112,4 @@ ModelObservation 有三个分支：`context_reduction { beforeBytes, afterBytes,
 
 离线测试覆盖配置边界、工具参数和溢出、多工具关联、多轮纠错、迭代上限、协议错误、HTTP / 网络故障、超时、取消以及 CLI 退出码。
 
-真实 DeepSeek 验证已覆盖直接回答、工具闭环、Session 追问和完整 CLI 入口；详细结果以 PROGRESS.md 为准。阶段 2B 已通过用户 review；阶段 2C 和 2D-1 已通过用户 review；2D-2 原 write 已完成离线及真实读改读验证并合入 main；终端确认修正已合入 main。2D-3 的 shell 和固定样例编码闭环已通过离线与真实模型验证、用户 review 并合入 main。2D-4 默认委派迁移已通过 review 并合入；2D-5 的回合执行报告已通过 review 并合入；2D-6 的 read query 文本搜索已通过 review 并合入；2D-7 的请求容量与用量记录已通过 review 并合入；2D-8 的旧读取投影已验证并随 PR #10 合入，2D-9 的双回合验收已验证、待 review。2D-10 的 Skills 和新厂商使用离线测试，不能沿用上述真实模型证据宣称已在线验证。持久化、并行调度及其他子系统仍未实现。
+真实 DeepSeek 验证已覆盖直接回答、工具闭环、Session 追问和完整 CLI 入口；详细结果以 PROGRESS.md 为准。阶段 2B 已通过用户 review；阶段 2C 和 2D-1 已通过用户 review；2D-2 原 write 已完成离线及真实读改读验证并合入 main；终端确认修正已合入 main。2D-3 的 shell 和固定样例编码闭环已通过离线与真实模型验证、用户 review 并合入 main。2D-4 默认委派迁移已通过 review 并合入；2D-5 的回合执行报告已通过 review 并合入；2D-6 的 read query 文本搜索已通过 review 并合入；2D-7 的请求容量与用量记录已通过 review 并合入；2D-8 的旧读取投影已验证并随 PR #10 合入，2D-9 的双回合验收已验证、待 review。2D-10 的 Skills 和新厂商使用离线测试，不能沿用上述真实模型证据宣称已在线验证。2D-14 增加本地会话持久化与管理，并行调度、文件检查点和操作恢复仍未实现。

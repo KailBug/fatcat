@@ -188,7 +188,7 @@ CLI 的父 Agent 默认具有 delegate_task，由模型判断任务是否值得�
 
 ### 同阶段修正：默认工作目录与工具可用性
 
-在 `fix/default-workspace-tools` 修正未传 --workspace 时普通 --chat 缺少 shell / write 的入口行为。任务、--chat、--tui 与 --listSkills 默认选择启动目录，--workspace 可覆盖；read / write / shell 默认同级可用，写入和命令仍分别确认，权限选项可直接作用于默认工作目录。程序化 createTools 仍保留显式目录与 read-only / deny 默认值。
+在 `fix/default-workspace-tools` 修正未传 --workspace 时普通 --chat 缺少 shell / write 的入口行为。任务、--chat、--tui 默认选择启动目录，--workspace 可覆盖；read / write / shell 默认同级可用，写入和命令仍分别确认，权限选项可直接作用于默认工作目录。程序化 createTools 仍保留显式目录与 read-only / deny 默认值。
 
 入口修正还覆盖 pnpm 将脚本 cwd 切至包根的行为：专用启动器在包根构建和 .env 加载后恢复调用目录，默认目录及相对 --workspace 以该位置为准；直接执行 CLI 不读取 INIT_CWD。补充验收范围为真实 pnpm 子目录启动、绝对/相对覆盖、技能发现、无效启动目录及直接 Node 入口隔离，实际结果仍以 PROGRESS.md 为准。
 
@@ -227,6 +227,10 @@ Channel、App 待核心任务能力稳定后再考虑；TUI 因用户明确要�
 - 默认使用用户目录 `.fatcat/sessions`，允许 `FATCAT_SESSION_DIR` 覆盖根目录与 `--no-session-persistence` 临时会话；没有后台清理、跨工作目录导入、自动摘要或文件回滚。
 
 验收方向：真实临时文件下的保存/跨实例恢复/新建/切换/命名/分支、原会话独立、非法/超大/损坏历史、工具关联、写盘失败、取消与未完成回合、并发忙碌与修订冲突；实际 CLI 参数与本地命令、TUI 和 Web UI 的共享行为与权限回归。模型响应用虚构凭据与注入传输，真实模型效果另记，不据本增量将阶段 2D 整体标为完成。实现边界见 [SESSION.md](ARCHITECTURE/SESSION.md)。
+
+### 同阶段修正：本地列表命令
+
+按用户后续要求，删除独立技能/会话列表启动参数，以 chat / TUI 的 `/skills` 与已有 `/sessions` 在交互命令层统一展示。共享 src/commands.ts 使用已发现目录元数据并委托 session/commands，不调用模型、不读取完整技能正文或更改历史；交互启动仍要求 provider 配置，bare --resume 保留无凭据选择/管道列表。Web UI 的原会话侧栏与当前阶段范围不变，验收仅针对参数拒绝、本地命令及相关入口回归，验证事实见 PROGRESS。
 
 ## 阶段推进方式
 

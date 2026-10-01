@@ -66,7 +66,7 @@
 - Help: pnpm start --help
 - Continuous chat: pnpm start --chat (uses the launch directory with read/write/shell and a new saved session; writes and commands require per-operation approval).
 - Session continuation: pnpm start --continue or pnpm start --resume <id-or-name> (uses the selected workspace and current launch provider/permissions; resumes chat unless another mode or prompt is given).
-- Session listing: pnpm start --listSessions (local workspace metadata; no model credentials required). --name <name> names a session; --fork-session with --continue/--resume branches completed history; --no-session-persistence keeps a new run in memory.
+- Session listing: /sessions in chat or TUI (local workspace metadata; no model request). Chat/TUI startup requires configured provider credentials. --name <name> names a session; --fork-session with --continue/--resume branches completed history; --no-session-persistence keeps a new run in memory.
 - Chat and TUI session commands: /new [name], /clear and /reset retain the old session and create a new one; /sessions lists, /resume <id-or-name> switches, /rename <name> names, and /fork [name] branches. Session changes do not undo tools or reset process journals and usage.
 - Session storage defaults to the user home .fatcat/sessions directory, isolated by canonical workspace. FATCAT_SESSION_DIR overrides the root. Saved tool results and prompts are plaintext local data; never serialize credentials or restore permissions from them. Interrupted operations require current-state inspection and are never automatically replayed.
 - Interactive TUI: pnpm start --tui (uses the launch directory; requires a terminal).
@@ -78,7 +78,7 @@
 - Preauthorized command execution: add --shell-permission allow to a workspace task; commands are not OS-sandboxed.
 - Task-driven delegation is available in ordinary task and chat commands without a capability flag.
 - Local configuration check: pnpm start --checkConfig
-- Local skill catalog: pnpm start --listSkills (includes launch-directory skills; --workspace <directory> selects another directory; no model credentials required).
+- Local skill catalog: /skills in chat or TUI (shows discovered workspace, user, and built-in metadata without a model request, history mutation, or full instruction loading). Select another directory at startup with --workspace <directory>; chat/TUI startup requires configured provider credentials.
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
 - Public web verification: pnpm run verify:web (five fixed search/page/weather checks, no model credentials or requests; separate from offline tests).
 - CLI tasks, chat and TUI expose public web search and fetch by default. --web-permission deny disables this tool independently of workspace permissions; it is not a network sandbox for shell.
@@ -91,6 +91,6 @@
 - Follow docs/ARCHITECTURE/PROVIDERS.md for provider changes: use official endpoints and supported request fields, preserve tool-call validation, request budgets, cancellation, safe errors, and injected-transport coverage. New providers do not require live API validation unless explicitly requested.
 - Existing live verification scripts are restricted to DeepSeek; do not silently redirect them to another provider.
 - Built-in Skills live in src/skill/<subsystem>/<skill-name>/SKILL.md and ship with the build. Add task guidance only for implemented subsystems; do not create empty placeholders or copy runtime permission enforcement into prompts.
-- CLI tasks and skill listing use the launch directory by default. --workspace overrides it; --permission and --shell-permission work with tasks without an explicit workspace flag. Programmatic createTools callers retain explicit workspace selection and read-only/deny defaults.
+- CLI tasks, chat, and TUI use the launch directory by default; /skills and /sessions use the selected workspace. --workspace overrides it; --permission and --shell-permission work with tasks without an explicit workspace flag. Programmatic createTools callers retain explicit workspace selection and read-only/deny defaults.
 - Skills are discovered from the selected workspace and user skill roots, then the built-in catalog, and loaded through read. Local same-name Skills take precedence. Skill metadata and instructions never grant additional workspace or shell permissions.
 - Automated tests must use fake credentials and injected transports. Live verification is a separate, explicit command.

@@ -10,10 +10,11 @@
 | --- | --- |
 | `src/system-prompt.ts` | 父子 Loop 共用的英文 systemPrompt：CLI 编码协作、沟通、工具边界和证据化交付 |
 | `src/agent.ts` | `createAgent(config, baseTools?, transport?, skills?)` 装配父子模型与工具，内部包装 Skill read，返回 model / tools / maxIterations；工作目录、委派与 Skill 指导不进入保存历史 |
-| `src/cli.ts` | 解析任务文本、`--prompt`、`--chat`、`--listSkills`、帮助与配置检查；发现本地 Skills；管理 Ctrl+C；选择入口并输出退出码 |
+| `src/cli.ts` | 解析任务文本、`--prompt`、`--chat`、帮助与配置检查；发现本地 Skills；管理 Ctrl+C；选择入口并输出退出码 |
 | `scripts/start.ts` | pnpm start 专用启动器：在导入 CLI 前根据 INIT_CWD 恢复调用目录；不承担工具装配、配置加载或权限规则 |
 | `src/chat.ts`、`src/session/session.ts` | 连续输入与单会话成功历史，详见 Session 文档 |
 | `src/session/manager.ts`、`store.ts`、`history.ts`、`commands.ts` | 2D-14 共享会话选择、磁盘持久化、恢复校验和本地命令；会话文件集中在 src/session，与 tools/skill 同级，不授予工具权限，详见 Session 文档 |
+| `src/commands.ts` | chat / TUI 共用的本地命令分发；处理 /skills 元数据展示并委托 session/commands，不请求模型或写入对话历史 |
 | `src/terminal.ts` | 统一终端输入，隔离聊天、写入及命令确认，管理提示颜色及终端取消 |
 | `src/config.ts` | `loadConfig(env = process.env): Config` 校验 Key、模型、迭代上限、单次请求超时与请求体字节上限 |
 | `src/providers.ts` | 四家供应商的配置描述、固定 endpoint 与专有请求参数；详见 PROVIDERS.md |
@@ -34,7 +35,7 @@
 
 `Model(messages, signal?, observe?)` 接收 SDK 消息数组，返回已校验模型回合；可选 observe 接收 ModelObservation 元数据，服务于当前 Loop 和离线测试。旧的双参数注入模型仍可用，但不提供新元数据。供应商选择通过小型 profile 实现，没有模型注册表、动态插件体系或模型路由。
 
-可注入的 `transport` 仅用于在 SDK 请求边界验证实际 JSON 与错误行为；生产客户端使用所选 profile 的固定厂商/区域地址，见 PROVIDERS.md。CLI 任务、chat 与 TUI 默认用 process.cwd()，--workspace 可覆盖；创建带权限和记录的基础 Tools，发现同一工作目录的本地 Skills 并以第四参传给 createAgent，由后者包装 Skill read、装配父子模型与委派工具。--listSkills 沿用同一默认目录，帮助与配置检查不装配工作目录工具。父模型和 Loop/Session 共用含委派的 Tools，子模型与子 Loop 共用带 Skill read 的基础 Tools。createAgent 默认基础工具为 sum，父集合增加 delegate_task；低层 createTools 省略工作目录和 runAgent 省略 tools 时仍只提供 sum，程序化调用者需显式注入 Skills。装配本身不发送网络请求。
+可注入的 `transport` 仅用于在 SDK 请求边界验证实际 JSON 与错误行为；生产客户端使用所选 profile 的固定厂商/区域地址，见 PROVIDERS.md。CLI 任务、chat 与 TUI 默认用 process.cwd()，--workspace 可覆盖；创建带权限和记录的基础 Tools，发现同一工作目录的本地 Skills 并以第四参传给 createAgent，由后者包装 Skill read、装配父子模型与委派工具。chat / TUI 的 /skills 使用启动发现的目录元数据，/sessions 使用当前管理器的工作目录；两者由共享本地命令分发，不调用模型。帮助与配置检查不装配工作目录工具，交互启动仍校验 provider 配置；bare --resume 保留无凭据列表/选择路径。父模型和 Loop/Session 共用含委派的 Tools，子模型与子 Loop 共用带 Skill read 的基础 Tools。createAgent 默认基础工具为 sum，父集合增加 delegate_task；低层 createTools 省略工作目录和 runAgent 省略 tools 时仍只提供 sum，程序化调用者需显式注入 Skills。装配本身不发送网络请求。
 
 pnpm 在包根运行 scripts，因此 start 命令先在包根构建并由 Node 加载该处的 .env，再运行 dist/scripts/start.js。启动器仅对非空白 INIT_CWD 检查绝对路径并 chdir，然后动态导入 CLI；缺失或空白值保持当前 cwd，非法或不可访问目录以安全 CONFIG 错误结束。CLI 本身仍只使用 --workspace 或 process.cwd()，相对 --workspace 基于恢复后的调用目录解析；直接执行 dist/src/cli.js 不读取继承的 INIT_CWD。工作目录改变不影响按模块位置发现的内置 Skill 资产，不改变低层 Tools 的默认权限。
 

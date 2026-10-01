@@ -4,8 +4,10 @@ import { HarnessError, checkCancellation, formatError } from "../src/errors.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import type { ReportEvent } from "../src/execution-report.js";
 import { SessionManager } from "../src/session/manager.js";
-import { runSessionCommand, sessionCommandHelp, sessionLabel } from "../src/session/commands.js";
+import { interactiveCommandHelp, runInteractiveCommand } from "../src/commands.js";
+import { sessionLabel } from "../src/session/commands.js";
 import type { Conversation } from "../src/session/commands.js";
+import type { SkillDescriptor } from "../src/skills.js";
 import type { ApproveWrite } from "../src/tools/write.js";
 import type { ApproveShell } from "../src/tools/shell.js";
 import { metricSections, statusText } from "./metrics.js";
@@ -17,7 +19,7 @@ import type { TuiViewState } from "./view.js";
 
 const help = [
   "/help    Show this guide", "/status  Show full configuration and metric definitions",
-  sessionCommandHelp, "/exit    Close Fatcat",
+  interactiveCommandHelp, "/exit    Close Fatcat",
   "New sessions and switches retain process usage and workspace execution facts; files are not rolled back.",
   "Enter sends. Alt+Enter inserts a newline. Up/Down recall prompts. PageUp/PageDown scroll.",
   "Escape or Ctrl+C cancels a running turn. Ctrl+C at idle exits. Ctrl+D exits after cancellation.",
@@ -25,7 +27,10 @@ const help = [
   "Responses appear when a model request completes; token streaming is not enabled.",
 ].join("\n");
 
-type Options = TuiConfig & { terminal?: Terminal; warnings?: readonly string[]; color?: boolean; signal?: AbortSignal };
+type Options = TuiConfig & {
+  terminal?: Terminal; warnings?: readonly string[]; color?: boolean; signal?: AbortSignal;
+  skillCatalog?: readonly SkillDescriptor[];
+};
 
 /** Route application keys before the toolkit consumes its own fullscreen shortcuts. */
 function routeInput(terminal: Terminal, consume: (data: string) => boolean): Terminal {
@@ -282,7 +287,7 @@ export class TuiApp {
 
   private async runLocalCommand(prompt: string): Promise<void> {
     try {
-      const result = await runSessionCommand(this.session!, prompt);
+      const result = await runInteractiveCommand(this.session!, prompt, this.options.skillCatalog);
       if (result?.switched) this.restoreConversation();
       else this.updateSessionFooter();
       this.message("system", result?.text ?? "Unknown command. Use /help.");

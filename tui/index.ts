@@ -26,7 +26,7 @@ export async function runTui(config: Config, workspace: string | undefined,
       maxRequestBytes: config.maxRequestBytes,
     },
     workspace: root, permission, shellPermission: root === undefined ? "deny" : shellPermission,
-    skills: skills.skills.length, warnings: skills.warnings, webPermission,
+    skills: skills.skills.length, skillCatalog: skills.skills, warnings: skills.warnings, webPermission,
   });
   const session = await SessionManager.open(createAgent(config, tools, undefined, skills), {
     ...sessionOptions, workspace: root ?? process.cwd(),

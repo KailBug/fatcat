@@ -96,12 +96,17 @@ export class WebUiController {
     return this.changeSession(() => this.session.resume(selector));
   }
 
-  rename(name: string): Promise<void> {
-    return this.changeSession(() => this.session.rename(name), false);
+  rename(name: string, id?: string): Promise<void> {
+    return this.changeSession(() => this.session.rename(name, id), false);
   }
 
-  fork(name?: string): Promise<void> {
-    return this.changeSession(() => this.session.fork(name));
+  fork(name?: string, id?: string): Promise<void> {
+    return this.changeSession(() => this.session.fork(name, id));
+  }
+
+  deleteSession(id: string, revision?: number): Promise<void> {
+    const selectedRevision = revision ?? this.sessions.find((item) => item.id === id)?.revision;
+    return this.changeSession(() => this.session.delete(id, selectedRevision), id === this.session.current.id);
   }
 
   private changeSession(change: () => Promise<unknown>, restore = true): Promise<void> {
@@ -114,6 +119,8 @@ export class WebUiController {
         this.sessions = await this.session.list();
         this.status = "Ready";
       } catch (error) {
+        // Expose fresh metadata for a newly confirmed retry without replacing the active transcript.
+        try { this.sessions = await this.session.list(); } catch { /* Keep the original operation error. */ }
         this.status = "Session change failed";
         throw error;
       } finally {

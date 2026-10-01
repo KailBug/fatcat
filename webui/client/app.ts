@@ -1,5 +1,8 @@
 import type { Approval, WebTurn, WebUiState } from "../controller.js";
 import { renderMarkdown } from "./markdown.js";
+import type { SessionSummary } from "../../src/session/store.js";
+import { SessionMenu } from "./session-menu.js";
+import type { SessionAction } from "./session-menu.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -12,8 +15,6 @@ const prompt = element<HTMLTextAreaElement>("prompt");
 const send = element<HTMLButtonElement>("send");
 const stop = element<HTMLButtonElement>("stop");
 const newChat = element<HTMLButtonElement>("new-chat");
-const renameChat = element<HTMLButtonElement>("rename-chat");
-const forkChat = element<HTMLButtonElement>("fork-chat");
 const sessionList = element("sessions");
 const scroll = element("scroll-area");
 const messages = element("messages");
@@ -32,7 +33,10 @@ let connected = false;
 let sending = false;
 let approvalId: string | undefined;
 let sessionSignature = "";
+let detailsSessionId: string | undefined;
 const rendered = new Map<string, { signature: string; element: HTMLElement }>();
+const sessionMenu = new SessionMenu(element("session-menu"), (action, session) => { void sessionAction(action, session); },
+  () => connected && !sending && !state?.busy);
 
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
 function controls(): void {
@@ -42,11 +46,7 @@ function controls(): void {
   send.disabled = !connected || sending || !prompt.value.trim();
   stop.disabled = !connected || sending;
   newChat.disabled = !connected || sending || busy;
-  renameChat.disabled = !connected || sending || busy;
-  forkChat.disabled = !connected || sending || busy;
-  sessionList.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
-    button.disabled = !connected || sending || busy;
-  });
+  if (state) sessionMenu.update(displaySessions(state));
 }
 function connection(ok: boolean): void {
   connected = ok;
@@ -143,7 +143,7 @@ function render(next: WebUiState): void {
   element("welcome").hidden = next.turns.length > 0;
   element("model").textContent = next.info.model;
   element("workspace").textContent = next.info.workspace;
-  element("permissions").textContent = `Write ${next.info.permission} · Shell ${next.info.shellPermission} · Web ${next.info.webPermission}`;
+  element("workspace").title = `${next.info.workspace}\nWrite ${next.info.permission} · Shell ${next.info.shellPermission} · Web ${next.info.webPermission}`;
   renderSessions(next);
   const warning = element("session-warning");
   warning.hidden = !next.current.interrupted || next.busy;
@@ -165,21 +165,33 @@ function render(next: WebUiState): void {
     rendered.set(turn.id, { signature, element: article });
   }
   renderApproval(next.approval);
-  const content = element("details-content"); content.replaceChildren();
-  for (const [key, value] of Object.entries({ Provider: next.info.provider, Model: next.info.model, Workspace: next.info.workspace,
-    "Session ID": next.current.id, "Session name": next.current.name ?? next.current.title,
-    "Saved locally": next.persistent ? "Yes" : "No", "Successful turns": next.current.turnCount,
-    "Created": next.current.createdAt, "Updated": next.current.updatedAt,
-    "Forked from": next.current.forkedFrom ?? "None",
-    "Write permission": next.info.permission, "Shell permission": next.info.shellPermission, "Public web": next.info.webPermission,
-    "Parent iteration limit": next.info.maxIterations, "Request budget (bytes)": next.info.maxRequestBytes, "Available skills": next.info.skills,
-    "Skill warnings": next.info.warnings.join("\n") || "None" })) content.append(node("dt", key), node("dd", String(value)));
+  renderDetails(next);
   if (follow) requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight; });
   controls();
 }
 
+function renderDetails(next: WebUiState): void {
+  if (!detailsSessionId) return;
+  const selected = displaySessions(next).find((session) => session.id === detailsSessionId);
+  if (!selected) { dialog.close(); return; }
+  const content = element("details-content"); content.replaceChildren();
+  for (const [key, value] of Object.entries({ Provider: next.info.provider, Model: next.info.model, Workspace: next.info.workspace,
+    "Session ID": selected.id, "Session name": selected.name ?? selected.title,
+    "Active session": selected.id === next.current.id ? "Yes" : "No",
+    "Saved locally": next.persistent ? "Yes" : "No", "Successful turns": selected.turnCount,
+    "Created": selected.createdAt, "Updated": selected.updatedAt,
+    "Forked from": selected.forkedFrom ?? "None", "Interrupted turn": selected.interrupted ? "Yes" : "No",
+    "Write permission": next.info.permission, "Shell permission": next.info.shellPermission, "Public web": next.info.webPermission,
+    "Parent iteration limit": next.info.maxIterations, "Request budget (bytes)": next.info.maxRequestBytes, "Available skills": next.info.skills,
+    "Skill warnings": next.info.warnings.join("\n") || "None" })) content.append(node("dt", key), node("dd", String(value)));
+}
+
+function displaySessions(next: WebUiState): SessionSummary[] {
+  return next.sessions.some((session) => session.id === next.current.id) ? next.sessions : [next.current, ...next.sessions];
+}
+
 function renderSessions(next: WebUiState): void {
-  const sessions = next.sessions.some((session) => session.id === next.current.id) ? next.sessions : [next.current, ...next.sessions];
+  const sessions = displaySessions(next);
   const signature = JSON.stringify([next.current.id, sessions]);
   if (signature === sessionSignature) return;
   sessionSignature = signature;
@@ -189,25 +201,62 @@ function renderSessions(next: WebUiState): void {
     const selected = session.id === next.current.id;
     button.setAttribute("aria-current", String(selected));
     button.title = `${session.name ?? session.title}\n${session.id}`;
+    button.dataset.sessionId = session.id;
+    button.setAttribute("aria-haspopup", "menu");
     button.append(node("span", selected ? "◉" : "◌"));
     const copy = node("span", undefined, "session-copy");
     copy.append(node("span", session.name ?? session.title, "session-name"),
       node("small", `${session.turnCount} turns · ${new Date(session.updatedAt).toLocaleDateString()}`));
     button.append(copy);
     button.addEventListener("click", () => {
+      sessionMenu.close();
+      if (!connected || sending || state?.busy) return;
       if (selected) { scroll.scrollTop = scroll.scrollHeight; closeSidebar(); return; }
       void api("session/resume", { id: session.id }).then((accepted) => { if (accepted) sessionChanged(); });
+    });
+    button.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      sessionMenu.open(session, button, event.clientX, event.clientY);
+    });
+    button.addEventListener("keydown", (event) => {
+      if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+        event.preventDefault();
+        const bounds = button.getBoundingClientRect();
+        sessionMenu.open(session, button, bounds.left + 16, bounds.bottom);
+      }
     });
     sessionList.append(button);
   }
 }
 
 function closeSidebar(): void {
+  sessionMenu.close();
   document.body.classList.remove("sidebar-open");
   element("toggle-sidebar").setAttribute("aria-expanded", "false");
 }
 
 function sessionChanged(): void { prompt.value = ""; resize(); prompt.focus(); closeSidebar(); }
+
+async function sessionAction(action: SessionAction, session: SessionSummary): Promise<void> {
+  if (action === "details") {
+    if (!state) return;
+    detailsSessionId = session.id;
+    renderDetails(state);
+    dialog.showModal();
+    return;
+  }
+  if (!connected || sending || state?.busy) return;
+  if (action === "rename") {
+    const name = window.prompt("Session name", session.name ?? session.title);
+    if (name !== null) await api("session/rename", { id: session.id, name });
+  } else if (action === "fork") {
+    if (await api("session/fork", { id: session.id })) sessionChanged();
+  } else if (action === "delete") {
+    if (!window.confirm(`Delete "${session.name ?? session.title}" and its saved conversation? This cannot be undone. Files and commands stay in effect.`)) return;
+    const currentId = state?.current.id;
+    if (await api("session/delete", { id: session.id, revision: session.revision }) && state?.current.id !== currentId) sessionChanged();
+  }
+}
 
 function resize(): void { prompt.style.height = "auto"; prompt.style.height = `${Math.min(prompt.scrollHeight, 180)}px`; controls(); }
 element<HTMLFormElement>("composer").addEventListener("submit", (event) => {
@@ -229,21 +278,14 @@ stop.addEventListener("click", () => { void api("stop", {}); });
 newChat.addEventListener("click", () => {
   void api("session/new", {}).then((accepted) => { if (accepted) sessionChanged(); });
 });
-renameChat.addEventListener("click", () => {
-  const name = window.prompt("Session name", state?.current.name ?? state?.current.title ?? "");
-  if (name !== null) void api("session/rename", { name });
-});
-forkChat.addEventListener("click", () => {
-  void api("session/fork", {}).then((accepted) => { if (accepted) sessionChanged(); });
-});
-element("settings").addEventListener("click", () => dialog.showModal());
 element("close-details").addEventListener("click", () => dialog.close());
+dialog.addEventListener("close", () => { detailsSessionId = undefined; });
 element("toggle-sidebar").addEventListener("click", () => {
   const open = document.body.classList.toggle("sidebar-open");
   element("toggle-sidebar").setAttribute("aria-expanded", String(open));
 });
 document.addEventListener("click", (event) => {
-  if (event.target instanceof Element && !event.target.closest("aside, #toggle-sidebar")) {
+  if (event.target instanceof Element && !event.target.closest("aside, #toggle-sidebar, #session-menu")) {
     document.body.classList.remove("sidebar-open"); element("toggle-sidebar").setAttribute("aria-expanded", "false");
   }
 });

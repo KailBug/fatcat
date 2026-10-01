@@ -15,14 +15,7 @@
     <button class="new-chat" id="new-chat"><span aria-hidden="true">＋</span> New chat <span class="button-hint">↗</span></button>
     <div class="section-label">WORKSPACE SESSIONS</div>
     <nav id="sessions" class="session-list" aria-label="Saved sessions"></nav>
-    <div class="session-actions"><button id="rename-chat">Rename</button><button id="fork-chat">Fork session</button></div>
     <div class="sidebar-bottom">
-      <section class="workspace-card" aria-label="Workspace">
-        <div class="workspace-label"><span class="status-dot"></span> LOCAL WORKSPACE</div>
-        <p id="workspace">Connecting…</p>
-        <div class="permission-line" id="permissions">Loading permissions</div>
-      </section>
-      <button id="settings" class="settings-button"><span aria-hidden="true">⚙</span> Session details <span aria-hidden="true">↗</span></button>
       <div class="profile"><span class="avatar">Y</span><div>You<span>Local developer</span></div><span class="private-label">Personal</span></div>
     </div>
   </aside>
@@ -54,11 +47,16 @@
       <form id="composer" class="composer">
         <label class="sr-only" for="prompt">Message Fatcat</label>
         <textarea id="prompt" rows="1" placeholder="Ask anything about your workspace…" maxlength="32768" disabled></textarea>
-        <div class="composer-toolbar"><span class="workspace-chip"><span aria-hidden="true">⌘</span> Workspace context</span><span class="composer-shortcut">Shift + Enter for a new line</span><button id="send" class="send-button" type="submit" aria-label="Send message" disabled>↑</button><button id="stop" class="send-button stop-button" type="button" aria-label="Stop current turn" hidden>■</button></div>
+        <div class="composer-toolbar">
+          <div class="composer-context"><span class="workspace-chip"><span aria-hidden="true">⌘</span> Workspace context</span><span id="workspace" class="composer-workspace" aria-label="Current workspace">Connecting…</span></div>
+          <span class="composer-shortcut">Shift + Enter for a new line</span>
+          <button id="send" class="send-button" type="submit" aria-label="Send message" disabled>↑</button><button id="stop" class="send-button stop-button" type="button" aria-label="Stop current turn" hidden>■</button>
+        </div>
       </form>
       <p class="footnote">Fatcat can make mistakes. Review changes and check the execution report.</p>
     </div>
   </main>
+  <div id="session-menu" class="session-menu" role="menu" aria-label="Session actions" hidden></div>
   <dialog id="details"><div class="dialog-heading"><h2>Session details</h2><button id="close-details" class="icon-button" aria-label="Close session details">×</button></div><dl id="details-content"></dl><p class="dialog-note">Switching sessions restores successful conversation history. Approvals, failed turns and execution reports are not restored. Files and commands stay in effect.</p></dialog>
 </body>
 </html>

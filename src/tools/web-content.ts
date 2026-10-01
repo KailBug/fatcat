@@ -1,6 +1,7 @@
 import { DomUtils, parseDocument } from "htmlparser2";
 import { HarnessError } from "../errors.js";
-import { publicUrl } from "./web-request.js";
+import { webUrl } from "../permissions/web-request.js";
+import type { NetworkAccess } from "../permissions/web-request.js";
 
 export function clipUtf8(value: string, bytes: number): string {
   const buffer = Buffer.from(value);
@@ -14,11 +15,11 @@ export function cleanText(value: string): string {
   return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "").replace(/\s+/g, " ").trim();
 }
 
-export function sourceUrl(value: string, base: URL): string | undefined {
-  try { return publicUrl(new URL(value, base).href).href; } catch { return undefined; }
+export function sourceUrl(value: string, base: URL, access: NetworkAccess = "public"): string | undefined {
+  try { return webUrl(new URL(value, base).href, access).href; } catch { return undefined; }
 }
 
-export function extractPage(html: string, url: URL) {
+export function extractPage(html: string, url: URL, access: NetworkAccess = "public") {
   const doc = parseDocument(html);
   const title = clipUtf8(cleanText(DomUtils.textContent(DomUtils.getElementsByTagName("title", doc)[0] ?? [])), 256);
   for (const node of DomUtils.findAll((element) => ["script", "style", "noscript", "template", "svg", "head"].includes(element.name), doc.children)) {
@@ -33,7 +34,7 @@ export function extractPage(html: string, url: URL) {
   const links: { title: string; url: string }[] = [];
   const seen = new Set<string>();
   for (const anchor of DomUtils.getElementsByTagName("a", doc)) {
-    const href = anchor.attribs.href ? sourceUrl(anchor.attribs.href, url) : undefined;
+    const href = anchor.attribs.href ? sourceUrl(anchor.attribs.href, url, access) : undefined;
     const text = cleanText(DomUtils.textContent(anchor));
     if (href && text && !seen.has(href)) {
       seen.add(href);
@@ -45,7 +46,7 @@ export function extractPage(html: string, url: URL) {
 }
 
 /** DuckDuckGo's documented no-JavaScript page is best-effort, not a contracted API. */
-export function extractSearch(html: string, url: URL, limit: number) {
+export function extractSearch(html: string, url: URL, limit: number, access: NetworkAccess = "public") {
   const doc = parseDocument(html);
   const hasClass = (classes: string | undefined, name: string) => classes?.split(/\s+/).includes(name) ?? false;
   if (/anomaly\.js|anomaly-modal|challenge-form/i.test(html)) {
@@ -62,7 +63,7 @@ export function extractSearch(html: string, url: URL, limit: number) {
       const target = href.searchParams.get("uddg");
       if (target) { try { href = new URL(target); } catch { continue; } }
     }
-    const link = sourceUrl(href.href, url);
+    const link = sourceUrl(href.href, url, access);
     if (!link || seen.has(link)) continue;
     const snippet = DomUtils.findAll((element) => hasClass(element.attribs.class, "result__snippet"), block.children)[0];
     seen.add(link);
@@ -76,7 +77,7 @@ export function extractSearch(html: string, url: URL, limit: number) {
   return results;
 }
 
-export function extractBingSearch(xml: string, url: URL, limit: number) {
+export function extractBingSearch(xml: string, url: URL, limit: number, access: NetworkAccess = "public") {
   const doc = parseDocument(xml, { xmlMode: true });
   const channel = DomUtils.getElementsByTagName("channel", doc)[0];
   if (!channel || !DomUtils.getElementsByTagName("rss", doc).length) {
@@ -88,7 +89,7 @@ export function extractBingSearch(xml: string, url: URL, limit: number) {
   const items = DomUtils.getElementsByTagName("item", channel);
   for (const item of items) {
     const href = text(item, "link");
-    const link = href ? sourceUrl(href, url) : undefined;
+    const link = href ? sourceUrl(href, url, access) : undefined;
     if (!link || seen.has(link)) continue;
     seen.add(link);
     results.push({ title: clipUtf8(text(item, "title"), 256), url: link,

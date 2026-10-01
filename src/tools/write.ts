@@ -2,19 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { link, open, rename, unlink } from "node:fs/promises";
 import { dirname, extname, join, posix } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
-import { maxFileBytes, readTextFile, textExtensions } from "./text-file.js";
+import { maxFileBytes, readTextFile, textExtensions } from "../permissions/text-file.js";
+import { writeDecision } from "../permissions/policy.js";
+import type { PermissionPolicy } from "../permissions/policy.js";
+import type { ApproveWrite, WorkspacePermission } from "../permissions/types.js";
 import type { Tool, ToolResult } from "./types.js";
-import type { Workspace } from "./workspace.js";
+import type { Workspace } from "../permissions/workspace.js";
 
-export type WorkspacePermission = "ask" | "read-only" | "workspace-write";
-export type WriteApprovalRequest = {
-  path: string;
-  operation: "create" | "edit";
-  oldText?: string;
-  newText: string;
-  bytes: number;
-};
-export type ApproveWrite = (request: WriteApprovalRequest, signal?: AbortSignal) => Promise<boolean>;
+export type { ApproveWrite, WorkspacePermission, WriteApprovalRequest } from "../permissions/types.js";
 export type WriteRecord = {
   id: string;
   path: string;
@@ -32,7 +27,7 @@ const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex")
 function parseArguments(args: unknown): WriteArguments {
   if (typeof args !== "object" || args === null || Array.isArray(args)
     || !("path" in args) || typeof args.path !== "string" || !args.path.trim() || args.path.length > 1024) {
-    throw new HarnessError("INVALID_ARGUMENTS", "Expected a relative path containing 1 to 1024 characters.");
+    throw new HarnessError("INVALID_ARGUMENTS", "Expected a path containing 1 to 1024 characters.");
   }
   const keys = Object.keys(args);
   if (keys.length === 2 && "content" in args && typeof args.content === "string" && args.content.length <= maxFileBytes) {
@@ -60,35 +55,38 @@ export function createWriteTool(
   permission: WorkspacePermission,
   fileSystem = { open, link, rename, unlink },
   approveWrite?: ApproveWrite,
+  policy?: PermissionPolicy,
 ) {
+  const permissionPolicy = policy ?? workspace.permissionPolicy;
   const records: WriteRecord[] = [];
   let busy = false;
 
   async function execute(args: unknown, signal?: AbortSignal): Promise<ToolResult> {
     checkCancellation(signal);
-    if (permission === "read-only" || (permission === "ask" && !approveWrite)) {
-      throw new HarnessError("PERMISSION_DENIED", "Writing is unavailable under this workspace policy. Do not retry without user authorization.");
-    }
-    const input = parseArguments(args);
-    if (busy) throw new HarnessError("WRITE_BUSY", "Another write is already in progress for these workspace tools.");
-    if (records.length >= 100) throw new HarnessError("WRITE_LIMIT", "The process-local journal has reached 100 write attempts. Start a new run after reviewing the records.");
-    busy = true;
+    const lease = permissionPolicy?.beginOperation();
     try {
-      return await performWrite(input, signal);
-    } finally {
-      busy = false;
-    }
+      const decision = writeDecision(lease?.permission ?? permission, Boolean(approveWrite));
+      if (decision === "deny") {
+        throw new HarnessError("PERMISSION_DENIED", "Writing is unavailable under this workspace policy. Do not retry without user authorization.");
+      }
+      const input = parseArguments(args);
+      if (busy) throw new HarnessError("WRITE_BUSY", "Another write is already in progress for these workspace tools.");
+      if (records.length >= 100) throw new HarnessError("WRITE_LIMIT", "The process-local journal has reached 100 write attempts. Start a new run after reviewing the records.");
+      busy = true;
+      try { return await performWrite(input, decision, signal); }
+      finally { busy = false; }
+    } finally { lease?.release(); }
   }
 
-  async function performWrite(input: WriteArguments, signal?: AbortSignal): Promise<ToolResult> {
+  async function performWrite(input: WriteArguments, decision: "ask" | "allow", signal?: AbortSignal): Promise<ToolResult> {
     const creating = "content" in input;
     const target = creating
       ? await workspace.resolveNewFile(input.path, signal)
       : await workspace.resolvePath(input.path, signal);
-    if (!textExtensions.has(extname(target.absolute).toLowerCase())) {
+    if (!target.unrestricted && !textExtensions.has(extname(target.absolute).toLowerCase())) {
       throw new HarnessError("UNSUPPORTED_FILE", "Only supported text file extensions can be written.");
     }
-    const parentPath = posix.dirname(target.relative);
+    const parentPath = target.unrestricted ? dirname(target.absolute) : posix.dirname(target.relative);
     const parent = await workspace.resolvePath(parentPath, signal);
     let before: Buffer | null = null;
     let beforeIdentity: { dev: number; ino: number } | undefined;
@@ -126,10 +124,13 @@ export function createWriteTool(
           throw new HarnessError("WRITE_CONFLICT", "The file changed during the write. Read it again before editing.");
         }
       } else {
-        await workspace.resolveNewFile(input.path, signal);
+        const current = await workspace.resolveNewFile(input.path, signal);
+        if (current.absolute !== target.absolute) {
+          throw new HarnessError("WRITE_CONFLICT", "The new file path changed during the write.");
+        }
       }
     }
-    if (permission === "ask") {
+    if (decision === "ask") {
       const approved = await approveWrite!({
         path: target.relative, operation: creating ? "create" : "edit", bytes: bytes.length,
         ...(creating ? { newText: input.content } : { oldText: input.oldText, newText: input.newText }),
@@ -150,7 +151,7 @@ export function createWriteTool(
     try {
       const file = await fileSystem.open(temporary, "wx", mode);
       ownsTemporary = true;
-      record.temporaryPath = posix.join(parentPath, temporaryName);
+      record.temporaryPath = target.unrestricted ? temporary : posix.join(parentPath, temporaryName);
       try {
         await file.writeFile(bytes);
         await file.sync();
@@ -196,7 +197,8 @@ export function createWriteTool(
   const tool: Tool = {
     definition: { type: "function", function: {
       name: "write",
-      description: "Create a new UTF-8 workspace file with path and content (never overwrites), or edit an existing file with path, oldText and newText. Read first; oldText must match exactly once, including whitespace and line endings. Existing content outside the fragment and the UTF-8 BOM are preserved. Parent directories must exist. Maximum file size is 1 MiB. Requires user approval or preauthorized workspace-write permission. Errors do not imply rollback; inspect write records and read current content before retrying.",
+      description: "Create a new UTF-8 text file with path and content (never overwrites), or edit an existing file with path, oldText and newText. Current permission guidance defines whether paths must stay inside the workspace or may be absolute/outside it. Read first; oldText must match exactly once, including whitespace and line endings. Existing content outside the fragment and the UTF-8 BOM are preserved. Parent directories must exist. Maximum file size is 1 MiB. Requires user approval or preauthorized file-write permission. Errors do not imply rollback; inspect write records and read current content before retrying."
+        + (permissionPolicy ? " Current permission is supplied in request guidance and checked at execution." : ""),
       parameters: {
         type: "object", properties: {
           path: { type: "string", minLength: 1, maxLength: 1024 },

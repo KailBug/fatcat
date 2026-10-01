@@ -21,7 +21,7 @@
   </aside>
   <main>
     <header class="topbar">
-      <div class="topbar-left"><button id="toggle-sidebar" class="icon-button" aria-label="Toggle sidebar" aria-expanded="false">☰</button><span class="app-name">Fatcat</span><span class="model-pill" id="model">Connecting</span></div>
+      <div class="topbar-left"><button id="toggle-sidebar" class="icon-button" aria-label="Toggle sidebar" aria-expanded="false">☰</button><span class="app-name">Fatcat</span></div>
       <div class="connection"><span class="status-dot" id="connection-dot"></span><span id="connection">Connecting</span></div>
     </header>
     <div class="scroll-area" id="scroll-area">
@@ -48,15 +48,22 @@
         <label class="sr-only" for="prompt">Message Fatcat</label>
         <textarea id="prompt" rows="1" placeholder="Ask anything about your workspace…" maxlength="32768" disabled></textarea>
         <div class="composer-toolbar">
-          <div class="composer-context"><span class="workspace-chip"><span aria-hidden="true">⌘</span> Workspace context</span><span id="workspace" class="composer-workspace" aria-label="Current workspace">Connecting…</span></div>
-          <span class="composer-shortcut">Shift + Enter for a new line</span>
-          <button id="send" class="send-button" type="submit" aria-label="Send message" disabled>↑</button><button id="stop" class="send-button stop-button" type="button" aria-label="Stop current turn" hidden>■</button>
+          <div class="composer-primary-tools">
+            <button id="permission-mode" class="permission-mode" type="button" disabled></button>
+            <span class="workspace-path"><span class="workspace-path-icon" aria-hidden="true">⌁</span><span id="workspace" class="composer-workspace" aria-label="Current workspace">Connecting…</span></span>
+          </div>
+          <div class="composer-secondary-tools">
+            <span id="context-usage" class="context-chip" tabindex="0" aria-label="Model context usage"><span class="context-ring" aria-hidden="true"></span><span id="context-label">Context —</span></span>
+            <span class="model-pill" id="model" aria-label="Selected model">Connecting</span>
+            <button id="send" class="send-button" type="submit" aria-label="Send message" disabled>↑</button><button id="stop" class="send-button stop-button" type="button" aria-label="Stop current turn" hidden>■</button>
+          </div>
         </div>
       </form>
-      <p class="footnote">Fatcat can make mistakes. Review changes and check the execution report.</p>
+      <div class="composer-footer"><p class="footnote">Fatcat can make mistakes. Review changes and check the execution report.</p><span class="composer-shortcut">Shift + Enter for a new line</span></div>
     </div>
   </main>
   <div id="session-menu" class="session-menu" role="menu" aria-label="Session actions" hidden></div>
+  <div id="permission-menu" class="permission-menu" role="menu" aria-label="Permission modes" hidden></div>
   <dialog id="details"><div class="dialog-heading"><h2>Session details</h2><button id="close-details" class="icon-button" aria-label="Close session details">×</button></div><dl id="details-content"></dl><p class="dialog-note">Switching sessions restores successful conversation history. Approvals, failed turns and execution reports are not restored. Files and commands stay in effect.</p></dialog>
 </body>
 </html>

@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { HarnessError } from "../src/errors.js";
 import type { WebUiController } from "./controller.js";
+import { isPermissionMode } from "../src/permissions/policy.js";
 
 const assets = new Map([
   ["/", ["./public/index.html", "text/html; charset=utf-8"]],
@@ -11,6 +12,8 @@ const assets = new Map([
   ["/app.js", ["./client/app.js", "text/javascript; charset=utf-8"]],
   ["/markdown.js", ["./client/markdown.js", "text/javascript; charset=utf-8"]],
   ["/session-menu.js", ["./client/session-menu.js", "text/javascript; charset=utf-8"]],
+  ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
+  ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
   ["/favicon.svg", ["./public/favicon.svg", "image/svg+xml"]],
 ]);
 
@@ -110,6 +113,9 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
         throw new HttpError(400, "Expected a session ID and optional positive revision.");
       }
       await controller.deleteSession(body.id, body.revision as number | undefined);
+    } else if (path === "/api/permission-mode") {
+      if (!isPermissionMode(body.mode) || Object.keys(body).length !== 1) throw new HttpError(400, "Expected permission mode default, acceptEdits, plan, or freeToGo.");
+      controller.selectPermissionMode(body.mode);
     } else if (path === "/api/approval") {
       if (typeof body.id !== "string" || typeof body.allowed !== "boolean" || Object.keys(body).length !== 2) throw new HttpError(400, "Expected an approval ID and boolean decision.");
       controller.approve(body.id, body.allowed);

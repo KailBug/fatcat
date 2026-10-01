@@ -5,10 +5,11 @@ import type { ShellPermission } from "./tools/shell.js";
 import type { WorkspacePermission } from "./tools/write.js";
 import type { WebPermission } from "./tools/web.js";
 import { runChat } from "./chat.js";
-import { Session } from "./session.js";
+import { SessionManager } from "./session/manager.js";
+import { SessionStore } from "./session/store.js";
+import { formatSessionList } from "./session/commands.js";
 import { loadConfig } from "./config.js";
 import { HarnessError, formatError } from "./errors.js";
-import { runAgent } from "./loop.js";
 import { createTurnReporter } from "./execution-report.js";
 import { createAgent } from "./agent.js";
 import { createTools } from "./tools.js";
@@ -21,18 +22,27 @@ Usage:
   pnpm start --help
   pnpm start --checkConfig
   pnpm start --listSkills
+  pnpm start --listSessions
   pnpm start --chat
+  pnpm start --continue
+  pnpm start --resume <id-or-name>
   pnpm start --tui
   pnpm start --webui
   pnpm start --chat --workspace examples/workspace
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
 
-Use --chat for a continuous conversation with /help, /reset, and /exit.
+Use --chat for a continuous conversation with /help, /new, /sessions, /resume, /rename, /fork, and /exit.
 Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
 Use --webui for the local browser interface at 127.0.0.1:3210; --port <1-65535> selects another port.
 Open the private link printed at startup. Web UI write and command approvals appear in the browser.
-A prompt runs one task. History stays in memory.
+A prompt runs one task. Successful history is saved locally for the selected workspace.
+Use --continue (-c) to continue the latest session, or --resume (-r) <id-or-name> to select one.
+Bare --resume shows a session picker in a terminal or a local list for pipes, without model credentials.
+Use --name (-n) <name> to name a session; --fork-session with --continue or --resume copies history into a new session.
+Use --listSessions to list workspace sessions without credentials; --no-session-persistence keeps a new session in memory.
+Session storage defaults to ~/.fatcat/sessions; FATCAT_SESSION_DIR selects another local store.
+Restored sessions use the current launch's provider, workspace and permission settings.
 The agent can delegate focused independent tasks when useful; simple tasks stay direct.
 At most two child tasks may start per user turn (up to six additional model requests).
 Each child uses at most three additional model requests and cannot delegate.
@@ -49,7 +59,7 @@ Use --web-permission deny to disable the web tool (allow is the default). This i
 Search queries go to Bing (default) or DuckDuckGo; fetched URLs go to their hosts. Do not include secrets in either.
 Each task emits an execution_report with request sizes, reported token usage, writes and command outcomes, even on failure.
 HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 262144 bytes); older read outputs may be replaced by explicit markers to fit.
-Current and recent turns, user instructions, and execution facts are preserved; full history remains in memory.
+Current and recent turns, user instructions, and execution facts are preserved; full successful history is saved locally.
 An answer or a zero exit code alone does not certify the task; inspect the recorded evidence.
 HARNESS_PROVIDER selects deepseek (default), kimi, mimo, or qwen for the entire session.
 Selected file and skill contents are sent to the configured provider when the model reads them.
@@ -65,11 +75,17 @@ async function main(args: string[]): Promise<number> {
     let parsed;
     try {
       parsed = parseArgs({
-        args,
+        args: optionalResumeArgs(args),
         options: {
           help: { type: "boolean", short: "h" },
           checkConfig: { type: "boolean" },
           listSkills: { type: "boolean" },
+          listSessions: { type: "boolean" },
+          continue: { type: "boolean", short: "c" },
+          resume: { type: "string", short: "r" },
+          name: { type: "string", short: "n" },
+          "fork-session": { type: "boolean" },
+          "no-session-persistence": { type: "boolean" },
           prompt: { type: "string" },
           chat: { type: "boolean" },
           tui: { type: "boolean" },
@@ -87,26 +103,37 @@ async function main(args: string[]): Promise<number> {
       throw new HarnessError("USAGE", "Invalid arguments. Run pnpm start --help.");
     }
     const { values, positionals } = parsed;
+    const hasSelection = Boolean(values.continue || values.resume !== undefined || values.name !== undefined);
+    if (hasSelection && !values.help && !values.checkConfig && !values.listSkills && !values.listSessions
+      && !values.tui && !values.webui && values.prompt === undefined && positionals.length === 0) values.chat = true;
     const modes = Number(Boolean(values.help))
       + Number(Boolean(values.checkConfig))
       + Number(Boolean(values.listSkills))
+      + Number(Boolean(values.listSessions))
       + Number(Boolean(values.chat))
       + Number(Boolean(values.tui))
       + Number(Boolean(values.webui))
       + Number(values.prompt !== undefined || positionals.length > 0);
 
-    //start parsing if
     if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
-      throw new HarnessError("USAGE", "Choose one mode: help, config check, skill listing, chat, TUI, Web UI, or one prompt.");
+      throw new HarnessError("USAGE", "Choose one mode: help, config check, skill/session listing, chat, TUI, Web UI, or one prompt.");
     }
     if (values.workspace !== undefined && (!values.workspace.trim() || values.help || values.checkConfig
-      || (!values.chat && !values.tui && !values.webui && !values.listSkills && values.prompt === undefined && positionals.length === 0))) {
-      throw new HarnessError("USAGE", "Use --workspace with a prompt, --chat, --tui, --webui, or --listSkills and a non-empty directory.");
+      || (!values.chat && !values.tui && !values.webui && !values.listSkills && !values.listSessions && values.prompt === undefined && positionals.length === 0))) {
+      throw new HarnessError("USAGE", "Use --workspace with a task or local listing and a non-empty directory.");
     }
     if (values.port !== undefined && (!values.webui || !/^[1-9]\d*$/.test(values.port) || Number(values.port) > 65535)) {
       throw new HarnessError("USAGE", "Use --port with --webui and an integer from 1 to 65535.");
     }
     const hasTask = Boolean(values.chat || values.tui || values.webui || values.prompt !== undefined || positionals.length > 0);
+    if ((hasSelection || values["fork-session"] || values["no-session-persistence"]) && !hasTask) {
+      throw new HarnessError("USAGE", "Session selection options require a prompt, --chat, --tui, or --webui.");
+    }
+    if ((values.continue && values.resume !== undefined) || (values["fork-session"] && !values.continue && values.resume === undefined)
+      || (values["no-session-persistence"] && (values.continue || values.resume !== undefined || values["fork-session"]))
+      || (values.name !== undefined && !values.name.trim())) {
+      throw new HarnessError("USAGE", "Choose --continue or --resume; --fork-session requires one. Resume/fork requires persistence and names must be non-empty.");
+    }
     if (values["web-permission"] !== undefined && (!hasTask || !["allow", "deny"].includes(values["web-permission"]))) {
       throw new HarnessError("USAGE", "Use --web-permission allow or deny with a prompt, --chat, --tui, or --webui.");
     }
@@ -130,6 +157,12 @@ async function main(args: string[]): Promise<number> {
       console.log(JSON.stringify({ skills: skills.skills }, null, 2));
       return 0;
     }
+    if (values.listSessions || (values.resume === "" && (!process.stdin.isTTY || !process.stderr.isTTY))) {
+      const tools = await createTools(values.workspace ?? process.cwd());
+      const sessions = await new SessionStore().list(tools.workspaceRoot!);
+      console.log(values.listSessions ? JSON.stringify({ sessions }, null, 2) : formatSessionList(sessions));
+      return 0;
+    }
     if (values.checkConfig) {
       const config = loadConfig();
       console.log("Local configuration is valid (no model provider was contacted).");
@@ -148,7 +181,28 @@ async function main(args: string[]): Promise<number> {
       throw new HarnessError("USAGE", "TUI requires an interactive terminal. Use --chat for pipes or TERM=dumb.");
     }
 
-    //start config
+    const selection = {
+      ...(values.continue ? { continue: true } : {}),
+      ...(values.resume === undefined ? {} : { resume: values.resume }),
+      ...(values["fork-session"] ? { fork: true } : {}),
+      ...(values.name === undefined ? {} : { name: values.name }),
+    };
+    if (values.resume === "") {
+      process.on("SIGINT", cancel);
+      terminal = createTerminalInput(process.stdin, process.stderr, controller.signal);
+      const tools = await createTools(values.workspace ?? process.cwd());
+      const sessions = await new SessionStore().list(tools.workspaceRoot!);
+      console.error(formatSessionList(sessions));
+      if (!sessions.length) return 0;
+      console.error("Enter a session ID or name to resume, or /exit to cancel.");
+      terminal.prompt();
+      const selector = await terminal.readTask();
+      if (selector === undefined || selector.trim() === "/exit") return 0;
+      if (!selector.trim()) throw new HarnessError("USAGE", "A session ID or name is required.");
+      selection.resume = selector.trim();
+      if (values.tui || values.webui) { terminal.close(); terminal = undefined; }
+    }
+    const sessionOptions = { selection, persistence: !values["no-session-persistence"] };
     const config = loadConfig();
     const workspace = values.workspace ?? process.cwd();
     const permission = (values.permission ?? "ask") as WorkspacePermission;
@@ -156,14 +210,14 @@ async function main(args: string[]): Promise<number> {
     const webPermission = (values["web-permission"] ?? "allow") as WebPermission;
     if (values.webui) {
       const { runWebUi } = await import("../webui/index.js");
-      return await runWebUi(config, workspace, permission, shellPermission, webPermission, Number(values.port ?? "3210"));
+      return await runWebUi(config, workspace, permission, shellPermission, webPermission, Number(values.port ?? "3210"), sessionOptions);
     }
     if (values.tui) {
       const { runTui } = await import("../tui/index.js");
-      return await runTui(config, workspace, permission, shellPermission, webPermission);
+      return await runTui(config, workspace, permission, shellPermission, webPermission, sessionOptions);
     }
-    process.on("SIGINT", cancel);
-    if (values.chat || permission === "ask" || shellPermission === "ask") {
+    if (!terminal) process.on("SIGINT", cancel);
+    if (!terminal && (values.chat || permission === "ask" || shellPermission === "ask")) {
       terminal = createTerminalInput(process.stdin, process.stderr, controller.signal);
     }
     const signal = terminal?.signal ?? controller.signal;
@@ -174,13 +228,13 @@ async function main(args: string[]): Promise<number> {
     const skills = await discoverSkills({ workspace: baseTools.workspaceRoot!, signal });
     reportSkillWarnings(skills);
     const agent = createAgent(config, baseTools, undefined, skills);
+    const session = await SessionManager.open(agent, { ...sessionOptions, workspace: baseTools.workspaceRoot! });
     if (values.chat) {
-      return await runChat(new Session(agent), {
+      return await runChat(session, {
         input: process.stdin, output: process.stdout, error: process.stderr, signal, terminal: terminal!,
       });
     }
-    const answer = await runAgent(prompt, {
-      ...agent,
+    const answer = await session.run(prompt, {
       signal,
       onEvent: createTurnReporter((event) => console.error(JSON.stringify(event))),
     });
@@ -196,6 +250,16 @@ async function main(args: string[]): Promise<number> {
     terminal?.close();
     process.off("SIGINT", cancel);
   }
+}
+
+/** Node parseArgs requires a value for string options; normalize the optional picker form. */
+function optionalResumeArgs(args: string[]): string[] {
+  let positional = false;
+  return args.map((argument, index) => {
+    if (argument === "--") positional = true;
+    return !positional && (argument === "--resume" || argument === "-r")
+      && (args[index + 1] === undefined || args[index + 1]!.startsWith("-")) ? "--resume=" : argument;
+  });
 }
 
 function reportSkillWarnings(catalog: SkillCatalog): void {

@@ -16,7 +16,9 @@
 
 第一阶段最小 Agent Loop 已完成离线与真实 DeepSeek 验证，用户 review 通过。阶段 2A 的内存 Session 与连续对话已通过用户 review。阶段 2B 的只读工作目录工具已通过用户 review。阶段 2C 已实现显式开启、历史隔离、顺序执行的最小 Subagent，并通过离线与真实模型闭环验证；已通过用户 review。阶段 2D-1 通用 read 的目录与文本分页已通过 review。阶段 2D-2 已实现受控 write、最小工作目录权限和进程内写入事实记录，完成离线与真实模型验证，原 write 已合入 main；终端确认修正已合入 main。阶段 2D-3 的 Windows shell 已通过用户 review 并合入 main。阶段 2D-4 已将委派接入普通 CLI 默认工具集合，通过 review 并合入 main。阶段 2D-5 回合执行报告与提示词修正已通过 review 并合入 main。阶段 2D-6 的 read 有界字面搜索已通过 review 并合入 main。阶段 2D-7 的完整模型请求体预算和服务端 token 用量记录已通过 review 并合入 main。阶段 2D-8 已实现超预算时的旧读取结果请求投影，完成离线与真实多回合验证，随 PR #10 合入 main。阶段 2D-9 多文件修复及后续需求的验收已完成离线与真实双回合验证，待 review；阶段 2D 整体仍进行中。验证事实以 PROGRESS.md 为准。
 
-当前继续聚焦单个 Session 的可用性：阶段 2D-10 在 `feat/session-perfection` 分支加入本地 Skills、会话上下文保留，以及 Kimi、MiMo 和 Qwen 的模型配置。沿用现有 Loop、工具、SDK、权限和请求预算，不增加多会话管理。新增供应商按官方协议和项目 provider 开发规范接入，以离线注入传输验收；不据此宣称真实服务已验证。
+阶段 2D-10 在 `feat/session-perfection` 分支加入本地 Skills、会话上下文保留，以及 Kimi、MiMo 和 Qwen 的模型配置。当时沿用现有 Loop、工具、SDK、权限和请求预算，不增加多会话管理。新增供应商按官方协议和项目 provider 开发规范接入，以离线注入传输验收；不据此宣称真实服务已验证。
+
+按本轮用户要求，阶段 2D-14 在 `feat/session-perfection` 实现本地 Session 持久化，以及新建、列表、命名、切换、继续最近会话和会话分支。参考 Claude Code 的公开会话功能定义，按 Fatcat 当前模块与权限边界实现；CLI、TUI、Web UI 共享 SessionManager，磁盘保存完整成功对话与最近未完成回合记录。恢复仅恢复对话，不恢复权限授权、旧模型配置或文件状态，也不自动重放未完成操作。实际实现和验证以 PROGRESS.md 为准，系统设计见 [SESSION.md](ARCHITECTURE/SESSION.md)。
 
 2D-10 在同阶段、同分支补充按已有 subsystem 组织的内置 Skills，存放于 `src/skill/<subsystem>/<skill-name>/SKILL.md`，经构建随程序分发并以最低优先级发现。当前提供工作目录编辑、独立委派、上下文恢复、验证交付四种任务指导；用于 Fatcat 帮助用户处理目标项目，不是 Fatcat 自身源码维护规范。继续复用现有加载、Session 和权限边界，后续仅按实际 subsystem 任务扩充内容，不建空目录或搬迁运行时模块。内置补充已通过离线验收，真实模型效果尚未验证。
 
@@ -60,9 +62,9 @@ CLI 用户输入 → 模型响应或提出工具调用 → 执行工具 → 将�
 
 ## 当前非目标
 
-阶段 2D-9 的临时多文件双回合验收保留为回归基线。2D-10 的本地 Skills 与供应商选择继续使用已有历史和权限边界：启动发现元数据，模型按任务通过通用 read 加载 SKILL.md 和引用资源；成功历史保留已加载指令，失败与 /reset 沿用既有历史边界。Skills 不授予读写或命令权限，也不自动安装或执行脚本。2D-11 的 TUI 只扩展单 Session 的交互与可观测性；供应商在创建时固定，不加入回合中切换、模型路由、流式输出或思考历史管理。完整 Task、Context、记忆、会话持久化与多会话管理仍不进入本轮范围。
+阶段 2D-9 的临时多文件双回合验收保留为回归基线。2D-10 的本地 Skills 与供应商选择继续使用已有历史和权限边界：启动发现元数据，模型按任务通过通用 read 加载 SKILL.md 和引用资源；成功历史保留已加载指令，失败丢弃本轮未完成模型历史。Skills 不授予读写或命令权限，也不自动安装或执行脚本。供应商在本次启动固定，不加入回合中切换、模型路由、流式输出或思考历史管理。2D-14 将会话持久化与管理纳入当前范围；完整 Task、分层 Context、长期记忆、文件检查点和操作恢复仍不进入本轮范围。
 
-当前保留 CLI，并提供可选 TUI 与本地 Web UI。按用户明确要求，阶段 2D-13 在最新 main 的 `feat/webui-dev` 提前实现 `pnpm start --webui`：参考 ChatGPT 网页的侧栏、会话和底部输入布局，复用单 Session、Agent Loop、工具权限和回合报告；本地 HTTP 与浏览器交互分层，不新增 Agent 运行时。首版仅监听本机，使用进程内会话，不提供多会话管理、持久化、远程部署或模型流式协议。验证事实见 PROGRESS.md，设计见 [WEBUI.md](ARCHITECTURE/WEBUI.md)。Channel、App 继续后移；Hooks、MCP、后台任务与 Cron 按实际需求引入。完整长期记忆、复杂调度、递归委派和 Graph 引擎不进入近期范围。
+当前保留 CLI，并提供可选 TUI 与本地 Web UI。阶段 2D-13 在最新 main 的 `feat/webui-dev` 提前实现 `pnpm start --webui`：参考 ChatGPT 网页的侧栏、会话和底部输入布局，复用 Session、Agent Loop、工具权限和回合报告；本地 HTTP 与浏览器交互分层，不新增 Agent 运行时。首版仅监听本机；2D-14 在该边界内补充持久会话列表与切换，各标签仍共享一个活动会话、顺序执行回合，不提供远程部署或模型流式协议。验证事实见 PROGRESS.md，设计见 [WEBUI.md](ARCHITECTURE/WEBUI.md)。Channel、App 继续后移；Hooks、MCP、后台任务与 Cron 按实际需求引入。完整长期记忆、复杂调度、递归委派和 Graph 引擎不进入近期范围。
 
 不为未来功能预建大量空接口，不把参考项目整体搬入本项目，不在任务成功率尚无明确标准时以 token 成本最小化作为优先目标。
 

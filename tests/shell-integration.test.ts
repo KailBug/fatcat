@@ -5,7 +5,7 @@ import test from "node:test";
 import { HarnessError } from "../src/errors.js";
 import type { LoopEvent } from "../src/loop.js";
 import type { Model, ModelTurn } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { createSubagentTools } from "../src/subagent.js";
 import { createTools } from "../src/tools.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";

@@ -6,9 +6,12 @@ import { createServer, request } from "node:http";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
+import type { TestContext } from "node:test";
 import { HarnessError } from "../src/errors.js";
 import type { Message, Model, ModelTurn } from "../src/model.js";
-import { Session } from "../src/session.js";
+import type { LoopOptions } from "../src/loop.js";
+import { SessionManager } from "../src/session/manager.js";
+import { SessionStore } from "../src/session/store.js";
 import { createTools } from "../src/tools.js";
 import { WebUiController } from "../webui/controller.js";
 import type { WebUiInfo } from "../webui/controller.js";
@@ -27,11 +30,19 @@ async function until(predicate: () => boolean | Promise<boolean>): Promise<void>
   while (!await predicate()) { if (Date.now() > deadline) throw new Error("Fixture timed out."); await delay(10); }
 }
 
-test("Web UI preserves successful history, isolates snapshots and resets only while idle", async () => {
+async function controllerFor(t: TestContext, options: Pick<LoopOptions, "model" | "maxIterations" | "tools">): Promise<WebUiController> {
+  const workspace = options.tools?.workspaceRoot ?? (await temporaryWorkspace(t)).workspace;
+  const manager = await SessionManager.open(options, { workspace, persistence: false });
+  const controller = await WebUiController.create({ ...info, workspace }, manager);
+  t.after(() => controller.close());
+  return controller;
+}
+
+test("Web UI preserves successful history, isolates snapshots and creates new sessions only while idle", async (t) => {
   const requests: Message[][] = [];
-  const controller = new WebUiController(info, new Session({ maxIterations: 2, model: async (messages) => {
+  const controller = await controllerFor(t, { maxIterations: 2, model: async (messages) => {
     requests.push(structuredClone(messages)); return answer("Hello \u4e16\u754c");
-  } }));
+  } });
   controller.submit("Remember amber");
   assert.throws(() => controller.submit("Concurrent"), /current turn/);
   assert.throws(() => controller.reset(), /current turn/);
@@ -43,14 +54,17 @@ test("Web UI preserves successful history, isolates snapshots and resets only wh
   assert.equal(controller.snapshot().turns[1]?.answer, "Hello \u4e16\u754c");
   assert.equal(controller.snapshot().turns[1]?.report?.modelRequests.parent, 1);
   assert.equal(controller.snapshot().turns[1]?.report?.tokenUsage.parent.totals, null);
-  controller.reset(); controller.submit("Fresh"); await until(() => !controller.snapshot().busy);
+  const creating = controller.reset();
+  assert.throws(() => controller.submit("During session change"), /current turn/);
+  assert.throws(() => controller.rename("Concurrent rename"), /current turn/);
+  await creating; controller.submit("Fresh"); await until(() => !controller.snapshot().busy);
   assert.equal(requests[2]?.length, 2);
   assert.equal(controller.snapshot().turns.length, 1);
   await controller.close();
   assert.throws(() => controller.submit("Closed"), /shutting down/);
 });
 
-test("Web UI safely reports failures and cancellation, then permits another turn", async () => {
+test("Web UI safely reports failures and cancellation, then permits another turn", async (t) => {
   const model: Model = async (messages, signal) => {
     const prompt = messages.at(-1)?.content;
     if (prompt === "Fail") throw new Error("PRIVATE_PROVIDER_RESPONSE");
@@ -60,7 +74,7 @@ test("Web UI safely reports failures and cancellation, then permits another turn
     assert.ok(!JSON.stringify(messages).includes('"content":"Fail"'));
     return answer();
   };
-  const controller = new WebUiController(info, new Session({ model, maxIterations: 2 }));
+  const controller = await controllerFor(t, { model, maxIterations: 2 });
   controller.submit("Fail"); await until(() => !controller.snapshot().busy);
   assert.ok(!JSON.stringify(controller.snapshot()).includes("PRIVATE_PROVIDER_RESPONSE"));
   assert.equal(controller.snapshot().turns[0]?.report?.outcome, "stopped");
@@ -81,7 +95,7 @@ test("browser approvals enforce real workspace writes, reject replay and retain 
     if (messages.at(-1)?.role === "tool") { results.push(String(messages.at(-1)?.content)); return answer(); }
     return tool("write", { path: "result.txt", content: "Approved content" });
   };
-  controller = new WebUiController(info, new Session({ model, tools, maxIterations: 2 }));
+  controller = await controllerFor(t, { model, tools, maxIterations: 2 });
   t.after(() => controller.close());
   controller.submit("Deny"); await until(() => Boolean(controller.snapshot().approval));
   const denied = controller.snapshot().approval!;
@@ -96,7 +110,7 @@ test("browser approvals enforce real workspace writes, reject replay and retain 
   await until(() => !controller.snapshot().busy);
   assert.equal(await readFile(join(workspace, "result.txt"), "utf8"), "Approved content");
   assert.equal(controller.snapshot().turns[1]?.report?.writes[0]?.status, "committed");
-  controller.reset();
+  await controller.reset();
   assert.equal(tools.getWrites?.().length, 1);
   assert.equal(await readFile(join(workspace, "result.txt"), "utf8"), "Approved content");
 });
@@ -106,8 +120,8 @@ test("stopping or closing while approval is pending denies it without writing", 
   for (const action of ["stop", "close"] as const) {
     let controller: WebUiController;
     const tools = await createTools(workspace, "ask", (req, signal) => controller.requestApproval("write", req, signal));
-    controller = new WebUiController(info, new Session({ maxIterations: 2, tools,
-      model: async () => tool("write", { path: `${action}.txt`, content: "Never approved" }) }));
+    controller = await controllerFor(t, { maxIterations: 2, tools,
+      model: async () => tool("write", { path: `${action}.txt`, content: "Never approved" }) });
     controller.submit(action); await until(() => Boolean(controller.snapshot().approval));
     const id = controller.snapshot().approval!.id;
     await controller[action](); await until(() => !controller.snapshot().busy);
@@ -123,8 +137,8 @@ test("Web UI shell approvals use existing command rules and record the real exit
   let controller: WebUiController;
   const tools = await createTools(workspace, "ask", undefined, { permission: "ask",
     approve: (req, signal) => controller.requestApproval("shell", req, signal) });
-  controller = new WebUiController(info, new Session({ tools, maxIterations: 2, model: async (messages) =>
-    messages.at(-1)?.role === "tool" ? answer() : tool("shell", { command: "Write-Output WEBUI_CHECK", cwd: "." }) }));
+  controller = await controllerFor(t, { tools, maxIterations: 2, model: async (messages) =>
+    messages.at(-1)?.role === "tool" ? answer() : tool("shell", { command: "Write-Output WEBUI_CHECK", cwd: "." }) });
   t.after(() => controller.close());
   for (const allow of [false, true]) {
     controller.submit("Check shell"); await until(() => Boolean(controller.snapshot().approval));
@@ -144,8 +158,8 @@ test("read-only mode never requests browser approval for denied write and shell 
     permission: "deny", approve: async () => { approvals++; return true; },
   });
   for (const [name, args] of [["write", { path: "no.txt", content: "No" }], ["shell", { command: "Write-Output NO", cwd: "." }]] as const) {
-    const controller = new WebUiController(info, new Session({ tools, maxIterations: 2, model: async (messages) =>
-      messages.at(-1)?.role === "tool" ? answer(String(messages.at(-1)?.content)) : tool(name, args) }));
+    const controller = await controllerFor(t, { tools, maxIterations: 2, model: async (messages) =>
+      messages.at(-1)?.role === "tool" ? answer(String(messages.at(-1)?.content)) : tool(name, args) });
     controller.submit("Try tool"); await until(() => !controller.snapshot().busy);
     assert.match(controller.snapshot().turns[0]!.answer!, /PERMISSION_DENIED/);
     await controller.close();
@@ -154,7 +168,7 @@ test("read-only mode never requests browser approval for denied write and shell 
 });
 
 test("local HTTP boundary protects state and mutations and serves only built UI assets", async (t) => {
-  const controller = new WebUiController(info, new Session({ maxIterations: 1, model: async () => answer() }));
+  const controller = await controllerFor(t, { maxIterations: 1, model: async () => answer() });
   const server = await startWebUiServer(controller, 0);
   t.after(() => server.close());
   const token = new URLSearchParams(new URL(server.url).hash.slice(1)).get("token")!;
@@ -195,12 +209,12 @@ test("local HTTP boundary protects state and mutations and serves only built UI 
 
 test("HTTP concurrent submissions conflict and shutdown cancels an active model request", async (t) => {
   let cancelled = false;
-  const controller = new WebUiController(info, new Session({ maxIterations: 1, model: async (_messages, signal) => {
+  const controller = await controllerFor(t, { maxIterations: 1, model: async (_messages, signal) => {
     await new Promise<void>((_resolve, reject) => signal!.addEventListener("abort", () => {
       cancelled = true; reject(new HarnessError("CANCELLED", "Run cancelled."));
     }, { once: true }));
     return answer();
-  } }));
+  } });
   const server = await startWebUiServer(controller, 0); t.after(() => server.close());
   const token = new URLSearchParams(new URL(server.url).hash.slice(1)).get("token")!;
   const post = (path: string, body: unknown) => fetch(`${server.origin}/api/${path}`, { method: "POST",
@@ -208,6 +222,10 @@ test("HTTP concurrent submissions conflict and shutdown cancels an active model 
   assert.equal((await post("message", { prompt: "Wait" })).status, 202);
   assert.equal((await post("message", { prompt: "Second" })).status, 409);
   assert.equal((await post("reset", {})).status, 409);
+  assert.equal((await post("session/new", {})).status, 409);
+  assert.equal((await post("session/resume", { id: controller.snapshot().current.id })).status, 409);
+  assert.equal((await post("session/rename", { name: "Busy" })).status, 409);
+  assert.equal((await post("session/fork", {})).status, 409);
   await server.close();
   assert.equal(cancelled, true);
   assert.equal(controller.snapshot().busy, false);
@@ -219,7 +237,7 @@ test("actual CLI Web UI starts without a TTY, uses the launch workspace and keep
   t.after(async () => { if (child && child.exitCode === null && child.signalCode === null) {
     const exited = new Promise<void>((resolve) => child!.once("exit", () => resolve())); child.kill("SIGKILL"); await exited;
   } });
-  const { workspace } = await temporaryWorkspace(t);
+  const { workspace, base } = await temporaryWorkspace(t);
   const reservation = createServer();
   await new Promise<void>((resolve) => reservation.listen(0, "127.0.0.1", resolve));
   const address = reservation.address(); assert.ok(address && typeof address !== "string");
@@ -228,7 +246,8 @@ test("actual CLI Web UI starts without a TTY, uses the launch workspace and keep
   child = spawn(process.execPath, ["--import", new URL("./fixtures/webui-transport.js", import.meta.url).href,
     fileURLToPath(new URL("../src/cli.js", import.meta.url)), "--webui", "--port", String(port), "--permission", "read-only"], {
     cwd: workspace, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, HARNESS_PROVIDER: "deepseek", DEEPSEEK_API_KEY: "offline-webui-secret",
-      DEEPSEEK_MODEL: "offline-model", HARNESS_MAX_ITERATIONS: "4", HARNESS_REQUEST_TIMEOUT_MS: "10000", HARNESS_MAX_REQUEST_BYTES: "262144" },
+      DEEPSEEK_MODEL: "offline-model", HARNESS_MAX_ITERATIONS: "4", HARNESS_REQUEST_TIMEOUT_MS: "10000", HARNESS_MAX_REQUEST_BYTES: "262144",
+      FATCAT_SESSION_DIR: join(base, "sessions") },
   });
   let output = ""; let errors = "";
   child.stdout!.on("data", (chunk) => { output += String(chunk); }); child.stderr!.on("data", (chunk) => { errors += String(chunk); });
@@ -247,4 +266,104 @@ test("actual CLI Web UI starts without a TTY, uses the launch workspace and keep
   assert.match(final.turns[0].answer, /offline preview/);
   assert.equal(final.turns[0].report.tokenUsage.parent.totals.totalTokens, 30);
   assert.ok(!(output + errors).includes("offline-webui-secret"));
+});
+
+test("Web UI saves, names, switches, forks and restores canonical history after restart", async (t) => {
+  const { workspace, base } = await temporaryWorkspace(t);
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const requests: Message[][] = [];
+  const model: Model = async (messages) => {
+    requests.push(structuredClone(messages));
+    if (messages.at(-1)?.content === "Fail") throw new Error("PRIVATE_FAILURE");
+    return answer(`Saved ${String(messages.at(-1)?.content)}`);
+  };
+  const options = { model, maxIterations: 2 };
+  const manager = await SessionManager.open(options, { workspace, store });
+  const controller = await WebUiController.create({ ...info, workspace }, manager);
+  t.after(() => controller.close());
+  controller.submit("Remember amber"); await until(() => !controller.snapshot().busy);
+  const first = controller.snapshot().current.id;
+  await controller.rename("Amber");
+  assert.equal(controller.snapshot().current.name, "Amber");
+  await controller.newSession("Another session");
+  const second = controller.snapshot().current.id;
+  assert.notEqual(second, first);
+  assert.equal(controller.snapshot().turns.length, 0);
+  controller.submit("Beta"); await until(() => !controller.snapshot().busy);
+  await controller.resume(first);
+  assert.equal(controller.snapshot().turns[0]?.prompt, "Remember amber");
+  assert.equal(controller.snapshot().turns[0]?.answer, "Saved Remember amber");
+  assert.equal(controller.snapshot().turns[0]?.report, undefined);
+  assert.equal(controller.snapshot().approval, null);
+  controller.submit("Recall"); await until(() => !controller.snapshot().busy);
+  assert.ok(JSON.stringify(requests.at(-1)).includes("Remember amber"));
+  assert.ok(!JSON.stringify(requests.at(-1)).includes('"content":"Beta"'));
+  await controller.fork("Amber branch");
+  const fork = controller.snapshot().current.id;
+  assert.notEqual(fork, first);
+  assert.equal(controller.snapshot().current.forkedFrom, first);
+  assert.equal(controller.snapshot().turns.length, 2);
+  controller.submit("Branch only"); await until(() => !controller.snapshot().busy);
+  await controller.resume(first);
+  assert.equal(controller.snapshot().turns.length, 2);
+  assert.equal(controller.snapshot().sessions.length, 3);
+  await controller.close();
+
+  const reopened = await SessionManager.open(options, { workspace, store, selection: { resume: first } });
+  const restored = await WebUiController.create({ ...info, workspace }, reopened);
+  t.after(() => restored.close());
+  assert.equal(restored.snapshot().current.name, "Amber");
+  assert.equal(restored.snapshot().persistent, true);
+  assert.deepEqual(restored.snapshot().turns.map((turn) => turn.prompt), ["Remember amber", "Recall"]);
+  restored.submit("Fail"); await until(() => !restored.snapshot().busy);
+  assert.equal(restored.snapshot().current.interrupted, true);
+  assert.ok(!JSON.stringify(restored.snapshot()).includes("PRIVATE_FAILURE"));
+  await restored.close();
+  const failedReopen = await SessionManager.open(options, { workspace, store, selection: { resume: first } });
+  const afterFailure = await WebUiController.create({ ...info, workspace }, failedReopen);
+  t.after(() => afterFailure.close());
+  assert.equal(afterFailure.snapshot().turns.length, 2);
+  assert.equal(afterFailure.snapshot().current.interrupted, true);
+  assert.equal(afterFailure.snapshot().approval, null);
+  assert.ok(!JSON.stringify(failedReopen.history).includes('"content":"Fail"'));
+});
+
+test("session HTTP routes validate bodies and preserve old history when creating a chat", async (t) => {
+  const { workspace, base } = await temporaryWorkspace(t);
+  const manager = await SessionManager.open({ maxIterations: 1, model: async () => answer() }, {
+    workspace, store: new SessionStore({ root: join(base, "sessions") }),
+  });
+  const controller = await WebUiController.create({ ...info, workspace }, manager);
+  const server = await startWebUiServer(controller, 0);
+  t.after(() => server.close());
+  const token = new URLSearchParams(new URL(server.url).hash.slice(1)).get("token")!;
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const post = (path: string, body: unknown) => fetch(`${server.origin}/api/${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+  for (const [path, body] of [["session/new", { permission: "allow" }], ["session/new", { name: 4 }],
+    ["session/resume", {}], ["session/resume", { id: 4 }], ["session/resume", { id: "a", extra: true }],
+    ["session/rename", { name: 4 }], ["session/fork", { name: false }]] as const) {
+    assert.equal((await post(path, body)).status, 400);
+  }
+  const first = controller.snapshot().current.id;
+  assert.equal((await post("message", { prompt: "First session" })).status, 202);
+  await until(() => !controller.snapshot().busy);
+  assert.equal((await post("session/rename", { name: "First" })).status, 202);
+  assert.equal((await post("session/new", { name: "Second" })).status, 202);
+  assert.notEqual(controller.snapshot().current.id, first);
+  assert.equal(controller.snapshot().turns.length, 0);
+  assert.equal((await post("session/resume", { id: first })).status, 202);
+  assert.equal(controller.snapshot().turns[0]?.prompt, "First session");
+  assert.equal((await post("session/fork", { name: "Branch" })).status, 202);
+  assert.equal(controller.snapshot().current.forkedFrom, first);
+  assert.equal(controller.snapshot().turns.length, 1);
+  assert.equal((await post("session/resume", { id: "../outside" })).status, 400);
+  assert.equal(controller.snapshot().current.name, "Branch");
+  const branch = controller.snapshot().current.id;
+  const other = await SessionManager.open({ maxIterations: 1, model: async () => answer() }, {
+    workspace, store: new SessionStore({ root: join(base, "sessions") }), selection: { resume: branch },
+  });
+  await other.rename("External rename");
+  assert.equal((await post("session/rename", { name: "Stale rename" })).status, 409);
+  assert.equal((await post("session/resume", { id: branch })).status, 202);
+  assert.equal(controller.snapshot().current.name, "External rename");
 });

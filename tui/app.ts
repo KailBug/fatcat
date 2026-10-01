@@ -3,7 +3,9 @@ import type { Terminal } from "@earendil-works/pi-tui";
 import { HarnessError, checkCancellation, formatError } from "../src/errors.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import type { ReportEvent } from "../src/execution-report.js";
-import type { Session } from "../src/session.js";
+import { SessionManager } from "../src/session/manager.js";
+import { runSessionCommand, sessionCommandHelp, sessionLabel } from "../src/session/commands.js";
+import type { Conversation } from "../src/session/commands.js";
 import type { ApproveWrite } from "../src/tools/write.js";
 import type { ApproveShell } from "../src/tools/shell.js";
 import { metricSections, statusText } from "./metrics.js";
@@ -15,7 +17,8 @@ import type { TuiViewState } from "./view.js";
 
 const help = [
   "/help    Show this guide", "/status  Show full configuration and metric definitions",
-  "/reset   Clear conversation history; keep consumed usage and execution facts", "/exit    Close Fatcat",
+  sessionCommandHelp, "/exit    Close Fatcat",
+  "New sessions and switches retain process usage and workspace execution facts; files are not rolled back.",
   "Enter sends. Alt+Enter inserts a newline. Up/Down recall prompts. PageUp/PageDown scroll.",
   "Escape or Ctrl+C cancels a running turn. Ctrl+C at idle exits. Ctrl+D exits after cancellation.",
   "Approvals require a fresh yes or no. Pasted text is never submitted automatically.",
@@ -53,7 +56,7 @@ export class TuiApp {
   private readonly editor: Editor;
   private readonly view: FatcatView;
   private readonly state: TuiViewState;
-  private session?: Session;
+  private session?: Conversation;
   private turnController: AbortController | undefined;
   private activeTurn?: Promise<void>;
   private approval: { finish: (allowed: boolean) => void; draft: string } | undefined;
@@ -116,10 +119,11 @@ export class TuiApp {
     return false;
   }
 
-  async run(session: Session): Promise<number> {
+  async run(session: Conversation): Promise<number> {
     if (this.started) throw new HarnessError("SESSION_BUSY", "This TUI has already started.");
     this.started = true;
     this.session = session;
+    if (session instanceof SessionManager) this.restoreConversation();
     const interrupt = () => { if (this.turnController) this.cancelTurn(); else this.exit(); };
     const terminate = () => this.exit();
     const eof = () => this.exit();
@@ -216,12 +220,16 @@ export class TuiApp {
       }
       return;
     }
-    if (this.turnController || !prompt || !this.session) return;
+    if (this.state.busy || !prompt || !this.session) return;
     this.editor.setText("");
     if (prompt === "/exit") { this.exit(); return; }
     if (prompt === "/help") { this.message("system", help, "HELP"); return; }
-    if (prompt === "/status") { this.message("system", statusText(this.telemetry.snapshot(), this.options), "STATUS"); return; }
-    if (prompt === "/reset") {
+    if (prompt === "/status") {
+      this.message("system", (this.session instanceof SessionManager ? `Session: ${sessionLabel(this.session.current)}\n` : "")
+        + statusText(this.telemetry.snapshot(), this.options), "STATUS");
+      return;
+    }
+    if (["/reset", "/clear", "/new"].includes(prompt) && !(this.session instanceof SessionManager)) {
       this.session.reset();
       this.telemetry.resetConversation();
       this.state.messages = [];
@@ -229,7 +237,14 @@ export class TuiApp {
       this.message("system", "Conversation cleared. Usage and workspace execution facts are retained; files are not rolled back.");
       return;
     }
-    if (prompt.startsWith("/")) { this.message("system", "Unknown command. Use /help."); return; }
+    if (prompt.startsWith("/")) {
+      this.state.busy = true;
+      this.startedAt = Date.now();
+      this.editor.disableSubmit = true;
+      this.activity = "Updating session";
+      this.activeTurn = this.runLocalCommand(prompt);
+      return;
+    }
     this.editor.addToHistory(prompt);
     this.turnController = new AbortController();
     this.editor.disableSubmit = true;
@@ -240,6 +255,46 @@ export class TuiApp {
     this.telemetry.beginTurn();
     this.message("user", prompt);
     this.activeTurn = this.runTurn(prompt, this.turnController.signal);
+  }
+
+  private restoreConversation(): void {
+    if (!(this.session instanceof SessionManager)) return;
+    this.telemetry.resetConversation(this.session.current.turnCount);
+    this.state.messages = this.session.history.flatMap((message) =>
+      (message.role === "user" || message.role === "assistant") && typeof message.content === "string" && message.content
+        ? [{ role: message.role, text: message.content }] : []);
+    this.state.scrollOffset = 0;
+    this.activity = "Ready";
+    this.updateSessionFooter();
+    this.message("system", `Session: ${sessionLabel(this.session.current)}. `
+      + (this.session.persistent ? "History is saved locally." : "Persistence is disabled."));
+    if (this.session.current.interrupted) {
+      this.message("system", "The last turn was interrupted. Inspect workspace files before repeating operations.");
+    }
+    for (const warning of this.options.warnings ?? []) this.message("system", warning, "SKILL WARNING");
+  }
+
+  private updateSessionFooter(): void {
+    if (!(this.session instanceof SessionManager)) return;
+    this.state.footer = `session ${sessionLabel(this.session.current)} | write ${this.options.workspace === undefined ? "off" : this.options.permission} | `
+      + `shell ${this.options.shellPermission} | web ${this.options.webPermission ?? "deny"} | skills ${this.options.skills}`;
+  }
+
+  private async runLocalCommand(prompt: string): Promise<void> {
+    try {
+      const result = await runSessionCommand(this.session!, prompt);
+      if (result?.switched) this.restoreConversation();
+      else this.updateSessionFooter();
+      this.message("system", result?.text ?? "Unknown command. Use /help.");
+    } catch (cause) {
+      this.message("error", formatError(cause));
+    } finally {
+      this.state.busy = false;
+      this.editor.disableSubmit = false;
+      this.activity = "Ready";
+      this.refresh();
+      if (this.closing) this.resolveExit?.(this.failed ? 1 : 0);
+    }
   }
 
   private async runTurn(prompt: string, signal: AbortSignal): Promise<void> {

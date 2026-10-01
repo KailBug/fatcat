@@ -10,7 +10,7 @@ import type { WorkflowEvidence } from "../scripts/fixtures/coding-workflow.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import type { ExecutionReport } from "../src/execution-report.js";
 import type { Model, ModelTurn } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { createTools } from "../src/tools.js";
 import type { Tools } from "../src/tools.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
@@ -13,13 +15,24 @@ const skillHome = fileURLToPath(new URL("./fixtures/empty-skill-home", import.me
 
 function run(args: string[], cwd: string, initCwd: string | undefined, direct = false,
   overrides: NodeJS.ProcessEnv = {}) {
-  return spawnSync(process.execPath, ["--import", transport, direct ? cli : launcher, ...args], {
+  const sessionDirectory = overrides.FATCAT_SESSION_DIR ?? mkdtempSync(join(tmpdir(), "fatcat-start-sessions-"));
+  try {
+    return spawnSync(process.execPath, ["--import", transport, direct ? cli : launcher, ...args], {
     cwd, encoding: "utf8", input: "", timeout: 5000,
     env: { ...process.env, INIT_CWD: initCwd, HARNESS_PROVIDER: "deepseek",
       DEEPSEEK_API_KEY: "offline-start-only", DEEPSEEK_MODEL: "deepseek-flash",
       HARNESS_MAX_ITERATIONS: "8", HARNESS_REQUEST_TIMEOUT_MS: "60000", HARNESS_MAX_REQUEST_BYTES: "262144",
-      USERPROFILE: skillHome, HOME: skillHome, FATCAT_TEST_WORKSPACE_ROOT: undefined, ...overrides },
-  });
+      USERPROFILE: skillHome, HOME: skillHome, FATCAT_SESSION_DIR: sessionDirectory,
+      FATCAT_TEST_WORKSPACE_ROOT: undefined, ...overrides },
+    });
+  } finally {
+    if (overrides.FATCAT_SESSION_DIR === undefined) {
+      const target = resolve(sessionDirectory);
+      assert.equal(dirname(target), resolve(tmpdir()));
+      assert.ok(basename(target).startsWith("fatcat-start-sessions-"));
+      rmSync(target, { recursive: true, force: true });
+    }
+  }
 }
 
 test("package launcher restores the invocation directory before creating workspace tools", async (t) => {

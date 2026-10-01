@@ -22,6 +22,8 @@ export type LoopOptions = {
   tools?: Tools;
   signal?: AbortSignal;
   onEvent?: (event: LoopEvent) => void;
+  /** Persist a transcript checkpoint before work and after each recorded response. */
+  onCheckpoint?: (messages: readonly Message[]) => Promise<void>;
 };
 
 /** Run one task with fresh history, preserving the original single-task API. */
@@ -68,6 +70,7 @@ export async function runAgentTurn(
     if (!Number.isSafeInteger(maxIterations) || maxIterations < 1) {
       throw new HarnessError("CONFIG", "maxIterations must be a positive safe integer.");
     }
+    if (options.onCheckpoint) await options.onCheckpoint(structuredClone(messages));
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       checkCancellation(signal);
       onEvent?.({ type: "model_request", iteration });
@@ -83,6 +86,7 @@ export async function runAgentTurn(
       const turn = await model(requestMessages, signal, (event) => onEvent?.({ ...event, iteration }));
       checkCancellation(signal);
       messages.push(turn.message);
+      if (options.onCheckpoint) await options.onCheckpoint(structuredClone(messages));
       if (!turn.toolCalls.length) {
         const content = turn.message.content;
         if (typeof content !== "string" || !content.trim()) {
@@ -105,6 +109,7 @@ export async function runAgentTurn(
         reportExecutionRecords();
         checkCancellation(signal);
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+        if (options.onCheckpoint) await options.onCheckpoint(structuredClone(messages));
         onEvent?.({ type: "tool_result", iteration, callId: call.id, tool: call.function.name, ok: result.ok });
       }
     }

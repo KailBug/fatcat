@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createAgent } from "../src/agent.js";
 import { loadConfig } from "../src/config.js";
 import type { Message } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { discoverSkills, withSkills } from "../src/skills.js";
 import type { SkillDescriptor } from "../src/skills.js";
 import { defaultTools } from "../src/tools.js";

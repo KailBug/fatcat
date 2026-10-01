@@ -51,7 +51,7 @@ export type TuiTelemetry = {
   beginTurn(): void;
   observe(event: ReportEvent): void;
   finishTurn(outcome: "answered" | "stopped", stopCode?: string): void;
-  resetConversation(): void;
+  resetConversation(completedTurns?: number): void;
   snapshot(): TuiTelemetrySnapshot;
 };
 
@@ -203,9 +203,9 @@ export function createTuiTelemetry(): TuiTelemetry {
       // Only Session.run resolving confirms that its history was actually committed.
       if (outcome === "answered") conversation.completedTurns++;
     },
-    resetConversation() {
+    resetConversation(completedTurns = 0) {
       if (turn.status === "running") throw new Error("Cannot reset telemetry while a turn is running.");
-      conversation.completedTurns = 0;
+      conversation.completedTurns = completedTurns;
       conversation.resets++;
       turn = { ...emptySummary(), number: session.turns, status: "idle", stopCode: null, iteration: 0 };
       clearTurnDetails();

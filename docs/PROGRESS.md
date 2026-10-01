@@ -4,10 +4,14 @@
 
 ## 当前状态
 
-- 阶段 2D-13：从最新 origin/main `8885f95` 创建 `feat/webui-dev`，首版本地 Web UI 已实现 `pnpm start --webui`、ChatGPT 风格布局、单会话对话、浏览器审批、停止、基础 Markdown 和回合报告。类型检查、构建、299 项全量离线测试与真实 pnpm 入口下的 Edge 浏览器检查通过。尚未提交或推送，待 review；没有真实模型 API 验证，具体边界见本日记录。
-- 当前基线核对（2026-09-29）：fetch 后 origin/main 为 `8885f95`（PR #17 合并），已包含默认工作区修正、TUI 根目录迁移和 2D-12。以下较早状态中的“本地未提交/待合入”保留当时事实，不再代表当前 main 文件状态。Web UI 按本次要求提前进入 2D-13，Channel / App 继续后移。
+- Session 目录整理（2026-09-30）：按用户后续要求，在同一 `feat/session-perfection` 保留未提交的 2D-14 功能，将会话源码集中到 `src/session/`，与 tools/skill 同级；类型检查及含构建的 317 项全量离线测试通过，旧源路径、产物和活动引用均已核查。只改变文件位置及导入路径，尚未提交、推送或合并，结果见本日目录整理记录。
+- 阶段 2D-14：按用户要求在 `feat/session-perfection` 实现本地 Session 持久化、创建、列表、命名、继续/恢复、切换和分支；CLI、TUI、Web UI 共用 SessionManager。类型检查、构建、317 项全量离线测试、真实 CLI 跨进程恢复、强制结束后的工具收据恢复以及 Edge 桌面/窄屏会话操作与服务重启检查通过。未提交、推送或合并，待 review；没有真实模型 API 验证，具体限制见本日记录。
+- 当前基线核对（2026-09-30）：任务开始时已在用户指定 `feat/session-perfection`，HEAD 为 `b333039967b6ba4f3f8a00ac18d8e911bc301b76`（PR #18 合并），工作区干净，已包含 2D-13 Web UI。保留以下记录作为当时事实；其中“未提交/未合入”不再代表本轮开始时的基线状态。阶段 2D 整体仍进行中，Channel / App 继续后移。
 
 ### 此前基线状态（保留历史描述，当前合入状态以上述核对为准）
+
+- 阶段 2D-13：从最新 origin/main `8885f95` 创建 `feat/webui-dev`，首版本地 Web UI 已实现 `pnpm start --webui`、ChatGPT 风格布局、单会话对话、浏览器审批、停止、基础 Markdown 和回合报告。类型检查、构建、299 项全量离线测试与真实 pnpm 入口下的 Edge 浏览器检查通过。尚未提交或推送，待 review；没有真实模型 API 验证，具体边界见本日记录。
+- 当前基线核对（2026-09-29）：fetch 后 origin/main 为 `8885f95`（PR #17 合并），已包含默认工作区修正、TUI 根目录迁移和 2D-12。以下较早状态中的“本地未提交/待合入”保留当时事实，不再代表当前 main 文件状态。Web UI 按本次要求提前进入 2D-13，Channel / App 继续后移。
 
 - 阶段 2D-12：在用户指定的 fix/session-perfection 实现公开 web 搜索/读取、独立网络权限和 web-research / weather-lookup 两个 Skill。类型检查、含构建的 289 项离线测试、锁文件安装及五项真实公网工具检查通过；未调用真实模型 API。更改尚未提交或推送，待 review；详情及限制见本日记录。
 
@@ -25,6 +29,47 @@
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；yaml 2.9.1 解析 Skill frontmatter，@earendil-works/pi-tui 0.87.1 支撑可选终端界面。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+
+## 2026-09-30：Session 目录整理（本地已验证，未提交）
+
+- 按用户后续要求继续使用 `feat/session-perfection`，保留全部未提交的 Session 持久化增量和历史进度记录；本次为同一功能交付内的组织调整，没有另建分支、重置、暂存、提交、推送或合并。
+- 将原 src 下的五个会话文件集中到 `src/session/session.ts`、`manager.ts`、`store.ts`、`history.ts`、`commands.ts`，与 `src/tools/`、`src/skill/` 同级。同步 CLI/chat、TUI、Web UI、测试和脚本的导入位置，不增加 barrel、重新导出层或旧路径兼容包装。
+- 编译产物相应使用 `dist/src/session/`；构建前仅删除已核对的旧会话 10 个 .js / .js.map 生成文件，以验证运行不依赖旧产物。新目录包含五个模块及对应 source maps，原五个源码路径和旧根目录产物均不存在；活动源码、测试、脚本及动态子进程 URL 不再引用旧位置。
+- 对比五个移动模块，除导入行外内容保持一致；更新 27 个引用文件并保留其换行格式。Session API、持久化格式、模型/权限/工具边界及用户命令不变，不增加 barrel、依赖或测试，配置和 pnpm-lock.yaml 不变。
+- 本轮重新执行 pnpm run typecheck、pnpm test（含构建），317/317 全部通过，0 失败/取消/跳过，退出码 0，用时 33.20 秒；独立只读复核未发现遗漏引用。不沿用上次目录移动前的测试作为本次证据，也没有重新进行浏览器、ConPTY 或真实模型 API 验证。
+- 已同步 Session、Agent Loop 与架构总览的当前模块路径；README、USAGE、PROJECT 和 ROADMAP 的用户行为与阶段范围没有变化，无需新增范围描述。4 份更新文档的 UTF-8、39 个本地 Markdown 链接及五个新源码路径核对通过，git diff --check 通过；历史进度中的旧文件名保留当时事实。
+- 无已知组织或实现阻塞。继续在现有功能分支 review 持久化增量和本次目录整理；全部更改未暂存，没有提交、推送或合并，阶段 2D 整体状态不变。
+
+## 2026-09-30：阶段 2D-14，Session 持久化与会话管理（离线和浏览器已验证，待 review）
+
+### 实际结果
+
+- 核对用户指定的 `feat/session-perfection`、HEAD `b333039` 与干净工作区后在原分支实现，没有重置、清理、暂存、提交、推送或合并。沿用 Node.js 24、pnpm 11.21.0、TypeScript 和现有模型 SDK，不新增依赖，不修改 pnpm-lock.yaml。
+- 参考 Claude Code 官方会话功能定义，增加 `session-manager.ts`、`session-store.ts`、`session-history.ts` 和 `session-commands.ts`。CLI、TUI、Web UI 共享会话身份与管理边界，提供新建、列表、命名、按 ID/名称恢复、继续最近会话和独立会话分支；程序化 Session 保留内存入口。新建和 `/clear` / `/reset` 保留原会话，切换不改变启动配置、权限、工具事实或进程已消耗用量。
+- CLI 增加 `--continue` / `-c`、`--resume` / `-r`、`--name` / `-n`、`--fork-session`、`--listSessions` 与 `--no-session-persistence`。无选择时创建新持久会话；bare resume 在交互终端列出并读取选择，重定向时只列出后退出，不要求模型 Key。列表为无凭据的工作目录本地查询；chat / TUI 复用 `/new`、`/sessions`、`/resume`、`/rename`、`/fork` 等本地命令。
+- 默认在用户主目录 `.fatcat/sessions/<workspace-hash>/<session-id>.json` 保存，可用 `FATCAT_SESSION_DIR` 覆盖；使用规范工作目录隔离、UUID、格式版本、修订号、原子快照和短时跨进程锁。恢复严格校验文本历史和工具关联，首条 system 归一为当前 systemPrompt；快照最多 64 MiB，超限先拒绝再解析。已完成完整历史包含工具/Skill 正文，恢复不采用请求投影标记作为保存历史，也不保存凭据、权限策略或审批答复。
+- Loop 在工作开始及 assistant/tool 消息产生后等待可选检查点，单独保存最近未完成回合；失败、取消、强制退出不替换成功历史。恢复只展示中断提示，下一次模型请求附加有界恢复说明，要求核查副作用，不自动重放工具或请求。下一次成功提交清除最近未完成记录，不构成永久失败审计日志。
+- SessionManager 的根 completed / stopped 延迟到持久化结果确定后输出；最终写盘失败报告 stopped / SESSION_STORAGE，避免把模型返回答案误报为已保存会话。工作开始前的写盘失败有零请求停止报告；此前已观察到的工具事实和用量仍保留。普通程序化 Session / Loop 的事件时机保持。
+- Web UI 侧栏显示同工作目录会话，提供新建、切换、命名与分支；各标签仍共享一个活动会话，运行/审批中拒绝管理操作。服务重启可恢复用户/assistant 对话，但不恢复旧活动报告、实时 journals、待批操作或遥测。TUI 恢复相同对话和会话标识，不制造旧 token 计量。
+- 同步 AGENTS、README、USAGE、PROJECT、ROADMAP 与受影响架构文档，新增阶段 2D-14 的范围和验收边界；保留早期阶段进度事实，区分当前实现与未实现的文件检查点、回滚、长期记忆和后台恢复。
+
+### 验证与修正
+
+- Windows 原生 Node v24.19.0、pnpm 11.21.0：最终 pnpm run typecheck、pnpm run build、pnpm test 全量 317/317 通过，0 失败/取消/跳过；测试用时 33.45 秒，较 299 项基线增加 18 项。实际 package launcher 的 pnpm start --help 通过，列出新会话参数。初次全量 315/315 后补充存储失败和稀疏超大文件回归，最终全量重跑通过。
+- 最新定向测试 34/34 通过：11 项持久 Session、12 项 TUI app、11 项 Web UI。覆盖真实临时文件的保存/跨实例恢复、完整工具与 Skill 文本、当前 system、历史副本、工作目录隔离、新建/命名/切换/分支、内存模式、失败/取消、修订冲突、忙碌拒绝和损坏/非法历史；CLI 回归另验证多次独立进程的 resume/continue、当前权限及参数互斥、本地命令和无凭据列表。
+- 实际子进程在临时样例执行受控 write，工具结果持久保存后被强制结束；新进程以 read-only 恢复，零自动模型请求、不重复写入，下一次请求收到中断说明与历史收据，文件内容保持。这是本机文件与进程真实执行，模型来自离线夹具，不是在线供应商验证。
+- 注入检查点/最终发布失败后，原成功历史仍保留，execution_report 只产生 stopped / SESSION_STORAGE；开始记录失败时模型调用数为零。大于 64 MiB 的稀疏会话文件在解析前拒绝；不完整事务锁给出人工处理条件，陈旧 ownerPid 锁可恢复。原 Session、provider、工具、权限、委派、Context、报告与启动目录回归均通过。
+- 通过真实 CLI 服务、虚构凭据、注入传输、独立临时工作目录和本机 Edge 检查 1440×1000 桌面及 390×844 窄屏：新建、命名、切换、分支、回看旧对话，以及服务停止/重启后的恢复。最终没有浏览器 console/page 错误；截图保留于忽略的 dist/session-browser-*.png。本轮没有原生 ConPTY 手动会话检查；TUI 新管理操作依据 FakeTerminal 自动回归，不沿用旧阶段 ConPTY 结果作为本轮证据。
+- 独立审阅发现陈旧锁的两个恢复者可能删除新活动锁，改为独占恢复门内重新检查 ownerPid；发布成功后的锁关闭采用尽力清理，避免清理异常推翻已确认修订。另补齐不完整锁提示、存储失败报告时机和可选 checkpoint 的等待边界。一次 typecheck 因 exactOptionalPropertyTypes 下显式 undefined signal 失败，改为保留 options 的条件展开后最终通过。
+- 自动模型检查全部使用虚构凭据及注入传输，没有真实模型 API 或 verify:* 请求，没有检查或输出真实凭据，也未修改 .env；pnpm start --help 沿用包脚本的环境文件加载。默认命令沙箱和 CUA 遇到 Windows ACL 初始化限制，使用获准的原生执行和已安装 Edge 路径完成验证，不改变项目的运行环境要求。
+- 最后只读检查 15 份受影响文档、README 与 AGENTS 的 UTF-8 和 104 个本地 Markdown 链接，全部通过；git diff --check 通过。保留已有语言切换标签和历史进度记录，没有批量换行改写。
+
+### 限制与下一步
+
+- 持久化为本地明文 JSON，可含用户提示、读取内容和工具结果，没有加密、自动清理、Claude transcript 导入或跨工作目录搜索；`--no-session-persistence` 可关闭本次保存。文件恢复不撤销已经发生的修改、命令、网络请求和模型费用。
+- 最近未完成回合只保留至下一次成功提交；实时工具 journals、待批操作、活动报告和进程 token 用量不跨进程恢复。没有文件检查点、操作重放、后台任务恢复、自动摘要、运行中 provider 切换或长期记忆。
+- 不完整 store.lock 或崩溃遗留的 store.lock.recovery 保守阻止写入，只有确认没有存储操作时才人工清理；PID 被复用时也可能保持忙碌，应用不提供恶意本机进程隔离。正常工作流的锁和修订边界已有离线验证，不宣称任意崩溃点都能自动恢复。
+- 无剩余已知产品实现阻塞，交付 review。下一步在实际本地编码任务中使用新建、切换和跨进程恢复，评估真实模型如何处理旧证据与中断提示；本轮没有真实模型任务质量验证，也不据本增量将阶段 2D 整体标为完成。未提交、推送或合并。
 
 ## 2026-09-29：阶段 2D-13，本地 Web UI 首版（离线和浏览器已验证，待 review）
 

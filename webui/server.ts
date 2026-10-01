@@ -51,7 +51,7 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
     void route(request, response).catch((error: unknown) => {
       if (response.destroyed) return;
       const status = error instanceof HttpError ? error.status
-        : error instanceof HarnessError ? (["SESSION_BUSY", "STALE_APPROVAL", "CLOSED"].includes(error.code) ? 409 : 400) : 500;
+        : error instanceof HarnessError ? (["SESSION_BUSY", "SESSION_CONFLICT", "STALE_APPROVAL", "CLOSED"].includes(error.code) ? 409 : 400) : 500;
       json(response, status, { error: error instanceof HttpError || error instanceof HarnessError ? error.message : "The local server could not complete the request." });
     });
   });
@@ -85,7 +85,21 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
       controller.submit(body.prompt);
     } else if (path === "/api/stop" || path === "/api/reset") {
       if (Object.keys(body).length) throw new HttpError(400, "Expected an empty object.");
-      if (path === "/api/stop") controller.stop(); else controller.reset();
+      if (path === "/api/stop") controller.stop(); else await controller.reset();
+    } else if (path === "/api/session/new" || path === "/api/session/fork") {
+      if (Object.keys(body).some((key) => key !== "name") || (body.name !== undefined && typeof body.name !== "string")) {
+        throw new HttpError(400, "Expected an optional session name.");
+      }
+      if (path === "/api/session/new") await controller.newSession(body.name as string | undefined);
+      else await controller.fork(body.name as string | undefined);
+    } else if (path === "/api/session/resume") {
+      if (typeof body.id !== "string" || !body.id.trim() || Object.keys(body).length !== 1) {
+        throw new HttpError(400, "Expected a session ID.");
+      }
+      await controller.resume(body.id);
+    } else if (path === "/api/session/rename") {
+      if (typeof body.name !== "string" || Object.keys(body).length !== 1) throw new HttpError(400, "Expected a session name.");
+      await controller.rename(body.name);
     } else if (path === "/api/approval") {
       if (typeof body.id !== "string" || typeof body.allowed !== "boolean" || Object.keys(body).length !== 2) throw new HttpError(400, "Expected an approval ID and boolean decision.");
       controller.approve(body.id, body.allowed);

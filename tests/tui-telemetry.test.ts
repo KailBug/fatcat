@@ -6,7 +6,7 @@ import type { LoopEvent } from "../src/loop.js";
 import { createDeepSeekModel } from "../src/model.js";
 import { parseTokenUsage } from "../src/model-usage.js";
 import type { TokenUsage } from "../src/model-usage.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { createTuiTelemetry } from "../tui/telemetry.js";
 import type { TuiTelemetry } from "../tui/telemetry.js";
 import type { WriteRecord } from "../src/tools/write.js";

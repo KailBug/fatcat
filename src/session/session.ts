@@ -1,16 +1,22 @@
-import { HarnessError, checkCancellation } from "./errors.js";
-import { runAgentTurn } from "./loop.js";
-import type { LoopOptions } from "./loop.js";
-import type { Message } from "./model.js";
+import { HarnessError, checkCancellation } from "../errors.js";
+import { runAgentTurn } from "../loop.js";
+import type { LoopOptions } from "../loop.js";
+import type { Message } from "../model.js";
+import { validateHistory } from "./history.js";
 
 /** A process-local conversation that keeps only successfully completed turns. */
 export class Session {
   private history: Message[] = [];
   private running = false;
 
-  constructor(private readonly options: Pick<LoopOptions, "model" | "maxIterations" | "tools">) {}
+  constructor(private readonly options: Pick<LoopOptions, "model" | "maxIterations" | "tools">,
+    initialHistory: readonly Message[] = []) {
+    this.history = validateHistory(initialHistory);
+  }
 
-  async run(prompt: string, options: Pick<LoopOptions, "signal" | "onEvent"> = {}): Promise<string> {
+  get messages(): Message[] { return structuredClone(this.history); }
+
+  async run(prompt: string, options: Pick<LoopOptions, "signal" | "onEvent" | "onCheckpoint"> = {}): Promise<string> {
     this.requireIdle();
     this.running = true;
     try {

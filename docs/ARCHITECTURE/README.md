@@ -30,7 +30,7 @@
 | --- | --- | --- |
 | [README.md](README.md) | 架构总览、共享决策与文档组织约定 | 已建立 |
 | [AGENT_LOOP.md](AGENT_LOOP.md) | CLI、配置与最小 Loop 的设计和实现安排 | 最小 Loop 已实现、验证并通过 review |
-| [SESSION.md](SESSION.md) | 内存 Session 与连续对话的边界及实现安排 | 已实现、验证并通过用户 review |
+| [SESSION.md](SESSION.md) | 成功历史、持久化、会话管理与中断回合边界 | 2A 已通过 review；2D-14 离线和浏览器已验证，待 review |
 | [TOOLS.md](TOOLS.md) | 通用 read / write / shell、授权及执行记录 | read / write / shell 基线已合入；2D-6 文本搜索已通过 review 并合入 |
 | [SUBAGENT.md](SUBAGENT.md) | 默认可用的有界委派、历史隔离及取消 | 2C 已通过 review；2D-4 默认迁移已通过 review 并合入 |
 | [EXECUTION_REPORT.md](EXECUTION_REPORT.md) | 按用户回合汇总真实事件、共享记录去重与命令后写入提示 | 2D-5 / 2D-7 / 2D-8 已合入；2D-9 扩充双回合验收 |
@@ -58,6 +58,8 @@
 同阶段修正 CLI 的默认工作目录：普通任务、--chat、--tui 和 --listSkills 默认使用 process.cwd()，--workspace 可覆盖。pnpm start 的专用启动器先根据 INIT_CWD 恢复调用位置，因此默认目录及相对 --workspace 都基于用户调用命令的目录。任务默认提供同级 read / write / shell，write 与 shell 仍分别逐次确认；程序化 createTools 省略目录仍不开放文件访问。Tools.workspaceRoot 来自 createWorkspace 的规范 realpath，agent.ts 将该路径作为父子请求指导，TUI 显示同一值；不会改写 Session 历史或放宽相对路径及权限规则。实现与验证事实见 PROGRESS.md。
 
 ## 已确定的约束与决策
+
+2D-14 的会话代码集中在 `src/session/`，与 `src/tools/`、`src/skill/` 同级；`session.ts`、`manager.ts`、`store.ts`、`history.ts` 和 `commands.ts` 分别持有成功历史、活动会话管理、持久存储、恢复校验及共享本地命令，编译到 `dist/src/session/`。各入口直接导入具体模块，不增加 barrel 或旧路径兼容包装。CLI / TUI / Web UI 复用一个活动会话管理边界，Store 按规范工作目录保存带版本和修订号的原子 JSON，history 验证模块拒绝不完整成功对话和非法工具关联；共享本地命令不会进入模型历史。Loop 提供异步回合检查点，成功历史与最近未完成消息分开保存。恢复使用本次启动的配置、权限和 systemPrompt，不重放操作或恢复旧授权；程序化 Session 仍支持内存入口。没有新增依赖，实际失败/并发/入口验收见 PROGRESS 与 [SESSION.md](SESSION.md)。
 
 2D-13 的 `webui/` 与 `src/`、`tui/` 同级。CLI 选择 --webui 后加载 webui/index.ts，复用 Tools / Skills / createAgent / Session；controller 持有显示状态和待批操作，server 负责本机 HTTP 与 capability，client 持有 DOM 与交互。TypeScript 增加 DOM 类型和 webui 文件；build 复制 HTML/CSS/SVG，JS 直接由 tsc 生成，没有新增依赖或改动锁文件。接口、请求上限及状态边界见 [WEBUI.md](WEBUI.md)。
 
@@ -120,4 +122,4 @@ docs/ 之外的仓库文本只使用英文；中文仅用于 docs/ 内。模型�
 
 ## 后续方向（未实现）
 
-Session 持久化、并行或递归 Subagent、Channel、完整任务与分层上下文管理、长期记忆、恢复和成本优化均为计划，见 [ROADMAP.md](../ROADMAP.md)。本文件不将这些方向视为已有架构。
+2D-14 将本地 Session 持久化与管理纳入当前实现，见 [SESSION.md](SESSION.md)。并行或递归 Subagent、Channel、完整任务与分层上下文管理、长期记忆、文件检查点和操作恢复及成本优化仍为计划，见 [ROADMAP.md](../ROADMAP.md)。本文件不将这些方向视为已有架构。

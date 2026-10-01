@@ -3,23 +3,36 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import type { ExecutionReport } from "../src/execution-report.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 
 const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const transport = new URL("./fixtures/chat-transport.js", import.meta.url).href;
 function run(args: string[], overrides: NodeJS.ProcessEnv = {}, input?: string, cwd?: string) {
-  return spawnSync(process.execPath, [...(input === undefined ? [] : ["--import", transport]), cli, ...args], {
+  const sessionDirectory = overrides.FATCAT_SESSION_DIR ?? mkdtempSync(join(tmpdir(), "fatcat-cli-sessions-"));
+  try {
+    return spawnSync(process.execPath, [...(input === undefined ? [] : ["--import", transport]), cli, ...args], {
     encoding: "utf8",
     ...(cwd === undefined ? {} : { cwd }),
     ...(input === undefined ? {} : { input }),
     env: { ...process.env, HARNESS_PROVIDER: "deepseek", DEEPSEEK_API_KEY: "", DEEPSEEK_MODEL: "deepseek-flash", HARNESS_MAX_ITERATIONS: "8",
       USERPROFILE: fileURLToPath(new URL("./fixtures/empty-skill-home", import.meta.url)),
       HOME: fileURLToPath(new URL("./fixtures/empty-skill-home", import.meta.url)),
+      FATCAT_SESSION_DIR: sessionDirectory,
       HARNESS_REQUEST_TIMEOUT_MS: "60000", HARNESS_MAX_REQUEST_BYTES: "262144", ...overrides },
     timeout: 5000,
-  });
+    });
+  } finally {
+    if (overrides.FATCAT_SESSION_DIR === undefined) {
+      const target = resolve(sessionDirectory);
+      assert.equal(dirname(target), resolve(tmpdir()));
+      assert.ok(basename(target).startsWith("fatcat-cli-sessions-"));
+      rmSync(target, { recursive: true, force: true });
+    }
+  }
 }
 
 test("help works without credentials", () => {
@@ -29,9 +42,96 @@ test("help works without credentials", () => {
   assert.match(result.stdout, /--tui/);
   assert.match(result.stdout, /--webui/);
   assert.match(result.stdout, /--web-permission/);
+  assert.match(result.stdout, /--continue/);
+  assert.match(result.stdout, /--listSessions/);
+  assert.match(result.stdout, /--no-session-persistence/);
   assert.match(result.stdout, /two child tasks/);
   assert.ok(!result.stdout.includes("--subagent"));
   assert.equal(result.stderr, "");
+});
+
+test("CLI persists completed tool history, resumes by name and forks without changing the source", async (t) => {
+  const { base, workspace } = await temporaryWorkspace(t);
+  const env = { FATCAT_SESSION_DIR: join(base, "sessions"), DEEPSEEK_API_KEY: "offline-session-only" };
+  const create = run(["--chat", "-n", "original"], env, "keep\nadd\n/exit\n", workspace);
+  assert.equal(create.status, 0, create.stderr);
+  const listed = run(["--listSessions"], { FATCAT_SESSION_DIR: env.FATCAT_SESSION_DIR }, undefined, workspace);
+  assert.equal(listed.status, 0, listed.stderr);
+  const original = JSON.parse(listed.stdout).sessions[0];
+  assert.equal(original.name, "original");
+  assert.equal(original.turnCount, 2);
+  assert.ok(!listed.stdout.includes("offline-session-only"));
+  const picker = run(["--resume"], { FATCAT_SESSION_DIR: env.FATCAT_SESSION_DIR }, undefined, workspace);
+  assert.equal(picker.status, 0, picker.stderr);
+  assert.match(picker.stdout, new RegExp(original.id));
+  assert.ok(!picker.stderr.includes("DEEPSEEK_API_KEY"));
+  const fork = run(["--resume", "original", "--fork-session", "--name", "copy", "--prompt", "history"], env, "", workspace);
+  assert.equal(fork.status, 0, fork.stderr);
+  const restored = JSON.parse(fork.stdout);
+  assert.deepEqual(restored.map((message: { role: string }) => message.role),
+    ["user", "assistant", "user", "assistant", "tool", "assistant"]);
+  assert.equal(restored[4].tool_call_id, "call_1");
+  assert.equal(restored[4].content, '{"ok":true,"result":42}');
+  const afterFork = JSON.parse(run(["--listSessions"], env, undefined, workspace).stdout).sessions;
+  assert.equal(afterFork.find((session: { name: string }) => session.name === "original").turnCount, 2);
+  const copy = afterFork.find((session: { name: string }) => session.name === "copy");
+  assert.equal(copy.forkedFrom, original.id);
+  assert.equal(copy.turnCount, 3);
+  const continued = run(["-c", "--prompt", "history"], env, "", workspace);
+  assert.equal(continued.status, 0, continued.stderr);
+  assert.equal(JSON.parse(continued.stdout).length, 8);
+  const resumed = run(["-r", original.id, "--prompt", "history"], env, "", workspace);
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).length, 6);
+});
+
+test("session resume is workspace scoped and uses current permission settings", async (t) => {
+  const { base, workspace, outside } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "notes.txt"), "before");
+  const env = { FATCAT_SESSION_DIR: join(base, "sessions"), DEEPSEEK_API_KEY: "offline-session-only" };
+  const initial = run(["--name", "editable", "--permission", "workspace-write", "--prompt", "keep"], env, "", workspace);
+  assert.equal(initial.status, 0, initial.stderr);
+  const resumed = run(["--resume", "editable", "--permission", "read-only", "--prompt", "write fixture"], env, "", workspace);
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.match(resumed.stdout, /PERMISSION_DENIED/);
+  assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
+  assert.deepEqual(JSON.parse(run(["--listSessions"], env, undefined, outside).stdout).sessions, []);
+  assert.equal(run(["--resume", "editable", "--prompt", "history"], env, "", outside).status, 1);
+  assert.equal(run(["--continue", "--prompt", "history"], env, "", outside).status, 1);
+});
+
+test("chat session commands create, rename, switch and fork locally; persistence can be disabled", async (t) => {
+  const { base, workspace } = await temporaryWorkspace(t);
+  const env = { FATCAT_SESSION_DIR: join(base, "sessions"), DEEPSEEK_API_KEY: "offline-session-only" };
+  const result = run(["--chat", "--name", "first"], env,
+    "keep\n/new second\nhistory\n/resume first\nhistory\n/rename renamed\n/fork copied\n/sessions\n/exit\n", workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const responses = result.stdout.trim().split("\n");
+  assert.equal(responses[0], "keep");
+  assert.equal(responses[1], "[]");
+  assert.deepEqual(JSON.parse(responses[2]!), [{ role: "user", content: "keep" }, { role: "assistant", content: "keep" }]);
+  const sessions = JSON.parse(run(["--listSessions"], env, undefined, workspace).stdout).sessions;
+  assert.deepEqual(sessions.map((session: { name: string }) => session.name).sort(), ["copied", "renamed", "second"]);
+  assert.equal(sessions.find((session: { name: string }) => session.name === "renamed").turnCount, 2);
+  assert.equal(sessions.find((session: { name: string }) => session.name === "copied").turnCount, 2);
+  const disabled = { ...env, FATCAT_SESSION_DIR: join(base, "memory-only") };
+  const memory = run(["--chat", "--no-session-persistence", "--name", "temporary"], disabled,
+    "keep\n/clear\nhistory\n/resume temporary\nhistory\n/exit\n", workspace);
+  assert.equal(memory.status, 0, memory.stderr);
+  assert.deepEqual(JSON.parse(memory.stdout.trim().split("\n")[2]!),
+    [{ role: "user", content: "keep" }, { role: "assistant", content: "keep" }]);
+  assert.deepEqual(JSON.parse(run(["--listSessions"], disabled, undefined, workspace).stdout).sessions, []);
+});
+
+test("invalid session options are rejected before loading model credentials", () => {
+  for (const args of [["--continue", "--resume", "id"], ["--fork-session", "--chat"],
+    ["--chat", "--continue", "--no-session-persistence"], ["--chat", "--resume", "id", "--no-session-persistence"],
+    ["--chat", "--name", " "], ["--listSessions", "--chat"], ["--help", "--continue"],
+    ["--checkConfig", "--name", "name"], ["--listSessions", "--permission", "read-only"]]) {
+    const result = run(args);
+    assert.equal(result.status, 2, JSON.stringify(args));
+    assert.ok(!result.stderr.includes("DEEPSEEK_API_KEY"));
+  }
 });
 
 test("CLI web is available by default, independently denied and rejects invalid options", () => {
@@ -155,7 +255,9 @@ test("chat continues after provider errors, preserves earlier turns, and exits n
   assert.match(result.stderr, /Error \[MODEL_HTTP\]/);
   assert.ok(!result.stderr.includes("private-provider-secret"));
   const history = JSON.parse(result.stdout.trim().split("\n")[1]!);
-  assert.deepEqual(history, [{ role: "user", content: "keep" }, { role: "assistant", content: "keep" }]);
+  assert.match(history[0].content, /Harness session recovery notice/);
+  assert.match(history[0].content, /Do not automatically replay prior calls/);
+  assert.deepEqual(history.slice(1), [{ role: "user", content: "keep" }, { role: "assistant", content: "keep" }]);
 });
 
 test("chat exits cleanly with empty input and still requires valid configuration", () => {

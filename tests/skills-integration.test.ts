@@ -6,7 +6,7 @@ import { createAgent } from "../src/agent.js";
 import { loadConfig } from "../src/config.js";
 import { prepareRequestContext } from "../src/context.js";
 import type { Message } from "../src/model.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { discoverSkills } from "../src/skills.js";
 import { createTools } from "../src/tools.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";

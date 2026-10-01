@@ -6,7 +6,7 @@ import { createAgent } from "../src/agent.js";
 import { loadLiveConfig } from "./fixtures/live-config.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import type { ExecutionReport } from "../src/execution-report.js";
-import { Session } from "../src/session.js";
+import { Session } from "../src/session/session.js";
 import { createTools } from "../src/tools.js";
 import type { Tools } from "../src/tools.js";
 

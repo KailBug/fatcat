@@ -5,6 +5,7 @@ import { runChat } from "../src/chat.js";
 import { HarnessError } from "../src/errors.js";
 import type { Model } from "../src/model.js";
 import { Session } from "../src/session/session.js";
+import type { SkillDescriptor } from "../src/skills.js";
 
 function capture() {
   const stream = new PassThrough();
@@ -25,6 +26,46 @@ test("local commands and blank lines do not call the model", async () => {
   assert.equal(output.text(), "");
   assert.match(error.text(), /History cleared/);
   assert.match(error.text(), /Unknown command/);
+});
+
+test("skills lists local metadata without model calls or history changes and rejects arguments", async () => {
+  const skills: SkillDescriptor[] = [
+    { name: "fixture-review", description: "Review the local fixture.", uri: "skill://fixture-review/SKILL.md", scope: "workspace" },
+    { name: "workspace-editing", description: "Edit workspace files.", uri: "skill://workspace-editing/SKILL.md", scope: "builtin", subsystem: "tools" },
+  ];
+  const prompts: string[] = [];
+  const session = new Session({ maxIterations: 1, model: async (messages) => {
+    const prompt = String(messages.at(-1)?.content);
+    prompts.push(prompt);
+    assert.ok(!JSON.stringify(messages).includes("/skills"));
+    return { message: { role: "assistant", content: "Done" }, toolCalls: [] };
+  } });
+  await session.run("First");
+  const saved = session.messages;
+  const output = capture();
+  const error = capture();
+  const localStatus = await runChat(session, {
+    input: Readable.from(["/skills\n/skills unexpected\n/help\n/exit\n"]),
+    output: output.stream, error: error.stream, skills,
+  });
+  assert.equal(localStatus, 0);
+  assert.deepEqual(prompts, ["First"]);
+  assert.deepEqual(session.messages, saved);
+  assert.equal(output.text(), "");
+  for (const skill of skills) {
+    assert.ok(error.text().includes(skill.name));
+    assert.ok(error.text().includes(skill.description));
+    assert.ok(error.text().includes(skill.uri));
+    assert.ok(error.text().includes(skill.scope));
+  }
+  assert.match(error.text(), /Error \[USAGE\]/);
+  assert.match(error.text(), /\/skills/);
+  assert.ok(!error.text().includes('"type":"execution_report"'));
+  assert.equal(await runChat(session, {
+    input: Readable.from(["Next\n/exit\n"]), output: output.stream, error: error.stream, skills,
+  }), 0);
+  assert.deepEqual(prompts, ["First", "Next"]);
+  assert.equal(session.messages.length, saved.length + 2);
 });
 
 test("queued input survives a slow turn and failures allow later lines through EOF", async () => {

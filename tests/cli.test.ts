@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { ExecutionReport } from "../src/execution-report.js";
+import { SessionStore } from "../src/session/store.js";
 import { temporaryWorkspace } from "./fixtures/workspace.js";
 
 const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
@@ -43,10 +44,13 @@ test("help works without credentials", () => {
   assert.match(result.stdout, /--webui/);
   assert.match(result.stdout, /--web-permission/);
   assert.match(result.stdout, /--continue/);
-  assert.match(result.stdout, /--listSessions/);
+  assert.match(result.stdout, /\/skills/);
+  assert.match(result.stdout, /\/sessions/);
   assert.match(result.stdout, /--no-session-persistence/);
   assert.match(result.stdout, /two child tasks/);
   assert.ok(!result.stdout.includes("--subagent"));
+  assert.ok(!result.stdout.includes("--listSkills"));
+  assert.ok(!result.stdout.includes("--listSessions"));
   assert.equal(result.stderr, "");
 });
 
@@ -55,12 +59,15 @@ test("CLI persists completed tool history, resumes by name and forks without cha
   const env = { FATCAT_SESSION_DIR: join(base, "sessions"), DEEPSEEK_API_KEY: "offline-session-only" };
   const create = run(["--chat", "-n", "original"], env, "keep\nadd\n/exit\n", workspace);
   assert.equal(create.status, 0, create.stderr);
-  const listed = run(["--listSessions"], { FATCAT_SESSION_DIR: env.FATCAT_SESSION_DIR }, undefined, workspace);
+  const listed = run(["--chat", "--resume", "original"], env, "/sessions\n/exit\n", workspace);
   assert.equal(listed.status, 0, listed.stderr);
-  const original = JSON.parse(listed.stdout).sessions[0];
+  assert.equal(listed.stdout, "");
+  assert.ok(!listed.stderr.includes('"type":"model_request"'));
+  const original = (await new SessionStore({ root: env.FATCAT_SESSION_DIR }).list(workspace))[0]!;
   assert.equal(original.name, "original");
   assert.equal(original.turnCount, 2);
-  assert.ok(!listed.stdout.includes("offline-session-only"));
+  assert.ok(listed.stderr.includes(original.id));
+  assert.ok(!(listed.stdout + listed.stderr).includes("offline-session-only"));
   const picker = run(["--resume"], { FATCAT_SESSION_DIR: env.FATCAT_SESSION_DIR }, undefined, workspace);
   assert.equal(picker.status, 0, picker.stderr);
   assert.match(picker.stdout, new RegExp(original.id));
@@ -72,9 +79,9 @@ test("CLI persists completed tool history, resumes by name and forks without cha
     ["user", "assistant", "user", "assistant", "tool", "assistant"]);
   assert.equal(restored[4].tool_call_id, "call_1");
   assert.equal(restored[4].content, '{"ok":true,"result":42}');
-  const afterFork = JSON.parse(run(["--listSessions"], env, undefined, workspace).stdout).sessions;
-  assert.equal(afterFork.find((session: { name: string }) => session.name === "original").turnCount, 2);
-  const copy = afterFork.find((session: { name: string }) => session.name === "copy");
+  const afterFork = await new SessionStore({ root: env.FATCAT_SESSION_DIR }).list(workspace);
+  assert.equal(afterFork.find((session) => session.name === "original")?.turnCount, 2);
+  const copy = afterFork.find((session) => session.name === "copy")!;
   assert.equal(copy.forkedFrom, original.id);
   assert.equal(copy.turnCount, 3);
   const continued = run(["-c", "--prompt", "history"], env, "", workspace);
@@ -95,7 +102,7 @@ test("session resume is workspace scoped and uses current permission settings", 
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.match(resumed.stdout, /PERMISSION_DENIED/);
   assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
-  assert.deepEqual(JSON.parse(run(["--listSessions"], env, undefined, outside).stdout).sessions, []);
+  assert.deepEqual(await new SessionStore({ root: env.FATCAT_SESSION_DIR }).list(outside), []);
   assert.equal(run(["--resume", "editable", "--prompt", "history"], env, "", outside).status, 1);
   assert.equal(run(["--continue", "--prompt", "history"], env, "", outside).status, 1);
 });
@@ -110,33 +117,47 @@ test("chat session commands create, rename, switch and fork locally; persistence
   assert.equal(responses[0], "keep");
   assert.equal(responses[1], "[]");
   assert.deepEqual(JSON.parse(responses[2]!), [{ role: "user", content: "keep" }, { role: "assistant", content: "keep" }]);
-  const sessions = JSON.parse(run(["--listSessions"], env, undefined, workspace).stdout).sessions;
-  assert.deepEqual(sessions.map((session: { name: string }) => session.name).sort(), ["copied", "renamed", "second"]);
-  assert.equal(sessions.find((session: { name: string }) => session.name === "renamed").turnCount, 2);
-  assert.equal(sessions.find((session: { name: string }) => session.name === "copied").turnCount, 2);
+  const sessions = await new SessionStore({ root: env.FATCAT_SESSION_DIR }).list(workspace);
+  assert.deepEqual(sessions.map((session) => session.name).sort(), ["copied", "renamed", "second"]);
+  assert.equal(sessions.find((session) => session.name === "renamed")?.turnCount, 2);
+  assert.equal(sessions.find((session) => session.name === "copied")?.turnCount, 2);
   const disabled = { ...env, FATCAT_SESSION_DIR: join(base, "memory-only") };
   const memory = run(["--chat", "--no-session-persistence", "--name", "temporary"], disabled,
     "keep\n/clear\nhistory\n/resume temporary\nhistory\n/exit\n", workspace);
   assert.equal(memory.status, 0, memory.stderr);
   assert.deepEqual(JSON.parse(memory.stdout.trim().split("\n")[2]!),
     [{ role: "user", content: "keep" }, { role: "assistant", content: "keep" }]);
-  assert.deepEqual(JSON.parse(run(["--listSessions"], disabled, undefined, workspace).stdout).sessions, []);
+  assert.deepEqual(await new SessionStore({ root: disabled.FATCAT_SESSION_DIR }).list(workspace), []);
 });
 
 test("invalid session options are rejected before loading model credentials", () => {
   for (const args of [["--continue", "--resume", "id"], ["--fork-session", "--chat"],
     ["--chat", "--continue", "--no-session-persistence"], ["--chat", "--resume", "id", "--no-session-persistence"],
-    ["--chat", "--name", " "], ["--listSessions", "--chat"], ["--help", "--continue"],
-    ["--checkConfig", "--name", "name"], ["--listSessions", "--permission", "read-only"]]) {
+    ["--chat", "--name", " "], ["--help", "--continue"], ["--checkConfig", "--name", "name"]]) {
     const result = run(args);
     assert.equal(result.status, 2, JSON.stringify(args));
     assert.ok(!result.stderr.includes("DEEPSEEK_API_KEY"));
   }
 });
 
+test("removed listing flags are rejected before configuration or startup", () => {
+  for (const flag of ["--listSkills", "--listSessions"]) {
+    for (const args of [[flag], [flag, "--chat"], [flag, "--help"], [flag, "--checkConfig"],
+      [flag, "--permission", "read-only"]]) {
+      const result = run(args, { HARNESS_PROVIDER: "invalid-provider" });
+      assert.equal(result.status, 2, JSON.stringify(args));
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /Error \[USAGE\]/);
+      assert.ok(!result.stderr.includes("DEEPSEEK_API_KEY"));
+      assert.ok(!result.stderr.includes("Chat started"));
+      assert.ok(!result.stderr.includes("Error [CONFIG]"));
+    }
+  }
+});
+
 test("CLI web is available by default, independently denied and rejects invalid options", () => {
   for (const args of [["--chat", "--web-permission", "ask"], ["--help", "--web-permission", "deny"],
-    ["--checkConfig", "--web-permission", "allow"], ["--listSkills", "--web-permission", "deny"], ["--web-permission", "deny"]]) {
+    ["--checkConfig", "--web-permission", "allow"], ["--web-permission", "deny"]]) {
     assert.equal(run(args).status, 2, JSON.stringify(args));
   }
   const env = { DEEPSEEK_API_KEY: "offline-web-cli" };
@@ -155,7 +176,7 @@ test("TUI mode rejects pipes and conflicting modes before loading credentials", 
   assert.match(piped.stderr, /interactive terminal/);
   assert.ok(!piped.stderr.includes("DEEPSEEK_API_KEY"));
   for (const args of [["--tui", "--chat"], ["--tui", "--help"], ["--tui", "--checkConfig"],
-    ["--tui", "--listSkills"], ["--tui", "task"], ["--tui", "--prompt", "task"]]) {
+    ["--tui", "task"], ["--tui", "--prompt", "task"]]) {
     assert.equal(run(args).status, 2, JSON.stringify(args));
   }
 });
@@ -172,7 +193,7 @@ test("usage errors and missing credentials have distinct exit codes", () => {
 
 test("Web UI validates exclusive modes and its port before loading credentials", () => {
   for (const args of [["--webui", "--chat"], ["--webui", "--tui"], ["--webui", "--help"],
-    ["--webui", "--checkConfig"], ["--webui", "--listSkills"], ["--webui", "task"], ["--webui", "--prompt", "task"],
+    ["--webui", "--checkConfig"], ["--webui", "task"], ["--webui", "--prompt", "task"],
     ["--chat", "--port", "3210"], ["--port", "3210"], ["--webui", "--port", "0"],
     ["--webui", "--port", "65536"], ["--webui", "--port", "1.5"], ["--webui", "--port", "abc"]]) {
     assert.equal(run(args).status, 2, JSON.stringify(args));
@@ -189,23 +210,21 @@ test("local config checks do not contact the model or expose credentials", () =>
   assert.ok(!(result.stdout + result.stderr).includes("offline-credential-only"));
 });
 
-test("skill listing is local, bounded metadata and works without model credentials", async (t) => {
+test("chat /skills lists local metadata without loading bodies or contacting the model", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
   const skill = join(workspace, ".agents", "skills", "review-fixture");
   await mkdir(skill, { recursive: true });
   await writeFile(join(skill, "SKILL.md"), "---\nname: review-fixture\ndescription: Review the fixture.\n---\nPRIVATE_SKILL_BODY\n");
   for (const flags of [[], ["--workspace", workspace]]) {
-    const result = run(["--listSkills", ...flags], {}, undefined, workspace);
+    const result = run(["--chat", ...flags], { DEEPSEEK_API_KEY: "offline-skill-list-only" }, "/skills\n/exit\n", workspace);
     assert.equal(result.status, 0, result.stderr);
-    const catalog = JSON.parse(result.stdout).skills.filter((skill: { scope: string }) => skill.scope === "workspace");
-    assert.equal(catalog.length, 1);
-    assert.equal(catalog[0].name, "review-fixture");
-    assert.equal(catalog[0].uri, "skill://review-fixture/SKILL.md");
-    assert.ok(!result.stdout.includes("PRIVATE_SKILL_BODY"));
-    assert.ok(!result.stdout.includes(workspace));
-  }
-  for (const flags of [["--chat"], ["--checkConfig"], ["--prompt", "hello"], ["--permission", "workspace-write"]]) {
-    assert.equal(run(["--listSkills", "--workspace", workspace, ...flags]).status, 2);
+    const localRows = result.stderr.split("\n").filter((line) => /^\$.* \[workspace\] \|/.test(line));
+    assert.deepEqual(localRows, ['$review-fixture [workspace] | "Review the fixture." | "skill://review-fixture/SKILL.md"']);
+    assert.equal(result.stdout, "");
+    assert.ok(!result.stderr.includes("PRIVATE_SKILL_BODY"));
+    assert.ok(!result.stderr.includes(workspace));
+    assert.ok(!result.stderr.includes("offline-skill-list-only"));
+    for (const event of ["model_request", "tool_result", "execution_report"]) assert.ok(!result.stderr.includes(`"type":"${event}"`));
   }
 });
 
@@ -279,7 +298,7 @@ test("workspace CLI options require a task and an existing directory", async (t)
 
 test("permission options require a task but do not require an explicit workspace", () => {
   for (const option of [["--permission", "workspace-write"], ["--shell-permission", "allow"]]) {
-    for (const mode of [[], ["--help"], ["--checkConfig"], ["--listSkills"]]) {
+    for (const mode of [[], ["--help"], ["--checkConfig"]]) {
       const args = [...mode, ...option];
       assert.equal(run(args).status, 2, JSON.stringify(args));
     }

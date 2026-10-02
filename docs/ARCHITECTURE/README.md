@@ -68,7 +68,7 @@ chat / TUI 通过 `src/commands.ts` 统一分发本地命令，`/skills` 展示�
 
 2D-13 的 `webui/` 与 `src/`、`tui/` 同级。CLI 选择 --webui 后加载 webui/index.ts，复用 Tools / Skills / createAgent / Session；controller 持有显示状态和待批操作，server 负责本机 HTTP 与 capability，client 持有 DOM 与交互。TypeScript 增加 DOM 类型和 webui 文件；build 复制 HTML/CSS/SVG，JS 直接由 tsc 生成，没有新增依赖或改动锁文件。接口、请求上限及状态边界见 [WEBUI.md](WEBUI.md)。
 
-同阶段会话菜单由 `webui/client/session-menu.ts` 管理定位、键盘导航和焦点，app 将所点 ID 的详情、命名、分支和删除接入原 controller / SessionManager；Store 以工作目录和修订锁保护删除与分支。工作区位置及字体层次仅改变视图，不引入独立会话状态或模型工具。
+同阶段会话菜单由 `webui/client/session-menu.ts` 管理定位、键盘导航和焦点，app 将所点 ID 的详情、命名、分支和删除接入原 controller / SessionManager；Store 以工作目录和修订锁保护删除与分支。Web UI 入口启用 Manager 的 `deferEmptySessions`：未命名新会话和活动删除后的欢迎页仅持有 revision 0 草稿，首条消息执行前才保存，前端不将草稿补进侧栏；显式命名/分支立即保存，CLI/TUI 默认行为不变。工作区位置及字体层次仅改变视图，不引入独立会话状态或模型工具。
 
 后续 Web UI 交互由 `session-dialog.ts` 持有页面弹窗，`open-browser.ts` 持有本机启动链接打开，`context-usage.ts` 观察最近父请求输入用量并匹配已核对的模型窗口。composer 分为消息和底部工具栏，左侧模式/带框工作区，右侧无框上下文/模型/发送，窄屏按组换行；`permission-menu.ts` 按 Plan、Manual、Accept edits、Free to go 展示服务端策略并提交选择。会话轮次和日期仅放在悬浮提示与无障碍描述中。这些视图不改变持久历史或原字节预算，界面当前英文，多语言切换仍为计划，见 [WEBUI.md](WEBUI.md)。
 

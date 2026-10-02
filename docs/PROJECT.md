@@ -26,6 +26,8 @@
 
 `feat/webui-beauty` 在已合入 PR #22 的 main（`05b4e22`）上统一 Web UI 视觉：暖灰/柔绿主题、居中的欢迎语与 composer、输入框下方的建议操作、清晰的会话与消息间距、本地 Lucide SVG 图标和深浅色/窄屏布局。会话行省略号复用原右键菜单，移动侧栏增加遮罩关闭；不改变 Session、Loop、工具或授权语义，也不增加依赖。
 
+`feat/webui-dev` 后续修正空会话生命周期：默认启动、New chat 和删除活动会话只进入未保存欢迎页，首条消息在执行前保存；显式命名、分支和恢复保留原语义。草稿仍由共享 SessionManager 持有，不增加浏览器独立会话存储，不自动清理既有空会话，也不改变 CLI / TUI 默认创建行为。
+
 同分支增加权限模式和独立 `src/permissions/`，与 session 同级集中审批及文件、文本、进程和网络执行 guard。Manual 逐项审批，Accept edits 自动允许受控工作区修改且命令仍审批，Plan 只读规划并禁止写入/命令；Free to go 开放当前用户权限内的工作区外文件及 HTTP(S) 地址/端口，普通命令自动执行，危险/不透明命令经一次审批。CLI / chat / TUI 可从启动选项选定，Web UI 空闲时切换；父子使用同一运行时策略，显式启动 read-only/shell-deny/web-deny 为上限。前三种保持原范围和执行规则，旧 allow 参数不隐式选择 Free；命令判断是保守启发式，不能分析所有脚本内部操作，不提供 OS 沙箱。保持原工具与会话职责，详见 [权限架构](ARCHITECTURE/PERMISSIONS.md)。
 
 2D-10 在同阶段、同分支补充按已有 subsystem 组织的内置 Skills，存放于 `src/skill/<subsystem>/<skill-name>/SKILL.md`，经构建随程序分发并以最低优先级发现。当前提供工作目录编辑、独立委派、上下文恢复、验证交付四种任务指导；用于 Fatcat 帮助用户处理目标项目，不是 Fatcat 自身源码维护规范。继续复用现有加载、Session 和权限边界，后续仅按实际 subsystem 任务扩充内容，不建空目录或搬迁运行时模块。内置补充已通过离线验收，真实模型效果尚未验证。

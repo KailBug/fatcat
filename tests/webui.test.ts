@@ -262,12 +262,31 @@ test("actual CLI Web UI starts without a TTY, uses the launch workspace and keep
   assert.equal(snapshot.info.workspace, workspace);
   assert.equal(snapshot.info.permission, "read-only");
   assert.equal(snapshot.info.shellPermission, "deny");
+  assert.equal(snapshot.current.revision, 0);
+  assert.deepEqual(snapshot.sessions, []);
+  assert.deepEqual(await new SessionStore({ root: join(base, "sessions") }).list(workspace), []);
   assert.ok(!JSON.stringify(snapshot).includes("offline-webui-secret"));
   assert.equal((await fetch(`${origin}/api/message`, { method: "POST", headers, body: JSON.stringify({ prompt: "Hello" }) })).status, 202);
   await until(async () => !(await (await fetch(`${origin}/api/state`, { headers })).json()).busy);
   const final = await (await fetch(`${origin}/api/state`, { headers })).json();
   assert.match(final.turns[0].answer, /offline preview/);
   assert.equal(final.turns[0].report.tokenUsage.parent.totals.totalTokens, 30);
+  assert.equal(final.sessions.length, 1);
+  for (let i = 0; i < 2; i++) {
+    assert.equal((await fetch(`${origin}/api/session/new`, { method: "POST", headers, body: "{}" })).status, 202);
+    const draft = await (await fetch(`${origin}/api/state`, { headers })).json();
+    assert.equal(draft.current.revision, 0);
+    assert.equal(draft.sessions.length, 1);
+  }
+  assert.equal((await fetch(`${origin}/api/session/resume`, { method: "POST", headers,
+    body: JSON.stringify({ id: final.current.id }) })).status, 202);
+  assert.equal((await fetch(`${origin}/api/session/delete`, { method: "POST", headers,
+    body: JSON.stringify({ id: final.current.id, revision: final.current.revision }) })).status, 202);
+  const deleted = await (await fetch(`${origin}/api/state`, { headers })).json();
+  assert.equal(deleted.current.revision, 0);
+  assert.deepEqual(deleted.turns, []);
+  assert.deepEqual(deleted.sessions, []);
+  assert.deepEqual(await new SessionStore({ root: join(base, "sessions") }).list(workspace), []);
   assert.ok(!(output + errors).includes("offline-webui-secret"));
 });
 

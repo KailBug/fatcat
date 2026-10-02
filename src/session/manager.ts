@@ -9,6 +9,8 @@ import type { SessionRecord, SessionSummary, SessionAttempt } from "./store.js";
 export type SessionSelection = { continue?: boolean; resume?: string; fork?: boolean; name?: string };
 export type SessionOpenOptions = {
   workspace: string; store?: SessionStore; selection?: SessionSelection; persistence?: boolean;
+  /** Keep unnamed new sessions off the saved list until the first run (Web UI). */
+  deferEmptySessions?: boolean;
 };
 type AgentOptions = Pick<LoopOptions, "model" | "maxIterations" | "tools">;
 
@@ -37,7 +39,7 @@ export class SessionManager {
   private busy = false;
   private readonly memory = new Map<string, SessionRecord>();
   private constructor(private readonly agent: AgentOptions, private readonly workspace: string,
-    private readonly store: SessionStore, readonly persistent: boolean) {}
+    private readonly store: SessionStore, readonly persistent: boolean, private readonly deferEmptySessions: boolean) {}
 
   static async open(agent: AgentOptions, options: SessionOpenOptions): Promise<SessionManager> {
     const selection = options.selection ?? {};
@@ -47,7 +49,7 @@ export class SessionManager {
       throw new HarnessError("USAGE", "Persistent session selection cannot be used with --no-session-persistence.");
     }
     const manager = new SessionManager(agent, await canonicalWorkspace(options.workspace), options.store ?? new SessionStore(),
-      options.persistence !== false);
+      options.persistence !== false, options.deferEmptySessions === true);
     if (selection.continue) {
       const latest = (await manager.list())[0];
       if (!latest) throw new HarnessError("SESSION_NOT_FOUND", "There is no previous session in this workspace. Start a new conversation first.");
@@ -69,7 +71,8 @@ export class SessionManager {
 
   async newSession(name?: string): Promise<void> {
     await this.change(async () => {
-      const record = await this.persist(this.emptyRecord(name));
+      const empty = this.emptyRecord(name);
+      const record = this.deferEmptySessions && name === undefined ? empty : await this.persist(empty);
       this.activate(record);
     });
   }
@@ -108,7 +111,8 @@ export class SessionManager {
       const now = new Date().toISOString();
       const record = await this.persist({ ...selected, id: randomUUID(), name: name === undefined ? null : sessionName(name),
         title: name === undefined ? `${selected.title.slice(0, 110)} (fork)` : sessionName(name),
-        forkedFrom: selected.id, createdAt: now, updatedAt: now, revision: 0 }, selected);
+        forkedFrom: selected.revision === 0 ? null : selected.id, createdAt: now, updatedAt: now, revision: 0 },
+      selected.revision === 0 ? undefined : selected);
       this.activate(record);
     });
   }
@@ -123,6 +127,15 @@ export class SessionManager {
       }
       available(selected);
       const active = id === this.record.id;
+      if (this.deferEmptySessions) {
+        // A draft has revision zero and has never entered the saved-session list.
+        if (selected.revision > 0) {
+          if (this.persistent) await this.store.delete(this.workspace, id, selected.revision);
+          else this.memory.delete(id);
+        }
+        if (active) this.activate(this.emptyRecord());
+        return;
+      }
       let replacement: SessionRecord | undefined;
       if (this.persistent) replacement = await this.store.delete(this.workspace, id, selected.revision,
         active ? this.emptyRecord() : undefined);

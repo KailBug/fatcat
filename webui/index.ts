@@ -23,7 +23,7 @@ export async function runWebUi(config: Config, workspace: string, permission: Wo
   }, { permission: webPermission }, permissionPolicy);
   const skills = await discoverSkills({ workspace: tools.workspaceRoot! });
   const manager = await SessionManager.open(createAgent(config, tools, undefined, skills), {
-    ...sessionOptions, workspace: tools.workspaceRoot!,
+    ...sessionOptions, workspace: tools.workspaceRoot!, deferEmptySessions: true,
   });
   const controller = await WebUiController.create({
     provider: config.provider, model: config.model, workspace: tools.workspaceRoot!,

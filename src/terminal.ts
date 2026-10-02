@@ -85,9 +85,9 @@ export function createTerminalInput(
     return allowed;
   };
 
-  const { approveWrite, approveShell } = createTerminalApprovals(confirm);
+  const { approveWrite, approveShell, approveBrowser } = createTerminalApprovals(confirm);
 
-  return { readTask, prompt, approveWrite, approveShell, close, signal };
+  return { readTask, prompt, approveWrite, approveShell, approveBrowser, close, signal };
 }
 
 export type TerminalInput = ReturnType<typeof createTerminalInput>;

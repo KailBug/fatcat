@@ -13,6 +13,9 @@ import { failure } from "./tools/types.js";
 import { createWebTool } from "./tools/web.js";
 import type { WebOptions } from "./tools/web.js";
 import type { Tool, ToolResult } from "./tools/types.js";
+import { createBrowserTool } from "./tools/browser.js";
+import type { BrowserOptions } from "./tools/browser.js";
+import type { BrowserRecord } from "./browser/protocol.js";
 
 export type { ToolResult } from "./tools/types.js";
 export type Tools = {
@@ -21,6 +24,7 @@ export type Tools = {
   getPermissionState?: () => PermissionState;
   getWrites?: () => WriteRecord[];
   getCommands?: () => CommandRecord[];
+  getBrowserChecks?: () => BrowserRecord[];
   execute: (name: string, argumentsJson: string, signal?: AbortSignal, callId?: string) => Promise<ToolResult>;
   forTurn?: (onEvent?: (event: LoopEvent) => void) => Tools;
 };
@@ -64,7 +68,7 @@ export const defaultTools: Tools = collectTools([sumTool]);
 
 /** Filesystem access is enabled only by an explicit workspace selection. */
 export async function createTools(workspace?: string, permission: WorkspacePermission = "read-only", approveWrite?: ApproveWrite,
-  shell: ShellOptions = {}, web?: WebOptions, policy?: PermissionPolicy): Promise<Tools> {
+  shell: ShellOptions = {}, web?: WebOptions, policy?: PermissionPolicy, browser?: BrowserOptions): Promise<Tools> {
   if (permission !== "ask" && permission !== "read-only" && permission !== "workspace-write") {
     throw new HarnessError("CONFIG", "Workspace permission must be ask, read-only, or workspace-write.");
   }
@@ -82,7 +86,9 @@ export async function createTools(workspace?: string, permission: WorkspacePermi
   const scope = await createWorkspace(workspace, sharedPolicy);
   const writer = createWriteTool(scope, permission, undefined, approveWrite, sharedPolicy);
   const commands = createShellTool(scope, shell, undefined, sharedPolicy);
-  return { ...collectTools([sumTool, createReadTool(scope), writer.tool, commands.tool, ...webTools]),
+  const browserTools = browser ? await createBrowserTool(scope.root, sharedPolicy, browser) : undefined;
+  return { ...collectTools([sumTool, createReadTool(scope), writer.tool, commands.tool, ...webTools, ...(browserTools ? [browserTools.tool] : [])]),
+    ...(browserTools ? { getBrowserChecks: browserTools.getBrowserChecks } : {}),
     workspaceRoot: scope.root, getWrites: writer.getWrites, getCommands: commands.getCommands,
     getPermissionState: () => sharedPolicy.snapshot() };
 }

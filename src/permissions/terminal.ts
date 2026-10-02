@@ -1,6 +1,6 @@
-import type { ApproveShell, ApproveWrite } from "./types.js";
+import type { ApproveShell, ApproveWrite, ApproveBrowser } from "./types.js";
 
-type ConfirmApproval = (action: "Write" | "Command", details: string, unattended: string,
+type ConfirmApproval = (action: "Write" | "Command" | "Browser", details: string, unattended: string,
   signal?: AbortSignal) => Promise<boolean>;
 
 function preview(value: string, limit = 1200): string {
@@ -11,7 +11,7 @@ function preview(value: string, limit = 1200): string {
 }
 
 /** Format permission requests; the terminal interface owns input and single-operation confirmation. */
-export function createTerminalApprovals(confirm: ConfirmApproval): { approveWrite: ApproveWrite; approveShell: ApproveShell } {
+export function createTerminalApprovals(confirm: ConfirmApproval): { approveWrite: ApproveWrite; approveShell: ApproveShell; approveBrowser: ApproveBrowser } {
   const approveWrite: ApproveWrite = (request, signal) => confirm("Write",
     `\nWrite request: ${request.operation} ${preview(request.path)} (${request.bytes} bytes after write)\n`
       + (request.oldText === undefined ? "" : `Replace: ${preview(request.oldText)}\n`)
@@ -24,5 +24,9 @@ export function createTerminalApprovals(confirm: ConfirmApproval): { approveWrit
       + (request.approvalReason ? `Approval reason: ${preview(request.approvalReason)}\n` : "")
       + `Command: ${preview(request.command, Infinity)}\n`, request.approvalReason ? "" : "--shell-permission allow", signal);
 
-  return { approveWrite, approveShell };
+  const approveBrowser: ApproveBrowser = (request, signal) => confirm("Browser",
+    `\nRun an isolated local browser check: ${preview(JSON.stringify(request), Infinity)}\n`
+      + "Only workspace page assets are served. External network access is blocked. JSON/PNG evidence is saved in fatcat-browser-evidence.\n",
+    "--shell-permission allow", signal);
+  return { approveWrite, approveShell, approveBrowser };
 }

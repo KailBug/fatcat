@@ -19,6 +19,7 @@
     "verify:workflow": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-workflow.js",
     "verify:context": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-context.js",
     "verify:web": "pnpm run build && node dist/scripts/verify-web.js",
+    "verify:browser": "pnpm run build && node dist/scripts/verify-browser.js",
     "verify:live": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-live.js"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
     "htmlparser2": "12.0.0",
     "ipaddr.js": "2.5.0",
     "openai": "7.18.0",
+    "playwright": "1.63.0",
     "yaml": "2.9.1"
   }
 }

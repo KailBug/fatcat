@@ -4,6 +4,8 @@
 
 联网查询由独立的 web 工具提供，详见 [WEB.md](WEB.md)。`createTools` 的第五个可选参数为 WebOptions，未提供则保留本文件的程序化基础集合，提供但省略 permission 时默认 deny。CLI / chat / TUI 显式传 allow（可用 --web-permission deny 关闭）；父子 Agent 共享该配置。
 
+受控工作区页面检查由 `browser` 工具提供，详见 [BROWSER.md](BROWSER.md)。第七个可选 BrowserOptions 装配浏览器执行与一次审批回调；普通 CLI/chat/TUI/Web UI 默认提供，程序化省略时保持原工具集合。它复用 shell 权限上限及策略操作锁，但文件/网络始终限工作区，不继承 Free 的越界能力。getBrowserChecks journal 经父子包装和 Loop 发出 browser_record，报告保存证据路径；不新增长期浏览器 Session。
+
 第六个参数 PermissionPolicy 提供 Manual、Accept edits、Plan 和 Free to go。以下工作区路径/扩展名约束描述前三种与旧参数的默认范围；只有显式 Free 扩展 read/write/shell cwd 到本地绝对/越界、隐藏、依赖、链接和任意扩展名的文本文件。结果/journals 在默认范围返回相对路径，在 Free 返回规范绝对路径。read/search/write/shell/web 使用策略操作锁；有界 UTF-8、唯一编辑、冲突、取消、输出及执行期限保持。Free 普通命令自动执行，危险/不透明命令一次审批；策略及启发式限制见 [PERMISSIONS.md](PERMISSIONS.md)。
 
 阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移和 2D-5 回合报告已通过 review 并合入；2D-6 在 read 中增加字面文本搜索，已通过 review 并合入；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
@@ -14,7 +16,7 @@
 
 | 模块 | 已实现职责 |
 | --- | --- |
-| `src/tools.ts` | createTools(workspace?, permission = "read-only", approveWrite?, shellOptions?, webOptions?, permissionPolicy?) 创建工具集合；统一 JSON 解析、名称查找、执行、取消和安全错误转换 |
+| `src/tools.ts` | createTools(workspace?, permission = "read-only", approveWrite?, shellOptions?, webOptions?, permissionPolicy?, browserOptions?) 创建工具集合；统一 JSON 解析、名称查找、执行、取消和安全错误转换 |
 | `src/tools/types.ts` | 工具定义、执行类型与 JSON 可序列化 ToolResult |
 | `src/tools/sum.ts` | 纯计算示例工具的 Schema、校验与有限数求和 |
 | `src/permissions/workspace.ts` | createWorkspace(workspace, permissionPolicy?) 固定规范根；resolvePath/resolveNewFile 按当前文件范围检查并定位，返回规范路径、范围和文件状态；新建验证已有父目录且拒绝覆盖 |

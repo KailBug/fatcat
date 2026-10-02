@@ -18,7 +18,7 @@ export async function runTui(config: Config, workspace: string | undefined,
   const tools = await createTools(workspace, permission, (request, signal) => app.approveWrite(request, signal), {
     permission: workspace === undefined ? "deny" : shellPermission,
     approve: (request, signal) => app.approveShell(request, signal),
-  }, { permission: webPermission }, permissionPolicy);
+  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => app.approveBrowser(request, signal) });
   const root = tools.workspaceRoot;
   const skills = await discoverSkills(root === undefined ? {} : { workspace: root });
   const app = new TuiApp({

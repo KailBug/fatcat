@@ -5,11 +5,13 @@ import { defaultTools } from "./tools.js";
 import type { Tools } from "./tools.js";
 import type { CommandEventRecord } from "./tools/shell.js";
 import type { WriteRecord } from "./tools/write.js";
+import type { BrowserRecord } from "./browser/protocol.js";
 
 export type LoopEvent =
   | (ModelObservation & { iteration: number })
   | { type: "shell_record"; record: CommandEventRecord }
   | { type: "write_record"; record: WriteRecord }
+  | { type: "browser_record"; record: BrowserRecord }
   | { type: "model_request"; iteration: number }
   | { type: "tool_result"; iteration: number; callId: string; tool: string; ok: boolean }
   | { type: "completed"; iterations: number }
@@ -49,7 +51,11 @@ export async function runAgentTurn(
   const turnTools = tools.forTurn?.(onEvent) ?? tools;
   const loggedWrites = new Map((turnTools.getWrites?.() ?? []).map((record) => [record.id, JSON.stringify(record)]));
   const loggedCommands = new Set((turnTools.getCommands?.() ?? []).map((record) => record.id));
+  const loggedBrowsers = new Set((turnTools.getBrowserChecks?.() ?? []).map((record) => record.id));
   function reportExecutionRecords(): void {
+    for (const record of turnTools.getBrowserChecks?.() ?? []) {
+      if (!loggedBrowsers.has(record.id)) { loggedBrowsers.add(record.id); onEvent?.({ type: "browser_record", record }); }
+    }
     for (const record of turnTools.getCommands?.() ?? []) {
       if (!loggedCommands.has(record.id)) {
         loggedCommands.add(record.id);

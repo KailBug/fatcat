@@ -1,3 +1,5 @@
+import type { BrowserRequest } from "../browser/protocol.js";
+
 export type WorkspacePermission = "ask" | "read-only" | "workspace-write";
 export type ShellPermission = "ask" | "deny" | "allow";
 export type PermissionMode = "default" | "acceptEdits" | "plan" | "freeToGo";
@@ -24,7 +26,8 @@ export type ApproveWrite = (request: WriteApprovalRequest, signal?: AbortSignal)
 export type ShellRequest = { command: string; cwd: string; timeoutMs: number; approvalReason?: string };
 export type ApproveShell = (request: ShellRequest, signal?: AbortSignal) => Promise<boolean>;
 export type ShellOptions = { permission?: ShellPermission; approve?: ApproveShell };
-export type ApprovalRequests = { write: WriteApprovalRequest; shell: ShellRequest };
+export type ApproveBrowser = (request: BrowserRequest, signal?: AbortSignal) => Promise<boolean>;
+export type ApprovalRequests = { write: WriteApprovalRequest; shell: ShellRequest; browser: BrowserRequest };
 export type PendingApproval<Requests extends object = ApprovalRequests> = {
   [Kind in keyof Requests & string]: { id: string; kind: Kind; request: Requests[Kind] }
 }[keyof Requests & string];

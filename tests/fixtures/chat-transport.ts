@@ -29,7 +29,7 @@ globalThis.fetch = async (input, init) => {
   }
   const prompt = messages.findLast((message) => message.role === "user")?.content;
   if (prompt === "workspace location") {
-    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web"]);
+    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web", "browser"]);
     const prefix = "Workspace root (JSON string): ";
     const rootLines = String(messages[0]?.content).split("\n").filter((line) => line.startsWith(prefix));
     assert.equal(rootLines.length, 1);
@@ -118,7 +118,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: value.result.answer } }] });
   }
   if (prompt === "workspace pages") {
-    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web"]);
+    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web", "browser"]);
     const last = messages.at(-1);
     const previous = last?.role === "tool" ? JSON.parse(String(last.content)).result : undefined;
     if (previous?.nextOffset === null) {
@@ -151,7 +151,7 @@ globalThis.fetch = async (input, init) => {
     } }] });
   }
   if (prompt === "workspace" || prompt === "workspace blocked") {
-    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web"]);
+    assert.deepEqual(tools.filter((tool) => tool.function.name !== "delegate_task").map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web", "browser"]);
     const last = messages.at(-1);
     const list = prompt === "workspace" && last?.role === "user";
     if (last?.role === "user" || (last?.role === "tool" && last.tool_call_id === "list")) {

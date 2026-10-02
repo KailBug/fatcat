@@ -2,6 +2,7 @@ import type { TokenUsage } from "./model-usage.js";
 import type { LoopEvent } from "./loop.js";
 import type { CommandEventRecord } from "./tools/shell.js";
 import type { WriteRecord } from "./tools/write.js";
+import type { BrowserRecord } from "./browser/protocol.js";
 
 type InputSummary = { checked: number; rejected: number; maxBytes: number | null };
 type ReductionSummary = { requests: number; omittedReadResults: number; bytesSaved: number };
@@ -31,6 +32,7 @@ export type ExecutionReport = {
   tokenUsage: { parent: UsageSummary; children: UsageSummary };
   toolResults: { ok: number; errors: number };
   writes: WriteRecord[];
+  browserChecks?: (BrowserRecord & { laterWriteAttempt: boolean })[];
   commands: (CommandEventRecord & { succeeded: boolean; laterWriteAttempt: boolean })[];
 };
 export type ReportEvent = LoopEvent | { type: "execution_report"; report: ExecutionReport };
@@ -49,6 +51,7 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
   };
   const toolResults = { ok: 0, errors: 0 };
   const writes = new Map<string, WriteRecord>();
+  const browserChecks = new Map<string, BrowserRecord & { laterWriteAttempt: boolean }>();
   const commands = new Map<string, ExecutionReport["commands"][number]>();
   let finished = false;
 
@@ -76,6 +79,9 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
       if (JSON.stringify(writes.get(event.record.id)) === JSON.stringify(event.record)) return;
       writes.set(event.record.id, structuredClone(event.record));
       for (const command of commands.values()) command.laterWriteAttempt = true;
+      for (const check of browserChecks.values()) check.laterWriteAttempt = true;
+    } else if (event.type === "browser_record" && !browserChecks.has(event.record.id)) {
+      browserChecks.set(event.record.id, { ...event.record, laterWriteAttempt: false });
     } else if (event.type === "shell_record" && !commands.has(event.record.id)) {
       commands.set(event.record.id, { ...event.record,
         succeeded: event.record.status === "completed" && event.record.exitCode === 0
@@ -96,6 +102,7 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
         stopCode: event.type === "stopped" ? event.code : null,
         taskVerification: "not_assessed",
         modelRequests, requestBytes, contextReduction, tokenUsage, toolResults, writes: [...writes.values()], commands: [...commands.values()],
+        ...(browserChecks.size ? { browserChecks: [...browserChecks.values()] } : {}),
       }) });
     }
   };

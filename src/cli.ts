@@ -229,7 +229,7 @@ async function main(args: string[]): Promise<number> {
     const baseTools = await createTools(workspace, permission, terminal?.approveWrite, {
       permission: shellPermission,
       ...(terminal ? { approve: terminal.approveShell } : {}),
-    }, { permission: webPermission }, permissionPolicy);
+    }, { permission: webPermission }, permissionPolicy, terminal ? { approve: terminal.approveBrowser } : {});
     const skills = await discoverSkills({ workspace: baseTools.workspaceRoot!, signal });
     reportSkillWarnings(skills);
     const agent = createAgent(config, baseTools, undefined, skills);

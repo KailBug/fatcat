@@ -61,6 +61,7 @@ export function createSubagentTools(baseTools: Tools, childModel: Model, maxIter
     }
 
     return { definitions, execute, forTurn, ...(baseTools.getWrites ? { getWrites: baseTools.getWrites } : {}),
+      ...(baseTools.getBrowserChecks ? { getBrowserChecks: baseTools.getBrowserChecks } : {}),
       ...(baseTools.getPermissionState ? { getPermissionState: baseTools.getPermissionState } : {}),
       ...(baseTools.workspaceRoot === undefined ? {} : { workspaceRoot: baseTools.workspaceRoot }),
       ...(baseTools.getCommands ? { getCommands: baseTools.getCommands } : {}) };

@@ -610,7 +610,7 @@ test("CLI chat projects old read payloads under pressure while preserving follow
   const { workspace } = await temporaryWorkspace(t);
   await writeFile(join(workspace, "notes.txt"), "CURRENT_MARKER\n" + "x".repeat(12000));
   const result = run(["--chat", "--workspace", workspace, "--permission", "read-only"],
-    { DEEPSEEK_API_KEY: "offline-only", HARNESS_MAX_REQUEST_BYTES: "30000" },
+    { DEEPSEEK_API_KEY: "offline-only", HARNESS_MAX_REQUEST_BYTES: "35000" },
     "context load\nkeep-context-rule\ncontext recall " + "padding ".repeat(1375) + "\n/exit\n");
   assert.equal(result.status, 0, result.stderr);
   assert.ok(result.stdout.trim().endsWith("CURRENT_MARKER"));

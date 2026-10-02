@@ -9,7 +9,7 @@ import { sessionLabel } from "../src/session/commands.js";
 import type { Conversation } from "../src/session/commands.js";
 import type { SkillDescriptor } from "../src/skills.js";
 import { ApprovalCoordinator } from "../src/permissions/approval.js";
-import type { ApproveShell, ApproveWrite } from "../src/permissions/types.js";
+import type { ApproveBrowser, ApproveShell, ApproveWrite } from "../src/permissions/types.js";
 import { metricSections, statusText } from "./metrics.js";
 import type { TuiConfig } from "./metrics.js";
 import { createTuiTelemetry } from "./telemetry.js";
@@ -185,6 +185,12 @@ export class TuiApp {
     `Command: ${JSON.stringify(request.command)}`,
   ].join("\n"), signal);
 
+  readonly approveBrowser: ApproveBrowser = (request, signal) => this.confirm("BROWSER APPROVAL", [
+    `Workspace: ${this.options.workspace ?? "disabled"}`,
+    `Browser check: ${JSON.stringify(request)}`,
+    "Runs local page scripts with external traffic blocked; saves JSON/PNG under fatcat-browser-evidence.",
+  ].join("\n"), signal);
+
   private preview(value: string): string {
     const escaped = JSON.stringify(value);
     return escaped.length <= 4000 ? escaped : `${escaped.slice(0, 4000)} ... [preview truncated]`;
@@ -352,6 +358,13 @@ export class TuiApp {
         + `${report.writes.length} writes, ${report.commands.length} commands. Task verification: not assessed.`, "TURN REPORT");
       for (const command of report.commands) {
         if (command.laterWriteAttempt) this.message("system", "A write was attempted after a command. Earlier checks may be stale.", "EVIDENCE");
+      }
+      for (const check of report.browserChecks ?? []) {
+        this.message("system", [`${check.path}: ${check.status}; ${check.errorCount} diagnostics, ${check.blockedCount} blocked.`,
+          ...(check.reportPath ? [`Report: ${check.reportPath}`] : []),
+          ...(check.screenshotPath ? [`Screenshot: ${check.screenshotPath}`] : []),
+          ...(check.laterWriteAttempt ? ["A later write was attempted. Run a fresh browser check."] : []),
+        ].join("\n"), "BROWSER EVIDENCE");
       }
     }
     this.refresh();

@@ -16,7 +16,7 @@
 
 ## 内置内容与构建
 
-内置指令存放在 `src/skill/<subsystem>/<skill-name>/SKILL.md`，按已经存在的执行能力组织；发现和加载代码仍在 `src/skills.ts`，没有为目录组织搬迁运行时代码。2D-12 增加 web 任务指导后，当前六项为：
+内置指令存放在 `src/skill/<subsystem>/<skill-name>/SKILL.md`，按已经存在的执行能力组织；发现和加载代码仍在 `src/skills.ts`，没有为目录组织搬迁运行时代码。加入 web 及受控 browser 任务指导后，当前七项为：
 
 | subsystem / Skill | 面向用户任务的指导 |
 | --- | --- |
@@ -26,6 +26,7 @@
 | execution-report / verification-handoff | 核对修改后的真实检查结果，准确交付已做工作和剩余验证缺口 |
 | web / web-research | 搜索公开资料，读取来源，核对新闻日期、引用和访问失败 |
 | web / weather-lookup | 通过通用 web fetch 查询地点与天气 JSON，核对时区、单位和数据时间 |
+| browser / local-browser-check | 实际运行工作区页面、根据错误及 DOM/几何状态修复并复验，交付 JSON/PNG 证据；不把截图路径当成视觉输入 |
 
 这些指令供运行中的 Fatcat 完成用户的本地编码任务，目标项目仍沿用自己的约定。它们不是维护 Fatcat 源码的开发规范，不要求用户项目采用 Fatcat 的包管理器或目录结构。新增内置 Skill 应由实际 subsystem 任务驱动，名称在整个目录中保持唯一；不为未来系统创建空目录。
 

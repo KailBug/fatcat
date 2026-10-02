@@ -8,6 +8,6 @@
 
 A small TypeScript agent harness demo for local coding experiments, with configurable DeepSeek, Kimi, MiMo, and Qwen providers, built to run natively on Windows.
 
-Still an early demo, with a simple agent loop, CLI chat, an optional TUI and local browser UI with isolated HTML/SVG previews, persistent workspace sessions with resume and branching, built-in and local skills loaded on demand, web research and weather lookup, file reading, text search and editing, permission modes with dangerous-command approval, bounded task-driven delegation, bounded model requests with conditional omission of older read outputs, and execution, context, token usage and provider cache telemetry.
+Still an early demo, with a simple agent loop, CLI chat, an optional TUI and local browser UI with isolated HTML/SVG previews and controlled Playwright checks, persistent workspace sessions with resume and branching, built-in and local skills loaded on demand, web research and weather lookup, file reading, text search and editing, permission modes with dangerous-command approval, bounded task-driven delegation, bounded model requests with conditional omission of older read outputs, and execution, context, token usage and provider cache telemetry.
 
 [Setup and usage](docs/USAGE.md)

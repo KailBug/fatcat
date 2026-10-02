@@ -1,5 +1,18 @@
 # 实际进度
 
+## 2026-10-02：Playwright 工作区受控浏览器（已实现并验证，未提交）
+
+- 按用户要求继续在 `feat/webui-dev`；开始时工作区干净，HEAD `05f72d8`（最大迭代数调整）。本轮未切换分支、提交、推送或合并，未更改本地凭据/配置、既有作品或会话，没有发出真实模型请求。
+- 新增一个共享 `browser` 工具，普通 task/chat/TUI/Web UI 默认提供，程序化 createTools 第七参数显式选择。每次使用全新 headless Playwright browser/context，打开本地 HTML/HTM/SVG 与受控相对资源，执行 click/fill/press/select/wait，采集 pageerror、console warning/error、请求失败、DOM 文本/表单状态、viewport rect、SVG bbox/变换及 PNG。页面状态/错误返回文本，模型通过原 write 修改后可重跑；截图只返回路径，不接入图像输入。
+- 新增 `src/browser/`、`src/tools/browser.ts` 和 `src/permissions/browser.ts`，不增加第二套 Loop。固定工作区资源路由从受限读取字节 fulfill，不接外站或开发服务器；CSP、Service Worker/WebSocket/WebRTC 限制、弹窗/下载处理和取消/期限/大小/次数预算在运行入口落实。Manual/Accept edits 单次 Browser 审批，Plan/read-only/shell-deny 拒绝，显式 shell-allow/Free 自动执行；Free 不扩大浏览器访问范围。审批覆盖页面执行与新证据文件，源码写入仍沿原权限。
+- JSON/PNG 以随机 ID 独占写入工作区 `fatcat-browser-evidence`，包括请求、时间、源哈希、诊断与状态。browser journal 经父子包装及 Loop 进入执行报告，模型失败也保留执行事实，后续 write 尝试标记旧证据。Web UI 新增认证报告/截图接口和弹窗，令牌不进入图片 URL，JSON 不作为 HTML 执行；TUI 报告显示证据路径。当前报告入口不随旧会话恢复，磁盘证据保持可用。
+- 精确增加 `playwright@1.63.0` 与锁文件：需要真实浏览器生命周期、交互、路由和截图，保留 TypeScript/Node 24/pnpm 11.21.0/现有模型 SDK。Windows 复用已安装 Edge，未下载浏览器；非 Windows 手动 Chromium 路径未实机验证。新增 browser/local-browser-check 内置 Skill，构建目录由六项更新至七项。
+- 离线验证：`pnpm install --frozen-lockfile`、`pnpm run typecheck`、`pnpm run build` 通过；`pnpm test` 含 build，383 项全部通过（新增 8 项）。覆盖协议限制、权限/启动上限、并发/取消、文件/链接/UTF-8/大小、证据不覆盖、失败回合记录/子任务去重/后续写入，以及真实 HTTP 的审批拒绝/允许/旧 ID/停止、认证/Origin/MIME/错误路径。末次 TUI 路径显示调整后定向重跑 TUI 与 browser/Web UI 40 项全部通过并重新 typecheck/build。初次全量运行暴露旧工具列表、内置目录和 30000 字节上下文夹具与新增 schema 不符，修正预期并将该夹具调为 35000，原省略断言保留；后续全量通过。
+- 真实浏览器验证：新增可重复 `pnpm run verify:browser` 已通过，临时 HTML/CSS/JS 场景执行输入/选择/点击、复现 ReferenceError、经原 read/write 修改源码后 browser 复验、核对 DOM 与源哈希变化、SVG 几何、JSON/PNG、外部请求/弹窗阻断、缺失元素失败和取消。使用真实 Edge 与注入模型决策，没有模型 API/密钥；此结果证明工具闭环可运行，不等于真实模型自主修复能力已验收。
+- 真实 Web UI 另用临时注入模型 + 实际 browser runner + headless Edge 检查拒绝不启动、单次批准后实际执行、报告 JSON 与 PNG 显示。查看 1440×1000 浅色和 390×844 深色截图，修正证据关闭按钮及标题间距；最终运行无前端 pageerror。临时浏览器与服务已关闭，临时工作区与 QA 文件已清理。默认 Windows sandbox 的 ACL 初始化失败，仓库命令通过获准的沙箱外执行完成；不是产品浏览器失败。
+- 同步 README、AGENTS、USAGE、PROJECT、ROADMAP、架构索引、Tools、Permissions、Skills、Execution Report、Web UI，新增 BROWSER.md；`git diff --check` 通过。两次文档补丁因上下文不匹配未应用，已按实际内容重新应用，不影响源代码检查。
+- 限制与下一步：单次最终状态/视口截图，DOM 与图片不保证同一动画帧；completed 不认证页面正确，视觉输入、多时刻动画/完整周期验证、登录、持久页面、任意代码求值和开发服务器访问仍未实现。浏览器路由/CSP 不是 OS 或 CPU/内存沙箱；证据可能含页面数据，没有自动清理或防篡改保证，PNG/JSON 发布不是原子事务。未复验用户原动画或调用真实模型；可重启 Web UI 后用具体作品开展真实任务验证。阶段 2D 未标记整体完成。
+
 ## 2026-10-02：最大迭代次数调整为 32（已实现并离线验证，未提交）
 
 - 按用户要求继续在 `feat/webui-dev`（HEAD `5fad7ec`）修改，保留此前全部未提交工作。`src/config.ts` 默认值、`.env.example` 和已忽略的本地 `.env` 中 HARNESS_MAX_ITERATIONS 均从 8 改为 32；未展示或修改凭据，没有提交、推送或合并。

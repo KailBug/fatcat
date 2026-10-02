@@ -20,6 +20,8 @@ CLI 单次任务 / chat 每个用户回合创建观察器 → 传入 Loop / Sess
 
 ## 已实现的汇总规则
 
+受控浏览器增量新增可选 browserChecks：消费 browser_record，按 ID 去重父子共享 journal，保留路径、状态、采集时间、完成步骤、诊断计数及 JSON/PNG 路径，不嵌入页面正文或图片。随后观察到新的/变化的 write_record 时将旧检查 laterWriteAttempt 标为 true。该标记仅限本回合 journal，不能检测 shell/编辑器修改；源字节哈希保存在磁盘 JSON 中。completed 不是任务成功，taskVerification 仍为 not_assessed；失败模型回合仍报告已产生的证据，取消/启动失败可只有记录而无证据文件。每个 Tools 进程上限 40 次，重建/恢复会话不重放旧 journal。详见 [BROWSER.md](BROWSER.md)。
+
 - outcome 为 answered 或 stopped；stopCode 只记录根回合的安全错误码。answered 表示得到答案，taskVerification 固定为 not_assessed。
 - modelRequests 分别统计父与子请求事件；统计的是尝试，包含本地预算拒绝，不能当作实际 HTTP 次数或服务端计费确认。toolResults 统计父子返回的 ok / errors，包括 delegate_task；取消可能先留下记录而没有 tool_result。
 - writes 以记录 ID 保留最新副本，包含失败、未决和已提交状态，不从模型输出推断。commands 以 ID 保留第一次完整结果元数据；当前内置 shell 在 Loop 观察前已结束，命令记录没有异步后续更新。

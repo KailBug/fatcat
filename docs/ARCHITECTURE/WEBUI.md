@@ -30,6 +30,8 @@
 
 ## HTTP 和本地访问边界
 
+受控浏览器增量新增静态模块 `/browser-evidence.js`，以及认证 GET `/api/browser-evidence/<32位hex ID>/report|screenshot`，沿用 Host/Origin/capability 和 no-store/nosniff 边界，仅映射固定证据目录的 JSON/PNG。报告用 pre.textContent，图片经认证 fetch 转 Blob URL，令牌不在 URL 中；聊天 CSP 的 img-src 新增 blob。`webui/client/browser-evidence.ts` 持有弹窗和取消/URL 释放，关闭不影响聊天。浏览器执行仍在共享 Tools 层，不在 Web UI 页面运行。
+
 - 固定监听 `127.0.0.1`，默认 3210，CLI 可通过 `--port` 使用 1–65535。没有外网监听配置，启动失败返回安全错误。
 - 每次启动产生 32 字节随机 capability，只以 URL fragment 打印。页面读取后移除 fragment，并在当前标签 sessionStorage 保存，以 Bearer header 访问 API；不存储 provider Key。有链接的标签共享同一服务会话。
 - 所有请求验证精确 Host；带 Origin 的请求只允许实际本地 origin。API 必须有正确 capability，不开放 CORS。聊天页 CSP 限制脚本/样式/连接为自身，frame-src 只开放本服务 `/preview/` 路径，仍禁止外部页面和本页被嵌入，另设置 no-store、nosniff 和 no-referrer。预览文档使用下述独立 CSP。
@@ -77,11 +79,17 @@ Enter 提交，Shift+Enter 换行，composition 期间不提交；执行时允�
 
 iframe 的 sandbox 和响应头 CSP sandbox 都只允许 allow-scripts，不允许 allow-same-origin。预览文档采用 `default-src 'none'`，只开放内联脚本/样式和 data/blob 图像媒体及 data 字体；禁止 base、表单、嵌套页面及连接，frame-ancestors 仅允许本地聊天 origin。Permissions-Policy 禁止相机、麦克风、位置、屏幕捕获、USB 和支付。聊天认证令牌不进入预览地址或文档，客户端不接收预览 postMessage 指令。浏览器负责隔离 DOM、存储、弹窗和顶层导航；这不是 OS 或 CPU/内存资源沙箱，不能保证任意页面脚本不会占用浏览器资源。
 
-首版支持自包含 HTML/SVG 动画；相对文件依赖、CDN、网络、动态代码求值、表单、存储及多文件开发服务不支持。普通 read-only/Plan 和 web deny 不禁止用户打开作品，但不会因此授予模型脚本执行工具。打开预览不代表自动验证，结果不回传模型；浏览器自动化及图像/多时刻反馈仍未实现。隔离依据：[CSP sandbox](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/sandbox)、[iframe sandbox](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe)。
+首版支持自包含 HTML/SVG 动画；相对文件依赖、CDN、网络、动态代码求值、表单、存储及多文件开发服务不支持。普通 read-only/Plan 和 web deny 不禁止用户打开作品，但不会因此授予模型脚本执行工具。打开 Preview 不代表自动验证，结果不回传模型；另一个共享 browser 工具已实现运行检查和证据采集，见下节。图像输入/多时刻反馈仍未实现。隔离依据：[CSP sandbox](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/sandbox)、[iframe sandbox](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe)。
+
+## Agent 浏览器执行与证据
+
+共享 browser 工具使用独立 Playwright browser/context 打开工作区 HTML/SVG，可加载受控相对资源并执行基本交互。Web UI 注入 browser 审批回调，显示 Allow this browser check? 和完整请求；approve/deny/stop 沿原协调器与取消信号，不建立独立授权系统。执行受 shell 权限上限限制，Plan/read-only 禁止。详见 [BROWSER.md](BROWSER.md)。
+
+browser_record 活动和 execution_report.browserChecks 持有事实，模型失败后仍展示已产生证据。View browser report / View screenshot 打开安全弹窗；后续 write 尝试会提示重新采集。JSON/PNG 留在工作区，旧会话恢复不重新构造报告按钮；模型收到文字观测及路径，不接收图片像素。源码修复继续使用 write 并重新 browser 检查，不把 completed 当作页面正确。
 
 ## 技术选择与限制
 
-沿用 Node 24 / pnpm 11.21.0 / TypeScript 和 openai SDK；Node HTTP、浏览器原生 DOM 与 CSS 足以承载此单页及单活动 Session 增量，因此没有增加前端框架、HTTP 框架、打包器或依赖，不修改 pnpm-lock.yaml。tsconfig 加入 DOM 类型及 webui 源文件，build 复制固定 HTML/CSS 文件。
+沿用 Node 24 / pnpm 11.21.0 / TypeScript 和 openai SDK；Node HTTP、浏览器原生 DOM 与 CSS 承载此单页及单活动 Session，不增加前端框架、HTTP 框架或打包器。Web UI 首版未新增依赖；第二步共享 browser 工具新增 playwright 1.63.0 并更新 pnpm-lock.yaml，具体选择见 BROWSER.md。tsconfig 加入 DOM 类型及 webui 源文件，build 复制固定 HTML/CSS 文件。
 
 此前字体参考 [Claude Code Docs](https://code.claude.com/docs/en/overview)（2026-10-01 核对）：页面实际使用 Anthropic Sans 正文与 Anthropic Serif Display 标题，标题为正常字重、无额外字间距。Fatcat 采用同一衬线/无衬线层次，字体栈先使用本机已有的同名字体，回退到 Georgia / Times 标题与 Arial / Helvetica / Segoe UI 正文；代码继续使用等宽字体。没有打包第三方站点字体或加入外部加载，保持既有 CSP 与离线页面能力；回退字体不承诺逐像素相同。
 

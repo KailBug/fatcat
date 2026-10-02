@@ -142,7 +142,40 @@ The preview appears beside the chat on wide screens and over the chat on narrowe
 
 This first increment supports self-contained UTF-8 files up to 1 MiB: inline HTML styles and scripts, inline SVG, and standalone SVG animations. Embedded data images are supported. Relative scripts/styles/images, CDN libraries, remote resources, network requests, forms, popups, browser storage and access to the chat page are blocked. Use a single-file artifact for this preview; a multi-file application or development server is outside this increment. Hidden paths, dependency directories, links, absolute paths and paths outside the workspace remain unavailable even in Free to go mode. Preview remains available in read-only/Plan mode and with public web research disabled.
 
-Rendering is for your review. Fatcat does not receive the rendered page, screenshots or animation frames and must not treat opening this panel as automated visual verification. Browser automation and model visual feedback are later increments.
+Rendering in the Preview panel is for your review and does not send observations to Fatcat. Automated runtime checks use the separate browser tool below. Model visual feedback remains a later increment.
+
+### Let Fatcat run a local page
+
+The `browser` tool is available in ordinary tasks, chat, TUI and Web UI. Ask, for example: "Open animations/bicycle.html with the browser tool, check runtime errors and the geometry of the pedal and foot, fix any observed problem, rerun the check and provide the report and screenshot paths." Fatcat chooses when to use it; there is no per-task capability flag.
+
+Windows uses installed Microsoft Edge in headless mode, with a new browser and context for every call. Install project dependencies using `pnpm install --frozen-lockfile`; no browser is downloaded automatically. If Edge cannot start, the tool reports `BROWSER_UNAVAILABLE`. On other platforms, install the matching Chromium separately with `pnpm exec playwright install chromium` (the current verified platform is Windows).
+
+Manual and Accept edits ask **Allow this browser check?** for each operation. Approval covers running the page and writing its generated JSON/PNG evidence. Plan, explicit read-only and shell-deny prohibit browser execution. Explicit shell allow and Free to go allow it without individual approval. The browser always stays inside the workspace, even in Free to go; public `web` research permission is separate.
+
+Each call accepts a relative HTML/HTM/SVG path, up to 12 steps and 12 CSS selectors, an optional viewport and `screenshot` (default true). For example:
+
+```json
+{
+  "path": "demo/index.html",
+  "steps": [
+    { "action": "fill", "selector": "#name", "value": "Ada" },
+    { "action": "click", "selector": "#greet" },
+    { "action": "wait", "milliseconds": 200 }
+  ],
+  "selectors": ["#greeting", "svg circle"],
+  "viewport": { "width": 1000, "height": 700 }
+}
+```
+
+Other actions are `select` (option value) and `press` (Enter, Tab, Escape, Space, arrow keys, Home or End). Each action selector must match one element. Replay all required interactions on the next check: cookies, storage and page state do not persist across calls. Relative local scripts, CSS, JSON, images and fonts can load. External sites, CDN resources, local servers, frames, workers, popups, downloads, network writes and arbitrary JavaScript evaluation are unavailable. Text assets must be UTF-8. Hidden paths, dependencies, links and paths outside the workspace remain blocked.
+
+Reports include completed steps, page/console/request diagnostics, bounded DOM text, viewport rectangles, SVG local bounds and screen transforms, and hashes of loaded source bytes. Each check saves `fatcat-browser-evidence/<id>.json` and, when captured, `<id>.png`. Web UI execution reports expose **View browser report** and **View screenshot**. CLI/TUI users can open the saved files directly. Report buttons are not restored after restarting or switching sessions; evidence files remain on disk. They are not automatically deleted and may include page text and entered values, so treat them as local task data.
+
+`completed` means the requested browser actions finished; page errors may still be present. Fatcat receives text observations and file paths, not screenshot pixels. A single DOM capture or PNG does not verify an entire animation cycle. After source changes, rerun the browser scenario; the current report flags older captures after a later recorded write attempt but cannot detect all edits from shell or other processes. Browser contexts, routing and CSP do not provide an OS sandbox or a hard CPU/memory limit.
+
+Checks are bounded to a 30-second execution deadline, at most 40 checks per Tools process, 100 asset requests, 64 distinct loaded assets, 2 MiB per asset and 8 MiB total assets. A wait is at most 2 seconds, with 5 seconds total per call. PNGs capture the viewport (320–1600 by 240–1200), not a full-page or timed animation sequence. See [Browser architecture](ARCHITECTURE/BROWSER.md).
+
+Run `pnpm run verify:browser` for the fixed temporary-page scenario: real browser interactions, an injected-model repair loop, geometry, evidence, network boundaries and cancellation. It uses no model API or credentials. Ordinary `pnpm test` uses injected browser runners and does not launch or install a browser.
 
 ## Run a task
 

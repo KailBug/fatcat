@@ -19,6 +19,8 @@ Manual、Accept edits、Plan 保留原工作区及 Skill 目录边界、公开 H
 
 ## 模块边界
 
+受控 `browser` 另由 `src/permissions/browser.ts` 执行审批与本地资源检查，详见 [BROWSER.md](BROWSER.md)。Manual/Accept edits 每次 Browser 审批；read-only、Plan 和 shell-deny 拒绝；显式 shell-allow/Free 自动运行。审批涵盖页面脚本执行和固定目录下的新 JSON/PNG，不授权源文件修改。复用策略操作锁和单次审批协调器；BrowserRequest 含路径、步骤、选择器、视口和截图选项。无论模式，browser 均使用不带扩大策略的固定 Workspace，禁止工作区外/隐藏/链接/依赖文件和外部网络，不遵循 Free 的 HTTP 范围扩展。浏览器限制不是 OS 沙箱。
+
 | 模块 | 实际职责 |
 | --- | --- |
 | `src/permissions/types.ts` | 权限模式、低层权限、启动上限、写入/命令请求和审批回调类型 |

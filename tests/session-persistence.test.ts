@@ -48,7 +48,9 @@ test("durable sessions preserve full tool history and skill text with isolated s
   snapshot.push({ role: "user", content: "MUTATED_SNAPSHOT" });
   assert.equal(resumed.current.turnCount, 1);
   await resumed.run("Continue");
-  assert.equal(requests[0]?.[0]?.content, systemPrompt);
+  assert.ok(String(requests[0]?.[0]?.content).startsWith(systemPrompt));
+  assert.match(String(requests[0]?.[0]?.content), /Turn request budget: request 1 of 1/);
+  assert.equal(resumed.history[0]?.content, systemPrompt);
   assert.deepEqual(requests[0]?.map((message) => message.role), ["system", "user", "assistant", "tool", "assistant", "user"]);
   assert.ok(JSON.stringify(requests).includes("FULL_SKILL_BODY"));
   assert.ok(!JSON.stringify(requests).includes("MUTATED_SNAPSHOT"));

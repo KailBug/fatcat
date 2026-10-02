@@ -8,6 +8,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import { HarnessError } from "../src/errors.js";
+import { createAgent } from "../src/agent.js";
+import { loadConfig } from "../src/config.js";
 import type { Message, Model, ModelTurn } from "../src/model.js";
 import type { LoopOptions } from "../src/loop.js";
 import { SessionManager } from "../src/session/manager.js";
@@ -37,6 +39,55 @@ async function controllerFor(t: TestContext, options: Pick<LoopOptions, "model" 
   t.after(() => controller.close());
   return controller;
 }
+
+test("Web UI saves a budget-limited answer after a rejected path and a committed HTML write", async (t) => {
+  const { base, workspace } = await temporaryWorkspace(t);
+  const tools = await createTools(workspace, "workspace-write");
+  const config = loadConfig({ DEEPSEEK_API_KEY: "offline-webui-budget-only" });
+  const content = '<!doctype html><svg xmlns="http://www.w3.org/2000/svg"><circle r="10"/></svg>';
+  let requests = 0;
+  const agent = createAgent(config, tools, async (input, init) => {
+    const body = await new Request(input, init).json() as { messages: Message[]; tool_choice: string };
+    requests++;
+    if (requests === 33) {
+      assert.equal(body.tool_choice, "auto");
+      assert.match(String(body.messages[0]?.content), /request 1 of 32/);
+      assert.ok(body.messages.some((message) => message.role === "assistant" && message.content === "Created animation.html. Animation behavior remains unverified."));
+      return Response.json({ choices: [{ finish_reason: "stop", message: answer("The saved file is animation.html.").message }] });
+    }
+    if (body.tool_choice === "none") {
+      assert.equal(requests, 32);
+      assert.ok(body.messages.some((message) => message.role === "tool" && String(message.content).includes("PATH_NOT_ALLOWED")));
+      assert.ok(body.messages.some((message) => message.role === "tool" && String(message.content).includes('"operation":"create"')));
+      return Response.json({ choices: [{ finish_reason: "stop", message: answer("Created animation.html. Animation behavior remains unverified.").message }] });
+    }
+    const next = requests <= 2
+      ? tool("write", { path: requests === 1 ? join(workspace, "animation.html") : "animation.html", content })
+      : tool("read", { path: "animation.html" });
+    next.toolCalls[0]!.id = `budget-call-${requests}`;
+    return Response.json({ choices: [{ finish_reason: "tool_calls", message: next.message }] });
+  });
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const manager = await SessionManager.open(agent, { workspace, store });
+  const controller = await WebUiController.create({ ...info, workspace, maxIterations: 32 }, manager);
+  t.after(() => controller.close());
+  controller.submit("Generate an HTML SVG animation");
+  await until(() => !controller.snapshot().busy);
+  const turn = controller.snapshot().turns[0]!;
+  assert.equal(turn.status, "answered");
+  assert.equal(turn.error, undefined);
+  assert.match(turn.answer!, /remains unverified/);
+  assert.equal(turn.report?.modelRequests.parent, 32);
+  assert.equal(turn.report?.writes[0]?.status, "committed");
+  assert.equal(await readFile(join(workspace, "animation.html"), "utf8"), content);
+  const restored = await SessionManager.open(agent, { workspace, store, selection: { resume: manager.current.id } });
+  assert.equal(restored.current.turnCount, 1);
+  assert.ok(!JSON.stringify(restored.history).includes("Turn request budget:"));
+  controller.submit("Which file was created?");
+  await until(() => !controller.snapshot().busy);
+  assert.equal(controller.snapshot().turns[1]?.answer, "The saved file is animation.html.");
+  assert.equal(requests, 33);
+});
 
 test("Web UI preserves successful history, isolates snapshots and creates new sessions only while idle", async (t) => {
   const requests: Message[][] = [];

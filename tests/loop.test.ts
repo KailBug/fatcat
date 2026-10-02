@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HarnessError } from "../src/errors.js";
-import { runAgent } from "../src/loop.js";
+import { runAgent, runAgentTurn } from "../src/loop.js";
 import type { LoopEvent } from "../src/loop.js";
-import type { Model, ModelTurn } from "../src/model.js";
+import type { Message, Model, ModelTurn } from "../src/model.js";
 
 function finalAnswer(content: string): ModelTurn {
   return { message: { role: "assistant", content }, toolCalls: [] };
@@ -80,6 +80,40 @@ test("the iteration limit bounds model requests and skips unusable final tools",
   assert.equal(requests, 3);
   assert.equal(events.filter((event) => event.type === "tool_result").length, 2);
   assert.deepEqual(events.at(-1), { type: "stopped", code: "MAX_ITERATIONS" });
+});
+
+test("request budgets reserve a final answer without polluting checkpoints or the next turn", async () => {
+  const checkpoints: (readonly Message[])[] = [];
+  let requests = 0;
+  const model: Model = async (messages, _signal, _observe, options) => {
+    requests++;
+    const system = String(messages[0]?.content);
+    assert.equal((system.match(/Turn request budget:/g) ?? []).length, 1);
+    assert.match(system, new RegExp(`request ${requests} of 3`));
+    assert.equal(options?.toolChoice, requests === 3 ? "none" : "auto");
+    if (requests < 3) return requestTools({ id: `budget-${requests}`, name: "sum", args: '{"numbers":[1,2]}' });
+    assert.equal(messages.at(-1)?.role, "tool");
+    assert.match(system, /unfinished or unverified/);
+    return finalAnswer("Calculated 3. Further work remains unverified.");
+  };
+  const result = await runAgentTurn("Work within the allowance", [], {
+    model, maxIterations: 3, onCheckpoint: async (messages) => { checkpoints.push(messages); },
+  });
+  assert.equal(requests, 3);
+  assert.equal(result.messages.at(-1)?.content, result.answer);
+  assert.ok(!JSON.stringify([result.messages, checkpoints]).includes("Turn request budget:"));
+  const before = structuredClone(result.messages);
+  requests = 0;
+  await runAgentTurn("Continue", result.messages, { model, maxIterations: 3 });
+  assert.deepEqual(result.messages, before);
+});
+
+test("a one-request budget allows an honest answer but no tool execution", async () => {
+  const result = await runAgent("Create a file", { maxIterations: 1, model: async (_messages, _signal, _observe, options) => {
+    assert.equal(options?.toolChoice, "none");
+    return finalAnswer("The request budget did not allow file creation.");
+  }, tools: { definitions: [], execute: async () => { assert.fail("No tools may run"); } } });
+  assert.match(result, /did not allow/);
 });
 
 test("model errors terminate without another request", async () => {

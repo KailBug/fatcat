@@ -7,7 +7,7 @@ const fakeKey = "local-test-key-not-a-real-credential";
 test("uses defaults without consulting the host environment", () => {
   const config = loadConfig({ DEEPSEEK_API_KEY: fakeKey });
   assert.equal(config.model, "deepseek-flash");
-  assert.equal(config.maxIterations, 8);
+  assert.equal(config.maxIterations, 32);
   assert.equal(config.requestTimeoutMs, 60000);
 });
 

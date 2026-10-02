@@ -38,8 +38,13 @@ for (const item of cases) {
       const body = await request.json() as Record<string, unknown> & { messages: Message[] };
       assert.equal(body.model, item.model);
       assert.equal(body.stream, false);
-      assert.equal(body.tool_choice, "auto");
-      assert.equal((body.tools as unknown[]).length, 1);
+      if (calls === 1 && item.provider === "mimo") {
+        assert.ok(!("tool_choice" in body));
+        assert.ok(!("tools" in body));
+      } else {
+        assert.equal(body.tool_choice, calls === 0 ? "auto" : "none");
+        assert.equal((body.tools as unknown[]).length, 1);
+      }
       if (item.provider === "qwen") {
         assert.equal(body.enable_thinking, false);
         assert.equal(body.max_tokens, 2048);
@@ -58,10 +63,11 @@ for (const item of cases) {
       assert.deepEqual(body.messages.at(-2), { role: "assistant", content: null, tool_calls: [toolCall] });
       return Response.json(response());
     });
-    assert.equal(await runAgent("Add 17 and 25", { model: (history, signal) => model(history, signal,
-      (event) => observations.push(event)), maxIterations: 2 }), "42");
+    assert.equal(await runAgent("Add 17 and 25", { model, onEvent: (event) => {
+      if (event.type === "model_usage") observations.push(event);
+    }, maxIterations: 2 }), "42");
     assert.equal(calls, 2);
-    assert.deepEqual(observations.filter((event) => event.type === "model_usage"), [
+    assert.deepEqual(observations.filter((event) => event.type === "model_usage").map(({ type, usage }) => ({ type, usage })), [
       { type: "model_usage", usage: { promptTokens: 30, completionTokens: 12, totalTokens: 42 } },
       { type: "model_usage", usage: { promptTokens: 30, completionTokens: 12, totalTokens: 42 } },
     ]);

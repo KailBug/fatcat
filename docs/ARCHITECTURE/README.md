@@ -72,6 +72,8 @@ chat / TUI 通过 `src/commands.ts` 统一分发本地命令，`/skills` 展示�
 
 后续 Web UI 交互由 `session-dialog.ts` 持有页面弹窗，`open-browser.ts` 持有本机启动链接打开，`context-usage.ts` 观察最近父请求输入用量并匹配已核对的模型窗口。composer 分为消息和底部工具栏，左侧模式/带框工作区，右侧无框上下文/模型/发送，窄屏按组换行；`permission-menu.ts` 按 Plan、Manual、Accept edits、Free to go 展示服务端策略并提交选择。会话轮次和日期仅放在悬浮提示与无障碍描述中。这些视图不改变持久历史或原字节预算，界面当前英文，多语言切换仍为计划，见 [WEBUI.md](WEBUI.md)。
 
+Web UI 视觉统一增量新增 `webui/client/icons.ts`，通过 DOM SVG/use 引用本地 Lucide sprite；HTML/CSS/图标和许可证随已有 build 复制并由静态白名单提供。首页采用居中的输入布局，移动侧栏使用遮罩，会话行省略号与右键入口复用同一 SessionMenu；核心运行时和权限边界不变，细节见 [WEBUI.md](WEBUI.md)。
+
 2D-12 新增一个通用 web 工具，CLI / chat / TUI 默认开放公开搜索和页面文本读取，`--web-permission deny` 可独立关闭。程序化 createTools 第五个参数显式选择 web，未传时维持旧工具集合；父子模型共享相同工具边界。web.ts 负责协议、权限与调用期限，web-request.ts 负责公开地址检查、DNS 固定、HTTP(S) 与有界解码，web-content.ts 负责搜索/HTML 解析；Loop、Session 与执行报告的职责不变。新增 web/web-research 与 web/weather-lookup，当前内置 Skill 共六项。细节和未实现边界见 [WEB.md](WEB.md)。
 
 新增锁定依赖 htmlparser2@12.0.0 和 ipaddr.js@2.5.0，分别用于 HTML/XML 结构解析和特殊 IP 范围分类；保留 Node / pnpm / TypeScript / 模型 SDK。`pnpm run verify:web` 是独立公网检查，不加载凭据或调用模型；自动测试仍保持离线。

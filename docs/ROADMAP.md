@@ -216,6 +216,10 @@ Channel、App 待核心任务能力稳定后再考虑；TUI 因用户明确要�
 
 首版只有一个进程内会话，各标签共享；不实现持久化、多会话列表、模型流式输出、账户、远程部署或通用 Channel。阶段 2D 整体继续进行中。实际边界见 [WEBUI.md](ARCHITECTURE/WEBUI.md)。
 
+### 同阶段界面改进：视觉统一
+
+`feat/webui-beauty` 在已合入 PR #22 的 main（`05b4e22`）上统一 Web UI 视觉：暖灰/柔绿主题、居中的欢迎语与 composer、输入框下方的建议操作、清晰的会话与消息间距、本地 Lucide SVG 图标和深浅色/窄屏布局。会话行省略号复用原右键菜单，移动侧栏增加遮罩关闭；不改变 Session、Loop、工具或授权语义，也不增加依赖。 验收包括桌面/窄屏/短屏、深浅主题、菜单与弹窗、会话目标、草稿保留、发送/停止与审批回归；具体结果见 PROGRESS。当前仍为本地界面增量，不引入远程部署或新的运行时。
+
 ## 阶段 2D-14：Session 持久化与会话管理（离线和浏览器已验证，待 review）
 
 按用户要求使用 `feat/session-perfection`，参考 [Claude Code 官方会话文档](https://code.claude.com/docs/en/sessions)，实现按规范工作目录隔离的本地持久对话。CLI、TUI、Web UI 共享 SessionManager；继续使用既有 Session、Loop、模型 SDK、工具和权限，不增加依赖或 Graph。

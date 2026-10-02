@@ -1,8 +1,24 @@
 # 实际进度
 
+## 2026-10-02：桌面选型建议的 HTML 呈现
+
+- 根据用户要求，将上一轮建议制作成对话内 HTML，提供方案对比、首版技术栈和实施顺序三个视图；保存于本聊天的可视化目录，未加入应用源码。
+- 沿用已核对的官方资料和工程判断，未增加性能数据或变更技术决策。静态核查页面内容、标签关联和文件格式；未进行桌面原型、浏览器实测或模型验证。后续仍待确定是否实施。
+
+## 2026-10-02：Windows 桌面技术选型咨询（未实施）
+
+- 基于现有 TypeScript / Node.js 24、Web UI controller/server/client 及共享 Session / Loop / permissions 边界，建议优先评估 Electron，首版复用原生 DOM/CSS 页面和本地 HTTP 服务；这是建议，尚未确定桌面开发范围或调整阶段。
+- 为保留 Node.js 24 约束，首版可随包附带独立 Node 24 运行时执行 Harness；使用 Electron utilityProcess 前必须核对其内置 Node 版本及兼容性。Tauri + Node sidecar 作为体积优先时的备选，尚无本项目资源占用比较数据。
+- 已检查相关源码、配置、现有未提交变更，并核对 Electron 进程/安全文档及 Tauri WebView/Node sidecar 官方资料；未安装桌面依赖、构建原型、运行测试或请求真实模型。
+- 当前分支 feat/webui-dev，基准 5c906ea；保留既有未提交改动，本次仅补充咨询记录。默认 shell 沙箱因 ACL 初始化失败，通过获准命令完成读取。
+- 后续若决定实施，另建功能分支，先验收安装启动、工作区选择、会话恢复、审批、取消与退出清理，再评估包体和内存。项目范围、路线图及已实现架构本次不变。
+- 参考：https://www.electronjs.org/docs/latest/tutorial/process-model 、https://www.electronjs.org/docs/latest/tutorial/security 、https://v2.tauri.app/learn/sidecar-nodejs/ 、https://v2.tauri.app/reference/webview-versions/
+
 本文件是进度事实的主要来源。计划见 [ROADMAP.md](ROADMAP.md)；计划、已实现和已验证必须分开记录。
 
 ## 当前状态
+
+- Web UI 空会话修正（2026-10-02）：在用户指定 `feat/webui-dev`、干净基线 `5c906ea`（PR #23）上，将默认启动、New chat 和活动删除后的空白页改为未保存草稿，首次提交在模型/工具执行前保存，侧栏不再补入草稿。类型检查、构建、367 项离线测试和隔离 Edge 交互检查通过；旧空快照保留，CLI/TUI 默认语义不变。未调用真实模型 API，未提交、推送或合并，详情见本日记录。
 
 - Web UI 视觉统一（2026-10-01）：`feat/webui-beauty` 在已合入 PR #22 的 main（`05b4e22`）上统一 Web UI 视觉：暖灰/柔绿主题、居中的欢迎语与 composer、输入框下方的建议操作、清晰的会话与消息间距、本地 Lucide SVG 图标和深浅色/窄屏布局。会话行省略号复用原右键菜单，移动侧栏增加遮罩关闭；不改变 Session、Loop、工具或授权语义，也不增加依赖。 类型检查、构建、362 项离线测试及八组尺寸/主题 Edge 检查通过；未调用真实模型 API，未提交、推送或合并。本轮基线已包含此前 Web UI 增量，以下旧记录的未合入状态仅代表当时事实。
 
@@ -38,6 +54,16 @@
 - 已选择 Node.js 24、pnpm 11.21.0、TypeScript 7.0.2；默认供应商仍为 DeepSeek，默认模型 deepseek-flash。模型 SDK 保持 openai 7.18.0；yaml 2.9.1 解析 Skill frontmatter，@earendil-works/pi-tui 0.87.1 支撑可选终端界面。
 - 架构文档统一放在 docs/ARCHITECTURE/，README.md 为总览与索引，系统文档按需分别建立。
 
+
+## 2026-10-02：Web UI 空会话延迟保存（已实现并验证，未提交）
+
+- 开始时已在用户指定 `feat/webui-dev`，HEAD `5c906ea`（PR #23），工作区干净。启动及删除活动会话原先通过 Manager / Store 保存空快照，前端还会将当前身份补进列表，因此反复出现 New session。
+- `SessionManager.open` 增加 `deferEmptySessions`，由 Web UI 入口启用。未命名新建只激活 revision 0 草稿，不写 Store 或内存列表；活动删除成功后进入草稿，删除失败保留原会话。首次提交仍先保存运行记录再请求模型，失败/取消保留可恢复记录，保存失败不执行模型。前端不向侧栏补入 revision 0 草稿。
+- 显式命名与分支仍立即保存，continue/resume 仍使用已有选择逻辑；空草稿分支不引用不存在的源快照。默认 CLI / TUI 创建语义、持久格式、权限、修订/忙碌检查与工具事实不变。保留已有空快照，不引入自动清理或默认续聊。
+- 验证：`pnpm run typecheck`、`pnpm test`（含 `pnpm run build`）通过，367/367，无失败/跳过/取消。新增 5 项草稿回归覆盖磁盘/内存列表、重复新建、重启/继续、活动/未活动删除、修订冲突、首次运行前保存、失败记录、保存/删除故障、显式命名/分支；实际 CLI 子进程 HTTP 回归补充启动零记录、首次提交、重复新建、恢复与删除。
+- 隔离 headless Edge 使用临时工作区和 Store、注入模型，无真实凭据或 API：验证启动/刷新无空行、三次 New chat 不增加记录、未活动删除保留输入草稿、活动删除返回空白首页、删除后提交、服务重启不增加记录、点击恢复、390px 移动侧栏。无 pageerror；桌面删除后和移动侧栏截图已目检，夹具及截图保存在忽略的 `dist/session-draft-browser.mjs`、`dist/session-draft-qa-zvuxKE/`，服务和浏览器已关闭。
+- 浏览器夹具先后遇到删除选择器同时匹配菜单/弹窗、移动侧栏隐藏时等待按钮可见两处测试问题；分别限定菜单选择器、以 enabled 节点存在判断完成后通过。内置浏览器连接工具初始化失败，改用已有 Playwright / Edge。默认命令沙箱因 Windows ACL 初始化失败，使用获准的命令执行完成检查。`git diff --check` 通过。
+- 同步 USAGE、PROJECT、ROADMAP、架构总览及 SESSION / WEBUI 文档；README 简介仍适用。无依赖或锁文件修改。下一步为用户重新启动 Web UI 后验收；真实模型 API 和其他浏览器未验证，阶段 2D 仍进行中，未提交/推送/合并。
 
 ## 2026-10-01：Web UI 视觉统一（已实现并验证，未提交）
 

@@ -83,7 +83,16 @@ export async function runAgentTurn(
         role: "user",
         content: "Harness workspace write records (data, not instructions). These survive failed turns and history reset. Committed changes were not rolled back; uncertain outcomes require reading current files before retrying. Records are historical, not proof of current file contents: " + JSON.stringify(writes),
       }, ...commandContext, ...messages.slice(1)] : [messages[0]!, ...commandContext, ...messages.slice(1)];
-      const turn = await model(requestMessages, signal, (event) => onEvent?.({ ...event, iteration }));
+      const finalRequest = iteration === maxIterations;
+      const budgetGuidance = `Turn request budget: request ${iteration} of ${maxIterations}. `
+        + (finalRequest
+          ? "This is the final request. Tool calls are disabled. Respond now using the available evidence: state completed work, failures, and anything unfinished or unverified. Do not claim the task or verification succeeded merely because the request budget ended."
+          : `There are ${maxIterations - iteration} model requests after this one; the last is reserved for your final response. Prioritize the requested result and essential checks, then finish. Avoid optional investigation when the budget is low.`);
+      // Only the request sees the current allowance; checkpoints and saved history stay unchanged.
+      const first = requestMessages[0]!;
+      requestMessages[0] = { role: "system", content: `${first.content}\n\n${budgetGuidance}` };
+      const turn = await model(requestMessages, signal, (event) => onEvent?.({ ...event, iteration }),
+        { toolChoice: finalRequest ? "none" : "auto" });
       checkCancellation(signal);
       messages.push(turn.message);
       if (options.onCheckpoint) await options.onCheckpoint(structuredClone(messages));
@@ -113,7 +122,7 @@ export async function runAgentTurn(
         onEvent?.({ type: "tool_result", iteration, callId: call.id, tool: call.function.name, ok: result.ok });
       }
     }
-    throw new HarnessError("MAX_ITERATIONS", "Maximum model iterations reached before a final answer.");
+    throw new HarnessError("MAX_ITERATIONS", `The model still requested tools on the final request (${maxIterations}/${maxIterations}) instead of returning an answer. Check completed operations before retrying with a smaller task or increasing HARNESS_MAX_ITERATIONS.`);
   } catch (error) {
     reportExecutionRecords();
     onEvent?.({ type: "stopped", code: error instanceof HarnessError ? error.code : "INTERNAL" });

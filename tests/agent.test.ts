@@ -20,7 +20,25 @@ function calls(...tools: { name: string; args: unknown; id: string }[]) {
     tool_calls: tools.map(({ name, args, id }) => ({ id, type: "function", function: { name, arguments: JSON.stringify(args) } })),
   } }] });
 }
-type RequestBody = { messages: Message[]; tools: { function: { name: string } }[] };
+type RequestBody = { messages: Message[]; tools: { function: { name: string } }[]; tool_choice: string };
+
+test("parent and child guidance forwards their independent final-answer options", async () => {
+  let parents = 0;
+  let children = 0;
+  const agent = createAgent(config, undefined, async (input, init) => {
+    const body = await new Request(input, init).json() as RequestBody;
+    const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
+    const iteration = parent ? ++parents : ++children;
+    assert.equal(body.tool_choice, iteration === 3 ? "none" : "auto");
+    assert.match(String(body.messages[0]?.content), new RegExp(`request ${iteration} of 3`));
+    if (iteration === 3) return answer(parent ? "Parent summary" : "Child summary");
+    if (parent && iteration === 1) return calls({ name: "delegate_task", args: { task: "Compute the fixture sum" }, id: "delegate-budget" });
+    return calls({ name: "sum", args: { numbers: [1, 2] }, id: `${parent ? "parent" : "child"}-${iteration}` });
+  });
+  assert.equal(await runAgent("Review the calculation", agent), "Parent summary");
+  assert.equal(parents, 3);
+  assert.equal(children, 3);
+});
 
 test("default agent construction is idle and direct tasks make no child requests", async () => {
   let requests = 0;

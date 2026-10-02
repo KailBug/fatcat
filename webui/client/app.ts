@@ -7,6 +7,7 @@ import { SessionDialog } from "./session-dialog.js";
 import type { SessionMutation } from "./session-dialog.js";
 import { icon } from "./icons.js";
 import { PermissionMenu } from "./permission-menu.js";
+import { FilePreview } from "./preview.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -47,9 +48,11 @@ const permissionMenu = new PermissionMenu(element<HTMLButtonElement>("permission
 const sessionDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
 const tokenCount = new Intl.NumberFormat("en-US");
 const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const filePreview = new FilePreview(() => token);
 
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
 function controls(): void {
+  filePreview.update(connected);
   const busy = Boolean(state?.busy);
   prompt.disabled = !connected;
   send.hidden = busy; stop.hidden = !busy;
@@ -112,6 +115,20 @@ function renderTurn(turn: WebTurn): HTMLElement {
   }
   if (turn.report) {
     const report = turn.report;
+    const previews = node("div", undefined, "preview-files");
+    const paths = new Set(report.writes.filter((write) => write.status === "committed").map((write) => write.path));
+    for (let path of paths) {
+      path = path.replaceAll("\\", "/");
+      const root = state?.info.workspace.replaceAll("\\", "/").replace(/\/$/, "");
+      if (root && path.toLowerCase().startsWith(`${root.toLowerCase()}/`)) path = path.slice(root.length + 1);
+      if (!/\.(html?|svg)$/i.test(path) || /^(?:\/|[a-z]:)/i.test(path)) continue;
+      const button = node("button", `Preview ${path}`, "preview-file-button");
+      button.type = "button";
+      const selectedPath = path;
+      button.addEventListener("click", () => filePreview.open(selectedPath));
+      previews.append(button);
+    }
+    if (previews.childElementCount) article.append(previews);
     const details = node("details"); details.dataset.kind = "report";
     details.append(node("summary", `Execution report · ${report.modelRequests.parent + report.modelRequests.children} requests · ${report.writes.length} writes · ${report.commands.length} commands`));
     details.append(node("p", "Task verification is not assessed automatically. Token totals cover only requests with valid provider usage reports."));

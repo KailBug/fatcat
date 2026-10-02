@@ -40,7 +40,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     region: region as ProviderRegion,
     apiKey,
     model,
-    maxIterations: positiveInteger(env.HARNESS_MAX_ITERATIONS ?? "8", "HARNESS_MAX_ITERATIONS", Number.MAX_SAFE_INTEGER),
+    maxIterations: positiveInteger(env.HARNESS_MAX_ITERATIONS ?? "32", "HARNESS_MAX_ITERATIONS", Number.MAX_SAFE_INTEGER),
     maxRequestBytes: positiveInteger(env.HARNESS_MAX_REQUEST_BYTES ?? "262144", "HARNESS_MAX_REQUEST_BYTES", 16 * 1024 * 1024),
     requestTimeoutMs: positiveInteger(env.HARNESS_REQUEST_TIMEOUT_MS ?? "60000", "HARNESS_REQUEST_TIMEOUT_MS", 2_147_483_647),
   };

@@ -24,7 +24,8 @@ export type ModelObservation =
   | { type: "model_input"; bytes: number; limitBytes: number; accepted: boolean }
   | { type: "model_usage"; usage: TokenUsage | null };
 export type Model = (messages: Message[], signal?: AbortSignal,
-  observe?: (event: ModelObservation) => void) => Promise<ModelTurn>;
+  observe?: (event: ModelObservation) => void,
+  options?: { toolChoice: "auto" | "none" }) => Promise<ModelTurn>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -89,13 +90,16 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
     ...(transport ? { fetch: transport } : {}),
   });
 
-  const callModel: Model = async (messages, signal, observe) => {
+  const callModel: Model = async (messages, signal, observe, options) => {
     checkCancellation(signal);
     const body: ChatCompletionCreateParamsNonStreaming = {
       model: config.model,
       messages,
-      tools: tools.definitions,
-      tool_choice: "auto",
+      // MiMo ignores non-auto tool_choice values; omit tools for a text-only request.
+      ...(options?.toolChoice === "none" && config.provider === "mimo" ? {} : {
+        tools: tools.definitions,
+        tool_choice: options?.toolChoice ?? "auto",
+      }),
       stream: false,
       ...profile.generation,
     };

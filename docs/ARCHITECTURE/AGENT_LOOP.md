@@ -33,7 +33,7 @@
 | `scripts/verify-delegation.ts` | 复用 CLI 装配的真实模型验证：算术直接完成、隔离上下文审查的默认委派，使用独立只读临时样例 |
 | `scripts/verify-live.ts` | 显式真实模型验证：直接回答、工具闭环、依赖前文的追问、样例工作目录读取、子任务委派及临时目录读改读，与离线测试分开 |
 
-`Model(messages, signal?, observe?)` 接收 SDK 消息数组，返回已校验模型回合；可选 observe 接收 ModelObservation 元数据，服务于当前 Loop 和离线测试。旧的双参数注入模型仍可用，但不提供新元数据。供应商选择通过小型 profile 实现，没有模型注册表、动态插件体系或模型路由。
+`Model(messages, signal?, observe?, options?)` 接收 SDK 消息数组，返回已校验模型回合；可选 observe 接收 ModelObservation 元数据，服务于当前 Loop 和离线测试。options.toolChoice 为 auto 或 none，由 Loop 控制最后一次请求只返回文字，agent.ts 的父子指导包装原样透传。旧的双参数注入模型仍可用，但不提供新元数据或落实工具选择；Loop 仍拒绝执行最后一次响应中的工具。供应商选择通过小型 profile 实现，没有模型注册表、动态插件体系或模型路由。
 
 可注入的 `transport` 仅用于在 SDK 请求边界验证实际 JSON 与错误行为；生产客户端使用所选 profile 的固定厂商/区域地址，见 PROVIDERS.md。CLI 任务、chat 与 TUI 默认用 process.cwd()，--workspace 可覆盖；创建带权限和记录的基础 Tools，发现同一工作目录的本地 Skills 并以第四参传给 createAgent，由后者包装 Skill read、装配父子模型与委派工具。chat / TUI 的 /skills 使用启动发现的目录元数据，/sessions 使用当前管理器的工作目录；两者由共享本地命令分发，不调用模型。帮助与配置检查不装配工作目录工具，交互启动仍校验 provider 配置；bare --resume 保留无凭据列表/选择路径。父模型和 Loop/Session 共用含委派的 Tools，子模型与子 Loop 共用带 Skill read 的基础 Tools。createAgent 默认基础工具为 sum，父集合增加 delegate_task；低层 createTools 省略工作目录和 runAgent 省略 tools 时仍只提供 sum，程序化调用者需显式注入 Skills。装配本身不发送网络请求。
 
@@ -65,7 +65,7 @@ pnpm 在包根运行 scripts，因此 start 命令先在包根构建并由 Node 
 本节保留 DeepSeek profile 的已验证约定。2D-10 新增 Kimi、MiMo 和 Qwen 的字段差异、固定地址、默认模型及开发规范见 [PROVIDERS.md](PROVIDERS.md)，不能将这里的 DeepSeek 专有参数直接复用于全部厂商。新增供应商仅做离线 SDK 合约检查，不进行本轮 API 在线验证。
 
 - 使用 `openai@7.18.0` 作为 DeepSeek Chat Completions 的兼容客户端，模型配置默认 `deepseek-flash`。
-- 请求设置 `stream: false`、`thinking: { type: "disabled" }`、`tool_choice: "auto"` 和 `max_completion_tokens: 2048`。
+- 请求设置 `stream: false`、`thinking: { type: "disabled" }`、`tool_choice: "auto"`（最后一次请求为 none）和 `max_completion_tokens: 2048`。
 - 第一阶段明确使用非思考模式；没有实现 reasoning_content 的历史管理，也没有暴露启用思考模式的配置开关。
 - 禁用 SDK 自动重试，避免隐藏重试扩大运行时间。Loop 的 model_request 统计模型调用尝试；本地预算拒绝或取消可能没有实际网络请求。
 - 默认单次请求 60 秒；SDK timeout 与覆盖整个请求的 AbortSignal deadline 共同限制等待，外部取消信号也会传入 SDK。
@@ -84,8 +84,10 @@ sum 使用 JavaScript number 运算，浮点精度遵循 JavaScript 语义，不
 
 ## 终止与日志
 
-- 每次模型请求计为一次迭代，每个用户回合默认最多 8 次；连续对话在新用户输入时重置计数。
-- 最后一轮如仍提出工具调用，直接以 MAX_ITERATIONS 终止，不执行无法回传给后续模型的调用。
+- 每次模型请求计为一次迭代，每个用户回合默认最多 32 次（含最后一次文字交付）；连续对话在新用户输入时重置计数。
+- 每次请求在 system 消息副本中加入当前/总次数、剩余次数及最后一轮用于交付的指导；不修改成功历史或检查点，也不累积到后续回合。指导要求优先完成目标与必要检查，避免低额度时追加可选调查。
+- 最后一次请求用于基于已有证据说明结果、失败、未完成和未验证事项。DeepSeek/Kimi/Qwen 使用 tool_choice: none；MiMo 不支持该值，省略 tools 和 tool_choice。保留完整 assistant/tool 关联、执行事实、请求预算、取消和响应校验，不额外请求或执行工具，也不自动提高配置上限。上限为 1 时仅能回答。
+- 若供应商或自定义 Model 在最后一轮仍提出工具调用，仍以 MAX_ITERATIONS 终止并给出检查已完成操作、缩小任务或调整 HARNESS_MAX_ITERATIONS 的提示。正常文字回复可由 Session 保存；回合得到回复不等于任务或验证全部成功，模型必须如实说明限制。失败、截断与取消不会伪装为成功回复。
 - 缺失配置、模型服务失败、超时、截断或无效响应均明确终止；不把部分响应当作最终成功。
 - Ctrl+C 发出取消信号，CLI 返回 130。其他运行错误返回 1，参数错误返回 2，成功返回 0。
 - Loop 事件包括 model_request、context_reduction、model_input、model_usage、tool_result、write_record、shell_record、completed 和 stopped；委派时用 subagent_event 包装子事件，并记录父调用 callId。CLI 将事件写入 stderr，最终答案写入 stdout；连续对话添加用户回合编号 turn，重置时另发 session_reset。

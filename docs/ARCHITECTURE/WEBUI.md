@@ -17,6 +17,8 @@
 | `webui/client/session-menu.ts` | 针对所点会话的一份右键菜单，持有菜单定位、键盘导航、关闭和焦点恢复；操作由 app 提交到原控制器。 |
 | `webui/client/session-dialog.ts` | 页面内命名、分支、删除弹窗；目标快照、校验、提交锁、错误和取消；权限及持久写入仍由原服务边界落实。 |
 | `webui/client/permission-menu.ts` | 按 Plan / Manual / Accept edits / Free to go 展示菜单、描述、启动限制、键盘/焦点及关闭；只提交服务端选择，不在浏览器执行授权。 |
+| `webui/preview.ts` | 工作区 HTML/HTM/SVG 受控读取、短期单次快照及预览响应 CSP；独立于模型工具、会话和可切换的扩大访问策略。 |
+| `webui/client/preview.ts` | 用户预览面板、相对路径输入、刷新、错误和关闭；只装载隔离 iframe，不将页面结果传给模型。 |
 | `src/permissions/` | 与 session 同级的共享策略、单次审批、工作区/文本/进程/公开网络 guard；浏览器复用同一父子 Tools 和 journals。 |
 | `webui/context-usage.ts` | 观察最近父请求的有效输入 token；精确模型名称的已核对容量，未知值不估算；不改变预算或持久历史。 |
 | `webui/client/icons.ts` | 统一创建装饰性 SVG/use 节点，引用本地 Lucide sprite；无不可信 HTML 或运行时外部请求。 |
@@ -30,8 +32,8 @@
 
 - 固定监听 `127.0.0.1`，默认 3210，CLI 可通过 `--port` 使用 1–65535。没有外网监听配置，启动失败返回安全错误。
 - 每次启动产生 32 字节随机 capability，只以 URL fragment 打印。页面读取后移除 fragment，并在当前标签 sessionStorage 保存，以 Bearer header 访问 API；不存储 provider Key。有链接的标签共享同一服务会话。
-- 所有请求验证精确 Host；带 Origin 的请求只允许实际本地 origin。API 必须有正确 capability，不开放 CORS。页面 CSP 限制脚本/样式/连接为自身、禁止 frame 和外部资源，另设置 no-store、nosniff 和 no-referrer。
-- 静态 GET 仅 `/`、`/styles.css`、`/app.js`、`/markdown.js`、`/session-menu.js`、`/session-dialog.js`、`/permission-menu.js`、`/icons.js`、`/icons.svg`、`/icons-LICENSE.txt`、`/favicon.svg`，不映射任意磁盘目录。JSON 请求体最多 64 KiB，prompt 最多 32768 UTF-8 字节；仅接受指定字段和类型。连接数最多 32，header/request 限时 10 秒，连接空闲限时 15 秒。
+- 所有请求验证精确 Host；带 Origin 的请求只允许实际本地 origin。API 必须有正确 capability，不开放 CORS。聊天页 CSP 限制脚本/样式/连接为自身，frame-src 只开放本服务 `/preview/` 路径，仍禁止外部页面和本页被嵌入，另设置 no-store、nosniff 和 no-referrer。预览文档使用下述独立 CSP。
+- 静态 GET 仅 `/`、`/styles.css`、`/app.js`、`/markdown.js`、`/session-menu.js`、`/session-dialog.js`、`/permission-menu.js`、`/preview.js`、`/icons.js`、`/icons.svg`、`/icons-LICENSE.txt`、`/favicon.svg`，不映射任意磁盘目录。JSON 请求体最多 64 KiB，prompt 最多 32768 UTF-8 字节；仅接受指定字段和类型。连接数最多 32，header/request 限时 10 秒，连接空闲限时 15 秒。
 - `GET /api/state` 返回显示快照并支持 ETag/304。前台每约 700ms、后台每约 3 秒轮询；这是状态更新，不是 provider token 流。
 - `POST /api/message`、`/api/stop`、`/api/reset` 和 `/api/approval` 处理回合与审批。运行中提交或 reset 返回 409；approval ID 不匹配或重复使用返回 409。有效写入/命令仍受原 permission 和 shellPermission 限制。
 - `POST /api/permission-mode` 只接受 `{mode: "default" | "acceptEdits" | "plan" | "freeToGo"}`，沿用相同认证、来源和 JSON 边界；活动回合、审批或会话管理中返回 409，超出显式启动限制拒绝。state.permissionMode 包含当前模式、有效 write/shell 权限、fileAccess/networkAccess 及可选模式，info 中的权限同步更新，各标签轮询同一版本。
@@ -42,6 +44,8 @@
 这不是多用户或远程服务器。链接持有者可查看当前会话并操作授权范围；本机其他用户与程序的隔离不由此应用提供。浏览器页面关闭不会自动停止模型或拒绝审批，用户可以重新打开带令牌的链接继续；终端 Ctrl+C 才关闭服务。
 
 ## 状态和交互
+
+共享 Loop 将配置内的最后一次模型请求用于文字交付，避免文件已经生成后仍追加工具而直接耗尽额度。正常回复显示并保存到会话，可说明未完成/未验证部分；这不是任务成功认证。若模型仍请求工具或发生服务错误、截断、取消，仍显示失败并保留中断记录，不重放操作或提高上限。实现与供应商差异见 [AGENT_LOOP.md](AGENT_LOOP.md)。
 
 控制器保存显示状态，SessionManager 持有活动会话并保存完整成功历史及最近未完成回合。失败/取消的提示和错误可见，但不替换成功模型历史。Web UI 入口启用 `deferEmptySessions`，默认启动与 New chat 进入 revision 0 的未保存草稿；前端不将它补进会话列表，原会话仍在列表。首次提交在模型/工具执行前保存开始记录，失败或中断也保留；显式命名、分支仍立即保存，启动 continue/resume 仍恢复指定历史。旧空会话不自动清理。切换、命名、分支通过同一 Manager，运行/审批中拒绝操作。工具事实独立保存，不撤销修改/命令、不重置 journals 上限。单会话最多 100 个显示回合，需要 New chat 后继续；每回合活动保留最近 100 项，完整报告保留写入、命令和父子请求事实。
 
@@ -62,6 +66,18 @@ composer 分为主要消息输入和底部工具栏，移除单独的工作区/�
 Enter 提交，Shift+Enter 换行，composition 期间不提交；执行时允许保留下一条草稿。刷新从服务器恢复显示快照，草稿不持久化。基础 Markdown 支持标题、列表、引用、粗体、行内/块代码与 HTTP(S) 链接，任意 HTML 和其他链接协议保持文本。窄屏侧栏可展开，跟随系统深浅色及 reduced-motion。
 
 执行报告直接来自 createTurnReporter，不根据自然语言声称推断测试成功；未知用量仍为 null。报告含父/子请求数量、有效 token 报告覆盖、请求字节、上下文整理、写入与命令结果。当前不实现 TUI 的完整缓存指标面板或费用估算。
+
+## 工作区作品预览
+
+顶部 Preview 可输入工作区相对 `.html` / `.htm` / `.svg` 路径；当前执行报告的 committed write 记录另显示文件按钮，仅为工作区内文件提供快捷入口。恢复历史没有执行报告、shell 创建文件或既有文件使用路径入口。面板在宽屏侧置，1200px 及以下覆盖右侧；不持久保存选中文件。Refresh 重新读取当前文件，替换 iframe 并重启动画；失败清除旧页面，关闭卸载 iframe 并取消待完成请求。聊天消息依旧按文本/Markdown 渲染，不执行其中的 HTML。
+
+认证的 `POST /api/preview` 只接受 `{path: string}`，最多 1024 字符。服务从启动工作区创建固定受限 Workspace，复用路径校验和 text-file 的 1 MiB 有界 UTF-8 读取、文件身份和硬链接检查。text-file reader 可接收调用方扩展名集合，原工具默认集合不变。此入口拒绝越界、绝对/隐藏/依赖目录路径、符号/硬链接以及非文本/超大文件；Free to go 不放宽预览范围。最多 4 个并发读取，每次有 5 秒期限，断连或关服取消；不运行命令、触发模型、写文件、改变会话版本或审批状态。
+
+读取返回规范相对路径、字节数和 `/preview/<32-byte random id>`。内存最多保留 8 个待取快照，60 秒后不可领取，准备/领取时清理过期项，满额淘汰最旧项，关闭清空。`GET /preview/<id>` 只消费一次不可变快照；不接收文件路径，不使用聊天令牌，不映射目录，不支持子资源。HTML 与 SVG 分别按 text/html 和 image/svg+xml 输出，并保留 no-store / nosniff / no-referrer。
+
+iframe 的 sandbox 和响应头 CSP sandbox 都只允许 allow-scripts，不允许 allow-same-origin。预览文档采用 `default-src 'none'`，只开放内联脚本/样式和 data/blob 图像媒体及 data 字体；禁止 base、表单、嵌套页面及连接，frame-ancestors 仅允许本地聊天 origin。Permissions-Policy 禁止相机、麦克风、位置、屏幕捕获、USB 和支付。聊天认证令牌不进入预览地址或文档，客户端不接收预览 postMessage 指令。浏览器负责隔离 DOM、存储、弹窗和顶层导航；这不是 OS 或 CPU/内存资源沙箱，不能保证任意页面脚本不会占用浏览器资源。
+
+首版支持自包含 HTML/SVG 动画；相对文件依赖、CDN、网络、动态代码求值、表单、存储及多文件开发服务不支持。普通 read-only/Plan 和 web deny 不禁止用户打开作品，但不会因此授予模型脚本执行工具。打开预览不代表自动验证，结果不回传模型；浏览器自动化及图像/多时刻反馈仍未实现。隔离依据：[CSP sandbox](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/sandbox)、[iframe sandbox](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe)。
 
 ## 技术选择与限制
 

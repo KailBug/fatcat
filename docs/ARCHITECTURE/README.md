@@ -60,6 +60,8 @@
 
 同阶段修正 CLI 的默认工作目录：普通任务、--chat、--tui 默认使用 process.cwd()，--workspace 可覆盖。pnpm start 的专用启动器先根据 INIT_CWD 恢复调用位置，因此默认目录及相对 --workspace 都基于用户调用命令的目录。任务默认提供同级 read / write / shell，write 与 shell 仍分别逐次确认；程序化 createTools 省略目录仍不开放文件访问。Tools.workspaceRoot 来自 createWorkspace 的规范 realpath，agent.ts 将该路径作为父子请求指导，TUI 显示同一值；不会改写 Session 历史或放宽相对路径及权限规则。实现与验证事实见 PROGRESS.md。
 
+Web UI 的单文件作品预览由 `webui/preview.ts` 持有工作区受控读取和短期快照，`webui/client/preview.ts` 管理面板、刷新和沙箱 iframe。入口复用 HTTP capability，预览文档只得到一次性随机快照地址，运行在不允许同源的 sandbox 与独立 CSP 下。共享 text-file reader 增加调用方扩展名集合参数；原 read/write/Skills 默认白名单不变。预览不进入 Session/Loop/模型消息或工具报告，也不是 Agent 浏览器工具；详细边界见 [WEBUI.md](WEBUI.md)。
+
 ## 已确定的约束与决策
 
 chat / TUI 通过 `src/commands.ts` 统一分发本地命令，`/skills` 展示已发现的目录元数据，`/sessions` 委托 `src/session/commands.ts` 读取会话列表。列表操作不请求模型、不读取 Skill 正文或修改成功历史；交互进程启动仍要求正常 provider 配置。技能与会话列表不再提供独立启动参数，bare `--resume` 的无凭据选择/管道列表路径保留；Web UI 继续使用原会话侧栏，没有接入 `/skills`。
@@ -124,6 +126,8 @@ Web UI 视觉统一增量新增 `webui/client/icons.ts`，通过 DOM SVG/use 引
 - 工具执行：统一校验 JSON 并顺序等待异步执行；程序化基础集合默认 sum，传入工作目录时提供 read / write / shell，CLI 默认选择启动目录；已发现 Skills 时通用 read 也可读取其专属 URI；CLI 父工具集合另默认提供 delegate_task；写入与命令分别授权，支持终端逐次确认或显式策略，按调用 ID 回传结果或错误。
 
 当前数据流：CLI 输入进入内存历史；循环控制请求模型；模型直接回答时结束，提出工具调用时执行工具并记录关联结果，再请求模型，直到得到最终结果或明确终止。
+
+共享 Loop 在请求副本中说明剩余次数，并在原配置上限内保留最后一次请求生成文字交付；Model 的单次工具选择选项经 agent 父子包装透传，供应商差异仅在请求构造处处理。正常回复可保存成功对话，但不代表任务全部完成；未验证/未完成须明示，异常、取消及最后一轮违规工具调用仍明确终止。详见 [AGENT_LOOP.md](AGENT_LOOP.md) 和 [PROVIDERS.md](PROVIDERS.md)。
 
 历史采用兼容 SDK 的消息结构；工具结果保留调用 ID。轮次按模型请求计数，工具错误可回传并纠正，服务错误和迭代上限明确终止。详细规则见 [AGENT_LOOP.md](AGENT_LOOP.md)。
 

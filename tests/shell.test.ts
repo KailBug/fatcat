@@ -58,7 +58,7 @@ test("native PowerShell preserves cwd, Unicode, stderr and nonzero exit codes", 
   if (!result.ok) return;
   const output = result.result as { success: boolean; stdout: string; stderr: string; exitCode: number; status: string };
   assert.equal(output.success, false);
-  assert.equal(output.exitCode, 7);
+  assert.equal(output.exitCode, 7, JSON.stringify(result));
   assert.equal(output.status, "completed");
   assert.match(output.stdout, /hello \u4e2d\u6587/);
   assert.ok(output.stdout.includes(join(workspace, "nested")));
@@ -73,18 +73,21 @@ test("native PowerShell preserves cwd, Unicode, stderr and nonzero exit codes", 
 });
 
 test("child environment excludes model credentials, hooks and arbitrary inherited secrets", windows, async (t) => {
-  assert.deepEqual(commandEnvironment({ Path: "runtime", SystemRoot: "windows", DEEPSEEK_API_KEY: "fake",
-    CUSTOM_SECRET: "fake", NODE_OPTIONS: "--import unsafe", GITHUB_TOKEN: "fake" }), { Path: "runtime", SystemRoot: "windows" });
+  assert.deepEqual(commandEnvironment({ Path: "runtime", SystemRoot: "windows", PSModulePath: "system-modules", DEEPSEEK_API_KEY: "fake",
+    CUSTOM_SECRET: "fake", NODE_OPTIONS: "--import unsafe", GITHUB_TOKEN: "fake" }),
+  { Path: "runtime", SystemRoot: "windows", PSModulePath: "system-modules" });
+  assert.deepEqual(commandEnvironment({ psmodulepath: "system-modules", PYTHONPATH: "untrusted" }),
+    { psmodulepath: "system-modules" });
   const { workspace } = await temporaryWorkspace(t);
   const result = await runPowerShell("if ($env:DEEPSEEK_API_KEY -or $env:NODE_OPTIONS) { exit 5 }; 'environment-ok'", workspace, 10000);
-  assert.equal(result.exitCode, 0);
+  assert.equal(result.exitCode, 0, JSON.stringify(result));
   assert.match(result.stdout, /environment-ok/);
 });
 
 test("output limits bound both streams and stop a noisy command", windows, async (t) => {
   const { workspace } = await temporaryWorkspace(t);
   const result = await runPowerShell("[Console]::Out.Write(('x' * 100000)); Start-Sleep -Seconds 30", workspace, 10000);
-  assert.equal(result.status, "output_limit");
+  assert.equal(result.status, "output_limit", JSON.stringify(result));
   assert.equal(result.truncated, true);
   assert.equal(result.cleanup, "tree-killed");
   assert.ok(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) <= outputLimit);

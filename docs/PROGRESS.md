@@ -1,5 +1,17 @@
 # 实际进度
 
+## 2026-10-02：PR #27 Windows CI 环境差异修复（已实现，本地与托管 runner 均通过）
+
+- 用户允许在 `feat/github-CI` 修改相关测试并更新 PR #27。基线 `562a9fe` 的 GitHub Actions 首次运行失败，日志记录 334 项通过、43 项失败；存在 runner TEMP 的 `RUNNER~1` 短路径与规范路径不一致，以及原生 PowerShell 超时。先前本地 383 项通过不能代表托管 runner 已通过。
+- 共享 `temporaryWorkspace` 先用 `realpath` 规范化临时根，再创建目录并针对同一根校验清理路径，避免别名导致路径断言、Skills 安全路径检查和注入模型断言失败。新增目录别名子进程回归，验证规范路径与清理范围；修复前明确失败，修复后通过。补充 shell 测试失败时的固定夹具结果，便于定位剩余环境差异，不输出继承环境或真实凭据。
+- 原生 Windows Node 24.19.0 / pnpm 11.21.0 验证：锁文件安装、类型检查、构建及 384 项离线测试全部通过，无跳过；没有真实模型请求。独立 worktree 隔离主目录的 Cron/Web UI 未提交工作，项目范围与运行时架构未改变。
+- 下一步：推送修复到同一 PR，核对托管 Windows runner 的路径与 shell 检查；远端复验成功前不宣称 CI 已修复，不绕过失败检查或合并 PR。
+- 远端第二次运行确认路径/Skills 相关失败消失，367 项通过、11 项失败；剩余为 PowerShell 超时且 stdout/stderr 均空。临时增加固定命令的有界启动对照，比较环境筛选与 stdin 句柄，仅输出固定脚本的标记、耗时和状态，不输出环境值；定位后移除诊断步骤。
+- 远端启动对照定位第二个根因：筛选环境在 `New-Object` 模块初始化前后停滞，单独补回 `PSModulePath` 约 336 ms 完成，而补回 ALLUSERSPROFILE、PUBLIC、SystemDrive、USERDOMAIN、USERNAME 分别仍达 8 秒超时；换 stdin pipe 同样无效。本机 Node 24.21.0 和 detached 进程未复现，不能归因为 Node 版本或一般并发负载。
+- `commandEnvironment` 白名单仅补充 PowerShell 模块搜索路径，并验证大小写不敏感的继承及其他凭据/注入变量仍被排除；同步 Tools 架构中的宿主信任边界，移除全部临时诊断 workflow 步骤。保留原测试数量、超时及失败门槛，待本地和远端完整复验。
+- 最终运行时修复本地复验：`pnpm run typecheck`、`pnpm test`（含 build，384 项全部通过、无跳过）、`pnpm start --help` 与 `git diff --check` 通过；workflow 已恢复原始检查配置，未改 runner、Node 范围或命令超时。准备推送后验收托管 runner。
+- 远端验收：修复提交 `515e19e` 的 [GitHub Actions 第 5 次运行](https://github.com/KailBug/fatcat/actions/runs/37014330734) 成功，锁文件安装、类型检查、完整离线测试和 CLI help 均通过。两个根因已修复，未跳过测试、放宽权限审批、扩大命令期限或更换 runner；未合并 PR，也未修改分支保护。后续在 PR #27 review 后按实际检查名称配置 main 的必需状态检查。
+
 ## 2026-10-02：Playwright 工作区受控浏览器（已实现并验证，未提交）
 
 - 按用户要求继续在 `feat/webui-dev`；开始时工作区干净，HEAD `05f72d8`（最大迭代数调整）。本轮未切换分支、提交、推送或合并，未更改本地凭据/配置、既有作品或会话，没有发出真实模型请求。

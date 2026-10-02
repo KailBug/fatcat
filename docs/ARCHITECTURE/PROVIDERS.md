@@ -32,11 +32,13 @@ Web UI 的后续上下文指示器在独立 webui/context-usage.ts 中维护六�
 | 请求字段 | DeepSeek / Kimi / MiMo | Qwen |
 | --- | --- | --- |
 | stream | false | false |
-| tool_choice | auto | auto |
+| tool_choice | 通常 auto；收尾时 DeepSeek/Kimi 为 none，MiMo 省略 tools 和 tool_choice | 通常 auto；收尾时 none |
 | 非思考控制 | thinking: { type: "disabled" } | enable_thinking: false |
 | 输出上限 | max_completion_tokens: 2048 | max_tokens: 2048 |
 
 Qwen 使用 max_tokens，是因为所选 qwen-plus 的兼容范围不统一支持较新的 max_completion_tokens；不将 DeepSeek/Kimi/MiMo 的 thinking 参数发送给 Qwen。Kimi 默认选用文档明确支持关闭思考的 kimi-k2.6，不能切换到只能思考的模型后期待当前协议继续成立。MiMo 文档支持 Bearer 和 api-key，本项目统一使用 SDK Bearer。
+
+2026-10-02 核对最后一次请求的工具选择：[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)、[Kimi Chat API](https://platform.kimi.com/docs/api/chat) 与 [Qwen OpenAI-compatible Chat](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions) 支持 none。[MiMo Chat API](https://mimo.mi.com/docs/en-US/api/chat/openai-api) 说明非 auto 值会被忽略，因此 MiMo 的文字收尾请求省略工具定义及选择字段，不发送不支持的 none。此前工具调用和结果仍保留在消息中；若仍返回工具调用，Loop 硬上限拒绝执行。父子包装透传单次 Model options，不改变其他请求或持久配置。四家离线 SDK 合约覆盖请求字段；真实服务效果须另行验证。
 
 ## Provider 开发规范
 

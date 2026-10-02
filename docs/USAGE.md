@@ -49,7 +49,7 @@ Edit `.env` locally and set the selected provider's API key. DeepSeek remains th
 HARNESS_PROVIDER=deepseek
 DEEPSEEK_API_KEY=replace-with-your-deepseek-api-key
 DEEPSEEK_MODEL=deepseek-flash
-HARNESS_MAX_ITERATIONS=8
+HARNESS_MAX_ITERATIONS=32
 HARNESS_REQUEST_TIMEOUT_MS=60000
 HARNESS_MAX_REQUEST_BYTES=262144
 ```
@@ -59,9 +59,11 @@ Do not commit or share credentials. The example key above is a placeholder.
 | Variable | Behavior |
 | --- | --- |
 | HARNESS_PROVIDER | deepseek (default), kimi, mimo, or qwen |
-| HARNESS_MAX_ITERATIONS | Positive safe integer; defaults to 8 model requests per user turn |
+| HARNESS_MAX_ITERATIONS | Positive safe integer; defaults to 32 model requests per user turn, including the final response |
 | HARNESS_REQUEST_TIMEOUT_MS | Positive integer up to 2147483647; defaults to 60000 milliseconds per request |
 | HARNESS_MAX_REQUEST_BYTES | Positive integer up to 16777216; defaults to 262144 bytes (256 KiB) per complete model JSON request body |
+
+The loop tells the model its remaining request allowance and reserves the last request for a final response, with no further tool execution. The response must distinguish completed work from unfinished or unverified work; reaching the budget is not evidence that the task succeeded. A limit of 1 permits a text response only. If the model still requests tools on the final request, `MAX_ITERATIONS` remains a failure. Review files and completed operations before retrying; increase `HARNESS_MAX_ITERATIONS` and restart only when the task needs a larger allowance. Existing interrupted turns are not automatically replayed or repaired.
 
 Each provider has separate credentials and model settings. Only the selected provider's settings are read:
 
@@ -131,6 +133,16 @@ If another process changes a session before deletion, the operation is rejected 
 Refreshing the same tab reconnects to server state, including pending approval; closing the tab does not cancel an active turn. Failed and cancelled turns remain visible with an explicit history warning. Messages are limited to 32768 UTF-8 bytes, and the display shows the latest 100 activity events per turn.
 
 Successful conversation history is saved locally by default and can be resumed after restart; old activity reports, approvals, process usage and live tool journals are not restored. Start with `--continue` or `--resume <id-or-name>`, or choose a saved session in the sidebar. Responses appear when the existing non-streaming provider call completes; status updates are polled locally. There is no account system, remote hosting, or runtime provider switching. API credentials stay on the server. Treat the startup link as private: its random capability permits access to this local server's session list and active conversation. Reports distinguish valid provider token usage from missing usage and do not certify task correctness. See [Web UI architecture](ARCHITECTURE/WEBUI.md).
+
+### Preview workspace HTML and SVG
+
+Click **Preview** in the top bar, enter a workspace-relative `.html`, `.htm` or `.svg` path (for example `animations/bicycle.html`), and click **Open**. Current-turn execution reports also offer **Preview <path>** buttons for committed HTML/SVG writes inside the workspace. These buttons come from write records, not claims in model responses; files created by shell commands or restored sessions without reports can be opened using the path field.
+
+The preview appears beside the chat on wide screens and over the chat on narrower screens. **Refresh** rereads the displayed file from disk and restarts its preview; unsaved editor changes are not included. Closing the panel removes the frame and stops its page. A failed read clears the old preview and shows an error. Previewing does not send a model request, change session history, grant an approval or write a file.
+
+This first increment supports self-contained UTF-8 files up to 1 MiB: inline HTML styles and scripts, inline SVG, and standalone SVG animations. Embedded data images are supported. Relative scripts/styles/images, CDN libraries, remote resources, network requests, forms, popups, browser storage and access to the chat page are blocked. Use a single-file artifact for this preview; a multi-file application or development server is outside this increment. Hidden paths, dependency directories, links, absolute paths and paths outside the workspace remain unavailable even in Free to go mode. Preview remains available in read-only/Plan mode and with public web research disabled.
+
+Rendering is for your review. Fatcat does not receive the rendered page, screenshots or animation frames and must not treat opening this panel as automated visual verification. Browser automation and model visual feedback are later increments.
 
 ## Run a task
 
@@ -550,7 +562,7 @@ Parent-only guidance favors direct work for simple questions, arithmetic, and si
 
 The parent supplies a self-contained `task` string of 1 to 4000 characters. A child starts with fresh history and the same provider configuration and basic tools, including the selected workspace, its permission, and the Skill catalog. A child must load relevant Skill instructions for its own task; it does not inherit the parent's loaded documents. Parent and child share the same write and command journals and approval callbacks; a child cannot elevate access, and its committed writes remain visible even if its turn fails. It cannot see the parent conversation or delegate further. Its final answer returns as tool data; its internal messages stay out of the parent history. Answers longer than 12000 characters return an error rather than a successful partial answer.
 
-Each user turn may start at most two child tasks, including failed attempts. Each child gets at most three model requests, further capped by HARNESS_MAX_ITERATIONS. The parent's own request limit is unchanged: with the default limit of 8, the total upper bound is 14 requests per user turn. Tasks run sequentially. A new user turn gets a fresh allowance.
+Each user turn may start at most two child tasks, including failed attempts. Each child gets at most three model requests, further capped by HARNESS_MAX_ITERATIONS. The parent's own request limit is unchanged: with the default limit of 32, the total upper bound is 38 requests per user turn. Tasks run sequentially. A new user turn gets a fresh allowance.
 
 Child failures become safe tool errors so the parent can continue or explain the limitation. Ctrl+C cancels both parent and child. Nested `subagent_event` logs include the parent tool-call ID; chat also supplies the user-turn number. Logs omit task text, answers, file contents, and credentials.
 

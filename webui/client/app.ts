@@ -5,6 +5,7 @@ import { SessionMenu } from "./session-menu.js";
 import type { SessionAction } from "./session-menu.js";
 import { SessionDialog } from "./session-dialog.js";
 import type { SessionMutation } from "./session-dialog.js";
+import { icon } from "./icons.js";
 import { PermissionMenu } from "./permission-menu.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
@@ -242,7 +243,6 @@ function renderSessions(next: WebUiState): void {
     button.setAttribute("aria-description", metadata);
     button.dataset.sessionId = session.id;
     button.setAttribute("aria-haspopup", "menu");
-    button.append(node("span", selected ? "◉" : "◌"));
     const copy = node("span", undefined, "session-copy");
     copy.append(node("span", session.name ?? session.title, "session-name"));
     button.append(copy);
@@ -263,7 +263,22 @@ function renderSessions(next: WebUiState): void {
         sessionMenu.open(session, button, bounds.left + 16, bounds.bottom);
       }
     });
-    sessionList.append(button);
+    const row = node("div", undefined, "session-row");
+    row.dataset.active = String(selected);
+    const more = node("button", undefined, "session-more icon-button");
+    more.type = "button";
+    more.setAttribute("aria-label", `Actions for ${session.name ?? session.title}`);
+    more.setAttribute("aria-haspopup", "menu");
+    more.setAttribute("aria-controls", "session-menu");
+    more.setAttribute("aria-expanded", "false");
+    more.title = "Session actions";
+    more.append(icon("ellipsis"));
+    more.addEventListener("click", () => {
+      const bounds = more.getBoundingClientRect();
+      sessionMenu.open(session, more, bounds.left, bounds.bottom + 4);
+    });
+    row.append(button, more);
+    sessionList.append(row);
   }
 }
 
@@ -328,6 +343,7 @@ element("toggle-sidebar").addEventListener("click", () => {
   const open = document.body.classList.toggle("sidebar-open");
   element("toggle-sidebar").setAttribute("aria-expanded", String(open));
 });
+element("sidebar-backdrop").addEventListener("click", closeSidebar);
 document.addEventListener("click", (event) => {
   if (event.target instanceof Element && !event.target.closest("aside, #toggle-sidebar, #session-menu, #session-action-dialog")) {
     document.body.classList.remove("sidebar-open"); element("toggle-sidebar").setAttribute("aria-expanded", "false");

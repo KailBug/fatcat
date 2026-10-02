@@ -14,6 +14,9 @@ const assets = new Map([
   ["/session-menu.js", ["./client/session-menu.js", "text/javascript; charset=utf-8"]],
   ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
   ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
+  ["/icons.js", ["./client/icons.js", "text/javascript; charset=utf-8"]],
+  ["/icons.svg", ["./public/icons.svg", "image/svg+xml"]],
+  ["/icons-LICENSE.txt", ["./public/icons-LICENSE.txt", "text/plain; charset=utf-8"]],
   ["/favicon.svg", ["./public/favicon.svg", "image/svg+xml"]],
 ]);
 

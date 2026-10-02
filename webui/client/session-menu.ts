@@ -1,5 +1,7 @@
 import type { SessionSummary } from "../../src/session/store.js";
 
+import { icon } from "./icons.js";
+
 export type SessionAction = "details" | "rename" | "fork" | "delete";
 
 /** A single menu owns pointer placement, keyboard navigation, and focus restoration. */
@@ -21,7 +23,7 @@ export class SessionMenu {
       button.role = "menuitem";
       button.tabIndex = -1;
       button.dataset.action = action;
-      button.textContent = label;
+      button.append(icon(({ details: "info", rename: "pencil", fork: "git-branch", delete: "trash" } as const)[action]), document.createTextNode(label));
       button.addEventListener("click", () => {
         const session = this.selected;
         if (!session || (action !== "details" && !this.canManage())) return;
@@ -60,8 +62,10 @@ export class SessionMenu {
   }
 
   open(session: SessionSummary, trigger: HTMLElement, x: number, y: number): void {
+    this.close();
     this.selected = structuredClone(session);
     this.trigger = trigger;
+    trigger.setAttribute("aria-expanded", "true");
     this.title.textContent = session.name ?? session.title;
     this.title.title = this.title.textContent;
     this.buttons.forEach((button) => { button.disabled = button.dataset.action !== "details" && !this.canManage(); });
@@ -87,6 +91,7 @@ export class SessionMenu {
     if (this.menu.hidden) return;
     this.menu.hidden = true;
     this.selected = undefined;
+    this.trigger?.setAttribute("aria-expanded", "false");
     if (restoreFocus && this.trigger?.isConnected) this.trigger.focus({ preventScroll: true });
     this.trigger = undefined;
   }

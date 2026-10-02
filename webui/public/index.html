@@ -10,10 +10,11 @@
   <script type="module" src="/app.js"></script>
 </head>
 <body>
+  <button id="sidebar-backdrop" class="sidebar-backdrop" aria-label="Close sidebar" tabindex="-1"></button>
   <aside id="sidebar" aria-label="Workspace sidebar">
     <a class="brand" href="/" aria-label="Fatcat home"><span class="cat-mark" aria-hidden="true">f.</span>fatcat<span class="local-tag">LOCAL</span></a>
-    <button class="new-chat" id="new-chat"><span aria-hidden="true">＋</span> New chat <span class="button-hint">↗</span></button>
-    <div class="section-label">WORKSPACE SESSIONS</div>
+    <button class="new-chat" id="new-chat"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> New chat </button>
+    <div class="section-label">Recent chats</div>
     <nav id="sessions" class="session-list" aria-label="Saved sessions"></nav>
     <div class="sidebar-bottom">
       <div class="profile"><span class="avatar">Y</span><div>You<span>Local developer</span></div><span class="private-label">Personal</span></div>
@@ -21,21 +22,16 @@
   </aside>
   <main>
     <header class="topbar">
-      <div class="topbar-left"><button id="toggle-sidebar" class="icon-button" aria-label="Toggle sidebar" aria-expanded="false">☰</button><span class="app-name">Fatcat</span></div>
+      <div class="topbar-left"><button id="toggle-sidebar" class="icon-button" aria-label="Toggle sidebar" aria-expanded="false" aria-controls="sidebar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#panel-left"></use></svg></button><span class="app-name">Fatcat</span></div>
       <div class="connection"><span class="status-dot" id="connection-dot"></span><span id="connection">Connecting</span></div>
     </header>
     <div class="scroll-area" id="scroll-area">
       <section class="welcome" id="welcome">
         <div class="welcome-icon" aria-hidden="true">f.</div>
-        <div class="eyebrow">YOUR LOCAL CODING COMPANION</div>
+        <div class="eyebrow">A LITTLE CURIOSITY. A LOT OF POSSIBILITY.</div>
         <h1>What are we building today?</h1>
-        <p>From the first question to the final check.<br>Make yourself at home in your codebase.</p>
-        <div class="suggestions">
-          <button data-prompt="Explore this workspace and explain its structure and main entry points."><span class="suggestion-icon">⌘</span><strong>Explore this project</strong><span>Find your way around the codebase</span><b aria-hidden="true">↗</b></button>
-          <button data-prompt="Review this workspace for a concrete bug. Explain the evidence before proposing a fix."><span class="suggestion-icon">⌕</span><strong>Find a bug</strong><span>A fresh pair of eyes on your code</span><b aria-hidden="true">↗</b></button>
-          <button data-prompt="Inspect this project's tests and suggest the most useful missing test case."><span class="suggestion-icon">✓</span><strong>Strengthen the tests</strong><span>Build confidence in your next change</span><b aria-hidden="true">↗</b></button>
-          <button data-prompt="Read this project's documentation and suggest a small, useful next improvement."><span class="suggestion-icon">✧</span><strong>Plan the next step</strong><span>Turn an idea into something concrete</span><b aria-hidden="true">↗</b></button>
-        </div>
+        <p>Your codebase, a fresh perspective. Let’s make something good.</p>
+
       </section>
       <section id="messages" class="messages" aria-label="Conversation"></section>
       <section id="approval" class="approval" aria-label="Operation approval" hidden></section>
@@ -50,20 +46,26 @@
         <div class="composer-toolbar">
           <div class="composer-primary-tools">
             <button id="permission-mode" class="permission-mode" type="button" disabled></button>
-            <span class="workspace-path"><span class="workspace-path-icon" aria-hidden="true">⌁</span><span id="workspace" class="composer-workspace" aria-label="Current workspace">Connecting…</span></span>
+            <span class="workspace-path"><span class="workspace-path-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#folder"></use></svg></span><span id="workspace" class="composer-workspace" aria-label="Current workspace">Connecting…</span></span>
           </div>
           <div class="composer-secondary-tools">
             <span id="context-usage" class="context-chip" tabindex="0" aria-label="Model context usage"><span class="context-ring" aria-hidden="true"></span><span id="context-label">Context —</span></span>
             <span class="model-pill" id="model" aria-label="Selected model">Connecting</span>
-            <button id="send" class="send-button" type="submit" aria-label="Send message" disabled>↑</button><button id="stop" class="send-button stop-button" type="button" aria-label="Stop current turn" hidden>■</button>
+            <button id="send" class="send-button" type="submit" aria-label="Send message" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#arrow-up"></use></svg></button><button id="stop" class="send-button stop-button" type="button" aria-label="Stop current turn" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#square"></use></svg></button>
           </div>
         </div>
       </form>
+        <div class="suggestions" aria-label="Ideas to get started">
+          <button data-prompt="Explore this workspace and explain its structure and main entry points."><span class="suggestion-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#folder"></use></svg></span><strong>Explore this project</strong><span>Find your way around the codebase</span></button>
+          <button data-prompt="Review this workspace for a concrete bug. Explain the evidence before proposing a fix."><span class="suggestion-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#search"></use></svg></span><strong>Find a bug</strong><span>A fresh pair of eyes on your code</span></button>
+          <button data-prompt="Inspect this project's tests and suggest the most useful missing test case."><span class="suggestion-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#list-checks"></use></svg></span><strong>Strengthen the tests</strong><span>Build confidence in your next change</span></button>
+          <button data-prompt="Read this project's documentation and suggest a small, useful next improvement."><span class="suggestion-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#compass"></use></svg></span><strong>Plan the next step</strong><span>Turn an idea into something concrete</span></button>
+        </div>
       <div class="composer-footer"><p class="footnote">Fatcat can make mistakes. Review changes and check the execution report.</p><span class="composer-shortcut">Shift + Enter for a new line</span></div>
     </div>
   </main>
   <div id="session-menu" class="session-menu" role="menu" aria-label="Session actions" hidden></div>
   <div id="permission-menu" class="permission-menu" role="menu" aria-label="Permission modes" hidden></div>
-  <dialog id="details"><div class="dialog-heading"><h2>Session details</h2><button id="close-details" class="icon-button" aria-label="Close session details">×</button></div><dl id="details-content"></dl><p class="dialog-note">Switching sessions restores successful conversation history. Approvals, failed turns and execution reports are not restored. Files and commands stay in effect.</p></dialog>
+  <dialog id="details"><div class="dialog-heading"><h2>Session details</h2><button id="close-details" class="icon-button" aria-label="Close session details"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#x"></use></svg></button></div><dl id="details-content"></dl><p class="dialog-note">Switching sessions restores successful conversation history. Approvals, failed turns and execution reports are not restored. Files and commands stay in effect.</p></dialog>
 </body>
 </html>

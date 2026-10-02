@@ -1,12 +1,14 @@
 import type { PermissionMode, PermissionState } from "../../src/permissions/types.js";
 
+import { icon } from "./icons.js";
+
 export type PermissionModeState = PermissionState;
 
 const modes = [
-  { mode: "plan", label: "Plan", icon: "☷", description: "Read and plan. File changes and commands are disabled." },
-  { mode: "default", label: "Manual", icon: "◇", description: "Ask before file changes and commands." },
-  { mode: "acceptEdits", label: "Accept edits", icon: "✓", description: "Allow file changes; ask before commands." },
-  { mode: "freeToGo", label: "Free to go", icon: "↗", description: "Access local files and networks. Ask before clearly dangerous commands." },
+  { mode: "plan", label: "Plan", icon: "list", description: "Read and plan. File changes and commands are disabled." },
+  { mode: "default", label: "Manual", icon: "shield", description: "Ask before file changes and commands." },
+  { mode: "acceptEdits", label: "Accept edits", icon: "pencil", description: "Allow file changes; ask before commands." },
+  { mode: "freeToGo", label: "Free to go", icon: "arrow-up-right", description: "Access local files and networks. Ask before clearly dangerous commands." },
 ] as const;
 
 /** The selector displays server policy; selecting a mode does not grant permissions locally. */
@@ -24,7 +26,7 @@ export class PermissionMenu {
     this.icon.setAttribute("aria-hidden", "true");
     const chevron = document.createElement("span");
     chevron.className = "permission-mode-chevron";
-    chevron.textContent = "⌄";
+    chevron.append(icon("chevron-down"));
     chevron.setAttribute("aria-hidden", "true");
     trigger.append(this.icon, this.label, chevron);
     trigger.setAttribute("aria-haspopup", "menu");
@@ -47,9 +49,9 @@ export class PermissionMenu {
       copy.append(heading, description);
       const check = document.createElement("span");
       check.className = "permission-option-check";
-      check.textContent = "✓";
+      check.append(icon("check"));
       check.setAttribute("aria-hidden", "true");
-      button.append(copy, check);
+      button.append(icon(item.icon), copy, check);
       button.addEventListener("click", () => {
         if (this.disabled || !this.state?.availableModes.includes(item.mode)) return;
         const changed = this.state.mode !== item.mode;
@@ -90,7 +92,10 @@ export class PermissionMenu {
     this.disabled = disabled || !state;
     const selected = modes.find((item) => item.mode === state?.mode);
     this.label.textContent = selected?.label ?? (state ? "Custom permissions" : "Manual");
-    this.icon.textContent = selected?.icon ?? "◇";
+    if (this.icon.dataset.name !== (selected?.icon ?? "shield")) {
+      this.icon.dataset.name = selected?.icon ?? "shield";
+      this.icon.replaceChildren(icon(selected?.icon ?? "shield"));
+    }
     this.trigger.dataset.mode = state?.mode ?? "default";
     this.trigger.setAttribute("aria-label", `Permission mode: ${this.label.textContent}`);
     this.trigger.title = selected ? selected.description

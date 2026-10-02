@@ -6,5 +6,7 @@ dist/
 *.log
 .idea/
 
-
 examples
+
+#explicit file
+/docs/PROGRESS.md

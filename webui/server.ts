@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { HarnessError } from "../src/errors.js";
 import type { WebUiController } from "./controller.js";
 import { isPermissionMode } from "../src/permissions/policy.js";
+import { createPreviewStore, previewCsp } from "./preview.js";
 
 const assets = new Map([
   ["/", ["./public/index.html", "text/html; charset=utf-8"]],
@@ -14,6 +15,7 @@ const assets = new Map([
   ["/session-menu.js", ["./client/session-menu.js", "text/javascript; charset=utf-8"]],
   ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
   ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
+  ["/preview.js", ["./client/preview.js", "text/javascript; charset=utf-8"]],
   ["/icons.js", ["./client/icons.js", "text/javascript; charset=utf-8"]],
   ["/icons.svg", ["./public/icons.svg", "image/svg+xml"]],
   ["/icons-LICENSE.txt", ["./public/icons-LICENSE.txt", "text/plain; charset=utf-8"]],
@@ -49,12 +51,14 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 /** Bind only to loopback. The fragment capability is never included in HTTP URLs. */
 export async function startWebUiServer(controller: WebUiController, port = 3210) {
   const token = randomBytes(32).toString("hex");
+  const previews = await createPreviewStore(controller.info.workspace);
+  const shutdown = new AbortController();
   let origin = "";
   const server = createServer({ requestTimeout: 10_000, headersTimeout: 10_000, maxHeaderSize: 8192 }, (request, response) => {
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Referrer-Policy", "no-referrer");
-    response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+    response.setHeader("Content-Security-Policy", `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-src ${origin}/preview/; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
     void route(request, response).catch((error: unknown) => {
       if (response.destroyed) return;
       const status = error instanceof HttpError ? error.status
@@ -69,6 +73,15 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
     if (request.headers.host !== new URL(origin).host) throw new HttpError(403, "Invalid local host.");
     if (request.headers.origin && request.headers.origin !== origin) throw new HttpError(403, "Cross-origin requests are not allowed.");
     const path = request.url ?? "/";
+    if (request.method === "GET" && /^\/preview\/[a-f0-9]{64}$/.test(path)) {
+      const snapshot = previews.take(path.slice("/preview/".length));
+      if (!snapshot) throw new HttpError(404, "Preview expired. Use Refresh to read the file again.");
+      response.setHeader("Content-Security-Policy", previewCsp(origin));
+      response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), display-capture=(), usb=(), payment=()");
+      response.writeHead(200, { "Content-Type": snapshot.contentType });
+      response.end(snapshot.content);
+      return;
+    }
     const asset = assets.get(path);
     if (request.method === "GET" && asset) {
       const data = await readFile(new URL(asset[0]!, import.meta.url));
@@ -87,7 +100,17 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
     }
     if (request.method !== "POST") throw new HttpError(405, "Method not allowed.");
     const body = await readBody(request);
-    if (path === "/api/message") {
+    if (path === "/api/preview") {
+      if (typeof body.path !== "string" || Object.keys(body).length !== 1) throw new HttpError(400, "Expected a workspace-relative file path.");
+      const disconnected = new AbortController();
+      const abort = () => disconnected.abort();
+      response.once("close", abort);
+      try {
+        const snapshot = await previews.prepare(body.path, AbortSignal.any([shutdown.signal, disconnected.signal, AbortSignal.timeout(5000)]));
+        json(response, 200, snapshot);
+      } finally { response.off("close", abort); }
+      return;
+    } else if (path === "/api/message") {
       if (typeof body.prompt !== "string" || Object.keys(body).length !== 1) throw new HttpError(400, "Expected a prompt string.");
       controller.submit(body.prompt);
     } else if (path === "/api/stop" || path === "/api/reset") {
@@ -136,6 +159,8 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
   let closing: Promise<void> | undefined;
   return { url: `${origin}/#token=${token}`, origin, close(): Promise<void> {
     closing ??= (async () => {
+      shutdown.abort();
+      previews.close();
       const stopped = controller.close();
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();

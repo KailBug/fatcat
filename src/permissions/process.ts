@@ -16,7 +16,7 @@ export const outputLimit = 16 * 1024;
 export function commandEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const allowed = new Set(["systemroot", "windir", "comspec", "path", "pathext", "temp", "tmp",
     "userprofile", "homedrive", "homepath", "appdata", "localappdata", "programfiles", "programfiles(x86)",
-    "programdata", "processor_architecture", "number_of_processors", "pnpm_home"]);
+    "programdata", "processor_architecture", "number_of_processors", "pnpm_home", "psmodulepath"]);
   return Object.fromEntries(Object.entries(env).filter(([key, value]) => allowed.has(key.toLowerCase()) && value !== undefined));
 }
 

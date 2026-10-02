@@ -158,7 +158,7 @@ Free 使用当前用户的本地 cwd 范围；普通识别命令无需回调，�
 
 process.ts 使用系统目录下的 Windows PowerShell，通过 spawn 的参数数组传入 UTF-16LE EncodedCommand；无 profile、无 stdin、非交互、隐藏窗口，每次均为新进程，不保留变量或 cd 状态。设置 UTF-8 控制台编码、文本输出及关闭进度输出；PowerShell 错误转为非零退出，外部程序最终 LASTEXITCODE 作为退出码。多个外部命令串联时需逐个检查退出码，后来的命令可能覆盖先前失败。
 
-环境仅继承列出的 OS/运行时变量，例如 PATH、SystemRoot、TEMP、用户目录及 PNPM_HOME；不继承模型供应商 Key、任意业务密钥或 NODE_OPTIONS。此措施不隔离当前账户可读取的磁盘凭据。命令输出与命令记录进入模型，JSON 事件不记录正文；终端授权会本地显示命令。
+环境仅继承列出的 OS/运行时变量，例如 PATH、SystemRoot、TEMP、用户目录、PNPM_HOME 及 PSModulePath；后者保留宿主的 PowerShell 模块搜索配置，避免托管 Windows runner 缺少该变量时在模块初始化处超时。不继承模型供应商 Key、任意业务密钥或 NODE_OPTIONS。PATH 和 PSModulePath 均属于受信任的宿主运行环境，环境筛选不验证其目录中的可执行文件或模块，也不隔离当前账户可读取的磁盘凭据。命令输出与命令记录进入模型，JSON 事件不记录正文；终端授权会本地显示命令。
 
 stdout/stderr 合计最多收集 16 KiB 原始字节，UTF-8 解码；不兼容编码可能替换字符。超过上限标记 truncated 并请求终止；结果不把截断输出冒充完整验证。预算不含 JSON、元数据及转码开销。默认 30 秒超时，工具参数最多 120 秒。
 

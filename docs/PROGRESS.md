@@ -7,6 +7,9 @@
 - 原生 Windows Node 24.19.0 / pnpm 11.21.0 验证：锁文件安装、类型检查、构建及 384 项离线测试全部通过，无跳过；没有真实模型请求。独立 worktree 隔离主目录的 Cron/Web UI 未提交工作，项目范围与运行时架构未改变。
 - 下一步：推送修复到同一 PR，核对托管 Windows runner 的路径与 shell 检查；远端复验成功前不宣称 CI 已修复，不绕过失败检查或合并 PR。
 - 远端第二次运行确认路径/Skills 相关失败消失，367 项通过、11 项失败；剩余为 PowerShell 超时且 stdout/stderr 均空。临时增加固定命令的有界启动对照，比较环境筛选与 stdin 句柄，仅输出固定脚本的标记、耗时和状态，不输出环境值；定位后移除诊断步骤。
+- 远端启动对照定位第二个根因：筛选环境在 `New-Object` 模块初始化前后停滞，单独补回 `PSModulePath` 约 336 ms 完成，而补回 ALLUSERSPROFILE、PUBLIC、SystemDrive、USERDOMAIN、USERNAME 分别仍达 8 秒超时；换 stdin pipe 同样无效。本机 Node 24.21.0 和 detached 进程未复现，不能归因为 Node 版本或一般并发负载。
+- `commandEnvironment` 白名单仅补充 PowerShell 模块搜索路径，并验证大小写不敏感的继承及其他凭据/注入变量仍被排除；同步 Tools 架构中的宿主信任边界，移除全部临时诊断 workflow 步骤。保留原测试数量、超时及失败门槛，待本地和远端完整复验。
+- 最终运行时修复本地复验：`pnpm run typecheck`、`pnpm test`（含 build，384 项全部通过、无跳过）、`pnpm start --help` 与 `git diff --check` 通过；workflow 已恢复原始检查配置，未改 runner、Node 范围或命令超时。准备推送后验收托管 runner。
 
 ## 2026-10-02：Playwright 工作区受控浏览器（已实现并验证，未提交）
 

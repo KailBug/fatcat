@@ -73,8 +73,11 @@ test("native PowerShell preserves cwd, Unicode, stderr and nonzero exit codes", 
 });
 
 test("child environment excludes model credentials, hooks and arbitrary inherited secrets", windows, async (t) => {
-  assert.deepEqual(commandEnvironment({ Path: "runtime", SystemRoot: "windows", DEEPSEEK_API_KEY: "fake",
-    CUSTOM_SECRET: "fake", NODE_OPTIONS: "--import unsafe", GITHUB_TOKEN: "fake" }), { Path: "runtime", SystemRoot: "windows" });
+  assert.deepEqual(commandEnvironment({ Path: "runtime", SystemRoot: "windows", PSModulePath: "system-modules", DEEPSEEK_API_KEY: "fake",
+    CUSTOM_SECRET: "fake", NODE_OPTIONS: "--import unsafe", GITHUB_TOKEN: "fake" }),
+  { Path: "runtime", SystemRoot: "windows", PSModulePath: "system-modules" });
+  assert.deepEqual(commandEnvironment({ psmodulepath: "system-modules", PYTHONPATH: "untrusted" }),
+    { psmodulepath: "system-modules" });
   const { workspace } = await temporaryWorkspace(t);
   const result = await runPowerShell("if ($env:DEEPSEEK_API_KEY -or $env:NODE_OPTIONS) { exit 5 }; 'environment-ok'", workspace, 10000);
   assert.equal(result.exitCode, 0, JSON.stringify(result));

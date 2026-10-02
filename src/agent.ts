@@ -49,14 +49,14 @@ export function createAgent(config: Config, baseTools: Tools = defaultTools, tra
 
 function withGuidance(model: Model, guidance: string | (() => string)): Model {
   if (!guidance) return model;
-  return (messages, signal, observe) => {
+  return (messages, signal, observe, options) => {
     const currentGuidance = typeof guidance === "function" ? guidance() : guidance;
-    if (!currentGuidance) return model(messages, signal, observe);
+    if (!currentGuidance) return model(messages, signal, observe, options);
     // Request-only guidance leaves Session history and independent child history untouched.
     const first = messages[0];
     const system = first?.role === "system" && typeof first.content === "string";
     return model(system
       ? [{ ...first, content: `${first.content}\n\n${currentGuidance}` }, ...messages.slice(1)]
-      : [{ role: "system", content: currentGuidance }, ...messages], signal, observe);
+      : [{ role: "system", content: currentGuidance }, ...messages], signal, observe, options);
   };
 }

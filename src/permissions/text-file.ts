@@ -12,8 +12,8 @@ export const textExtensions = new Set([
 
 type Target = Awaited<ReturnType<Workspace["resolvePath"]>>;
 
-export async function readTextFile(target: Target, signal?: AbortSignal) {
-  if (!target.unrestricted && !textExtensions.has(extname(target.absolute).toLowerCase())) {
+export async function readTextFile(target: Target, signal?: AbortSignal, extensions: ReadonlySet<string> = textExtensions) {
+  if (!target.unrestricted && !extensions.has(extname(target.absolute).toLowerCase())) {
     throw new HarnessError("UNSUPPORTED_FILE", "Only supported text file extensions can be read.");
   }
   const file = await open(target.absolute, "r");

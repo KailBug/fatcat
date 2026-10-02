@@ -225,6 +225,7 @@ function renderDetails(next: WebUiState): void {
 }
 
 function displaySessions(next: WebUiState): SessionSummary[] {
+  if (next.current.revision === 0) return next.sessions;
   return next.sessions.some((session) => session.id === next.current.id) ? next.sessions : [next.current, ...next.sessions];
 }
 

@@ -290,6 +290,15 @@ main {
 .preview-viewport:empty::before { content:"Open a saved HTML or SVG file to preview it here."; margin:auto; padding:24px; text-align:center; color:#73756d; font-size:13px }
 .preview-viewport iframe { width:100%; flex:1; border:0; background:white; color-scheme:normal }
 .preview-footer { font-size:11px }
+.browser-check { border:1px solid var(--border); border-radius:10px; padding:12px; margin:12px 0; font-size:12px; overflow-wrap:anywhere }
+.browser-check p { margin:0 0 8px }
+.browser-check button { margin:0 8px 4px 0 }
+.browser-evidence-dialog { width:min(1100px,94vw); max-width:94vw; max-height:90dvh; overflow:auto; color:inherit }
+.browser-evidence-dialog img { display:block; max-width:100%; height:auto; margin-top:16px; background:white }
+.browser-evidence-dialog h2 { overflow-wrap:anywhere; min-width:0 }
+.browser-evidence-dialog .dialog-heading { gap:12px }
+.browser-evidence-dialog button { flex-shrink:0; padding:8px 12px; border:1px solid var(--border); border-radius:8px }
+.browser-evidence-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px }
 
 @media(max-width:1200px) {
   .file-preview { position:fixed; inset:0 0 0 auto; width:min(700px,100%); max-width:100%; min-width:0; z-index:30; box-shadow:-8px 0 32px #0002 }

@@ -12,6 +12,7 @@ import { PermissionPolicy } from "../src/permissions/policy.js";
 import type { PermissionMode } from "../src/permissions/policy.js";
 import { WebContextUsage } from "./context-usage.js";
 import type { ContextUsage } from "./context-usage.js";
+import type { BrowserRequest } from "../src/browser/protocol.js";
 
 export type WebUiInfo = {
   provider: string; model: string; workspace: string;
@@ -186,9 +187,11 @@ export class WebUiController {
 
   requestApproval(kind: "write", request: WriteApprovalRequest, signal?: AbortSignal): Promise<boolean>;
   requestApproval(kind: "shell", request: ShellRequest, signal?: AbortSignal): Promise<boolean>;
-  requestApproval(kind: "write" | "shell", request: WriteApprovalRequest | ShellRequest, signal?: AbortSignal): Promise<boolean> {
+  requestApproval(kind: "browser", request: BrowserRequest, signal?: AbortSignal): Promise<boolean>;
+  requestApproval(kind: "write" | "shell" | "browser", request: WriteApprovalRequest | ShellRequest | BrowserRequest, signal?: AbortSignal): Promise<boolean> {
     if (this.closed || !this.active || signal?.aborted || this.active.abort.signal.aborted) return Promise.resolve(false);
     const waitingSignal = signal ? AbortSignal.any([signal, this.active.abort.signal]) : this.active.abort.signal;
+    if (kind === "browser") return this.approvals.request(kind, request as BrowserRequest, waitingSignal);
     return kind === "write" ? this.approvals.request(kind, request as WriteApprovalRequest, waitingSignal)
       : this.approvals.request(kind, request as ShellRequest, waitingSignal);
   }
@@ -208,6 +211,7 @@ export class WebUiController {
     if (event.type === "tool_result") message = `${source}${event.tool} · ${event.ok ? "completed" : "failed"}`;
     if (event.type === "write_record") message = `${source}Write ${event.record.path} · ${event.record.status}`;
     if (event.type === "shell_record") message = `${source}Command · ${event.record.status}`;
+    if (event.type === "browser_record") message = `${source}Browser ${event.record.path} · ${event.record.status}`;
     if (message) {
       turn.activity.push(message);
       if (turn.activity.length > 100) turn.activity.shift();

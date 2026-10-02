@@ -8,6 +8,7 @@ import type { SessionMutation } from "./session-dialog.js";
 import { icon } from "./icons.js";
 import { PermissionMenu } from "./permission-menu.js";
 import { FilePreview } from "./preview.js";
+import { BrowserEvidenceView } from "./browser-evidence.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -49,6 +50,7 @@ const sessionDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "num
 const tokenCount = new Intl.NumberFormat("en-US");
 const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 const filePreview = new FilePreview(() => token);
+const browserEvidence = new BrowserEvidenceView(() => token);
 
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
 function controls(): void {
@@ -115,6 +117,7 @@ function renderTurn(turn: WebTurn): HTMLElement {
   }
   if (turn.report) {
     const report = turn.report;
+    for (const check of report.browserChecks ?? []) article.append(browserEvidence.buttons(check));
     const previews = node("div", undefined, "preview-files");
     const paths = new Set(report.writes.filter((write) => write.status === "committed").map((write) => write.path));
     for (let path of paths) {
@@ -143,8 +146,11 @@ function renderApproval(approval: Approval | null): void {
   if (!approval) { panel.replaceChildren(); approvalId = undefined; return; }
   if (approval.id === approvalId) return;
   approvalId = approval.id;
-  panel.replaceChildren(node("h2", approval.kind === "shell" ? "Allow this command?" : "Allow this file change?"));
-  if (approval.kind === "shell") {
+  panel.replaceChildren(node("h2", approval.kind === "browser" ? "Allow this browser check?" : approval.kind === "shell" ? "Allow this command?" : "Allow this file change?"));
+  if (approval.kind === "browser") {
+    panel.append(node("p", "Run this workspace page in an isolated browser. External network access is blocked. JSON and PNG evidence will be saved in fatcat-browser-evidence."));
+    panel.append(node("pre", JSON.stringify(approval.request, null, 2)));
+  } else if (approval.kind === "shell") {
     panel.append(node("p", `PowerShell · ${approval.request.cwd} · ${approval.request.timeoutMs / 1000}s timeout`));
     panel.append(node("pre", approval.request.command));
     if (approval.request.approvalReason) panel.append(node("p", approval.request.approvalReason, "approval-reason"));

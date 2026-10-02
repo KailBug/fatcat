@@ -20,7 +20,7 @@ export async function runWebUi(config: Config, workspace: string, permission: Wo
     { readOnly: permission === "read-only", shellDenied: shellPermission === "deny", webDenied: webPermission === "deny" })): Promise<number> {
   const tools = await createTools(workspace, permission, (request, signal) => controller.requestApproval("write", request, signal), {
     permission: shellPermission, approve: (request, signal) => controller.requestApproval("shell", request, signal),
-  }, { permission: webPermission }, permissionPolicy);
+  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => controller.requestApproval("browser", request, signal) });
   const skills = await discoverSkills({ workspace: tools.workspaceRoot! });
   const manager = await SessionManager.open(createAgent(config, tools, undefined, skills), {
     ...sessionOptions, workspace: tools.workspaceRoot!, deferEmptySessions: true,

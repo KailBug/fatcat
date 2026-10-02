@@ -6,6 +6,7 @@ import { HarnessError } from "../src/errors.js";
 import type { WebUiController } from "./controller.js";
 import { isPermissionMode } from "../src/permissions/policy.js";
 import { createPreviewStore, previewCsp } from "./preview.js";
+import { readBrowserEvidence } from "../src/browser/evidence.js";
 
 const assets = new Map([
   ["/", ["./public/index.html", "text/html; charset=utf-8"]],
@@ -16,6 +17,7 @@ const assets = new Map([
   ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
   ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
   ["/preview.js", ["./client/preview.js", "text/javascript; charset=utf-8"]],
+  ["/browser-evidence.js", ["./client/browser-evidence.js", "text/javascript; charset=utf-8"]],
   ["/icons.js", ["./client/icons.js", "text/javascript; charset=utf-8"]],
   ["/icons.svg", ["./public/icons.svg", "image/svg+xml"]],
   ["/icons-LICENSE.txt", ["./public/icons-LICENSE.txt", "text/plain; charset=utf-8"]],
@@ -58,7 +60,7 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Referrer-Policy", "no-referrer");
-    response.setHeader("Content-Security-Policy", `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-src ${origin}/preview/; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
+    response.setHeader("Content-Security-Policy", `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; frame-src ${origin}/preview/; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
     void route(request, response).catch((error: unknown) => {
       if (response.destroyed) return;
       const status = error instanceof HttpError ? error.status
@@ -91,6 +93,15 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
     }
     if (!path.startsWith("/api/")) throw new HttpError(404, "Not found.");
     if (request.headers.authorization !== `Bearer ${token}`) throw new HttpError(401, "Open the authenticated URL printed by pnpm start --webui.");
+    const evidence = /^\/api\/browser-evidence\/([a-f0-9]{32})\/(report|screenshot)$/.exec(path);
+    if (request.method === "GET" && evidence) {
+      try {
+        const file = await readBrowserEvidence(controller.info.workspace, evidence[1]!, evidence[2] as "report" | "screenshot");
+        response.writeHead(200, { "Content-Type": evidence[2] === "report" ? "application/json; charset=utf-8" : "image/png" });
+        response.end(file.bytes);
+      } catch { throw new HttpError(404, "Browser evidence is unavailable. The file may have been removed or changed."); }
+      return;
+    }
     if (request.method === "GET" && path === "/api/state") {
       const state = controller.snapshot();
       if (request.headers["if-none-match"] === `"${state.revision}"`) { response.writeHead(304); response.end(); return; }

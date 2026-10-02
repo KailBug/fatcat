@@ -34,6 +34,18 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm start --help
+
+  diagnostics:
+    name: PowerShell environment diagnostics
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
       - name: Diagnose Windows PowerShell startup
         shell: pwsh
         run: |
@@ -49,7 +61,7 @@ jobs:
           for (const [name, env, stdin] of [
             ['inherited-ignore', process.env, 'ignore'],
             ['filtered-ignore', filtered, 'ignore'],
-            ['filtered-pipe', filtered, 'pipe'],
+            ...Object.entries(osExtra).map(([key, value]) => [key, { ...filtered, [key]: value }, 'ignore']),
             ['os-settings-ignore', { ...filtered, ...osExtra }, 'ignore'],
           ]) {
             const start = Date.now();
@@ -58,6 +70,4 @@ jobs:
             });
             console.log(JSON.stringify({ name, ms: Date.now() - start, status: result.status, error: result.error?.code, stdout: result.stdout, stderr: result.stderr }));
           }
-          '@ | pnpm exec node --input-type=module
-      - run: pnpm test
-      - run: pnpm start --help
+          '@ | node --input-type=module

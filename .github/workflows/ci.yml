@@ -34,5 +34,30 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
+      - name: Diagnose Windows PowerShell startup
+        shell: pwsh
+        run: |
+          @'
+          import { spawnSync } from 'node:child_process';
+          import { join } from 'node:path';
+          import { commandEnvironment } from './src/permissions/process.ts';
+          const executable = join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
+          const script = "[Console]::WriteLine('entry'); $ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; [Console]::WriteLine('output-ready'); [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false; [Console]::WriteLine('input-ready'); exit 0";
+          const filtered = commandEnvironment();
+          const osNames = new Set(['systemdrive', 'username', 'userdomain', 'allusersprofile', 'public', 'psmodulepath']);
+          const osExtra = Object.fromEntries(Object.entries(process.env).filter(([key]) => osNames.has(key.toLowerCase())));
+          for (const [name, env, stdin] of [
+            ['inherited-ignore', process.env, 'ignore'],
+            ['filtered-ignore', filtered, 'ignore'],
+            ['filtered-pipe', filtered, 'pipe'],
+            ['os-settings-ignore', { ...filtered, ...osExtra }, 'ignore'],
+          ]) {
+            const start = Date.now();
+            const result = spawnSync(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+              env, windowsHide: true, stdio: [stdin, 'pipe', 'pipe'], encoding: 'utf8', timeout: 8000,
+            });
+            console.log(JSON.stringify({ name, ms: Date.now() - start, status: result.status, error: result.error?.code, stdout: result.stdout, stderr: result.stderr }));
+          }
+          '@ | pnpm exec node --input-type=module
       - run: pnpm test
       - run: pnpm start --help

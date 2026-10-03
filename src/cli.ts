@@ -16,6 +16,9 @@ import { createTools } from "./tools.js";
 import { discoverSkills } from "./skills.js";
 import type { SkillCatalog } from "./skills.js";
 import { PermissionPolicy, isPermissionMode } from "./permissions/policy.js";
+import { loadAutomationConfig } from "./automation/config.js";
+import { FileChanges } from "./automation/files.js";
+import { runAutomations } from "./automation/runner.js";
 
 const help = `Fatcat - minimal Agent Harness
 
@@ -31,10 +34,22 @@ Usage:
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
 
-Use --chat for a continuous conversation with /help, /skills, /new, /sessions, /resume, /rename, /fork, and /exit.
+Use --chat for a continuous conversation with /help, /cron, /skills, /new, /sessions, /resume, /rename, /fork, and /exit.
 Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
 Use --webui for the local browser interface at 127.0.0.1:3210; --port <1-65535> selects another port.
+
 The default browser opens automatically. Web UI write and command approvals appear in the browser.
+Describe scheduled or file-change tasks in a conversation, use /cron in chat/TUI, or open Cron tasks in Web UI.
+The automation tool binds tasks to that session; later runs continue its history with current permissions.
+Keep chat/TUI/Web UI open for tasks to run. Saved task counts persist; offline occurrences are not replayed.
+
+Advanced standalone JSON runner (separate from session-bound tasks):
+  pnpm start --automation automation.example.json --check-automation
+  pnpm start --automation automation.example.json
+The first command only validates configuration and watched paths, without model credentials.
+The second starts a runner that creates a fresh saved session per activation under current permissions.
+Its queues and run counts are process-local, defaulting to 20 total attempts and 24 hours. Ctrl+C stops it.
+
 A prompt runs one task. Successful history is saved locally for the selected workspace.
 Use --continue (-c) to continue the latest session, or --resume (-r) <id-or-name> to select one.
 Bare --resume shows a session picker in a terminal or a local list for pipes, without model credentials.
@@ -47,9 +62,11 @@ At most two child tasks may start per user turn (up to six additional model requ
 Each child uses at most three additional model requests and cannot delegate.
 Tasks use the current directory as the workspace and expose read, write, and shell.
 Use --workspace <directory> to select another directory. Writes and commands ask for approval in the active interface.
+
 Built-in skills are available by default; workspace and user .fatcat/skills or .agents/skills override matching names.
 Use /skills in chat or TUI to inspect the local catalog. Mention $name or describe a task to use a skill.
 Skill instructions and bundled resources are loaded on demand through read; scripts still need shell authorization.
+
 Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
 Use --permission-mode default (Manual), acceptEdits (automatic file edits), plan (read-only planning), or freeToGo (Free to go).
 Free to go allows local files and HTTP(S) networks beyond the workspace/public boundary; ordinary commands run automatically.
@@ -61,12 +78,15 @@ Public web search and page reading are available by default, including in read-o
 Use --web-permission deny to disable the web tool (allow is the default). This is not a network sandbox for shell.
 Search queries go to Bing (default) or DuckDuckGo; fetched URLs go to their hosts. Do not include secrets in either.
 Each task emits an execution_report with request sizes, reported token usage, writes and command outcomes, even on failure.
+
 HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 262144 bytes); older read outputs may be replaced by explicit markers to fit.
 Current and recent turns, user instructions, and execution facts are preserved; full successful history is saved locally.
 An answer or a zero exit code alone does not certify the task; inspect the recorded evidence.
+
 HARNESS_PROVIDER selects deepseek (default), kimi, mimo, or qwen for the entire session.
 Selected file and skill contents are sent to the configured provider when the model reads them.
 Configuration checks are local and do not validate credentials or connectivity.
+
 In CLI task mode, logs go to stderr and the final answer goes to stdout. Press Ctrl+C to cancel.`;
 
 async function main(args: string[]): Promise<number> {
@@ -91,6 +111,8 @@ async function main(args: string[]): Promise<number> {
           chat: { type: "boolean" },
           tui: { type: "boolean" },
           webui: { type: "boolean" },
+          automation: { type: "string" },
+          "check-automation": { type: "boolean" },
           port: { type: "string" },
           workspace: { type: "string" },
           permission: { type: "string" },
@@ -107,25 +129,31 @@ async function main(args: string[]): Promise<number> {
     const { values, positionals } = parsed;
     const hasSelection = Boolean(values.continue || values.resume !== undefined || values.name !== undefined);
     if (hasSelection && !values.help && !values.checkConfig
-      && !values.tui && !values.webui && values.prompt === undefined && positionals.length === 0) values.chat = true;
+      && !values.tui && !values.webui && values.automation === undefined && values.prompt === undefined && positionals.length === 0) values.chat = true;
+
     const modes = Number(Boolean(values.help))
       + Number(Boolean(values.checkConfig))
       + Number(Boolean(values.chat))
       + Number(Boolean(values.tui))
       + Number(Boolean(values.webui))
+      + Number(values.automation !== undefined)
       + Number(values.prompt !== undefined || positionals.length > 0);
 
     if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
-      throw new HarnessError("USAGE", "Choose one mode: help, config check, chat, TUI, Web UI, or one prompt.");
+      throw new HarnessError("USAGE", "Choose one mode: help, config check, chat, TUI, Web UI, automation, or one prompt.");
     }
     if (values.workspace !== undefined && (!values.workspace.trim() || values.help || values.checkConfig
-      || (!values.chat && !values.tui && !values.webui && values.prompt === undefined && positionals.length === 0))) {
+      || (!values.chat && !values.tui && !values.webui && values.automation === undefined && values.prompt === undefined && positionals.length === 0))) {
       throw new HarnessError("USAGE", "Use --workspace with a task and a non-empty directory.");
     }
     if (values.port !== undefined && (!values.webui || !/^[1-9]\d*$/.test(values.port) || Number(values.port) > 65535)) {
       throw new HarnessError("USAGE", "Use --port with --webui and an integer from 1 to 65535.");
     }
-    const hasTask = Boolean(values.chat || values.tui || values.webui || values.prompt !== undefined || positionals.length > 0);
+    const hasTask = Boolean(values.chat || values.tui || values.webui || values.automation !== undefined || values.prompt !== undefined || positionals.length > 0);
+    if ((values["check-automation"] && values.automation === undefined)
+      || (values.automation !== undefined && (!values.automation.trim() || hasSelection || values["fork-session"] || values["no-session-persistence"]))) {
+      throw new HarnessError("USAGE", "Automation requires a configuration path and fresh persistent sessions; --check-automation requires --automation.");
+    }
     if ((hasSelection || values["fork-session"] || values["no-session-persistence"]) && !hasTask) {
       throw new HarnessError("USAGE", "Session selection options require a prompt, --chat, --tui, or --webui.");
     }
@@ -176,7 +204,7 @@ async function main(args: string[]): Promise<number> {
       return 0;
     }
     const prompt = values.prompt ?? positionals.join(" ");
-    if (!values.chat && !values.tui && !values.webui && !prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
+    if (!values.chat && !values.tui && !values.webui && values.automation === undefined && !prompt.trim()) throw new HarnessError("USAGE", "The prompt must not be empty.");
     if (values.tui && (!process.stdin.isTTY || !process.stdout.isTTY || process.env.TERM === "dumb")) {
       throw new HarnessError("USAGE", "TUI requires an interactive terminal. Use --chat for pipes or TERM=dumb.");
     }
@@ -203,8 +231,17 @@ async function main(args: string[]): Promise<number> {
       if (values.tui || values.webui) { terminal.close(); terminal = undefined; }
     }
     const sessionOptions = { selection, persistence: !values["no-session-persistence"] };
-    const config = loadConfig();
     const workspace = values.workspace ?? process.cwd();
+    const automation = values.automation === undefined ? undefined : await loadAutomationConfig(workspace, values.automation, controller.signal);
+    if (automation) {
+      await FileChanges.open(workspace, automation.config.tasks.flatMap((task) => task.trigger.type === "file_changed" ? task.trigger.paths : []), controller.signal);
+      if (values["check-automation"]) {
+        console.log("Automation configuration and watched paths are valid (no model provider was contacted).");
+        console.log(JSON.stringify(automation.config));
+        return 0;
+      }
+    }
+    const config = loadConfig();
     const launchPermission = (values.permission ?? "ask") as WorkspacePermission;
     const launchShellPermission = (values["shell-permission"] ?? (launchPermission === "read-only" ? "deny" : "ask")) as ShellPermission;
     const permissionPolicy = new PermissionPolicy(isPermissionMode(values["permission-mode"])
@@ -233,6 +270,11 @@ async function main(args: string[]): Promise<number> {
     const skills = await discoverSkills({ workspace: baseTools.workspaceRoot!, signal });
     reportSkillWarnings(skills);
     const agent = createAgent(config, baseTools, undefined, skills);
+    if (automation) {
+      await runAutomations(automation.config, agent, { workspace: baseTools.workspaceRoot!, signal,
+        emit: (event) => (event.type === "automation_finished" ? console.log : console.error)(JSON.stringify(event)) });
+      return 0;
+    }
     const session = await SessionManager.open(agent, { ...sessionOptions, workspace: baseTools.workspaceRoot! });
     if (values.chat) {
       return await runChat(session, {

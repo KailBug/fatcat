@@ -42,6 +42,7 @@ test("help works without credentials", () => {
   assert.match(result.stdout, /Fatcat/);
   assert.match(result.stdout, /--tui/);
   assert.match(result.stdout, /--webui/);
+  assert.match(result.stdout, /--automation/);
   assert.match(result.stdout, /--web-permission/);
   assert.match(result.stdout, /--permission-mode/);
   assert.match(result.stdout, /--continue/);
@@ -53,6 +54,44 @@ test("help works without credentials", () => {
   assert.ok(!result.stdout.includes("--listSkills"));
   assert.ok(!result.stdout.includes("--listSessions"));
   assert.equal(result.stderr, "");
+});
+
+test("automation configuration checks are credential-free and reject incompatible modes", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "automation.json"), JSON.stringify({ version: 1, tasks: [
+    { id: "check", prompt: "Inspect changes", trigger: { type: "file_changed", paths: ["notes.txt"] } },
+  ] }));
+  const checked = run(["--automation", "automation.json", "--check-automation"], {}, undefined, workspace);
+  assert.equal(checked.status, 0, checked.stderr);
+  assert.match(checked.stdout, /no model provider was contacted/);
+  for (const args of [["--check-automation"], ["--automation", "automation.json", "--chat"],
+    ["--automation", "automation.json", "--resume", "old"], ["--automation", "automation.json", "--no-session-persistence"],
+    ["--automation", "automation.json", "--name", "old"], ["--automation", "automation.json", "--prompt", "task"]]) {
+    assert.equal(run(args, {}, undefined, workspace).status, 2, JSON.stringify(args));
+  }
+  const outside = run(["--automation", "../outside/private.json", "--check-automation"], {}, undefined, workspace);
+  assert.equal(outside.status, 1);
+  assert.match(outside.stderr, /PATH_NOT_ALLOWED/);
+});
+
+test("CLI automation runs and persists one injected-model task, then exits at its attempt limit", async (t) => {
+  const { base, workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "automation.json"), JSON.stringify({ version: 1, maxRuns: 1, tasks: [
+    { id: "check", prompt: "Inspect changes", trigger: { type: "at", time: new Date(Date.now() + 1200).toISOString() } },
+  ] }));
+  const root = join(base, "sessions");
+  const result = run(["--automation", "automation.json", "--permission", "read-only"],
+    { DEEPSEEK_API_KEY: "offline-automation-only", FATCAT_SESSION_DIR: root }, "", workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout.trim());
+  assert.equal(output.type, "automation_finished");
+  assert.equal(output.status, "completed");
+  assert.match(result.stderr, /execution_report/);
+  assert.match(result.stderr, /automation_stopped/);
+  assert.ok(!(result.stdout + result.stderr).includes("offline-automation-only"));
+  const sessions = await new SessionStore({ root }).list(workspace);
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0]?.turnCount, 1);
 });
 
 test("CLI persists completed tool history, resumes by name and forks without changing the source", async (t) => {

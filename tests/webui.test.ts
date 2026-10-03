@@ -32,6 +32,62 @@ async function until(predicate: () => boolean | Promise<boolean>): Promise<void>
   while (!await predicate()) { if (Date.now() > deadline) throw new Error("Fixture timed out."); await delay(10); }
 }
 
+test("Web UI Cron API binds existing or new sessions and background runs preserve the selected conversation", async (t) => {
+  let server: Awaited<ReturnType<typeof startWebUiServer>> | undefined;
+  t.after(() => server?.close());
+  const { base, workspace } = await temporaryWorkspace(t);
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const manager = await SessionManager.open({ model: async () => answer("Scheduled answer"), maxIterations: 1 }, { workspace, store });
+  const controller = await WebUiController.create({ ...info, workspace }, manager);
+  server = await startWebUiServer(controller, 0);
+  const token = new URL(server.url).hash.slice("#token=".length);
+  const post = (path: string, body: unknown, authenticated = true) => fetch(`${server!.origin}/api/${path}`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...(authenticated ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body),
+  });
+  const original = manager.current.id;
+  const task = { prompt: "Review source", trigger: { type: "at", time: new Date(Date.now() + 2300).toISOString() }, maxRuns: 1 };
+  assert.equal((await post("automation/create", { task, sessionId: original }, false)).status, 401);
+  assert.equal((await post("automation/create", { task, sessionId: original })).status, 202);
+  const bound = controller.snapshot().automations[0]!;
+  assert.equal(bound.sessionId, original);
+  assert.equal(controller.snapshot().current.automationCount, 1);
+  assert.equal((await post("session/new", { name: "ordinary" })).status, 202);
+  const ordinary = controller.snapshot().current.id;
+  await until(() => controller.snapshot().automations[0]?.runs === 1 && !controller.snapshot().busy);
+  assert.equal(controller.snapshot().current.id, ordinary);
+  assert.deepEqual(controller.snapshot().turns, []);
+  assert.equal((await store.load(workspace, original)).history.at(-1)?.content, "Scheduled answer");
+  assert.equal((await post("automation/create", { task: { prompt: "New task conversation", trigger: { type: "interval", seconds: 60 } } })).status, 202);
+  const created = controller.snapshot().current;
+  assert.notEqual(created.id, ordinary);
+  assert.equal(created.automationCount, 1);
+  const createdTask = controller.snapshot().automations.find((item) => item.sessionId === created.id)!;
+  assert.equal((await post("automation/manage", { sessionId: created.id, id: createdTask.id, action: "pause" })).status, 202);
+  assert.equal(controller.snapshot().automations.find((item) => item.id === createdTask.id)?.enabled, false);
+  assert.equal((await post("automation/manage", { sessionId: created.id, id: createdTask.id, action: "resume" })).status, 202);
+  assert.equal((await post("automation/manage", { sessionId: created.id, id: createdTask.id, action: "delete" })).status, 202);
+  assert.equal(controller.snapshot().current.automationCount, undefined);
+  assert.equal((await post("automation/create", { task: { prompt: "Bad", trigger: { type: "file_changed", paths: ["../private.txt"] } }, sessionId: original })).status, 400);
+});
+
+test("scheduled Web UI turns still require approval and stop cancels the linked session attempt", async (t) => {
+  let controller: WebUiController | undefined;
+  t.after(() => controller?.close());
+  const { base, workspace } = await temporaryWorkspace(t);
+  const tools = await createTools(workspace, "ask", (request, signal) => controller!.requestApproval("write", request, signal));
+  const manager = await SessionManager.open({ tools, maxIterations: 2, model: async (messages) => messages.at(-1)?.role === "user"
+    ? tool("write", { path: "requested.txt", content: "requires approval" }) : answer() }, { workspace, store: new SessionStore({ root: join(base, "sessions") }) });
+  controller = await WebUiController.create({ ...info, workspace }, manager);
+  await controller.createAutomation({ prompt: "Create requested.txt", trigger: { type: "at", time: new Date(Date.now() + 2000).toISOString() } }, manager.current.id);
+  await until(() => Boolean(controller!.snapshot().approval));
+  assert.equal(controller.snapshot().runningSessionId, manager.current.id);
+  controller.stop();
+  await until(() => !controller!.snapshot().busy);
+  assert.equal(controller.snapshot().automations[0]?.lastStatus, "cancelled");
+  await assert.rejects(readFile(join(workspace, "requested.txt")));
+  assert.equal(manager.current.turnCount, 0);
+});
+
 async function controllerFor(t: TestContext, options: Pick<LoopOptions, "model" | "maxIterations" | "tools">): Promise<WebUiController> {
   const workspace = options.tools?.workspaceRoot ?? (await temporaryWorkspace(t)).workspace;
   const manager = await SessionManager.open(options, { workspace, persistence: false });

@@ -9,6 +9,7 @@ import { icon } from "./icons.js";
 import { PermissionMenu } from "./permission-menu.js";
 import { FilePreview } from "./preview.js";
 import { BrowserEvidenceView } from "./browser-evidence.js";
+import { CronPanel } from "./cron.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -51,6 +52,7 @@ const tokenCount = new Intl.NumberFormat("en-US");
 const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 const filePreview = new FilePreview(() => token);
 const browserEvidence = new BrowserEvidenceView(() => token);
+const cron = new CronPanel(api);
 
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
 function controls(): void {
@@ -63,6 +65,7 @@ function controls(): void {
   newChat.disabled = !connected || sending || busy;
   if (state) sessionMenu.update(displaySessions(state));
   sessionDialog.update();
+  if (state) cron.update(state, !connected || sending || busy);
   permissionMenu.update(state?.permissionMode, !connected || sending || busy || Boolean(state?.approval));
 }
 function connection(ok: boolean): void {
@@ -104,6 +107,7 @@ async function refresh(force = false): Promise<void> {
 
 function renderTurn(turn: WebTurn): HTMLElement {
   const article = node("article", undefined, "turn");
+  if (turn.automation) article.append(node("div", "Scheduled task", "scheduled-turn-label"));
   article.append(node("div", turn.prompt, "user-message"));
   const label = node("div", undefined, "assistant-label");
   label.append(node("span", "f.", "cat-mark"), node("span", "Fatcat")); article.append(label);
@@ -186,7 +190,7 @@ function render(next: WebUiState): void {
   const warning = element("session-warning");
   warning.hidden = !next.current.interrupted || next.busy;
   warning.textContent = "A turn in this session was interrupted. Model history contains only successful turns. Check current files and commands before retrying; completed operations were not undone.";
-  element("run-status").textContent = next.busy ? next.status : "";
+  element("run-status").textContent = next.busy ? next.status : next.automationNotice;
   for (const [id, previous] of rendered) {
     if (!next.turns.some((turn) => turn.id === id)) { previous.element.remove(); rendered.delete(id); }
   }
@@ -302,6 +306,13 @@ function renderSessions(next: WebUiState): void {
       sessionMenu.open(session, more, bounds.left, bounds.bottom + 4);
     });
     row.append(button, more);
+    if (session.automationCount) {
+      const clock = node("span", undefined, "session-clock");
+      clock.title = `${session.automationCount} linked automation task(s)`;
+      clock.setAttribute("aria-label", clock.title);
+      clock.append(icon("clock"));
+      row.append(clock);
+    }
     sessionList.append(row);
   }
 }

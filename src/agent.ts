@@ -6,6 +6,7 @@ import { defaultTools } from "./tools.js";
 import type { Tools } from "./tools.js";
 import { skillCatalogPrompt, withSkills } from "./skills.js";
 import type { SkillCatalog } from "./skills.js";
+import { withAutomationTool } from "./automation/tool.js";
 
 const delegationPolicy = "For straightforward questions, arithmetic, or one direct file operation, work directly. "
   + "When the task asks for independent reviews or investigations of separate components, prefer delegate_task for focused independent parts, then synthesize their findings. "
@@ -43,9 +44,9 @@ export function createAgent(config: Config, baseTools: Tools = defaultTools, tra
     return [workspaceGuidance, skillGuidance, permissionGuidance, browserGuidance].filter(Boolean).join("\n\n");
   };
   const childModel = withGuidance(createModel(config, transport, sharedTools), sharedGuidance);
-  const tools = createSubagentTools(sharedTools, childModel, config.maxIterations);
+  const tools = withAutomationTool(createSubagentTools(sharedTools, childModel, config.maxIterations));
   const model = withGuidance(createModel(config, transport, tools),
-    () => [delegationPolicy, sharedGuidance()].filter(Boolean).join("\n\n"));
+    () => [delegationPolicy, sharedGuidance(), `Current local time: ${new Date().toString()}. For user-requested scheduled or event-triggered work, use automation to bind it to this session. Future runs continue this conversation. State the actual schedule, limits and process-lifetime requirement after successful creation.`].filter(Boolean).join("\n\n"));
   return { tools, model, maxIterations: config.maxIterations };
 }
 

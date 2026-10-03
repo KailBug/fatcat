@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "maxRuns": 10,
+  "maxRuntimeSeconds": 28800,
+  "tasks": [
+    {
+      "id": "review-cli",
+      "prompt": "Read src/cli.ts and report issues supported by current file evidence. Do not modify files.",
+      "trigger": {
+        "type": "file_changed",
+        "paths": ["src/cli.ts"],
+        "debounceMs": 2000
+      },
+      "maxRuns": 5
+    },
+    {
+      "id": "hourly-review",
+      "prompt": "Inspect the workspace and report unfinished work supported by current file evidence. Do not modify files or run commands.",
+      "trigger": {
+        "type": "cron",
+        "expression": "0 * * * *",
+        "timezone": "local"
+      },
+      "maxRuns": 5
+    }
+  ]
+}

@@ -13,6 +13,12 @@ import type { PermissionMode } from "../src/permissions/policy.js";
 import { WebContextUsage } from "./context-usage.js";
 import type { ContextUsage } from "./context-usage.js";
 import type { BrowserRequest } from "../src/browser/protocol.js";
+import { ConversationAutomations } from "../src/automation/conversations.js";
+import { newBoundTask } from "../src/automation/tasks.js";
+import type { SessionAutomation } from "../src/automation/tasks.js";
+import type { Activation } from "../src/automation/scheduler.js";
+import { FileChanges } from "../src/automation/files.js";
+import { automationCommandPrompt } from "../src/commands.js";
 
 export type WebUiInfo = {
   provider: string; model: string; workspace: string;
@@ -25,6 +31,7 @@ export type WebTurn = {
   id: string; prompt: string; answer?: string; error?: string;
   status: "running" | "answered" | "stopped";
   activity: string[]; report?: ExecutionReport;
+  automation?: boolean;
 };
 export type WebUiState = {
   revision: number; info: WebUiInfo; turns: WebTurn[]; busy: boolean;
@@ -32,6 +39,8 @@ export type WebUiState = {
   current: SessionSummary; sessions: SessionSummary[]; persistent: boolean;
   contextUsage: ContextUsage;
   permissionMode: ReturnType<PermissionPolicy["snapshot"]>;
+  automations: SessionAutomation[]; automationNotice: string;
+  runningSessionId: string | null;
 };
 
 /** Browser tabs share one selected session, active turn and pending approval. */
@@ -45,6 +54,10 @@ export class WebUiController {
   private changing: Promise<void> | undefined;
   private sessions: SessionSummary[] = [];
   private readonly contextUsage: WebContextUsage;
+  private automationTasks: SessionAutomation[] = [];
+  private automationNotice = "";
+  private runningSessionId: string | null = null;
+  private automationService: ConversationAutomations | undefined;
 
   private constructor(readonly info: WebUiInfo, private readonly session: SessionManager,
     private readonly permissionPolicy?: PermissionPolicy) {
@@ -59,6 +72,17 @@ export class WebUiController {
     const controller = new WebUiController(info, session, permissionPolicy);
     controller.turns = restoredTurns(session.history, session.current.id);
     controller.sessions = await session.list();
+    controller.automationTasks = await session.listAutomations();
+    controller.automationService = new ConversationAutomations(session, {
+      idle: () => !controller.active && !controller.changing && !controller.closed,
+      run: async (task, activation) => {
+        controller.startTurn(task.prompt, { task, activation });
+        await controller.active?.done;
+      },
+      changed: async () => { controller.automationTasks = await session.listAutomations(); controller.sessions = await session.list(); controller.revision++; },
+      error: (message) => { controller.automationNotice = message; controller.revision++; },
+    });
+    controller.automationService.start();
     return controller;
   }
 
@@ -72,7 +96,8 @@ export class WebUiController {
     return structuredClone({ revision: this.revision, info: this.info, turns: this.turns,
       busy: Boolean(this.active || this.changing), approval: this.approvals.snapshot(), status: this.status,
       current: this.session.current, sessions: this.sessions, persistent: this.session.persistent,
-      contextUsage: this.contextUsage.snapshot(), permissionMode });
+      contextUsage: this.contextUsage.snapshot(), permissionMode, automations: this.automationTasks,
+      automationNotice: this.automationNotice, runningSessionId: this.runningSessionId });
   }
 
   selectPermissionMode(mode: PermissionMode): void {
@@ -86,20 +111,28 @@ export class WebUiController {
   }
 
   submit(prompt: string): void {
+    this.startTurn(automationCommandPrompt(prompt) ?? prompt);
+  }
+
+  private startTurn(prompt: string, automatic?: { task: SessionAutomation; activation: Activation }): void {
     this.requireIdle();
     if (!prompt.trim() || Buffer.byteLength(prompt) > 32_768) {
       throw new HarnessError("INPUT", "Enter a message of at most 32768 UTF-8 bytes.");
     }
-    if (this.turns.length >= 100) throw new HarnessError("INPUT", "Start a new chat after 100 turns.");
-    const turn: WebTurn = { id: randomUUID(), prompt, status: "running", activity: [] };
-    this.turns.push(turn);
-    this.status = "Working";
+    if (!automatic && this.turns.length >= 100) throw new HarnessError("INPUT", "Start a new chat after 100 turns.");
+    const turn: WebTurn = { id: randomUUID(), prompt, status: "running", activity: [], ...(automatic ? { automation: true } : {}) };
+    const visible = !automatic || automatic.task.sessionId === this.session.current.id;
+    if (visible) this.turns.push(turn);
+    this.runningSessionId = automatic?.task.sessionId ?? this.session.current.id;
+    this.status = automatic ? `Automation · ${automatic.task.sessionTitle}` : "Working";
     const abort = new AbortController();
     // Install active state before the session can emit events or request approval.
     const done = Promise.resolve().then(async () => {
       try {
-        turn.answer = await this.session.run(prompt, { signal: abort.signal,
-          onEvent: createTurnReporter((event) => this.observe(turn, event)) });
+        const options = { signal: abort.signal, onEvent: createTurnReporter((event) => this.observe(turn, event, false, visible)) };
+        turn.answer = automatic
+          ? await this.session.runAutomation(automatic.task.sessionId, automatic.task.id, automatic.activation.scheduledAt, automatic.activation.paths ?? [], options)
+          : await this.session.run(prompt, options);
         turn.status = "answered";
         this.status = "Ready";
       } catch (error) {
@@ -108,9 +141,10 @@ export class WebUiController {
         this.status = abort.signal.aborted ? "Stopped" : "Turn failed";
       } finally {
         this.approvals.deny();
-        try { this.sessions = await this.session.list(); }
+        try { this.sessions = await this.session.list(); this.automationTasks = await this.session.listAutomations(); }
         catch { this.status = "Session list could not be refreshed"; }
         this.active = undefined;
+        this.runningSessionId = null;
         this.revision++;
       }
     });
@@ -141,6 +175,20 @@ export class WebUiController {
     return this.changeSession(() => this.session.delete(id, selectedRevision), id === this.session.current.id);
   }
 
+  async createAutomation(value: unknown, sessionId?: string): Promise<void> {
+    this.requireIdle();
+    const task = newBoundTask(value);
+    await this.changeSession(async () => {
+      if (task.trigger.type === "file_changed") await FileChanges.open(this.info.workspace, task.trigger.paths);
+      if (!sessionId) await this.session.newSession();
+      await this.session.manageSessionAutomation(sessionId ?? this.session.current.id, { action: "create", ...(value as object) });
+    }, !sessionId);
+  }
+
+  manageAutomation(sessionId: string, id: string, action: "pause" | "resume" | "delete"): Promise<void> {
+    return this.changeSession(() => this.session.manageSessionAutomation(sessionId, { action, id }), false);
+  }
+
   private changeSession(change: () => Promise<unknown>, restore = true): Promise<void> {
     this.requireIdle();
     this.status = "Loading session";
@@ -152,6 +200,7 @@ export class WebUiController {
           this.contextUsage.reset();
         }
         this.sessions = await this.session.list();
+        this.automationTasks = await this.session.listAutomations();
         this.status = "Ready";
       } catch (error) {
         // Expose fresh metadata for a newly confirmed retry without replacing the active transcript.
@@ -179,6 +228,7 @@ export class WebUiController {
     this.closed = true;
     this.stop();
     await Promise.allSettled([this.active?.done, this.changing]);
+    await this.automationService?.close();
   }
 
   approve(id: string, allowed: boolean): void {
@@ -201,9 +251,9 @@ export class WebUiController {
     if (this.active || this.changing) throw new HarnessError("SESSION_BUSY", "Stop or finish the current turn first.");
   }
 
-  private observe(turn: WebTurn, event: ReportEvent, child = false): void {
-    if (event.type === "subagent_event") { this.observe(turn, event.event, true); return; }
-    if (!child) this.contextUsage.observe(event);
+  private observe(turn: WebTurn, event: ReportEvent, child = false, visible = true): void {
+    if (event.type === "subagent_event") { this.observe(turn, event.event, true, visible); return; }
+    if (!child && visible) this.contextUsage.observe(event);
     if (event.type === "execution_report") turn.report = event.report;
     let message: string | undefined;
     const source = child ? "Subagent · " : "";

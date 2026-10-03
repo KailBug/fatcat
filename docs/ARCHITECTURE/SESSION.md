@@ -2,6 +2,8 @@
 
 ## 状态与范围
 
+2D-15 增加可选 `automations` 字段和摘要 `automationCount`。SessionManager 负责创建/管理绑定、执行前持久领取与计数、继续目标历史；后台目标不同于选中会话时不改变选择。fork 不复制绑定，删除 Session 同时删除绑定，无持久化模式拒绝创建。触发 metadata 仅进入当次模型请求投影；重启不重放中断自动回合。详见 [AUTOMATION.md](AUTOMATION.md)。
+
 阶段 2A 的进程内 Session 与连续对话已通过离线、真实 DeepSeek 和 Windows 终端验证及用户 review。阶段 2D-14 按用户要求在 `feat/session-perfection` 增加本地持久化、新建、列表、命名、切换、继续最近会话和会话分支。实现与验证事实统一记录在 [PROGRESS.md](../PROGRESS.md)，不会以写入代码替代验证。
 
 本轮参考 [Claude Code 官方会话文档](https://code.claude.com/docs/en/sessions)（2026-09-30 核对）的目录关联会话、继续/恢复、命名和分支定义，以及中断后先核查副作用的原则。Fatcat 按现有边界实现这些行为，不采用其内部存储格式，也不承诺功能等同。模型和权限继续由本次启动决定；未实现跨项目查找、文件检查点、回退、自动摘要、后台操作或工具重放。

@@ -16,6 +16,64 @@ The implementation includes isolated persistent sessions with local listing, nam
 
 The shared system prompt asks Fatcat to respond concisely in your language, inspect relevant code before edits, complete authorized implementation work, and report checks actually performed. It avoids unsolicited edits for review-only questions and keeps assumptions separate from observed facts. This is model guidance, not a guarantee of correctness or an additional permission mechanism. Restart the CLI after changing the prompt source and rebuilding.
 
+## Local cron and file-change tasks
+
+Use a normal chat, TUI or Web UI conversation. For example, ask: "Every five minutes, read notes.txt and summarize changes here" or "When src/cli.ts changes, review it and report here." The model submits a structured task through the automation tool; the harness validates and binds it to the current saved session. Each later run continues that conversation and saves its output there.
+
+In chat/TUI, `/cron <description>` creates through the model. `/cron` or `/cron list` lists current bindings; `/cron pause <id>`, `/cron resume <id>` and `/cron delete <id>` manage them locally. The TUI footer and session list show `[clock]` for sessions with tasks.
+
+In Web UI, open **Cron tasks** in the sidebar. Choose an existing session or **Create a new session**, enter the task instructions and select an interval, cron time, one-shot time or file change. Cards provide pause/resume/delete and a link to the bound session. A clock appears at the far right of its sidebar title. Running another session's task does not switch the conversation you are viewing.
+
+Keep chat/TUI/Web UI running. Saved task definitions, attempt counts and expiry survive restart, but offline occurrences are not replayed. Defaults are 20 attempts and a 24-hour lifetime per task; up to 1000 attempts and seven days can be requested. A one-shot must occur before expiry. Up to 32 bindings per session, 128 enabled tasks and 64 different watched files per workspace are supported. Forking a session does not copy its tasks; deleting it removes its bindings. Memory-only sessions cannot save tasks.
+
+Automatic turns use current permissions and ordinary approvals; failed/cancelled turns count as attempts. Files are explicit relative text paths, not directories or globs, and must satisfy workspace guards even in Free to go. All changes during an automated turn, including simultaneous external edits, are ignored to prevent self-triggering. Unreadable watched files pause their task with an error. Restarted tasks left running after a crash require inspection and explicit recovery; there is no automatic replay.
+
+### Advanced standalone JSON runner
+
+Use a reviewed JSON configuration inside the selected workspace. This is a separate CLI mode; keep its process running:
+
+```powershell
+pnpm start --automation automation.example.json --check-automation
+pnpm start --automation automation.example.json --permission read-only
+```
+
+The first command validates configuration and watched files without credentials or model requests. The second uses the configured provider and creates a fresh saved session for each trigger. The [example](../automation.example.json) watches `src/cli.ts` and schedules an hourly review. Review and adjust its prompts and paths before running. Relative config and watch paths resolve against `--workspace` or the launch directory, not the config file's parent.
+
+```json
+{
+  "version": 1,
+  "maxRuns": 10,
+  "maxRuntimeSeconds": 28800,
+  "tasks": [
+    {
+      "id": "review-source",
+      "prompt": "Read src/cli.ts and report issues supported by current evidence. Do not modify files.",
+      "trigger": { "type": "file_changed", "paths": ["src/cli.ts"], "debounceMs": 2000 },
+      "maxRuns": 5
+    }
+  ]
+}
+```
+
+| Trigger | Configuration | Behavior |
+| --- | --- | --- |
+| Cron | `{"type":"cron","expression":"0 9 * * 1-5","timezone":"local"}` | Weekdays at 09:00 in the machine's timezone; `UTC` is also supported |
+| Interval | `{"type":"interval","seconds":300}` | Every five minutes, first firing one interval after startup |
+| One-shot | `{"type":"at","time":"2026-10-03T09:00:00+08:00"}` | Once during this process; replace the example with a future timestamp |
+| File event | `{"type":"file_changed","paths":["src/cli.ts"],"debounceMs":2000}` | Content changes, creation or deletion after a two-second quiet period |
+
+Cron supports five numeric fields, wildcards, lists, ranges and steps. No seconds, weekday/month names, or named IANA timezones. Day-of-month and weekday use OR when both are restricted. Local DST can skip a nonexistent time or fire twice at a repeated time. Tasks do not fire in the startup minute. While a task is busy, missed cron/interval firings coalesce to one latest activation per task.
+
+Tasks run serially. Defaults are 20 attempts per process, 20 per task, and 24 hours total; failures count and are not retried. Limits are 1–1000 attempts and 1 second–7 days; intervals must be 60 seconds–7 days. Up to 32 tasks and 64 distinct watched text files are supported, with 1–32 files per trigger and 1–60 seconds of debounce. Each file is limited to 1 MiB. Parent directories must exist; directories, globs, hidden paths, links and paths outside the workspace are refused even in Free to go.
+
+Files are polled about once a second while idle. All changes during an automated turn, including external edits, are ignored when the baseline is refreshed afterward. This prevents the task's own writes from triggering another run. A change that returns to identical contents between polls can be missed. Invalid or unreadable watched paths stop the runner explicitly.
+
+Writes and commands retain normal launch permissions and per-operation approval; the config cannot grant permissions. Piped input cannot approve operations. `--permission read-only` is useful for review-only jobs; for authorized unattended writes use `--permission workspace-write`, and authorize commands separately with `--shell-permission allow` when needed. Existing request, delegation and cancellation budgets apply to every activation.
+
+Results are JSON lines on stdout (`automation_finished`); lifecycle and execution reports go to stderr and include task/run identifiers. The returned session ID can be opened with `--resume` or the existing session UI. A completed turn is not a claim that its tests passed. Ctrl+C cancels the active operation and drops queued work; it does not roll back completed file changes. Expiry or exhausted budgets stop with exit code 0 even if individual attempts failed; inspect their result statuses. Ctrl+C returns 130, and configuration/storage/monitor failures return a nonzero status.
+
+This standalone configuration is loaded once; restart to apply edits. Its queues, budgets and file baselines are process-local. Restarting skips overdue one-shots and offline cron occurrences, and restarts intervals and counters. This differs from the persistent counters and shared conversation history of session-bound tasks above. Neither mode installs a daemon or OS scheduler or supports webhooks. A shared workspace lock under the selected session store prevents duplicate schedulers using that store; after a crash, inspect its recorded PID and remove only the reported stale lock after verifying its owner has exited. See [automation architecture](ARCHITECTURE/AUTOMATION.md).
+
 ## Windows setup
 
 Use Node.js 24.x and pnpm 11.21.0. No WSL, Docker, Bun, or global TypeScript installation is required. Get Node.js from the [official download page](https://nodejs.org/en/download).

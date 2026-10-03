@@ -166,9 +166,9 @@ test("a multi-turn session rereads changed content after omission and reset remo
   await writeFile(join(workspace, "notes.txt"), source);
   const tools = await createTools(workspace);
   let thirdRequests = 0;
-  const agent = createAgent({ ...config, maxRequestBytes: 26000 }, tools, async (input, init) => {
+  const agent = createAgent({ ...config, maxRequestBytes: 28000 }, tools, async (input, init) => {
     const payload = await new Request(input, init).text();
-    assert.ok(Buffer.byteLength(payload) <= 26000);
+    assert.ok(Buffer.byteLength(payload) <= 28000);
     const body = JSON.parse(payload) as { messages: Message[] };
     const prompt = String(body.messages.findLast((message) => message.role === "user")?.content);
     const last = body.messages.at(-1)!;
@@ -208,7 +208,7 @@ test("failed requests cannot persist omitted markers into later session history"
   const { workspace } = await temporaryWorkspace(t);
   await writeFile(join(workspace, "notes.txt"), "original-body\n" + "x".repeat(12000));
   let fail = false;
-  const agent = createAgent({ ...config, maxRequestBytes: 26000 }, await createTools(workspace), async (input, init) => {
+  const agent = createAgent({ ...config, maxRequestBytes: 28000 }, await createTools(workspace), async (input, init) => {
     const body = await new Request(input, init).json() as { messages: Message[] };
     const prompt = String(body.messages.findLast((message) => message.role === "user")?.content);
     if (fail) {

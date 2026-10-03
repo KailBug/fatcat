@@ -4,10 +4,11 @@ import type { TerminalInput } from "./terminal.js";
 import type { Readable, Writable } from "node:stream";
 import { checkCancellation, formatError } from "./errors.js";
 import { SessionManager } from "./session/manager.js";
-import { runInteractiveCommand, interactiveCommandHelp } from "./commands.js";
+import { runInteractiveCommand, interactiveCommandHelp, automationCommandPrompt } from "./commands.js";
 import { sessionLabel } from "./session/commands.js";
 import type { Conversation } from "./session/commands.js";
 import type { SkillDescriptor } from "./skills.js";
+import { ConversationAutomations } from "./automation/conversations.js";
 
 const commands = `/help: show commands; /exit: end chat. ${interactiveCommandHelp}`;
 
@@ -28,7 +29,27 @@ export async function runChat(
   checkCancellation(signal);
   let turn = 0;
   let failed = false;
+  let foreground = false;
+  let background: Promise<void> | undefined;
+  const backgroundAbort = new AbortController();
+  const automation = session instanceof SessionManager ? new ConversationAutomations(session, {
+    idle: () => !foreground && !background,
+    run: async (task, activation) => {
+      background = (async () => {
+        error.write(`[clock] Automation in ${JSON.stringify(task.sessionTitle)}\n`);
+        try {
+          output.write(`${await session.runAutomation(task.sessionId, task.id, activation.scheduledAt, activation.paths ?? [], {
+            signal: AbortSignal.any([signal, backgroundAbort.signal]),
+            onEvent: createTurnReporter((event) => error.write(`${JSON.stringify({ automation: task.id, sessionId: task.sessionId, ...event })}\n`)),
+          })}\n`);
+        } catch (cause) { error.write(`${formatError(cause)}\n`); }
+      })();
+      try { await background; } finally { background = undefined; terminal.prompt(); }
+    },
+    changed: () => {}, error: (message) => error.write(`Automation: ${message}\n`),
+  }) : undefined;
   try {
+    automation?.start();
     error.write(`Chat started. ${session instanceof SessionManager
       ? `Session: ${sessionLabel(session.current)}. ${session.persistent ? "History is saved locally." : "Persistence is disabled."}`
       : "History stays in memory."} ${commands}\n`);
@@ -39,8 +60,10 @@ export async function runChat(
     while (true) {
       const line = await terminal.readTask();
       if (line === undefined) break;
+      foreground = true;
+      await background;
       checkCancellation(signal);
-      const prompt = line.trim();
+      const prompt = automationCommandPrompt(line.trim()) ?? line.trim();
       if (prompt === "/exit") break;
       if (prompt === "/help") {
         error.write(`${commands}\n`);
@@ -68,10 +91,13 @@ export async function runChat(
         }
       }
       terminal.prompt();
+      foreground = false;
     }
     checkCancellation(signal);
     return failed ? 1 : 0;
   } finally {
+    backgroundAbort.abort();
+    await automation?.close();
     terminal.close();
   }
 }

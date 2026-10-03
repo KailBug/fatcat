@@ -5,6 +5,8 @@ import { isAbsolute, join, resolve } from "node:path";
 import { HarnessError } from "../errors.js";
 import type { Message } from "../model.js";
 import { invalidSession, isRecord, validateHistory } from "./history.js";
+import { decodeBoundTasks } from "../automation/tasks.js";
+import type { BoundTask } from "../automation/tasks.js";
 
 const maxFileBytes = 64 * 1024 * 1024;
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -16,18 +18,21 @@ export type SessionRecord = {
   version: 1; id: string; workspace: string; name: string | null; title: string;
   createdAt: string; updatedAt: string; revision: number; forkedFrom: string | null;
   history: Message[]; attempt: SessionAttempt | null;
+  automations?: BoundTask[];
 };
 export type SessionSummary = {
   id: string; workspace: string; name: string | null; title: string;
   createdAt: string; updatedAt: string; revision: number; turnCount: number;
   forkedFrom: string | null; interrupted: boolean;
+  automationCount?: number;
 };
 
 export function sessionSummary(record: SessionRecord): SessionSummary {
   return { id: record.id, workspace: record.workspace, name: record.name, title: record.title,
     createdAt: record.createdAt, updatedAt: record.updatedAt, revision: record.revision,
     turnCount: record.history.filter((message) => message.role === "user").length,
-    forkedFrom: record.forkedFrom, interrupted: record.attempt !== null };
+    forkedFrom: record.forkedFrom, interrupted: record.attempt !== null,
+    ...(record.automations?.length ? { automationCount: record.automations.length } : {}) };
 }
 
 export function sessionName(value: string): string {
@@ -90,7 +95,7 @@ function decode(value: unknown, workspace: string, id: string): SessionRecord {
   }
   return { version: 1, id, workspace, name, title: value.title, createdAt: value.createdAt,
     updatedAt: value.updatedAt, revision: Number(value.revision), forkedFrom: value.forkedFrom as string | null,
-    history, attempt };
+    history, attempt, ...(value.automations === undefined ? {} : { automations: decodeBoundTasks(value.automations) }) };
 }
 
 /** Versioned atomic snapshots; no credentials, permission grants, or live handles. */

@@ -21,7 +21,7 @@ export function formatSessionList(sessions: readonly SessionSummary[], activeId?
   if (!sessions.length) return "No saved sessions for this workspace.";
   return sessions.map((session) => `${session.id === activeId ? "*" : " "} ${sessionLabel(session)} | `
     + `${session.turnCount} saved turns | ${session.updatedAt} | ${quoted(session.title)}`
-    + `${session.interrupted ? " | interrupted" : ""}`).join("\n");
+    + `${session.interrupted ? " | interrupted" : ""}${session.automationCount ? ` | [clock] ${session.automationCount} automation(s)` : ""}`).join("\n");
 }
 
 /** Local session commands never become user messages or grant tool permissions. */

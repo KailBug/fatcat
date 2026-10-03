@@ -1,5 +1,5 @@
 /** Locally bundled Lucide SVG symbols; licenses ship alongside the sprite. */
-export type IconName = "plus" | "arrow-up-right" | "panel-left" | "folder" | "search" | "list-checks" | "compass" | "arrow-up" | "square" | "x" | "chevron-down" | "check" | "shield" | "pencil" | "list" | "info" | "git-branch" | "trash" | "ellipsis";
+export type IconName = "clock" | "plus" | "arrow-up-right" | "panel-left" | "folder" | "search" | "list-checks" | "compass" | "arrow-up" | "square" | "x" | "chevron-down" | "check" | "shield" | "pencil" | "list" | "info" | "git-branch" | "trash" | "ellipsis";
 
 export function icon(name: IconName): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");

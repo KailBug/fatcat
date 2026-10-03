@@ -50,6 +50,36 @@ const settings = {
   workspace: "D:\\fixture", permission: "ask" as const, shellPermission: "ask" as const, skills: 4,
 };
 const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content }, toolCalls: [] });
+
+test("TUI cron creates a bound task, shows its marker and appends the triggered answer in the same session", async (t) => {
+  const terminal = new FakeTerminal();
+  let done: Promise<number> | undefined;
+  t.after(async () => { terminal.input("\x04"); await done; });
+  const { base, workspace } = await temporaryWorkspace(t);
+  const session = await SessionManager.open({ maxIterations: 2, model: async (messages) => {
+    const latest = messages.at(-1);
+    if (latest?.role === "user" && String(latest.content).startsWith("Schedule in this conversation:")) {
+      const toolCalls = [{ id: "create", type: "function" as const, function: { name: "automation", arguments: JSON.stringify({
+        action: "create", prompt: "Scheduled review", trigger: { type: "at", time: new Date(Date.now() + 2200).toISOString() }, maxRuns: 1,
+      }) } }];
+      return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+    }
+    return answer(latest?.role === "tool" ? "Schedule created" : "Scheduled review finished");
+  } }, { workspace, store: new SessionStore({ root: join(base, "sessions") }) });
+  const id = session.current.id;
+  const app = new TuiApp({ ...settings, workspace, terminal, color: false });
+  done = app.run(session);
+  terminal.submit("/cron review this later");
+  await until(() => session.current.automationCount === 1 && app.telemetry.snapshot().turn.status === "answered");
+  await until(() => terminal.plain.includes("[clock]"));
+  await until(() => session.current.turnCount === 2);
+  assert.equal(session.current.id, id);
+  assert.ok(session.history.some((message) => message.content === "Scheduled review finished"));
+  terminal.submit("/cron list");
+  await until(() => terminal.plain.includes("1/1 runs"));
+  terminal.submit("/exit");
+  assert.equal(await done, 0);
+});
 async function until(predicate: () => boolean) {
   const deadline = Date.now() + 3000;
   while (!predicate()) {

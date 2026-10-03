@@ -10,6 +10,8 @@
 
 ## Development direction and organization
 
+- Strictly follow pi agent's TypeScript coding style in all future development. Treat its readability, maintainability, and extensibility as required standards for new and modified code, including naming, types, function structure, module boundaries, and abstraction choices.
+- Before implementing TypeScript changes, inspect the relevant pi agent source and conventions; review the resulting changes against that reference. Base alignment on concrete source examples rather than assumed style rules, while preserving this project's runtime, permissions, and current phase boundaries.
 - Prioritize a working local coding workflow: inspect, modify, verify, and deliver reviewable results. Keep the CLI, optional TUI, and local Web UI on the same Session, Loop, and tool boundaries; defer channels and app development.
 - Prefer a small set of general-purpose, composable tools such as read, write, and shell execution. Do not add a separate model-facing tool for every development operation. Native Windows support must not require Bash.
 - Target task-driven tool selection and delegation. Users should not need to enable internal capabilities per task; the harness still enforces workspace access, permissions, budgets, and cancellation. The CLI makes bounded delegation available by default; the model chooses whether to use it.
@@ -80,6 +82,8 @@
 - Preauthorized command execution: add --shell-permission allow to a workspace task; commands are not OS-sandboxed.
 - Task-driven delegation is available in ordinary task and chat commands without a capability flag.
 - Local configuration check: pnpm start --checkConfig
+- Session automation: describe a scheduled or file-change task in chat/TUI/Web UI; the parent automation tool binds it to the current saved Session. Chat/TUI support /cron; Web UI has a Cron tasks panel with existing/new session binding and pause/resume/delete. Later runs continue the bound history under current permissions. Tasks and counters persist, but the process must stay open and offline occurrences are not replayed. Forks do not copy tasks. See docs/ARCHITECTURE/AUTOMATION.md for limits and self-trigger suppression.
+- Advanced standalone automation: pnpm start --automation automation.example.json; add --check-automation to validate without model credentials. This separate JSON runner creates a fresh saved Session per activation and has process-local counters.
 - Local skill catalog: /skills in chat or TUI (shows discovered workspace, user, and built-in metadata without a model request, history mutation, or full instruction loading). Select another directory at startup with --workspace <directory>; chat/TUI startup requires configured provider credentials.
 - Live verification: pnpm run verify:live (uses a real local DeepSeek key and sends fixed test requests).
 - Public web verification: pnpm run verify:web (five fixed search/page/weather checks, no model credentials or requests; separate from offline tests).

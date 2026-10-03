@@ -4,7 +4,7 @@
 
 架构文档统一放在 `docs/ARCHITECTURE/` 下，本文件作为总览和索引，记录整体边界、跨系统关系及共享决策。
 
-- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md` 和 `WEBUI.md`；其他系统文档在需要时建立。
+- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md`、`WEBUI.md`、`BROWSER.md` 和 `AUTOMATION.md`；其他系统文档在需要时建立。
 - 系统文档记录该系统的职责、设计决策、接口与数据流，以及分步实现安排和验收方式；按当前需要展开，不要求提前填满所有内容。
 - 每份文档明确区分当前已实现内容和计划设计，具体实现安排也标注状态；验证与完成事实以 [PROGRESS.md](../PROGRESS.md) 为准，避免重复维护进度记录。
 - 新增系统文档时更新本文件的索引。项目阶段目标仍放在 [ROADMAP.md](../ROADMAP.md)，系统内部的实现安排放在对应架构文档中。
@@ -48,6 +48,8 @@
 | [BROWSER.md](BROWSER.md) | 工作区页面执行、基本交互、运行诊断、DOM/几何与截图证据 | 第二步已实现；离线/真实 Edge 验证见 PROGRESS，模型视觉输入未实现 |
 
 ## 当前实现
+
+2D-15 在 `src/automation/` 增加 cron 匹配、文件快照、有界调度、进程锁、持久任务字段、父模型 automation 工具和 ConversationAutomations 服务。自然语言、chat/TUI `/cron` 与 Web UI Cron 表单共用 SessionManager 绑定，之后触发继续目标会话，界面保留审批和展示所有权。配置和计数持久化，队列/基线仅在进程内。原独立 JSON CLI 保留高级用法。模块、权限、预算和未实现范围见 [AUTOMATION.md](AUTOMATION.md)，验证事实见 PROGRESS。
 
 当前工程已实现 CLI、配置校验、DeepSeek 模型客户端、内存消息循环、纯计算工具及统一错误处理；阶段 2A 已有独立内存 Session 和终端连续对话；阶段 2B 已有统一异步工具集合与显式开启的工作目录读取；阶段 2C 增加显式开启的最小子任务委派；阶段 2D-1 合并为通用 read，并分离 workspace 路径边界与 read 的读取和分页实现；2D-2 增加受控 write，共享有界文本读取模块，并将写入记录与成功对话历史分开。review 修正新增 terminal.ts 统一聊天与确认输入，CLI 注入批准回调，工具负责校验与落实权限。2D-3 新增 shell.ts 与 process.ts，分别持有命令规则/事实与 Windows 进程生命周期，terminal.ts 复用单次确认。2D-4 新增 agent.ts 集中装配父子模型与工具，普通 CLI 默认可委派；仅父请求带任务选择指导，不改变保存的历史。共享基础提示词现集中在 system-prompt.ts，父子 Loop 都使用简洁、行动导向及基于验证结果的编码协作规则。2D-5 新增 execution-report.ts，在交互边界观察事件，汇总当前回合报告；不改变 Loop / Session 返回值，不写入模型历史。2D-6 新增 tools/search.ts，负责 read query 的有界遍历与匹配；read.ts 持有统一 Schema、参数校验与分发，Workspace 和 text-file 继续负责访问与解码边界。2D-7 在 model.ts 发送前检查完整请求字节，model-usage.ts 校验服务用量；Model 的可选观察回调经 Loop 转为元数据事件，execution-report.ts 汇总父子请求和用量。2D-8 新增 context.ts，在完整请求超预算时整理较早成功 read 的请求副本，保留当前/最近回合和完整 Session 历史；具体边界见 [CONTEXT.md](CONTEXT.md)。真实运行可从 CLI 输入任务，经历模型调用与工具结果回传，再输出最终结果。Loop 接口、错误行为与数据流见 [AGENT_LOOP.md](AGENT_LOOP.md)，跨用户回合的历史所有权与连续输入见 [SESSION.md](SESSION.md)，内置工具与文件边界见 [TOOLS.md](TOOLS.md)，委派与请求上限见 [SUBAGENT.md](SUBAGENT.md)。
 

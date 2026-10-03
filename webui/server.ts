@@ -15,6 +15,7 @@ const assets = new Map([
   ["/markdown.js", ["./client/markdown.js", "text/javascript; charset=utf-8"]],
   ["/session-menu.js", ["./client/session-menu.js", "text/javascript; charset=utf-8"]],
   ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
+  ["/cron.js", ["./client/cron.js", "text/javascript; charset=utf-8"]],
   ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
   ["/preview.js", ["./client/preview.js", "text/javascript; charset=utf-8"]],
   ["/browser-evidence.js", ["./client/browser-evidence.js", "text/javascript; charset=utf-8"]],
@@ -150,6 +151,18 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
         throw new HttpError(400, "Expected a session ID and optional positive revision.");
       }
       await controller.deleteSession(body.id, body.revision as number | undefined);
+    } else if (path === "/api/automation/create") {
+      if (Object.keys(body).some((key) => !["task", "sessionId"].includes(key)) || !body.task
+        || (body.sessionId !== undefined && (typeof body.sessionId !== "string" || !body.sessionId.trim()))) {
+        throw new HttpError(400, "Expected a task and optional session ID.");
+      }
+      await controller.createAutomation(body.task, body.sessionId as string | undefined);
+    } else if (path === "/api/automation/manage") {
+      if (Object.keys(body).some((key) => !["id", "sessionId", "action"].includes(key))
+        || typeof body.id !== "string" || typeof body.sessionId !== "string" || !["pause", "resume", "delete"].includes(String(body.action))) {
+        throw new HttpError(400, "Expected task ID, session ID and pause/resume/delete action.");
+      }
+      await controller.manageAutomation(body.sessionId, body.id, body.action as "pause" | "resume" | "delete");
     } else if (path === "/api/permission-mode") {
       if (!isPermissionMode(body.mode) || Object.keys(body).length !== 1) throw new HttpError(400, "Expected permission mode default, acceptEdits, plan, or freeToGo.");
       controller.selectPermissionMode(body.mode);

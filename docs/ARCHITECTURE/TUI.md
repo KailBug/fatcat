@@ -2,6 +2,8 @@
 
 ## 范围与取舍
 
+2D-15 接入共享 ConversationAutomations：`/cron <描述>`通过模型绑定当前 Session，无参数列表，pause/resume/delete 本地管理。页脚、会话列表和自动回合显示 `[clock]`。空闲才运行自动任务，保留编辑器草稿，复用原审批、停止及遥测；结果保存到目标会话，后台执行不切换选中会话。详见 [AUTOMATION.md](AUTOMATION.md)。
+
 阶段 2D-11 按用户明确要求提供可选 `--tui`，分支为 `feat/tui-dev`。首版面向已有单 Session 编码工作流；2D-14 通过共享 SessionManager 增加本地持久化与会话管理，与单次任务及 `--chat` 共用模型、工具、权限、请求预算和历史规则。实现及验证事实以 [PROGRESS.md](../PROGRESS.md) 为准；本文描述接口边界，不将界面已写入等同于终端或真实模型已验收。
 
 采用 [`@earendil-works/pi-tui@0.87.1`](https://github.com/earendil-works/pi/tree/main/packages/tui) 的终端渲染、编辑器、Markdown 和显示宽度能力。界面的分区与青色/紫色视觉参考 [pi](https://github.com/earendil-works/pi) 和 [Charm Lip Gloss](https://github.com/charmbracelet/lipgloss)；本项目不依赖 Charm 的 Go 运行时，也不导入 pi 的 Agent 循环。Node.js 24、pnpm 11.21.0、TypeScript 与 `openai@7.18.0` 保持原选择。

@@ -4,7 +4,7 @@ import { HarnessError, checkCancellation, formatError } from "../src/errors.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import type { ReportEvent } from "../src/execution-report.js";
 import { SessionManager } from "../src/session/manager.js";
-import { interactiveCommandHelp, runInteractiveCommand } from "../src/commands.js";
+import { interactiveCommandHelp, runInteractiveCommand, automationCommandPrompt } from "../src/commands.js";
 import { sessionLabel } from "../src/session/commands.js";
 import type { Conversation } from "../src/session/commands.js";
 import type { SkillDescriptor } from "../src/skills.js";
@@ -16,6 +16,9 @@ import { createTuiTelemetry } from "./telemetry.js";
 import { createTuiTheme } from "./theme.js";
 import { FatcatView } from "./view.js";
 import type { TuiViewState } from "./view.js";
+import { ConversationAutomations } from "../src/automation/conversations.js";
+import type { SessionAutomation } from "../src/automation/tasks.js";
+import type { Activation } from "../src/automation/scheduler.js";
 
 const help = [
   "/help    Show this guide", "/status  Show full configuration and metric definitions",
@@ -80,6 +83,7 @@ export class TuiApp {
   private startedAt = 0;
   private activity = "Ready";
   private timer?: ReturnType<typeof setInterval>;
+  private automationService: ConversationAutomations | undefined;
   private readonly observedWrites = new Map<string, string>();
   private readonly observedCommands = new Set<string>();
 
@@ -137,6 +141,27 @@ export class TuiApp {
     this.started = true;
     this.session = session;
     if (session instanceof SessionManager) this.restoreConversation();
+    if (session instanceof SessionManager) {
+      this.automationService = new ConversationAutomations(session, {
+        idle: () => !this.state.busy && !this.closing,
+        run: async (task, activation) => {
+          this.turnController = new AbortController();
+          this.state.busy = true;
+          this.editor.disableSubmit = true;
+          this.startedAt = Date.now();
+          this.telemetry.beginTurn();
+          this.observedWrites.clear(); this.observedCommands.clear();
+          this.message("system", `Scheduled task in ${task.sessionTitle}`, "[clock] AUTOMATION");
+          const prompt = task.prompt;
+          if (task.sessionId === session.current.id) this.message("user", prompt);
+          this.activeTurn = this.runTurn(prompt, this.turnController.signal, { task, activation });
+          await this.activeTurn;
+        },
+        changed: () => { this.updateSessionFooter(); this.refresh(); },
+        error: (message) => this.message("error", message, "AUTOMATION"),
+      });
+      this.automationService.start();
+    }
     const interrupt = () => { if (this.turnController) this.cancelTurn(); else this.exit(); };
     const terminate = () => this.exit();
     const eof = () => this.exit();
@@ -157,6 +182,7 @@ export class TuiApp {
       this.approvals.deny();
       try {
         await this.activeTurn;
+        await this.automationService?.close();
       } finally {
         clearInterval(this.timer);
         process.off("SIGINT", interrupt);
@@ -220,7 +246,7 @@ export class TuiApp {
 
   private submit(value: string): void {
     if (this.closing) return;
-    const prompt = value.trim();
+    const prompt = automationCommandPrompt(value.trim()) ?? value.trim();
     if (this.approval) {
       const answer = prompt.toLowerCase();
       if (answer === "yes" || answer === "no") {
@@ -289,7 +315,7 @@ export class TuiApp {
 
   private updateSessionFooter(): void {
     if (!(this.session instanceof SessionManager)) return;
-    this.state.footer = `session ${sessionLabel(this.session.current)} | write ${this.options.workspace === undefined ? "off" : this.options.permission} | `
+    this.state.footer = `session ${sessionLabel(this.session.current)}${this.session.current.automationCount ? ` | [clock] ${this.session.current.automationCount} automation(s)` : ""} | write ${this.options.workspace === undefined ? "off" : this.options.permission} | `
       + `shell ${this.options.shellPermission} | web ${this.options.webPermission ?? "deny"} | skills ${this.options.skills}`;
   }
 
@@ -310,13 +336,14 @@ export class TuiApp {
     }
   }
 
-  private async runTurn(prompt: string, signal: AbortSignal): Promise<void> {
+  private async runTurn(prompt: string, signal: AbortSignal, automatic?: { task: SessionAutomation; activation: Activation }): Promise<void> {
     try {
-      const answer = await this.session!.run(prompt, {
-        signal, onEvent: createTurnReporter((event) => this.observe(event)),
-      });
+      const options = { signal, onEvent: createTurnReporter((event) => this.observe(event)) };
+      const answer = automatic && this.session instanceof SessionManager
+        ? await this.session.runAutomation(automatic.task.sessionId, automatic.task.id, automatic.activation.scheduledAt, automatic.activation.paths ?? [], options)
+        : await this.session!.run(prompt, options);
       this.telemetry.finishTurn("answered");
-      this.message("assistant", answer);
+      this.message("assistant", answer, automatic ? `[clock] ${automatic.task.sessionTitle}` : undefined);
       this.activity = "Answered";
     } catch (cause) {
       this.failed = true;
@@ -328,6 +355,10 @@ export class TuiApp {
       this.turnController = undefined;
       this.state.busy = false;
       this.editor.disableSubmit = false;
+      if (automatic && this.session instanceof SessionManager && automatic.task.sessionId !== this.session.current.id) {
+        this.telemetry.resetConversation(this.session.current.turnCount);
+      }
+      this.updateSessionFooter();
       this.refresh();
       if (this.closing) this.resolveExit?.(this.failed ? 1 : 0);
     }

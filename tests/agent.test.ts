@@ -45,7 +45,7 @@ test("default agent construction is idle and direct tasks make no child requests
   const agent = createAgent(config, undefined, async (input, init) => {
     requests++;
     const body = await new Request(input, init).json() as RequestBody;
-    assert.deepEqual(body.tools.map((tool) => tool.function.name), ["sum", "delegate_task"]);
+    assert.deepEqual(body.tools.map((tool) => tool.function.name), ["sum", "delegate_task", "automation"]);
     assert.ok(!String(body.messages[0]?.content).includes("Workspace root (JSON string):"));
     return answer("Direct answer");
   });

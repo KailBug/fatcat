@@ -1157,6 +1157,30 @@ dd {
 .send-button .icon { width:20px; height:20px; stroke-width:2 }
 .stop-button .icon { width:14px; height:14px; fill:currentColor }
 .session-row { display:flex; align-items:center; border-radius:9px; min-width:0; flex-shrink:0 }
+.session-clock { display:flex; flex:none; color:var(--muted); margin:0 10px 0 2px }
+.session-clock .icon { width:20px; height:20px }
+.cron-entry { display:flex; align-items:center; gap:10px; margin:0 0 18px; padding:11px 14px; border:0; border-radius:9px; background:transparent; color:inherit; text-align:left; font-size:14px }
+.cron-entry:hover { background:var(--hover) }
+.cron-dialog { width:min(700px,94vw); max-height:90dvh; overflow:hidden; color:inherit }
+.cron-dialog[open] { display:flex; flex-direction:column }
+.cron-dialog .dialog-heading { flex:none; gap:16px; padding:12px 0; border-bottom:1px solid var(--border) }
+.cron-body { min-height:0; overflow:auto; padding:0 2px 2px }
+.scheduled-turn-label { text-align:right; color:var(--muted); font-size:12px; margin-bottom:8px }
+.cron-dialog .dialog-heading button { flex:none }
+.cron-dialog h3 { font-size:15px; margin:22px 0 12px }
+.cron-dialog form { display:grid; gap:14px }
+.cron-dialog label { display:grid; gap:7px; font-size:13px; color:var(--muted) }
+.cron-dialog input,.cron-dialog select,.cron-dialog textarea { box-sizing:border-box; width:100%; min-width:0; padding:10px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface); color:inherit; font:inherit }
+.cron-dialog textarea { resize:vertical }
+.cron-dialog input:focus-visible,.cron-dialog select:focus-visible,.cron-dialog textarea:focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+.cron-dialog .session-dialog-submit { padding:11px 18px; border:0; border-radius:9px; justify-self:end }
+.cron-limits { display:grid; grid-template-columns:1fr 1fr; gap:14px }
+.cron-task { border:1px solid var(--border); border-radius:12px; padding:14px; margin:10px 0; overflow-wrap:anywhere }
+.cron-task p { margin:7px 0; font-size:13px; white-space:pre-wrap }
+.cron-task .cron-detail { color:var(--muted); font-size:12px }
+.cron-session-link { padding:0; border:0; background:none; color:var(--accent); font-size:14px; text-align:left; font-weight:600 }
+.cron-actions { display:flex; gap:8px; margin-top:12px }
+.cron-actions button { border:1px solid var(--border); border-radius:7px; padding:6px 12px; background:var(--surface); color:inherit; font-size:12px }
 .session-row[data-active="true"] { background:var(--accent-soft) }
 .session-row:hover { background:var(--hover) }
 .session-row .conversation:hover { background:transparent }

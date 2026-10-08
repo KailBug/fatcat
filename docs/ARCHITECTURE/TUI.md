@@ -2,6 +2,8 @@
 
 ## 范围与取舍
 
+2026-10-03：`/sessions` 和无参数 `/resume` 展示全部工作区会话及其路径。恢复目标会话同步更新实际 Tools、Skills、界面路径及 `/status`；`/workspace` 显示当前路径，`/workspace <path>` 修改当前会话工作区（含空白新会话），相对路径基于当前工作区，含空格路径可加双引号。运行/审批中拒绝修改；历史保留，不移动项目文件，也不提升启动权限。
+
 2D-15 接入共享 ConversationAutomations：`/cron <描述>`通过模型绑定当前 Session，无参数列表，pause/resume/delete 本地管理。页脚、会话列表和自动回合显示 `[clock]`。空闲才运行自动任务，保留编辑器草稿，复用原审批、停止及遥测；结果保存到目标会话，后台执行不切换选中会话。详见 [AUTOMATION.md](AUTOMATION.md)。
 
 阶段 2D-11 按用户明确要求提供可选 `--tui`，分支为 `feat/tui-dev`。首版面向已有单 Session 编码工作流；2D-14 通过共享 SessionManager 增加本地持久化与会话管理，与单次任务及 `--chat` 共用模型、工具、权限、请求预算和历史规则。实现及验证事实以 [PROGRESS.md](../PROGRESS.md) 为准；本文描述接口边界，不将界面已写入等同于终端或真实模型已验收。

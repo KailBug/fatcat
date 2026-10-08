@@ -387,7 +387,7 @@ test("workspace CLI options require a task and an existing directory", async (t)
   }
   const missing = run(["--workspace", join(workspace, "missing"), "--chat"], { DEEPSEEK_API_KEY: "offline-only" }, "");
   assert.equal(missing.status, 1);
-  assert.match(missing.stderr, /Workspace must/);
+  assert.match(missing.stderr, /Error \[SESSION_WORKSPACE\]: The session workspace must be an accessible directory\./);
 });
 
 test("permission options require a task but do not require an explicit workspace", () => {

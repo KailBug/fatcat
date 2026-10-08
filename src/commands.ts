@@ -38,6 +38,7 @@ export async function runInteractiveCommand(session: Conversation, prompt: strin
   const match = /^\/skills(?:\s+([\s\S]*))?$/.exec(prompt);
   if (!match) return runSessionCommand(session, prompt);
   if (match[1]?.trim()) throw new HarnessError("USAGE", "/skills does not take an argument.");
+  if (session instanceof SessionManager && session.skills) skills = session.skills.skills;
   return {
     text: skills.length ? skills.map((skill) => `$${skill.name} [${skill.scope}] | `
       + `${quoted(skill.description)} | ${quoted(skill.uri)}`).join("\n") : "No skills available for this workspace.",

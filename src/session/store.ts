@@ -16,6 +16,8 @@ export type SessionAttempt = {
 };
 export type SessionRecord = {
   version: 1; id: string; workspace: string; name: string | null; title: string;
+  /** Original storage bucket, retained when the execution workspace changes. */
+  storageWorkspace?: string;
   createdAt: string; updatedAt: string; revision: number; forkedFrom: string | null;
   history: Message[]; attempt: SessionAttempt | null;
   automations?: BoundTask[];
@@ -64,7 +66,9 @@ function date(value: unknown): value is string {
 }
 function decode(value: unknown, workspace: string, id: string): SessionRecord {
   if (!isRecord(value) || value.version !== 1 || value.id !== id || !idPattern.test(id)
-    || typeof value.workspace !== "string" || workspaceKey(value.workspace) !== workspaceKey(workspace)
+    || typeof value.workspace !== "string"
+    || (value.storageWorkspace !== undefined && (typeof value.storageWorkspace !== "string" || !isAbsolute(value.storageWorkspace)))
+    || workspaceKey(String(value.storageWorkspace ?? value.workspace)) !== workspaceKey(workspace)
     || !isAbsolute(value.workspace) || (value.name !== null && typeof value.name !== "string")
     || typeof value.title !== "string" || value.title.length > 120 || /[\x00-\x1f\x7f]/.test(value.title)
     || !date(value.createdAt) || !date(value.updatedAt) || !Number.isSafeInteger(value.revision)
@@ -93,7 +97,8 @@ function decode(value: unknown, workspace: string, id: string): SessionRecord {
       ownerPid: Number(raw.ownerPid), status: raw.status as SessionAttempt["status"],
       code: raw.code as string | null, messages };
   }
-  return { version: 1, id, workspace, name, title: value.title, createdAt: value.createdAt,
+  return { version: 1, id, workspace: value.workspace, name, title: value.title, createdAt: value.createdAt,
+    ...(value.storageWorkspace === undefined ? {} : { storageWorkspace: String(value.storageWorkspace) }),
     updatedAt: value.updatedAt, revision: Number(value.revision), forkedFrom: value.forkedFrom as string | null,
     history, attempt, ...(value.automations === undefined ? {} : { automations: decodeBoundTasks(value.automations) }) };
 }
@@ -109,21 +114,71 @@ export class SessionStore {
 
   async list(workspace: string): Promise<SessionSummary[]> {
     const canonical = await canonicalWorkspace(workspace);
-    return (await this.records(canonical)).map(sessionSummary)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+    return (await this.listAll()).filter((item) => workspaceKey(item.workspace) === workspaceKey(canonical));
+  }
+
+  async listAll(): Promise<SessionSummary[]> {
+    const summaries: SessionSummary[] = [];
+    for (const directory of await this.directories()) {
+      for (const file of await readdir(directory)) {
+        if (!file.endsWith(".json") || !idPattern.test(file.slice(0, -5))) continue;
+        try { summaries.push(sessionSummary(await this.readDirectory(directory, file.slice(0, -5)))); }
+        catch (error) {
+          if (!(error instanceof HarnessError && ["SESSION_CORRUPT", "SESSION_INVALID", "SESSION_NOT_FOUND"].includes(error.code))) throw error;
+        }
+      }
+    }
+    return summaries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+  }
+
+  async loadAny(selector: string): Promise<SessionRecord> {
+    if (!idPattern.test(selector)) {
+      const matches = (await this.listAll()).filter((item) => item.name === selector || item.title === selector);
+      if (!matches.length) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists. Use /sessions.");
+      if (matches.length > 1) throw new HarnessError("SESSION_AMBIGUOUS", "More than one session matches. Resume with the exact session ID.");
+      return this.loadAny(matches[0]!.id);
+    }
+    let selected: SessionRecord | undefined;
+    for (const directory of await this.directories()) {
+      let record: SessionRecord;
+      try { record = await this.readDirectory(directory, selector); }
+      catch (error) {
+        if (error instanceof HarnessError && error.code === "SESSION_NOT_FOUND") continue;
+        throw error;
+      }
+      if (selected) throw new HarnessError("SESSION_AMBIGUOUS", "Duplicate session ID in storage. Resolve the duplicate before continuing.");
+      selected = record;
+    }
+    if (!selected) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists. Use /sessions.");
+    return selected;
+  }
+
+  private async directories(): Promise<string[]> {
+    try {
+      const entries = await readdir(this.root, { withFileTypes: true });
+      return entries.filter((entry) => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name))
+        .map((entry) => join(this.root, entry.name));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw new HarnessError("SESSION_STORAGE", "Could not list the local session directory.");
+    }
   }
 
   async load(workspace: string, selector: string): Promise<SessionRecord> {
     const canonical = await canonicalWorkspace(workspace);
-    if (idPattern.test(selector)) return this.read(canonical, selector);
-    const records = (await this.records(canonical)).filter((record) => record.name === selector || record.title === selector);
+    if (idPattern.test(selector)) {
+      const record = await this.loadAny(selector);
+      if (workspaceKey(record.workspace) !== workspaceKey(canonical)) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace.");
+      return record;
+    }
+    const records = (await this.list(canonical)).filter((record) => record.name === selector || record.title === selector);
     if (!records.length) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
     if (records.length > 1) throw new HarnessError("SESSION_AMBIGUOUS", "More than one session matches. Resume with the exact session ID.");
-    return records[0]!;
+    return this.loadAny(records[0]!.id);
   }
 
   async save(record: SessionRecord, expectedRevision: number, forkSource?: Pick<SessionRecord, "id" | "revision">): Promise<SessionRecord> {
-    const workspace = await canonicalWorkspace(record.workspace);
+    const workspace = record.storageWorkspace ?? await canonicalWorkspace(record.workspace);
     if (!idPattern.test(record.id)) return invalidSession();
     const directory = this.directory(workspace);
     let release: (() => Promise<void>) | undefined;
@@ -163,7 +218,7 @@ export class SessionStore {
 
   /** Remove only an exact workspace ID, optionally publishing an empty replacement first. */
   async delete(workspace: string, id: string, expectedRevision: number, replacement?: SessionRecord): Promise<SessionRecord | undefined> {
-    const canonical = await canonicalWorkspace(workspace);
+    const canonical = workspace;
     if (!idPattern.test(id)) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
     const directory = this.directory(canonical);
     let release: (() => Promise<void>) | undefined;
@@ -180,7 +235,7 @@ export class SessionStore {
       }
       if (replacement) {
         if (replacement.revision !== 0 || replacement.id === id || !idPattern.test(replacement.id)
-          || workspaceKey(replacement.workspace) !== workspaceKey(canonical)
+          || workspaceKey(replacement.storageWorkspace ?? replacement.workspace) !== workspaceKey(canonical)
           || replacement.name !== null || replacement.history.length || replacement.attempt !== null) return invalidSession();
         try {
           await this.read(canonical, replacement.id);
@@ -235,9 +290,13 @@ export class SessionStore {
   }
 
   private async read(workspace: string, id: string): Promise<SessionRecord> {
+    return this.readDirectory(this.directory(workspace), id);
+  }
+
+  private async readDirectory(directory: string, id: string): Promise<SessionRecord> {
     let handle;
     try {
-      handle = await open(join(this.directory(workspace), `${id}.json`), "r");
+      handle = await open(join(directory, `${id}.json`), "r");
       const info = await handle.stat();
       if (!info.isFile() || info.size > maxFileBytes) return invalidSession();
       // Read a bounded buffer even if another writer changes the file after stat.
@@ -253,7 +312,10 @@ export class SessionStore {
       if (!Buffer.from(json, "utf8").equals(bytes.subarray(0, count))) return invalidSession();
       let parsed: unknown;
       try { parsed = JSON.parse(json); } catch { return invalidSession(); }
-      return decode(parsed, workspace, id);
+      if (!isRecord(parsed) || typeof parsed.workspace !== "string") return invalidSession();
+      const storageWorkspace = String(parsed.storageWorkspace ?? parsed.workspace);
+      if (this.directory(storageWorkspace) !== directory) return invalidSession();
+      return decode(parsed, storageWorkspace, id);
     } catch (error) {
       if (error instanceof HarnessError) throw error;
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {

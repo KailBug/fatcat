@@ -20,6 +20,7 @@
     "verify:context": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-context.js",
     "verify:web": "pnpm run build && node dist/scripts/verify-web.js",
     "verify:browser": "pnpm run build && node dist/scripts/verify-browser.js",
+    "verify:sessions": "pnpm run build && node dist/scripts/verify-session-workspaces.js",
     "verify:live": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-live.js"
   },
   "devDependencies": {

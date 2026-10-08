@@ -2,7 +2,7 @@ import type { SessionSummary } from "../../src/session/store.js";
 
 import { icon } from "./icons.js";
 
-export type SessionAction = "details" | "rename" | "fork" | "delete";
+export type SessionAction = "details" | "rename" | "fork" | "delete" | "workspace";
 
 /** A single menu owns pointer placement, keyboard navigation, and focus restoration. */
 export class SessionMenu {
@@ -17,13 +17,13 @@ export class SessionMenu {
     this.title.className = "session-menu-title";
     menu.append(this.title);
     for (const [action, label] of [["details", "Session details"], ["rename", "Rename session"],
-      ["fork", "Fork session"], ["delete", "Delete session"]] as const) {
+      ["workspace", "Change workspace"], ["fork", "Fork session"], ["delete", "Delete session"]] as const) {
       const button = document.createElement("button");
       button.type = "button";
       button.role = "menuitem";
       button.tabIndex = -1;
       button.dataset.action = action;
-      button.append(icon(({ details: "info", rename: "pencil", fork: "git-branch", delete: "trash" } as const)[action]), document.createTextNode(label));
+      button.append(icon(({ details: "info", rename: "pencil", workspace: "folder", fork: "git-branch", delete: "trash" } as const)[action]), document.createTextNode(label));
       button.addEventListener("click", () => {
         const session = this.selected;
         if (!session || (action !== "details" && !this.canManage())) return;

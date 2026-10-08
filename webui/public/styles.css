@@ -17,6 +17,17 @@
   --shadow:0 4px 20px #292e2010,0 1px 3px #292e2006
 }
 
+.session-dialog.workspace-dialog { width:min(640px, calc(100vw - 32px)) }
+.workspace-dialog .session-dialog-form { display:flex; flex-direction:column; gap:12px }
+.workspace-entries { display:flex; flex-direction:column; max-height: min(40vh, 340px); overflow:auto; border:1px solid var(--border); border-radius:8px; padding:6px }
+.workspace-entries button { text-align:left; overflow-wrap:anywhere; flex-shrink:0; padding:9px 12px; border:0; background:transparent; color:inherit }
+.workspace-entries button:hover:not(:disabled) { background:var(--hover) }
+.workspace-entries button:disabled { opacity:0.5 }
+.workspace-shortcuts { display:flex; flex-wrap:wrap; gap:6px }
+.workspace-shortcuts button { padding:6px 10px }
+#workspace-picker { cursor:pointer; color:inherit; font:inherit; text-align:left }
+#workspace-picker:disabled { cursor:default; opacity:0.6 }
+
 * {
   box-sizing:border-box
 }

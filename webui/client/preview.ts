@@ -31,6 +31,13 @@ export class FilePreview {
 
   update(connected: boolean): void { this.connected = connected; this.controls(); }
 
+  reset(): void {
+    this.close();
+    this.path = "";
+    this.input.value = "";
+    this.controls();
+  }
+
   open(path?: string): void {
     if (this.panel.hidden) this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : this.entry;
     this.panel.hidden = false;

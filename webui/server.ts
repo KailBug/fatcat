@@ -7,6 +7,7 @@ import type { WebUiController } from "./controller.js";
 import { isPermissionMode } from "../src/permissions/policy.js";
 import { createPreviewStore, previewCsp } from "./preview.js";
 import { readBrowserEvidence } from "../src/browser/evidence.js";
+import { listWorkspaceDirectory } from "./workspaces.js";
 
 const assets = new Map([
   ["/", ["./public/index.html", "text/html; charset=utf-8"]],
@@ -15,6 +16,7 @@ const assets = new Map([
   ["/markdown.js", ["./client/markdown.js", "text/javascript; charset=utf-8"]],
   ["/session-menu.js", ["./client/session-menu.js", "text/javascript; charset=utf-8"]],
   ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
+  ["/workspace-dialog.js", ["./client/workspace-dialog.js", "text/javascript; charset=utf-8"]],
   ["/cron.js", ["./client/cron.js", "text/javascript; charset=utf-8"]],
   ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
   ["/preview.js", ["./client/preview.js", "text/javascript; charset=utf-8"]],
@@ -54,7 +56,7 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 /** Bind only to loopback. The fragment capability is never included in HTTP URLs. */
 export async function startWebUiServer(controller: WebUiController, port = 3210) {
   const token = randomBytes(32).toString("hex");
-  const previews = await createPreviewStore(controller.info.workspace);
+  const previews = await createPreviewStore(() => controller.info.workspace);
   const shutdown = new AbortController();
   let origin = "";
   const server = createServer({ requestTimeout: 10_000, headersTimeout: 10_000, maxHeaderSize: 8192 }, (request, response) => {
@@ -112,7 +114,18 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
     }
     if (request.method !== "POST") throw new HttpError(405, "Method not allowed.");
     const body = await readBody(request);
-    if (path === "/api/preview") {
+    if (path === "/api/workspaces") {
+      if (typeof body.path !== "string" || body.path.length > 4096 || Object.keys(body).length !== 1) {
+        throw new HttpError(400, "Expected a directory path.");
+      }
+      json(response, 200, await listWorkspaceDirectory(body.path, controller.info.workspace));
+      return;
+    } else if (path === "/api/session/workspace") {
+      if (typeof body.path !== "string" || !body.path.trim() || body.path.length > 4096
+        || Object.keys(body).some((key) => !["path", "id"].includes(key))
+        || (body.id !== undefined && typeof body.id !== "string")) throw new HttpError(400, "Expected a workspace path and optional session ID.");
+      await controller.setWorkspace(body.path, body.id as string | undefined);
+    } else if (path === "/api/preview") {
       if (typeof body.path !== "string" || Object.keys(body).length !== 1) throw new HttpError(400, "Expected a workspace-relative file path.");
       const disconnected = new AbortController();
       const abort = () => disconnected.abort();

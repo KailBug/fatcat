@@ -541,7 +541,7 @@ test("session menu HTTP routes operate on selected sessions and reject stale del
   assert.equal((await post("session/delete", { id: source }, { ...headers, Authorization: "Bearer wrong" })).status, 401);
   assert.equal((await post("session/delete", { id: source }, { ...headers, Origin: "https://example.com" })).status, 403);
   const foreign = await SessionManager.open(agent, { workspace: outside, store });
-  assert.equal((await post("session/delete", { id: foreign.current.id })).status, 400);
+  assert.equal((await post("session/delete", { id: foreign.current.id })).status, 202);
   assert.equal((await post("session/delete", { id: "../outside" })).status, 400);
   const sourceRevision = controller.snapshot().sessions.find((item) => item.id === source)!.revision;
   const other = await SessionManager.open(agent, { workspace, store, selection: { resume: source } });
@@ -571,6 +571,6 @@ test("session menu HTTP routes operate on selected sessions and reject stale del
   assert.notEqual(controller.snapshot().current.id, fresh);
   assert.equal(controller.snapshot().turns.length, 0);
   assert.equal(controller.snapshot().sessions.length, 1);
-  assert.equal((await store.list(outside)).length, 1);
+  assert.equal((await store.list(outside)).length, 0);
   assert.equal(calls, 3);
 });

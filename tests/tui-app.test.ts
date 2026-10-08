@@ -51,6 +51,30 @@ const settings = {
 };
 const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content }, toolCalls: [] });
 
+test("TUI lists all workspaces and changes the displayed workspace with sessions and local commands", async (t) => {
+  const { base, workspace, outside } = await temporaryWorkspace(t);
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const agent = { model: async () => answer(), maxIterations: 1 };
+  const foreign = await SessionManager.open(agent, { workspace: outside, store, selection: { name: "Other project" } });
+  const session = await SessionManager.open(agent, { workspace, store });
+  const terminal = new FakeTerminal();
+  terminal.columns = 220;
+  const app = new TuiApp({ ...settings, workspace, terminal, color: false });
+  const done = app.run(session);
+  t.after(async () => { terminal.input("\x04"); await done; });
+  terminal.submit("/sessions");
+  await until(() => terminal.plain.includes("Other project"));
+  terminal.submit(`/resume ${foreign.current.id}`);
+  await until(() => session.current.workspace === outside && terminal.plain.includes(outside));
+  terminal.submit(`/workspace "${workspace}"`);
+  await until(() => session.current.workspace === workspace && !session.isBusy);
+  terminal.submit("/new");
+  await until(() => session.current.id !== foreign.current.id && !session.isBusy);
+  assert.equal(session.current.workspace, workspace);
+  terminal.submit("/exit");
+  assert.equal(await done, 0);
+});
+
 test("TUI cron creates a bound task, shows its marker and appends the triggered answer in the same session", async (t) => {
   const terminal = new FakeTerminal();
   let done: Promise<number> | undefined;

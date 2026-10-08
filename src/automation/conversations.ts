@@ -15,7 +15,7 @@ export class ConversationAutomations {
   private timer: ReturnType<typeof setInterval> | undefined;
   private active: Promise<void> | undefined;
   private closed = false;
-  private release: (() => Promise<void>) | undefined;
+  private readonly leases = new Map<string, () => Promise<void>>();
   private readonly abort = new AbortController();
   private notifiedError = "";
   private lastRun: string | undefined;
@@ -43,19 +43,29 @@ export class ConversationAutomations {
   }
 
   private async poll(): Promise<void> {
+    const workspace = this.session.automationWorkspace;
     const tasks = (await this.session.listAutomations()).filter((task) => taskIsEnabled(task) && task.lastStatus !== "running");
+    if (workspace !== this.session.automationWorkspace) return;
     const live = new Set(tasks.map((task) => task.id));
     for (const id of this.entries.keys()) if (!live.has(id)) this.entries.delete(id);
+    for (const [workspace, release] of this.leases) {
+      if (!tasks.some((task) => task.workspace === workspace)) {
+        await release();
+        this.leases.delete(workspace);
+      }
+    }
     if (!tasks.length) return;
     if (tasks.length > 128) throw new HarnessError("AUTOMATION_LIMIT", "Pause tasks to keep at most 128 enabled tasks in this workspace.");
     if (new Set(tasks.flatMap((task) => task.trigger.type === "file_changed" ? task.trigger.paths : [])).size > 64) {
       throw new HarnessError("AUTOMATION_LIMIT", "Pause file tasks to monitor at most 64 different files in this workspace.");
     }
-    if (!this.release) this.release = await acquireAutomationLock(this.session.automationStoreRoot, this.session.automationWorkspace);
+    for (const workspace of new Set(tasks.map((task) => task.workspace))) {
+      if (!this.leases.has(workspace)) this.leases.set(workspace, await acquireAutomationLock(this.session.automationStoreRoot, workspace));
+    }
     for (const task of tasks) {
-      if (this.closed || !this.host.idle() || this.session.isBusy) return;
+      if (this.closed || !this.host.idle() || this.session.isBusy || workspace !== this.session.automationWorkspace) return;
       try {
-        const signature = JSON.stringify([task.trigger, task.enabled, task.createdAt, task.expiresAt, task.maxRuns]);
+        const signature = JSON.stringify([task.workspace, task.trigger, task.enabled, task.createdAt, task.expiresAt, task.maxRuns]);
         let entry = this.entries.get(task.id);
         if (!entry || entry.signature !== signature) {
           const now = Date.now();
@@ -64,14 +74,14 @@ export class ConversationAutomations {
             ? now - ((now - task.createdAt) % (task.trigger.seconds * 1000)) : now;
           entry = { signature, scheduler: new Scheduler({ version: 1, maxRuns: 1000,
             maxRuntimeSeconds: Math.max(1, Math.ceil((task.expiresAt - anchor) / 1000)), tasks: [{ ...task, maxRuns: 1000 }] }, anchor),
-            files: await FileChanges.open(this.session.automationWorkspace,
+            files: await FileChanges.open(task.workspace,
               task.trigger.type === "file_changed" ? task.trigger.paths : [], this.abort.signal) };
           this.entries.set(task.id, entry);
         }
         entry.scheduler.filesChanged(await entry.files.poll(this.abort.signal), Date.now());
         entry.scheduler.advance(Date.now());
       } catch (error) {
-        if (this.closed || !this.host.idle() || this.session.isBusy) return;
+        if (this.closed || !this.host.idle() || this.session.isBusy || workspace !== this.session.automationWorkspace) return;
         await this.session.manageSessionAutomation(task.sessionId, { action: "pause", id: task.id });
         this.entries.delete(task.id);
         await this.host.changed();
@@ -80,7 +90,7 @@ export class ConversationAutomations {
     }
     const pivot = Math.max(0, tasks.findIndex((task) => task.id === this.lastRun) + 1);
     for (const task of [...tasks.slice(pivot), ...tasks.slice(0, pivot)]) {
-      if (this.closed || !this.host.idle() || this.session.isBusy) return;
+      if (this.closed || !this.host.idle() || this.session.isBusy || workspace !== this.session.automationWorkspace) return;
       const entry = this.entries.get(task.id);
       if (!entry) continue;
       const activation = entry.scheduler.take(Date.now());
@@ -100,8 +110,8 @@ export class ConversationAutomations {
     this.abort.abort();
     clearInterval(this.timer);
     await this.active;
-    await this.release?.();
-    this.release = undefined;
+    for (const release of this.leases.values()) await release();
+    this.leases.clear();
     this.entries.clear();
   }
 }

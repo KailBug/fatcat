@@ -158,7 +158,7 @@ The page includes a workspace sidebar, starter prompts, a conversation view, a m
 
 Writes and commands use the existing independent permission policies. With the default `ask`, the browser shows the exact file change or PowerShell command and requires **Allow once** or **Deny**. Approval is tied to the pending operation; a stale response cannot authorize another action. `--permission workspace-write` preauthorizes file writes only; `--shell-permission allow` separately preauthorizes commands. Shell runs with current-user access, not an OS sandbox. `--web-permission deny` disables public research independently of the local UI server.
 
-All tabs using this server link share one active session. The sidebar lists sessions for the selected workspace and supports switching. Starting Web UI without a session selection, clicking New chat, or deleting the active session opens an unsaved welcome screen; these actions do not add empty sessions to the sidebar or disk. The first submitted message saves the session before model or tool execution, including failed or interrupted attempts. New chat retains the previous conversation. Explicit naming (`--name` or the session API) and forking still save a session immediately; `--continue` and `--resume` still select saved history. Existing empty saved sessions remain available until explicitly deleted.
+All tabs using this server link share one active session. The sidebar lists all sessions in the same session store, regardless of launch directory. Selecting a session changes the active workspace to its saved directory. Starting Web UI without a session selection, clicking New chat, or deleting the active session opens an unsaved welcome screen; these actions do not add empty sessions to the sidebar or disk. The first submitted message saves the session before model or tool execution, including failed or interrupted attempts. New chat retains the previous conversation. Explicit naming (`--name` or the session API) and forking still save a session immediately; `--continue` and `--resume` still select saved history. Existing empty saved sessions remain available until explicitly deleted.
 
 Right-click a session to open **Session details**, **Rename session**, **Fork session**, or **Delete session**. Keyboard users can focus a session and press Shift+F10 or the context-menu key, then use arrow keys and Enter; Escape or clicking outside closes the menu. Each action targets the selected row, including an inactive session. Renaming or deleting an inactive session leaves the active conversation unchanged; forking opens the new branch. Deleting requires confirmation and permanently removes that session's saved conversation. Session changes do not undo files or commands, or clear process-local journals; management actions are disabled during a turn or approval.
 
@@ -408,7 +408,7 @@ pnpm start --chat --workspace examples/workspace
 
 `--workspace` works with a single prompt, `--chat`, `--tui` or `--webui`; it cannot be used alone or with help/configuration checks. Without it, Fatcat uses the directory where you invoked `pnpm start`, even though pnpm runs package scripts from the package root. An explicit absolute workspace overrides that directory; a relative workspace resolves from it. For example, from `D:\fatcat\examples`, `pnpm start --chat` uses `D:\fatcat\examples`, and `pnpm start --chat --workspace workspace` uses `D:\fatcat\examples\workspace`.
 
-The parent has `sum`, `read`, `write`, `shell`, and `delegate_task`; children share the same workspace tools and permissions without recursive delegation. A path that cannot be resolved to an existing directory fails configuration before any model request. The chosen workspace stays fixed throughout a chat, including after `/reset`. Directly running the compiled `dist/src/cli.js` uses that Node process's current directory and ignores inherited `INIT_CWD`; only the package start launcher restores pnpm's invocation directory.
+The parent has `sum`, `read`, `write`, `shell`, and `delegate_task`; children share the same workspace tools and permissions without recursive delegation. A path that cannot be resolved to an existing directory fails configuration before any model request. New sessions and `/reset` inherit the current workspace. Use `/workspace <path>` to change it; resuming a session selects its saved workspace. Directly running the compiled `dist/src/cli.js` uses that Node process's current directory and ignores inherited `INIT_CWD`; only the package start launcher restores pnpm's invocation directory.
 
 The canonical workspace root is included in parent and child model request guidance, so the model can answer which directory it is using without executing a command or inferring the path from a listing. Tool paths still use workspace-relative paths. The TUI displays the same canonical root. Help and configuration checks do not create a workspace or accept workspace/permission options.
 
@@ -524,7 +524,7 @@ Command records survive failed turns and `/reset`, and are shared with children.
 
 ## Saved sessions
 
-Tasks, chat, TUI and Web UI save sessions by default. Starting without a selection creates a new session; earlier conversations remain available. Sessions belong to the canonical workspace directory, so use the same `--workspace` or launch directory when resuming.
+Tasks, chat, TUI and Web UI save sessions by default. Starting without a selection creates a new session; earlier conversations remain available. Sessions store their canonical workspace but are listed globally across all workspace directories in the same session store. Resume from any launch directory to select a session and its saved workspace.
 
 ```powershell
 pnpm start --chat --name auth-refactor
@@ -541,14 +541,14 @@ pnpm start --chat --no-session-persistence
 
 | Option | Behavior |
 | --- | --- |
-| `--continue`, `-c` | Resume the most recently updated session in this workspace. No prior session is an error. |
+| `--continue`, `-c` | Resume the most recently updated session across all workspaces. No prior session is an error. |
 | `--resume <id-or-name>`, `-r <id-or-name>` | Resume an exact session ID, explicit name or local title. Ambiguous matches require an ID. |
 | `--resume`, `-r` | List sessions and ask for an ID or name in an interactive terminal. With redirected input or stderr, print the list and exit without model credentials. |
 | `--name <name>`, `-n <name>` | Name a new session, rename a resumed one, or name the new branch with `--fork-session`. |
 | `--fork-session` | Combine with continue or resume to copy history into a new session and preserve the source. |
 | `--no-session-persistence` | Keep new sessions only in this process. Startup resume, continue and fork selection cannot be combined with it. |
 
-Continue, resume or name without another mode opens ordinary chat. Selection also works with an explicit prompt, `--chat`, `--tui` or `--webui`; continue and resume are mutually exclusive. Use `/sessions` inside chat/TUI for local listing. The former skill/session listing startup flags have been removed; bare `--resume` retains its credential-free picker or pipe listing path. Names are trimmed, non-empty, limited to 120 characters and cannot contain control characters; duplicate explicit names in a workspace are rejected. Unnamed sessions use a title taken locally from the first prompt, without a model title request. Titles can repeat; the UUID always identifies one session.
+Continue, resume or name without another mode opens ordinary chat. Selection also works with an explicit prompt, `--chat`, `--tui` or `--webui`; continue and resume are mutually exclusive. Use `/sessions` inside chat/TUI for local listing. The former skill/session listing startup flags have been removed; bare `--resume` retains its credential-free picker or pipe listing path. Names are trimmed, non-empty, limited to 120 characters and cannot contain control characters; duplicate explicit names in a storage bucket are rejected. Names in different buckets can match; use the session ID to resolve an ambiguous global selection. Unnamed sessions use a title taken locally from the first prompt, without a model title request. Titles can repeat; the UUID always identifies one session.
 
 The default location is `<user-home>/.fatcat/sessions/<workspace-hash>/<session-id>.json`. Set a different storage root in the launching PowerShell session if needed:
 
@@ -557,9 +557,9 @@ $env:FATCAT_SESSION_DIR = 'D:\fatcat-session-data'
 pnpm start --chat
 ```
 
-The root contains separate SHA-256 directories for canonical workspaces. Files are versioned atomic JSON snapshots, limited to 64 MiB each. History includes prompts, answers, tool calls/results, read file and web content, and loaded Skill instructions. Data is local plaintext and has no automatic retention cleanup. The harness does not serialize provider credentials, permission policies or approval answers; user or tool content can still contain sensitive data. `--no-session-persistence` disables disk saving for the current run and allows in-process new/list/resume/rename/fork.
+The root retains separate SHA-256 storage buckets for compatibility. Editing a workspace keeps the original bucket (recorded as storageWorkspace) and changes only the execution workspace. No session or project files are moved. Files are versioned atomic JSON snapshots, limited to 64 MiB each. History includes prompts, answers, tool calls/results, read file and web content, and loaded Skill instructions. Data is local plaintext and has no automatic retention cleanup. The harness does not serialize provider credentials, permission policies or approval answers; user or tool content can still contain sensitive data. `--no-session-persistence` disables disk saving for the current run and allows in-process new/list/resume/rename/fork.
 
-Resuming restores full completed model history using the current launch's provider, Skills catalog, workspace and permissions. It does not restore old authorization grants, file contents, pending approvals, tool processes, live journals, activity reports or process token totals. The latest failed, cancelled or abandoned turn retains partial messages separately and displays an interrupted warning; the next model request receives a bounded recovery notice to inspect current state before repeating operations. Nothing runs automatically on resume, and the warning clears after the next successful turn. This is not a permanent failure audit log or a file rollback feature.
+Resuming restores full completed model history using the session's saved workspace and refreshed Skills catalog, with the current launch's provider and permissions. It does not restore old authorization grants, file contents, pending approvals, tool processes, live journals, activity reports or process token totals. The latest failed, cancelled or abandoned turn retains partial messages separately and displays an interrupted warning; the next model request receives a bounded recovery notice to inspect current state before repeating operations. Nothing runs automatically on resume, and the warning clears after the next successful turn. This is not a permanent failure audit log or a file rollback feature.
 
 Session updates check revisions before work, preventing a stale process from overwriting newer history. A running session cannot be resumed by another process; busy, changed or damaged sessions produce explicit errors. Use `/sessions` and resume again after the other process finishes. A fork has independent history and an origin ID; it does not create a Git branch or copy workspace files. See [Session architecture](ARCHITECTURE/SESSION.md) for storage and failure boundaries. The functionality draws on [Claude Code's public session definitions](https://code.claude.com/docs/en/sessions); Fatcat does not import its transcript format or implement all of its recovery features.
 
@@ -579,7 +579,7 @@ Enter one task per line. For example, ask `Use the sum tool to add 17 and 25.`, 
 | /skills | List discovered Skill metadata locally, without loading instructions or calling the model |
 | /new [name] | Create a new session, retaining the old one |
 | /clear, /reset | Start a new unnamed session |
-| /sessions, /resume | List workspace sessions |
+| /sessions, /resume | List all workspace sessions |
 | /resume <id-or-name> | Switch to a saved session |
 | /rename <name> | Rename the active session |
 | /fork [name] | Copy completed history into a new session |
@@ -615,7 +615,7 @@ Enter sends the prompt; Alt+Enter inserts a newline. Up/Down recalls prompts, an
 | /status | Show effective configuration and current telemetry. |
 | /skills | List discovered Skill metadata without a model request or history change. |
 | /new [name], /clear, /reset | Start a new session; retain the old history, consumed usage and execution records. |
-| /sessions, /resume | List workspace sessions. |
+| /sessions, /resume | List all workspace sessions. |
 | /resume <id-or-name> | Switch to an existing session. |
 | /rename <name> | Rename the active session. |
 | /fork [name] | Branch the completed conversation into a new session. |
@@ -734,3 +734,13 @@ Provider protocols use openai 7.18.0 as a compatibility client, with thinking an
 - [Development guidelines](../AGENTS.md)
 
 All repository text outside docs/ must be English. Chinese is allowed only under docs/. Runtime user input and model output may use any language.
+
+## Changing a session workspace
+
+Use `/workspace` to show the current directory, or `/workspace D:\my-project` in chat/TUI to change it. Relative paths resolve from the current workspace; paths with spaces may be wrapped in double quotes. Use `/new` before changing the directory to start a separate conversation; changing an existing session retains its ID and history.
+
+In Web UI, click the workspace path to open the directory picker, browse Parent/Home/drive roots, or enter a directory path and choose **Use this workspace**. The session menu also has **Change workspace**, including for inactive sessions or sessions whose old directory no longer exists. New chat starts in the current workspace; changing its directory keeps it an unsaved draft until the first message. The picker lists up to 1,000 entries and accepts an explicit path if an entry is omitted. It lists filenames for navigation, without exposing a new model tool.
+
+Directory changes are unavailable while a turn or approval is running. Reads, writes, shell cwd, browser checks, preview and Skills follow the selected workspace under current launch permissions. Returning to a previously visited workspace retains its process tool journals. Automation discovery remains limited to the active workspace and rebuilds its file baselines on workspace changes; listing all sessions does not start jobs in other projects.
+
+Run `pnpm run verify:sessions` for the explicit real Edge workflow check with temporary workspaces and injected model decisions. No model credentials or model requests are used.

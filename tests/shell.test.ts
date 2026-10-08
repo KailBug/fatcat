@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { HarnessError } from "../src/errors.js";
 import { createTools } from "../src/tools.js";
 import { createShellTool } from "../src/tools/shell.js";
@@ -14,6 +15,35 @@ import { temporaryWorkspace } from "./fixtures/workspace.js";
 
 const windows = { skip: process.platform !== "win32" };
 const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+
+async function waitForChildPid(path: string): Promise<number> {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    try {
+      const pid = Number(await readFile(path, "utf8"));
+      if (Number.isSafeInteger(pid) && pid > 0) return pid;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await delay(20);
+  }
+  assert.fail(`Child process did not publish a valid PID within 5000ms: ${path}`);
+}
+
+async function assertProcessExited(pid: number): Promise<void> {
+  // Windows may report taskkill completion before the child PID disappears.
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return;
+      throw error;
+    }
+    await delay(20);
+  }
+  assert.fail(`Child process ${pid} is still running 3000ms after tree cleanup`);
+}
 
 test("shell needs separate authorization and read-only cannot elevate it", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
@@ -95,21 +125,28 @@ test("output limits bound both streams and stop a noisy command", windows, async
 
 test("timeout and cancellation terminate a foreground process tree and retain outcomes", windows, async (t) => {
   const { workspace } = await temporaryWorkspace(t);
-  await writeFile(join(workspace, "child.cjs"), 'require("node:fs").writeFileSync("child.pid", String(process.pid)); setInterval(() => {}, 1000);');
+  // The fallback lifetime prevents an indefinitely orphaned fixture if cleanup regresses.
+  await writeFile(join(workspace, "child.cjs"),
+    'require("node:fs").writeFileSync(process.argv[2], String(process.pid)); setTimeout(() => {}, 60000);');
   const command = `& ${quote(process.execPath)} child.cjs`;
-  const timed = await runPowerShell(command, workspace, 1000);
-  assert.equal(timed.status, "timed_out");
-  assert.equal(timed.cleanup, "tree-killed");
-  const pid = Number(await readFile(join(workspace, "child.pid"), "utf8"));
-  assert.throws(() => process.kill(pid, 0), (error: unknown) => (error as NodeJS.ErrnoException).code === "ESRCH");
+  const timed = await runPowerShell(`${command} timed.pid`, workspace, 10000);
+  assert.equal(timed.status, "timed_out", JSON.stringify(timed));
+  assert.equal(timed.cleanup, "tree-killed", JSON.stringify(timed));
+  await assertProcessExited(await waitForChildPid(join(workspace, "timed.pid")));
   const controller = new AbortController();
   const tools = await createTools(workspace, "workspace-write", undefined, { permission: "allow" });
-  const timer = setTimeout(() => controller.abort(), 1000);
-  t.after(() => clearTimeout(timer));
-  await assert.rejects(tools.execute("shell", JSON.stringify({ command }), controller.signal),
+  const cancelled = assert.rejects(tools.execute("shell", JSON.stringify({ command: `${command} cancelled.pid` }), controller.signal),
     (error: unknown) => error instanceof HarnessError && error.code === "CANCELLED");
+  let cancelledPid: number;
+  try {
+    cancelledPid = await waitForChildPid(join(workspace, "cancelled.pid"));
+  } finally {
+    controller.abort();
+    await cancelled;
+  }
   assert.equal(tools.getCommands!()[0]!.status, "cancelled");
   assert.equal(tools.getCommands!()[0]!.cleanup, "tree-killed");
+  await assertProcessExited(cancelledPid);
 });
 
 test("terminal command approval is separate, complete, escaped and unavailable to pipes", windows, async (t) => {

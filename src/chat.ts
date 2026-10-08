@@ -51,7 +51,7 @@ export async function runChat(
   try {
     automation?.start();
     error.write(`Chat started. ${session instanceof SessionManager
-      ? `Session: ${sessionLabel(session.current)}. ${session.persistent ? "History is saved locally." : "Persistence is disabled."}`
+      ? `Session: ${sessionLabel(session.current)}. Workspace: ${JSON.stringify(session.current.workspace)}. ${session.persistent ? "History is saved locally." : "Persistence is disabled."}`
       : "History stays in memory."} ${commands}\n`);
     if (session instanceof SessionManager && session.current.interrupted) {
       error.write("The last turn was interrupted. Inspect workspace files before repeating operations.\n");

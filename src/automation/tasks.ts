@@ -9,7 +9,7 @@ export type BoundTask = {
   lastStatus?: "running" | "completed" | "failed" | "cancelled";
   lastScheduledAt?: number;
 };
-export type SessionAutomation = BoundTask & { sessionId: string; sessionTitle: string };
+export type SessionAutomation = BoundTask & { sessionId: string; sessionTitle: string; workspace: string };
 
 export function newBoundTask(value: unknown, now = Date.now()): BoundTask {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new HarnessError("AUTOMATION_CONFIG", "Expected a task object.");

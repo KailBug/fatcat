@@ -1,8 +1,6 @@
-import { createAgent } from "../src/agent.js";
 import type { Config } from "../src/config.js";
 import { SessionManager } from "../src/session/manager.js";
 import type { SessionOpenOptions } from "../src/session/manager.js";
-import { discoverSkills } from "../src/skills.js";
 import { createTools } from "../src/tools.js";
 import type { ShellPermission } from "../src/tools/shell.js";
 import type { WorkspacePermission } from "../src/tools/write.js";
@@ -11,6 +9,7 @@ import { WebUiController } from "./controller.js";
 import { openWebUiBrowser } from "./open-browser.js";
 import { startWebUiServer } from "./server.js";
 import { PermissionPolicy } from "../src/permissions/policy.js";
+import { workspaceAgentFactory } from "../src/workspace-agent.js";
 
 export async function runWebUi(config: Config, workspace: string, permission: WorkspacePermission,
   shellPermission: ShellPermission, webPermission: WebPermission, port: number,
@@ -18,15 +17,16 @@ export async function runWebUi(config: Config, workspace: string, permission: Wo
   openBrowser: (url: string, signal: AbortSignal) => Promise<void> = (url, signal) => openWebUiBrowser(url, { signal }),
   permissionPolicy = new PermissionPolicy({ permission, shellPermission },
     { readOnly: permission === "read-only", shellDenied: shellPermission === "deny", webDenied: webPermission === "deny" })): Promise<number> {
-  const tools = await createTools(workspace, permission, (request, signal) => controller.requestApproval("write", request, signal), {
+  const agentForWorkspace = workspaceAgentFactory(config, (root) => createTools(root, permission, (request, signal) => controller.requestApproval("write", request, signal), {
     permission: shellPermission, approve: (request, signal) => controller.requestApproval("shell", request, signal),
-  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => controller.requestApproval("browser", request, signal) });
-  const skills = await discoverSkills({ workspace: tools.workspaceRoot! });
-  const manager = await SessionManager.open(createAgent(config, tools, undefined, skills), {
-    ...sessionOptions, workspace: tools.workspaceRoot!, deferEmptySessions: true,
+  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => controller.requestApproval("browser", request, signal) }));
+  const agent = await agentForWorkspace(workspace);
+  const manager = await SessionManager.open(agent, {
+    ...sessionOptions, workspace: agent.tools.workspaceRoot!, deferEmptySessions: true, agentForWorkspace,
   });
+  const skills = manager.skills!;
   const controller = await WebUiController.create({
-    provider: config.provider, model: config.model, workspace: tools.workspaceRoot!,
+    provider: config.provider, model: config.model, workspace: manager.current.workspace,
     permission, shellPermission, webPermission, maxIterations: config.maxIterations,
     maxRequestBytes: config.maxRequestBytes, skills: skills.skills.length, warnings: [...skills.warnings],
   }, manager, permissionPolicy);

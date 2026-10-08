@@ -132,7 +132,7 @@ test("CLI persists completed tool history, resumes by name and forks without cha
   assert.equal(JSON.parse(resumed.stdout).length, 6);
 });
 
-test("session resume is workspace scoped and uses current permission settings", async (t) => {
+test("session resume finds all workspaces and uses current permission settings", async (t) => {
   const { base, workspace, outside } = await temporaryWorkspace(t);
   await writeFile(join(workspace, "notes.txt"), "before");
   const env = { FATCAT_SESSION_DIR: join(base, "sessions"), DEEPSEEK_API_KEY: "offline-session-only" };
@@ -143,8 +143,12 @@ test("session resume is workspace scoped and uses current permission settings", 
   assert.match(resumed.stdout, /PERMISSION_DENIED/);
   assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
   assert.deepEqual(await new SessionStore({ root: env.FATCAT_SESSION_DIR }).list(outside), []);
-  assert.equal(run(["--resume", "editable", "--prompt", "history"], env, "", outside).status, 1);
-  assert.equal(run(["--continue", "--prompt", "history"], env, "", outside).status, 1);
+  assert.equal(run(["--resume", "editable", "--prompt", "history"], env, "", outside).status, 0);
+  assert.equal(run(["--continue", "--prompt", "history"], env, "", outside).status, 0);
+  const denied = run(["--resume", "editable", "--permission", "read-only", "--prompt", "write fixture"], env, "", outside);
+  assert.equal(denied.status, 0, denied.stderr);
+  assert.match(denied.stdout, /PERMISSION_DENIED/);
+  assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "before");
 });
 
 test("chat session commands create, rename, switch and fork locally; persistence can be disabled", async (t) => {
@@ -383,7 +387,7 @@ test("workspace CLI options require a task and an existing directory", async (t)
   }
   const missing = run(["--workspace", join(workspace, "missing"), "--chat"], { DEEPSEEK_API_KEY: "offline-only" }, "");
   assert.equal(missing.status, 1);
-  assert.match(missing.stderr, /Workspace must/);
+  assert.match(missing.stderr, /Error \[SESSION_WORKSPACE\]: The session workspace must be an accessible directory\./);
 });
 
 test("permission options require a task but do not require an explicit workspace", () => {

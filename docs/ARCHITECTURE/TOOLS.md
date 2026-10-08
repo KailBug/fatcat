@@ -164,7 +164,7 @@ stdout/stderr 合计最多收集 16 KiB 原始字节，UTF-8 解码；不兼容�
 
 超时、取消或输出超限调用系统 taskkill /PID /T /F，仅针对本次启动的进程树；清理额外最多等待 5 秒。已观察到父进程退出后不再按旧 PID 执行清理，避免明显的 PID 复用风险；退出与系统调用间仍无 Job Object 级保证。未确认终止时记录 termination_failed / unconfirmed，并禁止同一 Tools 再启动命令。正常父进程退出只记 foreground-exited，不声称所有脱离的后代已结束。后台服务、脱离进程及交互式命令不受支持，不将其写成可靠恢复或隔离。
 
-依据：[Microsoft taskkill 文档](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill) 的 /PID、/T 和 /F 行为；实际本机测试验证了被启动子进程的 PID 在超时清理后不存在。
+依据：[Microsoft taskkill 文档](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill) 的 /PID、/T 和 /F 行为。原生进程测试分别验证超时与取消后的子 PID 消失；取消前等待该次子进程发布 PID，清理后最多等待 3 秒观察退出，持续残留仍失败。测试等待不扩大运行时清理期限，也不提供 Job Object 级保证。
 
 ## 命令结果与事实（2D-3 已实现）
 

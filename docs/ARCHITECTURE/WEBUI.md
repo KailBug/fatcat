@@ -2,6 +2,8 @@
 
 ## 范围与现状
 
+2026-10-03：侧栏列出全部工作区会话，选择后 workspace/Tools/Skills 同步更新。点击 composer 工作区路径或会话菜单 Change workspace 打开 `client/workspace-dialog.ts`，支持目录列表、上级、Home、Windows 盘符和路径输入，文件项仅显示名称。`workspaces.ts` 最多读取 1000 项；`/api/workspaces` 与 `/api/session/workspace` 沿原 capability、Origin 和 JSON 校验，不作为模型工具。新草稿选择目录不提前落盘，已有会话保留 ID/历史和修订保护，未选中会话的修改不改变当前选择。运行中禁止应用修改；预览按当前目录解析，目录切换撤下旧预览/报告并拒绝旧工作区快照。
+
 2D-15 增加侧栏 Cron tasks 模块，`client/cron.ts` 用 DOM 构建可访问表单和任务管理，支持既有/新会话绑定、四类触发器、次数/期限和暂停/恢复/删除。会话标题最右端显示时钟。认证 `/api/automation/create`、`/api/automation/manage` 交由 controller 与 SessionManager 校验。共享 ConversationAutomations 空闲触发原回合与审批，后台目标不改变当前选择；WebUiState 发布任务、错误及 runningSessionId，自动回合显示来源。详见 [AUTOMATION.md](AUTOMATION.md)。
 
 阶段 2D-13 根据用户要求增加 `pnpm start --webui`，在本机浏览器使用现有编码 Agent。参考 ChatGPT 网页的侧栏、居中对话与底部输入结构，使用 Fatcat 自有文字与配色。CLI、chat、TUI 保留。实现不增加 Graph、通用渠道框架或新模型协议；验证事实以 [PROGRESS.md](../PROGRESS.md) 为准。

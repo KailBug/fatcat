@@ -10,6 +10,7 @@ import { PermissionMenu } from "./permission-menu.js";
 import { FilePreview } from "./preview.js";
 import { BrowserEvidenceView } from "./browser-evidence.js";
 import { CronPanel } from "./cron.js";
+import { WorkspaceDialog } from "./workspace-dialog.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -53,6 +54,9 @@ const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maxi
 const filePreview = new FilePreview(() => token);
 const browserEvidence = new BrowserEvidenceView(() => token);
 const cron = new CronPanel(api);
+const workspaceDialog = new WorkspaceDialog(() => token, (session, path) => api("session/workspace", { id: session.id, path }),
+  () => connected && !sending && !state?.busy);
+element("workspace-picker").addEventListener("click", () => { if (state) workspaceDialog.open(state.current); });
 
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
 function controls(): void {
@@ -65,6 +69,8 @@ function controls(): void {
   newChat.disabled = !connected || sending || busy;
   if (state) sessionMenu.update(displaySessions(state));
   sessionDialog.update();
+  workspaceDialog.update();
+  element<HTMLButtonElement>("workspace-picker").disabled = !connected || sending || busy;
   if (state) cron.update(state, !connected || sending || busy);
   permissionMenu.update(state?.permissionMode, !connected || sending || busy || Boolean(state?.approval));
 }
@@ -178,6 +184,7 @@ function renderApproval(approval: Approval | null): void {
 }
 
 function render(next: WebUiState): void {
+  if (state && state.info.workspace !== next.info.workspace) filePreview.reset();
   const follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140 || next.turns.length !== state?.turns.length || next.approval?.id !== state?.approval?.id || next.current.id !== state?.current.id;
   state = next;
   element("welcome").hidden = next.turns.length > 0;
@@ -235,7 +242,7 @@ function renderDetails(next: WebUiState): void {
   const selected = displaySessions(next).find((session) => session.id === detailsSessionId);
   if (!selected) { dialog.close(); return; }
   const content = element("details-content"); content.replaceChildren();
-  for (const [key, value] of Object.entries({ Provider: next.info.provider, Model: next.info.model, Workspace: next.info.workspace,
+  for (const [key, value] of Object.entries({ Provider: next.info.provider, Model: next.info.model, Workspace: selected.workspace,
     "Session ID": selected.id, "Session name": selected.name ?? selected.title,
     "Active session": selected.id === next.current.id ? "Yes" : "No",
     "Saved locally": next.persistent ? "Yes" : "No", "Successful turns": selected.turnCount,
@@ -266,7 +273,7 @@ function renderSessions(next: WebUiState): void {
     const button = node("button", undefined, "conversation");
     const selected = session.id === next.current.id;
     button.setAttribute("aria-current", String(selected));
-    const metadata = `${session.turnCount} ${session.turnCount === 1 ? "turn" : "turns"} · ${sessionDate.format(new Date(session.updatedAt))}`;
+    const metadata = `${session.turnCount} ${session.turnCount === 1 ? "turn" : "turns"} · ${sessionDate.format(new Date(session.updatedAt))} · ${session.workspace}`;
     button.title = `${session.name ?? session.title}\n${metadata}\n${session.id}`;
     button.setAttribute("aria-description", metadata);
     button.dataset.sessionId = session.id;
@@ -326,6 +333,7 @@ function closeSidebar(): void {
 function sessionChanged(): void { prompt.value = ""; resize(); requestAnimationFrame(() => prompt.focus()); closeSidebar(); }
 
 async function sessionAction(action: SessionAction, session: SessionSummary): Promise<void> {
+  if (action === "workspace") { workspaceDialog.open(session); return; }
   if (action === "details") {
     if (!state) return;
     detailsSessionId = session.id;

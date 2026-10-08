@@ -1,0 +1,174 @@
+import assert from "node:assert/strict";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { join, relative } from "node:path";
+import test from "node:test";
+import { runInteractiveCommand } from "../src/commands.js";
+import { loadConfig } from "../src/config.js";
+import { HarnessError } from "../src/errors.js";
+import type { Model, ModelTurn } from "../src/model.js";
+import { SessionManager } from "../src/session/manager.js";
+import { SessionStore } from "../src/session/store.js";
+import { createTools } from "../src/tools.js";
+import { workspaceAgentFactory } from "../src/workspace-agent.js";
+import { WebUiController } from "../webui/controller.js";
+import { startWebUiServer } from "../webui/server.js";
+import { temporaryWorkspace } from "./fixtures/workspace.js";
+
+const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const agent = { maxIterations: 1, model: async () => answer() };
+const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
+
+test("global listing, ambiguous names and cross-workspace resume retain independent histories", async (t) => {
+  const { base, workspace, outside } = await temporaryWorkspace(t);
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const first = await SessionManager.open(agent, { workspace, store, selection: { name: "Shared name" } });
+  await first.run("History in A");
+  const second = await SessionManager.open(agent, { workspace: outside, store, selection: { name: "Shared name" } });
+  await second.run("History in B");
+  assert.deepEqual(await first.list(), await second.list());
+  assert.equal((await first.list()).length, 2);
+  await assert.rejects(first.resume("Shared name"), code("SESSION_AMBIGUOUS"));
+  assert.equal(first.current.workspace, workspace);
+  await first.resume(second.current.id);
+  assert.equal(first.current.workspace, outside);
+  assert.equal(first.history[1]?.content, "History in B");
+  const latest = await SessionManager.open(agent, { workspace, store, selection: { continue: true } });
+  assert.equal(latest.current.id, second.current.id);
+  await first.fork("B branch");
+  assert.equal(first.current.workspace, outside);
+  assert.equal(first.history[1]?.content, "History in B");
+  await first.newSession();
+  assert.equal(first.current.workspace, outside);
+});
+
+test("workspace command rebinds actual reads, writes, shell cwd and skill catalogs", async (t) => {
+  const { base, workspace, outside } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "marker.txt"), "A");
+  await writeFile(join(outside, "marker.txt"), "B");
+  const skillRoot = join(outside, ".agents", "skills", "outside-skill");
+  await mkdir(skillRoot, { recursive: true });
+  await writeFile(join(skillRoot, "SKILL.md"), "---\nname: outside-skill\ndescription: Outside test skill\n---\nRead marker.txt.\n");
+  const factory = workspaceAgentFactory(loadConfig({ DEEPSEEK_API_KEY: "offline-only" }),
+    (root) => createTools(root, "workspace-write", undefined, { permission: "allow" }));
+  const build = async (root: string) => {
+    const runtime = await factory(root);
+    const model: Model = async () => answer(JSON.stringify(await runtime.tools.execute("read", '{"path":"marker.txt"}')));
+    return { ...runtime, model };
+  };
+  const manager = await SessionManager.open(await build(workspace), { workspace,
+    store: new SessionStore({ root: join(base, "sessions") }), agentForWorkspace: build });
+  const id = manager.current.id;
+  assert.match(await manager.run("Read A"), /A/);
+  const change = await runInteractiveCommand(manager, `/workspace "${outside}"`);
+  assert.equal(change?.switched, true);
+  assert.equal(manager.current.id, id);
+  assert.equal(manager.current.turnCount, 1);
+  assert.equal(manager.current.workspace, outside);
+  assert.match(await manager.run("Read B"), /B/);
+  assert.match((await runInteractiveCommand(manager, "/skills"))!.text, /outside-skill/);
+  const tools = (await factory(outside)).tools;
+  assert.equal((await tools.execute("write", '{"path":"changed.txt","content":"B only"}')).ok, true);
+  await assert.rejects(readFile(join(workspace, "changed.txt")));
+  assert.equal(await readFile(join(outside, "changed.txt"), "utf8"), "B only");
+  const shell = await tools.execute("shell", '{"command":"(Get-Location).Path","cwd":"."}');
+  assert.equal(shell.ok, true);
+  assert.ok(JSON.stringify(shell).includes(outside.replaceAll("\\", "\\\\")));
+  assert.equal((await factory(workspace)).tools.getWrites?.().length, 0);
+  assert.equal((await factory(outside)).tools.getWrites?.().length, 1);
+  assert.equal((await factory(relative(process.cwd(), outside))).tools.getWrites?.().length, 1);
+});
+
+test("workspace changes persist in place and retain revision conflicts, drafts and unavailable-directory recovery", async (t) => {
+  const { base, workspace, outside } = await temporaryWorkspace(t);
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const manager = await SessionManager.open(agent, { workspace, store });
+  await manager.run("Keep my history");
+  const id = manager.current.id;
+  const stale = await SessionManager.open(agent, { workspace, store, selection: { resume: id } });
+  await manager.setWorkspace(outside);
+  assert.equal((await store.load(outside, id)).storageWorkspace, workspace);
+  assert.equal((await store.list(workspace)).length, 0);
+  assert.equal((await store.listAll()).length, 1);
+  await assert.rejects(stale.setWorkspace(outside), code("SESSION_CONFLICT"));
+  assert.equal(stale.current.workspace, workspace);
+  const old = manager.current;
+  await assert.rejects(manager.setWorkspace(join(base, "missing")), code("SESSION_WORKSPACE"));
+  assert.deepEqual(manager.current, old);
+  await rename(outside, join(base, "moved"));
+  assert.equal((await store.listAll()).length, 1);
+  await assert.rejects(stale.resume(id), code("SESSION_WORKSPACE"));
+  assert.equal(stale.current.workspace, workspace);
+  await assert.rejects(stale.setWorkspace(workspace, id), code("SESSION_CONFLICT"));
+  const fresh = await SessionManager.open(agent, { workspace, store, deferEmptySessions: true });
+  await fresh.setWorkspace(workspace, id);
+  assert.equal((await store.loadAny(id)).workspace, workspace);
+  await fresh.setWorkspace(join(base, "moved"));
+  assert.equal(fresh.current.revision, 0);
+  assert.equal((await store.listAll()).length, 1);
+  await fresh.run("Save this draft");
+  assert.equal((await store.loadAny(fresh.current.id)).workspace, join(base, "moved"));
+  await fresh.delete(fresh.current.id);
+  assert.equal(fresh.current.workspace, join(base, "moved"));
+});
+
+test("workspace switching refuses busy turns and does not grant permissions or run foreign automation", async (t) => {
+  const { base, workspace, outside } = await temporaryWorkspace(t);
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const foreign = await SessionManager.open(agent, { workspace: outside, store });
+  await foreign.manageAutomation({ action: "create", prompt: "Foreign task", trigger: { type: "interval", seconds: 60 }, maxRuns: 1 });
+  const factory = async (root: string) => ({ ...agent, tools: await createTools(root, "read-only", undefined, { permission: "deny" }) });
+  const manager = await SessionManager.open(await factory(workspace), { workspace, store, agentForWorkspace: factory });
+  assert.equal((await manager.listAutomations()).length, 0);
+  await manager.resume(foreign.current.id);
+  assert.equal((await manager.listAutomations())[0]?.workspace, outside);
+  const runtime = await factory(outside);
+  const result = await runtime.tools.execute("write", '{"path":"denied.txt","content":"no"}');
+  assert.match(JSON.stringify(result), /PERMISSION_DENIED/);
+  let finish!: () => void;
+  const slow = { maxIterations: 1, model: async () => { await new Promise<void>((resolve) => { finish = resolve; }); return answer(); } };
+  const busy = await SessionManager.open(slow, { workspace, persistence: false });
+  const running = busy.run("Wait");
+  while (!finish) await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(busy.setWorkspace(outside), code("SESSION_BUSY"));
+  await assert.rejects(busy.resume(foreign.current.id), code("SESSION_BUSY"));
+  finish();
+  await running;
+  assert.equal(busy.current.workspace, workspace);
+});
+
+test("Web UI lists all sessions, selects directories and keeps preview reads on the active workspace", async (t) => {
+  const { base, workspace, outside } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "index.html"), "<h1>A</h1>");
+  await writeFile(join(outside, "index.html"), "<h1>B</h1>");
+  const store = new SessionStore({ root: join(base, "sessions") });
+  const foreign = await SessionManager.open(agent, { workspace: outside, store, selection: { name: "B" } });
+  const manager = await SessionManager.open(agent, { workspace, store, deferEmptySessions: true });
+  const controller = await WebUiController.create({ provider: "deepseek", model: "offline", workspace,
+    permission: "read-only", shellPermission: "deny", webPermission: "deny", maxIterations: 1, maxRequestBytes: 262144,
+    skills: 0, warnings: [] }, manager);
+  const server = await startWebUiServer(controller, 0);
+  t.after(() => server.close());
+  const token = new URL(server.url).hash.slice("#token=".length);
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const post = (path: string, body: unknown) => fetch(`${server.origin}/api/${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+  assert.equal(controller.snapshot().sessions[0]?.id, foreign.current.id);
+  assert.equal((await fetch(`${server.origin}/api/workspaces`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: base }) })).status, 401);
+  const listing = await (await post("workspaces", { path: base })).json() as { entries: { path: string; directory: boolean }[] };
+  assert.ok(listing.entries.some((entry) => entry.path === outside && entry.directory));
+  const oldPreview = await (await post("preview", { path: "index.html" })).json() as { url: string };
+  assert.equal((await post("session/resume", { id: foreign.current.id })).status, 202);
+  assert.equal(controller.snapshot().info.workspace, outside);
+  assert.equal((await fetch(`${server.origin}${oldPreview.url}`)).status, 404);
+  const currentPreview = await (await post("preview", { path: "index.html" })).json() as { url: string };
+  assert.equal(await (await fetch(`${server.origin}${currentPreview.url}`)).text(), "<h1>B</h1>");
+  await controller.newSession();
+  const draftId = controller.snapshot().current.id;
+  assert.equal((await post("session/workspace", { path: workspace, id: draftId })).status, 202);
+  assert.equal(controller.snapshot().info.workspace, workspace);
+  assert.equal(controller.snapshot().current.revision, 0);
+  assert.equal((await post("session/workspace", { path: workspace, id: foreign.current.id })).status, 202);
+  assert.equal(controller.snapshot().current.id, draftId);
+  assert.equal((await store.loadAny(foreign.current.id)).workspace, workspace);
+  assert.equal((await post("session/workspace", { path: join(base, "missing"), id: draftId })).status, 400);
+  assert.equal(controller.snapshot().info.workspace, workspace);
+});

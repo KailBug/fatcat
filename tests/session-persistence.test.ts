@@ -85,7 +85,9 @@ test("new, switch, rename, fork and continue retain separate workspace histories
   assert.equal(manager.history[1]?.content, "Second prompt");
   const latest = await SessionManager.open(agent, { workspace, store, selection: { continue: true } });
   assert.equal(latest.current.id, fork);
-  await assert.rejects(SessionManager.open(agent, { workspace: outside, store, selection: { resume: original } }), expectCode("SESSION_NOT_FOUND"));
+  const elsewhere = await SessionManager.open(agent, { workspace: outside, store, selection: { resume: original } });
+  assert.equal(elsewhere.current.workspace, workspace);
+  assert.equal(elsewhere.current.id, original);
   assert.equal((await store.list(outside)).length, 0);
   assert.equal((await manager.list()).length, 3);
   const alias = await store.list(join(workspace, "."));
@@ -156,7 +158,8 @@ test("session deletion checks workspace, revision and active owners before remov
   const manager = await SessionManager.open(agent, { workspace, store });
   const id = manager.current.id;
   const foreign = await SessionManager.open(agent, { workspace: outside, store });
-  await assert.rejects(manager.delete(foreign.current.id), expectCode("SESSION_NOT_FOUND"));
+  await manager.delete(foreign.current.id);
+  await assert.rejects(store.loadAny(foreign.current.id), expectCode("SESSION_NOT_FOUND"));
   await assert.rejects(store.delete(outside, id, manager.current.revision), expectCode("SESSION_NOT_FOUND"));
   await assert.rejects(store.delete(workspace, "../outside", manager.current.revision), expectCode("SESSION_NOT_FOUND"));
   const stale = await SessionManager.open(agent, { workspace, store, selection: { resume: id } });
@@ -174,9 +177,9 @@ test("session deletion checks workspace, revision and active owners before remov
   await assert.rejects(reader.delete(id), expectCode("SESSION_BUSY"));
   await assert.rejects(reader.rename("Busy rename", id), expectCode("SESSION_BUSY"));
   await assert.rejects(reader.fork("Busy fork", id), expectCode("SESSION_BUSY"));
-  await assert.rejects(foreign.delete(id), expectCode("SESSION_NOT_FOUND"));
+  await assert.rejects(foreign.delete(id), expectCode("SESSION_BUSY"));
   assert.equal((await store.load(workspace, id)).attempt?.status, "running");
-  assert.equal((await store.list(outside)).length, 1);
+  assert.equal((await store.list(outside)).length, 0);
 });
 
 test("failed and cancelled partial attempts keep prior success and provide recovery data", async (t) => {

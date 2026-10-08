@@ -70,6 +70,7 @@ export class WebUiController {
 
   static async create(info: WebUiInfo, session: SessionManager, permissionPolicy?: PermissionPolicy): Promise<WebUiController> {
     const controller = new WebUiController(info, session, permissionPolicy);
+    controller.updateWorkspace();
     controller.turns = restoredTurns(session.history, session.current.id);
     controller.sessions = await session.list();
     controller.automationTasks = await session.listAutomations();
@@ -162,6 +163,18 @@ export class WebUiController {
     return this.changeSession(() => this.session.resume(selector));
   }
 
+  setWorkspace(path: string, id?: string): Promise<void> {
+    return this.changeSession(() => this.session.setWorkspace(path, id), id === undefined || id === this.session.current.id);
+  }
+
+  private updateWorkspace(): void {
+    this.info.workspace = this.session.current.workspace;
+    if (this.session.skills) {
+      this.info.skills = this.session.skills.skills.length;
+      this.info.warnings = [...this.session.skills.warnings];
+    }
+  }
+
   rename(name: string, id?: string): Promise<void> {
     return this.changeSession(() => this.session.rename(name, id), false);
   }
@@ -179,7 +192,11 @@ export class WebUiController {
     this.requireIdle();
     const task = newBoundTask(value);
     await this.changeSession(async () => {
-      if (task.trigger.type === "file_changed") await FileChanges.open(this.info.workspace, task.trigger.paths);
+      if (task.trigger.type === "file_changed") {
+        const workspace = sessionId ? (await this.session.list()).find((item) => item.id === sessionId)?.workspace : this.info.workspace;
+        if (!workspace) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists.");
+        await FileChanges.open(workspace, task.trigger.paths);
+      }
       if (!sessionId) await this.session.newSession();
       await this.session.manageSessionAutomation(sessionId ?? this.session.current.id, { action: "create", ...(value as object) });
     }, !sessionId);
@@ -195,6 +212,7 @@ export class WebUiController {
     const done = Promise.resolve().then(async () => {
       try {
         await change();
+        this.updateWorkspace();
         if (restore) {
           this.turns = restoredTurns(this.session.history, this.session.current.id);
           this.contextUsage.reset();

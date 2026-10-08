@@ -7,12 +7,13 @@ import { readTextFile } from "../src/permissions/text-file.js";
 const extensions = new Set([".html", ".htm", ".svg"]);
 const lifetimeMs = 60_000;
 const maxSnapshots = 8;
-type Snapshot = { content: Buffer; contentType: string; expiresAt: number };
+type Snapshot = { content: Buffer; contentType: string; expiresAt: number; workspace: string };
 
 /** Only explicit workspace files become short-lived, single-use frame documents. */
-export async function createPreviewStore(root: string) {
+export async function createPreviewStore(root: string | (() => string)) {
   // Preview never inherits Free to go access outside the workspace.
-  const workspace = await createWorkspace(root);
+  const getRoot = typeof root === "string" ? () => root : root;
+  await createWorkspace(getRoot());
   const snapshots = new Map<string, Snapshot>();
   let reading = 0;
   let closed = false;
@@ -30,16 +31,19 @@ export async function createPreviewStore(root: string) {
       if (reading >= 4) throw new HarnessError("PREVIEW_BUSY", "Too many preview reads. Try again shortly.");
       reading++;
       try {
+        const selectedRoot = getRoot();
+        const workspace = await createWorkspace(selectedRoot);
         const target = await workspace.resolvePath(path, signal);
         if (!target.stat.isFile()) throw new HarnessError("PREVIEW_PATH", "Select an HTML or SVG file, not a directory.");
         const { bytes } = await readTextFile(target, signal, extensions);
         checkCancellation(signal);
         if (closed) throw new HarnessError("CLOSED", "The local server is shutting down.");
+        if (getRoot() !== selectedRoot) throw new HarnessError("PREVIEW_PATH", "The workspace changed. Open the preview again.");
         const id = randomBytes(32).toString("hex");
         prune();
         if (snapshots.size >= maxSnapshots) snapshots.delete(snapshots.keys().next().value!);
         snapshots.set(id, { content: bytes, contentType: extname(target.relative).toLowerCase() === ".svg"
-          ? "image/svg+xml; charset=utf-8" : "text/html; charset=utf-8", expiresAt: Date.now() + lifetimeMs });
+          ? "image/svg+xml; charset=utf-8" : "text/html; charset=utf-8", expiresAt: Date.now() + lifetimeMs, workspace: selectedRoot });
         return { path: target.relative, url: `/preview/${id}`, bytes: bytes.length };
       } catch (error) {
         if (error instanceof HarnessError) throw error;
@@ -50,7 +54,7 @@ export async function createPreviewStore(root: string) {
       prune();
       const snapshot = snapshots.get(id);
       snapshots.delete(id);
-      return snapshot;
+      return snapshot?.workspace === getRoot() ? snapshot : undefined;
     },
     close(): void { closed = true; snapshots.clear(); },
   };

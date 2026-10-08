@@ -11,9 +11,8 @@ import { formatSessionList } from "./session/commands.js";
 import { loadConfig } from "./config.js";
 import { HarnessError, formatError } from "./errors.js";
 import { createTurnReporter } from "./execution-report.js";
-import { createAgent } from "./agent.js";
+import { workspaceAgentFactory } from "./workspace-agent.js";
 import { createTools } from "./tools.js";
-import { discoverSkills } from "./skills.js";
 import type { SkillCatalog } from "./skills.js";
 import { PermissionPolicy, isPermissionMode } from "./permissions/policy.js";
 import { loadAutomationConfig } from "./automation/config.js";
@@ -54,9 +53,10 @@ A prompt runs one task. Successful history is saved locally for the selected wor
 Use --continue (-c) to continue the latest session, or --resume (-r) <id-or-name> to select one.
 Bare --resume shows a session picker in a terminal or a local list for pipes, without model credentials.
 Use --name (-n) <name> to name a session; --fork-session with --continue or --resume copies history into a new session.
-Use /sessions in chat or TUI to list saved workspace sessions; --no-session-persistence keeps a new session in memory.
+Use /sessions in chat or TUI to list all saved sessions; --no-session-persistence keeps a new session in memory.
 Session storage defaults to ~/.fatcat/sessions; FATCAT_SESSION_DIR selects another local store.
-Restored sessions use the current launch's provider, workspace and permission settings.
+Restored sessions use their saved workspace with the current launch's provider and permission settings.
+Use /workspace <path> in chat or TUI, or click the Web UI workspace path, to change the session workspace.
 The agent can delegate focused independent tasks when useful; simple tasks stay direct.
 At most two child tasks may start per user turn (up to six additional model requests).
 Each child uses at most three additional model requests and cannot delegate.
@@ -186,8 +186,7 @@ async function main(args: string[]): Promise<number> {
       return 0;
     }
     if (values.resume === "" && (!process.stdin.isTTY || !process.stderr.isTTY)) {
-      const tools = await createTools(values.workspace ?? process.cwd());
-      const sessions = await new SessionStore().list(tools.workspaceRoot!);
+      const sessions = await new SessionStore().listAll();
       console.log(formatSessionList(sessions));
       return 0;
     }
@@ -218,8 +217,7 @@ async function main(args: string[]): Promise<number> {
     if (values.resume === "") {
       process.on("SIGINT", cancel);
       terminal = createTerminalInput(process.stdin, process.stderr, controller.signal);
-      const tools = await createTools(values.workspace ?? process.cwd());
-      const sessions = await new SessionStore().list(tools.workspaceRoot!);
+      const sessions = await new SessionStore().listAll();
       console.error(formatSessionList(sessions));
       if (!sessions.length) return 0;
       console.error("Enter a session ID or name to resume, or /exit to cancel.");
@@ -263,19 +261,19 @@ async function main(args: string[]): Promise<number> {
       terminal = createTerminalInput(process.stdin, process.stderr, controller.signal);
     }
     const signal = terminal?.signal ?? controller.signal;
-    const baseTools = await createTools(workspace, permission, terminal?.approveWrite, {
+    const agentForWorkspace = workspaceAgentFactory(config, (root) => createTools(root, permission, terminal?.approveWrite, {
       permission: shellPermission,
       ...(terminal ? { approve: terminal.approveShell } : {}),
-    }, { permission: webPermission }, permissionPolicy, terminal ? { approve: terminal.approveBrowser } : {});
-    const skills = await discoverSkills({ workspace: baseTools.workspaceRoot!, signal });
+    }, { permission: webPermission }, permissionPolicy, terminal ? { approve: terminal.approveBrowser } : {}));
+    const agent = await agentForWorkspace(workspace);
+    const skills = agent.skills;
     reportSkillWarnings(skills);
-    const agent = createAgent(config, baseTools, undefined, skills);
     if (automation) {
-      await runAutomations(automation.config, agent, { workspace: baseTools.workspaceRoot!, signal,
+      await runAutomations(automation.config, agent, { workspace: agent.tools.workspaceRoot!, signal,
         emit: (event) => (event.type === "automation_finished" ? console.log : console.error)(JSON.stringify(event)) });
       return 0;
     }
-    const session = await SessionManager.open(agent, { ...sessionOptions, workspace: baseTools.workspaceRoot! });
+    const session = await SessionManager.open(agent, { ...sessionOptions, workspace: agent.tools.workspaceRoot!, agentForWorkspace });
     if (values.chat) {
       return await runChat(session, {
         input: process.stdin, output: process.stdout, error: process.stderr, signal, terminal: terminal!, skills: skills.skills,

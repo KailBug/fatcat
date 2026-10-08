@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
 import type { LoopOptions, LoopEvent } from "../loop.js";
 import type { Message } from "../model.js";
@@ -9,14 +10,16 @@ import { newBoundTask, taskIsEnabled } from "../automation/tasks.js";
 import type { BoundTask, SessionAutomation } from "../automation/tasks.js";
 import { withAutomationTool } from "../automation/tool.js";
 import { FileChanges } from "../automation/files.js";
+import type { SkillCatalog } from "../skills.js";
 
 export type SessionSelection = { continue?: boolean; resume?: string; fork?: boolean; name?: string };
 export type SessionOpenOptions = {
   workspace: string; store?: SessionStore; selection?: SessionSelection; persistence?: boolean;
   /** Keep unnamed new sessions off the saved list until the first run (Web UI). */
   deferEmptySessions?: boolean;
+  agentForWorkspace?: (workspace: string) => Promise<AgentOptions>;
 };
-type AgentOptions = Pick<LoopOptions, "model" | "maxIterations" | "tools">;
+type AgentOptions = Pick<LoopOptions, "model" | "maxIterations" | "tools"> & { skills?: SkillCatalog };
 
 function available(record: SessionRecord): void {
   if (record.attempt?.status === "running" && processAlive(record.attempt.ownerPid)) {
@@ -44,8 +47,9 @@ export class SessionManager {
   private automationTurn = false;
   private triggerContext: { taskId: string; scheduledAt: number; paths: string[] } | undefined;
   private readonly memory = new Map<string, SessionRecord>();
-  private constructor(private readonly agent: AgentOptions, private readonly workspace: string,
-    private readonly store: SessionStore, readonly persistent: boolean, private readonly deferEmptySessions: boolean) {}
+  private constructor(private agent: AgentOptions, private workspace: string,
+    private readonly store: SessionStore, readonly persistent: boolean, private readonly deferEmptySessions: boolean,
+    private readonly agentForWorkspace?: SessionOpenOptions["agentForWorkspace"]) {}
 
   static async open(agent: AgentOptions, options: SessionOpenOptions): Promise<SessionManager> {
     const selection = options.selection ?? {};
@@ -55,10 +59,10 @@ export class SessionManager {
       throw new HarnessError("USAGE", "Persistent session selection cannot be used with --no-session-persistence.");
     }
     const manager = new SessionManager(agent, await canonicalWorkspace(options.workspace), options.store ?? new SessionStore(),
-      options.persistence !== false, options.deferEmptySessions === true);
+      options.persistence !== false, options.deferEmptySessions === true, options.agentForWorkspace);
     if (selection.continue) {
       const latest = (await manager.list())[0];
-      if (!latest) throw new HarnessError("SESSION_NOT_FOUND", "There is no previous session in this workspace. Start a new conversation first.");
+      if (!latest) throw new HarnessError("SESSION_NOT_FOUND", "There is no previous session. Start a new conversation first.");
       await manager.resume(latest.id);
     } else if (selection.resume !== undefined) await manager.resume(selection.resume);
     else await manager.newSession(selection.name);
@@ -69,16 +73,21 @@ export class SessionManager {
 
   get current(): SessionSummary { return sessionSummary(this.record); }
   get history(): Message[] { return this.session.messages; }
+  get skills(): SkillCatalog | undefined { return this.agent.skills; }
   get automationWorkspace(): string { return this.workspace; }
   get automationStoreRoot(): string { return this.store.root; }
   get isBusy(): boolean { return this.busy; }
 
   async listAutomations(): Promise<SessionAutomation[]> {
+    const workspace = this.workspace;
     const result: SessionAutomation[] = [];
     for (const summary of await this.list()) {
+      // Listing sessions globally must not start automation in unrelated projects.
+      if (summary.workspace !== workspace) continue;
       if (!summary.automationCount) continue;
-      const record = this.persistent ? await this.store.load(this.workspace, summary.id) : await this.selectedRecord(summary.id);
-      result.push(...(record.automations ?? []).map((task) => ({ ...structuredClone(task), sessionId: record.id, sessionTitle: record.name ?? record.title })));
+      const record = this.persistent ? await this.store.loadAny(summary.id) : await this.selectedRecord(summary.id);
+      if (record.workspace !== workspace) continue;
+      result.push(...(record.automations ?? []).map((task) => ({ ...structuredClone(task), workspace: record.workspace, sessionId: record.id, sessionTitle: record.name ?? record.title })));
     }
     return result;
   }
@@ -101,31 +110,32 @@ export class SessionManager {
     const record = await this.selectedRecord(id);
     available(record);
     if (!this.persistent) throw new HarnessError("AUTOMATION_UNAVAILABLE", "Background sessions require persistence.");
-    return SessionManager.open(this.agent, { workspace: this.workspace, store: this.store, selection: { resume: record.id } });
+    return SessionManager.open(this.agent, { workspace: this.workspace, store: this.store,
+      ...(this.agentForWorkspace ? { agentForWorkspace: this.agentForWorkspace } : {}), selection: { resume: record.id } });
   }
 
   async runAutomation(sessionId: string, taskId: string, scheduledAt: number, paths: string[],
     options: Pick<LoopOptions, "signal" | "onEvent"> = {}): Promise<string> {
     this.requireIdle();
-    if (sessionId === this.current.id && this.persistent) {
-      const latest = await this.store.load(this.workspace, sessionId);
-      this.requireIdle();
-      available(latest);
-      if (latest.revision !== this.record.revision) this.activate(latest);
-    }
-    const target = sessionId === this.current.id ? this : await this.automationSession(sessionId);
-    this.requireIdle();
-    const task = target.record.automations?.find((item) => item.id === taskId);
-    if (!task || !taskIsEnabled(task) || task.lastStatus === "running"
-      || (task.lastScheduledAt !== undefined && scheduledAt <= task.lastScheduledAt)) {
-      throw new HarnessError("AUTOMATION_INACTIVE", "This activation is no longer eligible.");
-    }
-    if (target !== this) this.busy = true;
+    this.busy = true;
     try {
+      if (sessionId === this.current.id && this.persistent) {
+        const latest = await this.store.loadAny(sessionId);
+        available(latest);
+        if (latest.workspace !== this.workspace) throw new HarnessError("AUTOMATION_INACTIVE", "The session workspace changed. Resume it before running its automation.");
+        if (latest.revision !== this.record.revision) this.activate(latest);
+      }
+      const target = sessionId === this.current.id ? this : await this.automationSession(sessionId);
+      const task = target.record.automations?.find((item) => item.id === taskId);
+      if (target.workspace !== this.workspace || !task || !taskIsEnabled(task) || task.lastStatus === "running"
+        || (task.lastScheduledAt !== undefined && scheduledAt <= task.lastScheduledAt)) {
+        throw new HarnessError("AUTOMATION_INACTIVE", "This activation is no longer eligible in the selected workspace.");
+      }
       const expiry = AbortSignal.timeout(Math.max(1, task.expiresAt - Date.now()));
+      if (target === this) this.busy = false;
       return await target.run(task.prompt, { ...options,
         signal: options.signal ? AbortSignal.any([options.signal, expiry]) : expiry, automation: { taskId, scheduledAt, paths } });
-    } finally { if (target !== this) this.busy = false; }
+    } finally { this.busy = false; }
   }
 
   private async applyAutomation(value: unknown, signal?: AbortSignal): Promise<unknown> {
@@ -173,7 +183,7 @@ export class SessionManager {
   }
 
   async list(): Promise<SessionSummary[]> {
-    return this.persistent ? this.store.list(this.workspace) : [...this.memory.values()].map(sessionSummary)
+    return this.persistent ? this.store.listAll() : [...this.memory.values()].map(sessionSummary)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
   }
 
@@ -190,7 +200,7 @@ export class SessionManager {
   async resume(selector: string): Promise<void> {
     await this.change(async () => {
       let record: SessionRecord;
-      if (this.persistent) record = await this.store.load(this.workspace, selector);
+      if (this.persistent) record = await this.store.loadAny(selector);
       else {
         const records = [...this.memory.values()].filter((item) => item.id === selector || item.name === selector || item.title === selector);
         if (!records.length) throw new HarnessError("SESSION_NOT_FOUND", "No matching in-memory session exists.");
@@ -198,6 +208,8 @@ export class SessionManager {
         record = structuredClone(records[0]!);
       }
       available(record);
+      const agent = await this.prepareWorkspace(record.workspace);
+      this.agent = agent;
       this.activate(record);
     });
   }
@@ -212,15 +224,45 @@ export class SessionManager {
     });
   }
 
+  async setWorkspace(path: string, id?: string): Promise<void> {
+    await this.change(async () => {
+      const selected = await this.selectedRecord(id);
+      available(selected);
+      const workspace = await canonicalWorkspace(resolve(selected.workspace, path));
+      const agent = await this.prepareWorkspace(workspace);
+      for (const task of selected.automations ?? []) {
+        if (taskIsEnabled(task) && task.trigger.type === "file_changed") await FileChanges.open(workspace, task.trigger.paths);
+      }
+      const updated = { ...selected, workspace, storageWorkspace: selected.storageWorkspace ?? selected.workspace,
+        updatedAt: new Date().toISOString() };
+      const saved = selected.revision === 0 ? updated : await this.persist(updated);
+      if (selected.id === this.record.id) {
+        this.agent = agent;
+        this.activate(saved);
+      }
+    });
+  }
+
+  private async prepareWorkspace(workspace: string): Promise<AgentOptions> {
+    const canonical = await canonicalWorkspace(workspace);
+    if (this.agentForWorkspace) return this.agentForWorkspace(canonical);
+    if (canonical !== this.workspace && this.agent.tools?.workspaceRoot !== undefined) {
+      throw new HarnessError("SESSION_WORKSPACE", "This host must provide an agent factory to switch tool workspaces.");
+    }
+    return this.agent;
+  }
+
   async fork(name?: string, id?: string): Promise<void> {
     await this.change(async () => {
       const selected = await this.selectedRecord(id);
       available(selected);
+      const agent = await this.prepareWorkspace(selected.workspace);
       const now = new Date().toISOString();
       const record = await this.persist({ ...selected, id: randomUUID(), name: name === undefined ? null : sessionName(name),
         title: name === undefined ? `${selected.title.slice(0, 110)} (fork)` : sessionName(name),
         forkedFrom: selected.revision === 0 ? null : selected.id, createdAt: now, updatedAt: now, revision: 0, automations: [] },
       selected.revision === 0 ? undefined : selected);
+      this.agent = agent;
       this.activate(record);
     });
   }
@@ -228,7 +270,7 @@ export class SessionManager {
   async delete(id: string, expectedRevision?: number): Promise<void> {
     await this.change(async () => {
       const selected = expectedRevision !== undefined && this.persistent
-        ? await this.store.load(this.workspace, id) : await this.selectedRecord(id);
+        ? await this.store.loadAny(id) : await this.selectedRecord(id);
       if (selected.id !== id) throw new HarnessError("SESSION_NOT_FOUND", "No matching session ID exists in this workspace.");
       if (expectedRevision !== undefined && selected.revision !== expectedRevision) {
         throw new HarnessError("SESSION_CONFLICT", "The saved session changed. Refresh it before deleting.");
@@ -238,15 +280,15 @@ export class SessionManager {
       if (this.deferEmptySessions) {
         // A draft has revision zero and has never entered the saved-session list.
         if (selected.revision > 0) {
-          if (this.persistent) await this.store.delete(this.workspace, id, selected.revision);
+          if (this.persistent) await this.store.delete(selected.storageWorkspace ?? selected.workspace, id, selected.revision);
           else this.memory.delete(id);
         }
         if (active) this.activate(this.emptyRecord());
         return;
       }
       let replacement: SessionRecord | undefined;
-      if (this.persistent) replacement = await this.store.delete(this.workspace, id, selected.revision,
-        active ? this.emptyRecord() : undefined);
+      if (this.persistent) replacement = await this.store.delete(selected.storageWorkspace ?? selected.workspace, id, selected.revision,
+        active ? { ...this.emptyRecord(), storageWorkspace: selected.storageWorkspace ?? selected.workspace } : undefined);
       else {
         if (active) replacement = await this.persist(this.emptyRecord());
         this.memory.delete(id);
@@ -326,7 +368,7 @@ export class SessionManager {
 
   private async selectedRecord(id?: string): Promise<SessionRecord> {
     if (id === undefined || id === this.record.id) return structuredClone(this.record);
-    const record = this.persistent ? await this.store.load(this.workspace, id) : this.memory.get(id);
+    const record = this.persistent ? await this.store.loadAny(id) : this.memory.get(id);
     if (!record || record.id !== id) throw new HarnessError("SESSION_NOT_FOUND", "No matching session ID exists in this workspace.");
     return structuredClone(record);
   }
@@ -334,6 +376,7 @@ export class SessionManager {
   private activate(record: SessionRecord): void {
     const recovery = record.attempt;
     this.record = record;
+    this.workspace = record.workspace;
     this.session = new Session({ ...this.agent, tools: withAutomationTool(this.agent.tools, (args, signal) => this.applyAutomation(args, signal)),
       model: (messages, signal, observe, requestOptions) => {
         let projected: Message[] = recovery ? [messages[0]!, { role: "user", content: recoveryNotice(recovery) }, ...messages.slice(1)] : messages;

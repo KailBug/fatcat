@@ -6,7 +6,7 @@ import type { SessionSummary } from "./store.js";
 export type Conversation = Session | SessionManager;
 
 export const sessionCommandHelp = "/new [name], /clear, /reset: start a new session; /sessions: list sessions; "
-  + "/resume <id|name>: switch; /rename <name>: rename; /fork [name]: copy history into a new session.";
+  + "/resume <id|name>: switch; /workspace [path]: show or change workspace; /rename <name>: rename; /fork [name]: copy history into a new session.";
 
 function quoted(value: string): string {
   return JSON.stringify(value).replace(/[\u007f-\u009f]/g,
@@ -18,9 +18,9 @@ export function sessionLabel(summary: SessionSummary): string {
 }
 
 export function formatSessionList(sessions: readonly SessionSummary[], activeId?: string): string {
-  if (!sessions.length) return "No saved sessions for this workspace.";
+  if (!sessions.length) return "No saved sessions.";
   return sessions.map((session) => `${session.id === activeId ? "*" : " "} ${sessionLabel(session)} | `
-    + `${session.turnCount} saved turns | ${session.updatedAt} | ${quoted(session.title)}`
+    + `${session.turnCount} saved turns | ${session.updatedAt} | ${quoted(session.title)} | ${quoted(session.workspace)}`
     + `${session.interrupted ? " | interrupted" : ""}${session.automationCount ? ` | [clock] ${session.automationCount} automation(s)` : ""}`).join("\n");
 }
 
@@ -28,7 +28,7 @@ export function formatSessionList(sessions: readonly SessionSummary[], activeId?
 export async function runSessionCommand(session: Conversation, prompt: string): Promise<{
   text: string; switched: boolean;
 } | undefined> {
-  const match = /^\/(new|clear|reset|sessions|resume|rename|fork)(?:\s+([\s\S]*))?$/.exec(prompt);
+  const match = /^\/(new|clear|reset|sessions|resume|rename|fork|workspace)(?:\s+([\s\S]*))?$/.exec(prompt);
   if (!match) return undefined;
   const command = match[1]!;
   const argument = match[2]?.trim();
@@ -45,6 +45,13 @@ export async function runSessionCommand(session: Conversation, prompt: string): 
   if (command === "sessions" || (command === "resume" && !argument)) {
     return { text: formatSessionList(await session.list(), session.current.id), switched: false };
   }
+  if (command === "workspace") {
+    if (argument) {
+      const path = argument.startsWith('"') && argument.endsWith('"') ? argument.slice(1, -1) : argument;
+      await session.setWorkspace(path);
+    }
+    return { text: `Workspace: ${quoted(session.current.workspace)}`, switched: Boolean(argument) };
+  }
   if (command === "rename") {
     if (!argument) throw new HarnessError("USAGE", "Use /rename <name>.");
     await session.rename(argument);
@@ -55,6 +62,7 @@ export async function runSessionCommand(session: Conversation, prompt: string): 
   else await session.newSession(argument || undefined);
   return {
     text: `${command === "resume" ? "Resumed" : command === "fork" ? "Forked" : "New"} session: ${sessionLabel(session.current)}.`
+      + ` Workspace: ${quoted(session.current.workspace)}.`
       + (session.current.interrupted ? " The last turn was interrupted; inspect workspace files before repeating operations." : ""),
     switched: true,
   };

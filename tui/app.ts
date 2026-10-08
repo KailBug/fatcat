@@ -315,6 +315,13 @@ export class TuiApp {
 
   private updateSessionFooter(): void {
     if (!(this.session instanceof SessionManager)) return;
+    this.options.workspace = this.session.current.workspace;
+    this.state.workspace = this.session.current.workspace;
+    if (this.session.skills) {
+      this.options.skills = this.session.skills.skills.length;
+      this.options.skillCatalog = this.session.skills.skills;
+      this.options.warnings = this.session.skills.warnings;
+    }
     this.state.footer = `session ${sessionLabel(this.session.current)}${this.session.current.automationCount ? ` | [clock] ${this.session.current.automationCount} automation(s)` : ""} | write ${this.options.workspace === undefined ? "off" : this.options.permission} | `
       + `shell ${this.options.shellPermission} | web ${this.options.webPermission ?? "deny"} | skills ${this.options.skills}`;
   }

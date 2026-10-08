@@ -2,7 +2,7 @@
 
 ## 范围与现状
 
-2026-10-03：侧栏列出全部工作区会话，选择后 workspace/Tools/Skills 同步更新。点击 composer 工作区路径或会话菜单 Change workspace 打开 `client/workspace-dialog.ts`，支持目录列表、上级、Home、Windows 盘符和路径输入，文件项仅显示名称。`workspaces.ts` 最多读取 1000 项；`/api/workspaces` 与 `/api/session/workspace` 沿原 capability、Origin 和 JSON 校验，不作为模型工具。新草稿选择目录不提前落盘，已有会话保留 ID/历史和修订保护，未选中会话的修改不改变当前选择。运行中禁止应用修改；预览按当前目录解析，目录切换撤下旧预览/报告并拒绝旧工作区快照。
+侧栏列出全部工作区会话，选择后 workspace/Tools/Skills 同步更新。2026-10-08 按用户反馈移除网页目录弹窗，点击 composer 工作区路径或会话菜单 Change workspace 经认证 `POST /api/session/choose-workspace`（仅 `{id}`）打开 Windows 原生资源管理器样式的文件夹窗口。选择结果仍由 SessionManager 校验和绑定；新草稿不提前落盘，已有会话保留 ID/历史和修订保护，未选中会话的修改不改变当前选择。取消保留目录、transcript 和报告。选择期间使用原会话管理锁，拒绝重复选择、模型执行和其他会话变更；断连、关服或 5 分钟期限会取消 helper。预览按当前目录解析，目录切换撤下旧预览/报告并拒绝旧工作区快照。原 `/api/workspaces`（最多 1000 项）及 `/api/session/workspace` 保留现有接口与校验，不再用于页面目录导航，也不是模型工具。
 
 2D-15 增加侧栏 Cron tasks 模块，`client/cron.ts` 用 DOM 构建可访问表单和任务管理，支持既有/新会话绑定、四类触发器、次数/期限和暂停/恢复/删除。会话标题最右端显示时钟。认证 `/api/automation/create`、`/api/automation/manage` 交由 controller 与 SessionManager 校验。共享 ConversationAutomations 空闲触发原回合与审批，后台目标不改变当前选择；WebUiState 发布任务、错误及 runningSessionId，自动回合显示来源。详见 [AUTOMATION.md](AUTOMATION.md)。
 
@@ -15,6 +15,7 @@
 | `src/cli.ts` | 模式互斥、`--webui` / `--port` 参数、已有配置和权限选项；动态加载 Web UI。 |
 | `webui/index.ts` | 创建相同的 Tools、Skills、Agent 和 SessionManager，注入浏览器审批回调；SIGINT/SIGTERM 停止服务与活动回合。配置只向浏览器暴露显式白名单字段。 |
 | `webui/open-browser.ts` | 服务监听后一次性打开私有本地链接；原生进程参数、隐藏 Windows helper、短期限及安全错误；不参与服务或模型状态。 |
+| `webui/folder-picker.ts`、`webui/native-folder-dialog.ps1` | 有界、可取消的原生目录选择桥接；PowerShell 5.1 STA 调用 Windows IFileDialog/FOS_PICKFOLDERS，返回 UTF-8 JSON；通过环境变量传递初始路径，固定脚本和参数不拼接用户输入。 |
 | `webui/controller.ts` | 单活动回合、显示用 transcript、当前状态及版本号；复用权限协调器处理待批操作，共享策略只允许空闲模式选择；2D-14 复用 SessionManager 管理会话；停止/关闭时取消模型与审批；生成独立报告。 |
 | `webui/server.ts` | 原生 Node HTTP、loopback 监听、随机 capability、来源校验、请求体上限、静态资源白名单及 JSON 路由。 |
 | `webui/client/app.ts` | DOM 视图、草稿、多行输入、轮询、重连、审批按钮、会话列表与操作、窄屏侧栏及会话详情；不执行工具或保存模型历史。 |
@@ -39,7 +40,7 @@
 - 固定监听 `127.0.0.1`，默认 3210，CLI 可通过 `--port` 使用 1–65535。没有外网监听配置，启动失败返回安全错误。
 - 每次启动产生 32 字节随机 capability，只以 URL fragment 打印。页面读取后移除 fragment，并在当前标签 sessionStorage 保存，以 Bearer header 访问 API；不存储 provider Key。有链接的标签共享同一服务会话。
 - 所有请求验证精确 Host；带 Origin 的请求只允许实际本地 origin。API 必须有正确 capability，不开放 CORS。聊天页 CSP 限制脚本/样式/连接为自身，frame-src 只开放本服务 `/preview/` 路径，仍禁止外部页面和本页被嵌入，另设置 no-store、nosniff 和 no-referrer。预览文档使用下述独立 CSP。
-- 静态 GET 仅 `/`、`/styles.css`、`/app.js`、`/markdown.js`、`/session-menu.js`、`/session-dialog.js`、`/permission-menu.js`、`/preview.js`、`/icons.js`、`/icons.svg`、`/icons-LICENSE.txt`、`/favicon.svg`，不映射任意磁盘目录。JSON 请求体最多 64 KiB，prompt 最多 32768 UTF-8 字节；仅接受指定字段和类型。连接数最多 32，header/request 限时 10 秒，连接空闲限时 15 秒。
+- 静态 GET 仅固定 HTML/CSS/客户端 JS、`/icons.svg`、`/icons-LICENSE.txt` 和 `/mini-logo.png`，不映射任意磁盘目录；原生 helper 不对 HTTP 暴露。JSON 请求体最多 64 KiB，prompt 最多 32768 UTF-8 字节；仅接受指定字段和类型。连接数最多 32，header/request 限时 10 秒，连接空闲限时 15 秒；等待原生选择结果的响应临时延长为 310 秒，操作完成后恢复。
 - `GET /api/state` 返回显示快照并支持 ETag/304。前台每约 700ms、后台每约 3 秒轮询；这是状态更新，不是 provider token 流。
 - `POST /api/message`、`/api/stop`、`/api/reset` 和 `/api/approval` 处理回合与审批。运行中提交或 reset 返回 409；approval ID 不匹配或重复使用返回 409。有效写入/命令仍受原 permission 和 shellPermission 限制。
 - `POST /api/permission-mode` 只接受 `{mode: "default" | "acceptEdits" | "plan" | "freeToGo"}`，沿用相同认证、来源和 JSON 边界；活动回合、审批或会话管理中返回 409，超出显式启动限制拒绝。state.permissionMode 包含当前模式、有效 write/shell 权限、fileAccess/networkAccess 及可选模式，info 中的权限同步更新，各标签轮询同一版本。
@@ -95,13 +96,21 @@ browser_record 活动和 execution_report.browserChecks 持有事实，模型失
 
 沿用 Node 24 / pnpm 11.21.0 / TypeScript 和 openai SDK；Node HTTP、浏览器原生 DOM 与 CSS 承载此单页及单活动 Session，不增加前端框架、HTTP 框架或打包器。Web UI 首版未新增依赖；第二步共享 browser 工具新增 playwright 1.63.0 并更新 pnpm-lock.yaml，具体选择见 BROWSER.md。tsconfig 加入 DOM 类型及 webui 源文件，build 复制固定 HTML/CSS 文件。
 
-此前字体参考 [Claude Code Docs](https://code.claude.com/docs/en/overview)（2026-10-01 核对）：页面实际使用 Anthropic Sans 正文与 Anthropic Serif Display 标题，标题为正常字重、无额外字间距。Fatcat 采用同一衬线/无衬线层次，字体栈先使用本机已有的同名字体，回退到 Georgia / Times 标题与 Arial / Helvetica / Segoe UI 正文；代码继续使用等宽字体。没有打包第三方站点字体或加入外部加载，保持既有 CSP 与离线页面能力；回退字体不承诺逐像素相同。
+此前版本参考 Claude Code Docs 的衬线/无衬线层次。2026-10-08 按用户指定的 minimal-product-website 设计规范改用系统无衬线：`ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif`，标题与正文共用字体栈，代码使用系统等宽字体。不打包第三方字体、不增加外部请求，具体字形取决于操作系统回退。
 
 ### 视觉系统与本地图标
 
-`feat/webui-beauty` 沿用无框架 DOM/CSS 实现，借鉴 Claude Chat 的居中输入与安静的侧栏层级。暖灰背景、柔绿强调色、衬线标题及 Segoe UI / Arial 正文均使用本机字体。CSS 变量集中定义深浅主题颜色；统一 16/18/20/21px 图标和 1.75px 描边、控件间距、细边框与圆角。
+`feat/webui-dev` 的当前视觉沿用原生 DOM/CSS，保留居中输入与侧栏结构。浅色为白底、近黑标题和中性灰面板，黑色主按钮，蓝色仅用于选中、链接、进度与焦点；深色保持同一中性层次。CSS 变量集中定义颜色、字体、阴影、缓动与圆角：控件 12px、面板 16px、卡片 18px、composer 22px、行动按钮胶囊。欢迎标题桌面最高 56px、手机 36px；正文 16px。首页、侧栏、助手消息和 favicon 使用用户提供的 `images/logo/mini-logo.png`，构建时复制同一源文件。无远程字体、图片或动效库。
 
-空会话将欢迎语、输入框和下方两列建议整体居中；有消息时隐藏建议并恢复底部 composer。短屏允许首页整体滚动；760px 及以下侧栏作为遮罩上的抽屉，点击遮罩或 Escape 关闭。省略号在当前/悬浮/键盘聚焦会话行以及窄屏可见，使用独立按钮而非嵌套按钮；传递原目标和 revision 至 SessionMenu，右键与 Shift+F10 保留，aria-expanded 随菜单开关同步。
+欢迎区使用 640ms 轻微上移，文字初始可见；按钮反馈 200ms，统一 `cubic-bezier(.22,1,.36,1)`。菜单和弹窗使用短入场，不对轮询替换的消息执行入场动画。移除工作状态的无限闪烁，在 `prefers-reduced-motion` 下禁用动画、过渡和滚动位移。JS 不可用时保留静态欢迎内容并显示启用提示。
+
+空会话将欢迎语与输入框整体居中，移除四个建议卡片及其填充处理和样式；有消息时恢复底部 composer。短屏允许首页整体滚动。移动侧栏作为遮罩上的抽屉，打开时焦点进入关闭按钮、主区域 inert、Tab 在抽屉内循环；关闭按钮、遮罩和 Escape 恢复入口焦点。嵌套会话菜单或原生弹窗优先处理 Escape，跨桌面断点清除抽屉状态。无会话时显示简短提示。省略号在当前/悬浮/键盘聚焦会话行以及触屏可见，使用独立按钮而非嵌套按钮；传递原目标和 revision 至 SessionMenu，右键与 Shift+F10 保留，aria-expanded 随菜单开关同步。
+
+Cron 桌面弹窗为任务列表和紧凑创建表单双栏：触发类型/参数、次数/期限分别并排；说明合并到标题下和底部。列表每页一项，Previous/Next 切换，长说明限行并保留 title，不随任务数量拉长表单。760px 及以下切换 New task / Scheduled 视图；四种触发器均保留原字段与提交校验。常规桌面与手机验收尺寸无需滚动，极短视口或放大字体允许安全滚动，不裁掉可操作控件。
+
+原生 helper 采用 [Windows Common Item Dialog](https://learn.microsoft.com/en-us/windows/win32/shell/common-file-dialog) 的文件夹选择模式，固定 `execFile` 参数、`shell: false`、32 KiB 输出上限和安全错误。选择器属于本地用户界面，不增加模型工具或放宽 shell 权限。使用系统自带 PowerShell/.NET Framework，不新增依赖；操作系统策略若禁止 helper，则页面显示失败信息。
+
+`pnpm run verify:webui` 使用现有 Playwright 和真实 Edge，在临时工作区与独立会话库中检查四种宽度、深浅色、菜单/弹窗、抽屉键盘焦点、发送/停止、写入审批、预览和工作区入口。模型决策注入，不读取凭据或请求模型；可用 `FATCAT_VERIFY_SCREENSHOTS` 指定截图输出目录。它不随普通离线 `pnpm test` 自动启动浏览器；实际检查结果见 PROGRESS。
 
 [Lucide](https://lucide.dev/license) 的 19 个公开图标保存于 `webui/public/icons.svg`；完整 ISC 与 Feather 衍生 MIT 通知见同目录 `icons-LICENSE.txt`。静态 HTML 和 `icons.ts` 创建的 SVG/use 都引用同源 sprite，装饰图标标记 aria-hidden，按钮保留文字或可访问名称。已有构建复制资源与许可证，HTTP 仅白名单开放三个新资源；CSP、自身来源限制、依赖和锁文件保持不变。没有引入字体下载或 CDN。
 

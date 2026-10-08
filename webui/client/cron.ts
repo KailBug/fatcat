@@ -17,14 +17,19 @@ export class CronPanel {
   private readonly prompt = el("textarea");
   private readonly kind = el("select");
   private readonly value = el("input");
-  private readonly valueLabel = el("span", "Interval in minutes");
+  private readonly valueLabel = el("span", "Interval (minutes)");
   private readonly runs = el("input");
   private readonly hours = el("input");
   private readonly note = el("p");
   private readonly error = el("p");
   private readonly create = el("button", "Create task");
+  private readonly newTab = el("button", "New task");
+  private readonly scheduledTab = el("button", "Scheduled tasks");
   private state: WebUiState | undefined;
   private pending = false;
+  private disabled = false;
+  private page = 0;
+  private selectedTaskId: string | undefined;
   private signature = "";
 
   constructor(private readonly api: (path: string, body: unknown) => Promise<boolean>) {
@@ -36,10 +41,10 @@ export class CronPanel {
     close.setAttribute("aria-label", "Close Cron tasks"); close.append(icon("x"));
     close.onclick = () => this.dialog.close();
     heading.append(title, close);
-    this.note.className = "dialog-note";
+    this.note.className = "cron-note";
     this.error.className = "session-dialog-error"; this.error.setAttribute("role", "alert");
-    const intro = el("p", "Create a task here, or describe a schedule in any chat. Each run continues its linked conversation. Keep Fatcat open for tasks to run.");
-    intro.className = "dialog-note";
+    const intro = el("p", "Schedule a task. Each run continues its linked conversation.");
+    intro.className = "cron-intro";
     let fieldIndex = 0;
     const field = (text: string | HTMLElement, input: HTMLElement) => {
       const label = el("label");
@@ -49,7 +54,7 @@ export class CronPanel {
       label.append(caption, input); return label;
     };
     this.session.setAttribute("aria-label", "Linked session");
-    this.prompt.required = true; this.prompt.maxLength = 16000; this.prompt.rows = 3;
+    this.prompt.required = true; this.prompt.maxLength = 16000; this.prompt.rows = 2;
     this.prompt.placeholder = "What should Fatcat do each time?";
     for (const [value, label] of [["interval", "Every interval"], ["cron", "Cron schedule"], ["at", "Once at a time"], ["file_changed", "When files change"]]) {
       this.kind.add(new Option(label, value));
@@ -61,35 +66,53 @@ export class CronPanel {
       this.value.type = this.kind.value === "interval" ? "number" : this.kind.value === "at" ? "datetime-local" : "text";
       this.value.step = this.kind.value === "at" ? "1" : "any";
       this.value.value = this.kind.value === "interval" ? "5" : this.kind.value === "cron" ? "0 9 * * 1-5" : "";
-      this.valueLabel.textContent = this.kind.value === "interval" ? "Interval in minutes (at least 1)"
-        : this.kind.value === "cron" ? "Five-field cron (machine local time)"
-        : this.kind.value === "at" ? "Date and time (your browser's timezone)" : "Workspace text files (comma-separated)";
+      this.valueLabel.textContent = this.kind.value === "interval" ? "Interval (minutes)"
+        : this.kind.value === "cron" ? "Cron (local time)"
+        : this.kind.value === "at" ? "Date & time (local)" : "Files (comma-separated)";
       this.value.placeholder = this.kind.value === "file_changed" ? "src/cli.ts, README.md" : "";
+      this.value.title = this.kind.value === "cron" ? "Five-field cron, in the machine's local timezone."
+        : this.kind.value === "at" ? "Date and time in your browser's timezone."
+        : this.kind.value === "file_changed" ? "Workspace-relative text file paths, separated by commas." : "At least one minute.";
     };
+    const schedule = el("div"); schedule.className = "cron-fields";
+    schedule.append(field("Trigger", this.kind), field(this.valueLabel, this.value));
     const limits = el("div"); limits.className = "cron-limits";
-    limits.append(field("Maximum runs", this.runs), field("Expires after hours", this.hours));
+    limits.append(field("Maximum runs", this.runs), field("Expires after (hours)", this.hours));
+    const footer = el("div"); footer.className = "cron-form-footer"; footer.append(this.error, this.create);
     this.form.append(el("h3", "New task"), field("Linked session", this.session), field("Task instructions", this.prompt),
-      field("Trigger", this.kind), field(this.valueLabel, this.value), limits, this.error, this.create);
+      schedule, limits, footer);
+    this.form.id = "cron-new-task";
     this.create.type = "submit"; this.create.className = "session-dialog-submit";
     this.form.onsubmit = (event) => { event.preventDefault(); void this.submit(); };
     this.list.className = "cron-list";
+    this.list.id = "cron-scheduled-tasks";
+    const tabs = el("div"); tabs.className = "cron-tabs"; tabs.setAttribute("aria-label", "Cron views");
+    for (const [button, view, panel] of [[this.newTab, "new", this.form], [this.scheduledTab, "scheduled", this.list]] as const) {
+      button.type = "button"; button.setAttribute("aria-controls", panel.id);
+      button.onclick = () => this.selectView(view);
+      tabs.append(button);
+    }
     const body = el("div"); body.className = "cron-body";
-    body.append(intro, this.note, this.list, this.form);
-    this.dialog.append(heading, body);
+    body.append(this.list, this.form);
+    this.dialog.append(heading, intro, tabs, body, this.note);
+    this.selectView("new");
     document.body.append(this.dialog);
     const entry = document.getElementById("show-cron") as HTMLButtonElement;
     entry.onclick = () => {
       if (!this.state) return;
       this.error.textContent = "";
       this.session.value = this.state.current.revision > 0 ? this.state.current.id : "";
+      this.selectView("new");
       this.dialog.showModal();
     };
   }
 
   update(state: WebUiState, disabled: boolean): void {
     this.state = state;
+    this.disabled = disabled;
     (document.getElementById("show-cron") as HTMLButtonElement).disabled = false;
-    this.note.textContent = state.automationNotice || (state.runningSessionId ? `Running in session ${state.runningSessionId}` : "Tasks use current permissions. Missed offline runs are not replayed.");
+    this.note.textContent = state.automationNotice || (state.runningSessionId ? `Running in session ${state.runningSessionId}` : "Keep Fatcat open. Tasks use current permissions; missed offline runs are skipped.");
+    this.scheduledTab.textContent = `Scheduled (${state.automations.length})`;
     const signature = JSON.stringify([state.automations, state.sessions, state.current.id, state.current.revision === 0]);
     if (signature !== this.signature) {
       this.signature = signature;
@@ -98,31 +121,67 @@ export class CronPanel {
       const sessions = state.sessions.some((item) => item.id === state.current.id) ? state.sessions : [state.current, ...state.sessions];
       for (const item of sessions) this.session.add(new Option(item.name ?? item.title, item.id));
       this.session.value = [...this.session.options].some((option) => option.value === selected) ? selected : "";
-      this.list.replaceChildren(el("h3", "Scheduled tasks"));
-      if (!state.automations.length) this.list.append(el("p", "No scheduled tasks yet."));
-      for (const task of state.automations) {
-        const card = el("article"); card.className = "cron-task";
-        const link = el("button", task.sessionTitle); link.type = "button"; link.className = "cron-session-link";
-        link.onclick = () => { void this.api("session/resume", { id: task.sessionId }).then((ok) => { if (ok) this.dialog.close(); }); };
-        const inactive = task.runs >= task.maxRuns || task.expiresAt <= Date.now() || (task.trigger.type === "at" && task.runs > 0);
-        const status = inactive ? "Finished" : task.lastStatus === "running" ? "Running / interrupted" : task.enabled ? "Enabled" : "Paused";
-        const description = task.trigger.type === "cron" ? `${task.trigger.expression} · ${task.trigger.timezone}`
-          : task.trigger.type === "interval" ? `Every ${task.trigger.seconds / 60} minutes`
-          : task.trigger.type === "at" ? new Date(task.trigger.time).toLocaleString() : `Files: ${task.trigger.paths.join(", ")}`;
-        const detail = el("p", `${description} · ${status} · ${task.runs}/${task.maxRuns} runs`); detail.className = "cron-detail";
-        const expiry = el("p", `Expires ${new Date(task.expiresAt).toLocaleString()}${task.lastStatus ? ` · Last run: ${task.lastStatus}` : ""}`); expiry.className = "cron-detail";
-        const actions = el("div"); actions.className = "cron-actions";
-        for (const action of [task.enabled && task.lastStatus !== "running" ? "pause" : "resume", "delete"] as const) {
-          const button = el("button", action === "delete" ? "Delete" : action === "pause" ? "Pause" : "Resume");
-          button.type = "button"; button.dataset.inactive = String(inactive && action !== "delete");
-          button.onclick = () => { void this.api("automation/manage", { sessionId: task.sessionId, id: task.id, action }); };
-          actions.append(button);
-        }
-        card.append(link, el("p", task.prompt), detail, expiry, actions); this.list.append(card);
-      }
+      this.renderTasks(true);
     }
+    this.updateControls();
+  }
+
+  private selectView(view: "new" | "scheduled"): void {
+    this.dialog.dataset.view = view;
+    this.newTab.setAttribute("aria-pressed", String(view === "new"));
+    this.scheduledTab.setAttribute("aria-pressed", String(view === "scheduled"));
+  }
+
+  private renderTasks(preserveSelection = false): void {
+    if (!this.state) return;
+    const tasks = this.state.automations;
+    const selected = preserveSelection ? tasks.findIndex((task) => task.id === this.selectedTaskId) : -1;
+    this.page = selected >= 0 ? selected : Math.min(this.page, Math.max(0, tasks.length - 1));
+    this.list.replaceChildren(el("h3", `Scheduled tasks · ${tasks.length}`));
+    if (!tasks.length) {
+      const empty = el("div"); empty.className = "cron-empty";
+      empty.append(icon("clock"), el("strong", "No tasks yet"), el("p", "Your scheduled tasks will appear here."));
+      this.list.append(empty);
+    }
+    const task = tasks[this.page];
+    this.selectedTaskId = task?.id;
+    if (task) {
+      const card = el("article"); card.className = "cron-task";
+      const link = el("button", task.sessionTitle); link.type = "button"; link.className = "cron-session-link";
+      link.onclick = () => { void this.api("session/resume", { id: task.sessionId }).then((ok) => { if (ok) this.dialog.close(); }); };
+      const inactive = task.runs >= task.maxRuns || task.expiresAt <= Date.now() || (task.trigger.type === "at" && task.runs > 0);
+      const status = inactive ? "Finished" : task.lastStatus === "running" ? "Running / interrupted" : task.enabled ? "Enabled" : "Paused";
+      const description = task.trigger.type === "cron" ? `${task.trigger.expression} · ${task.trigger.timezone}`
+        : task.trigger.type === "interval" ? `Every ${task.trigger.seconds / 60} minutes`
+        : task.trigger.type === "at" ? new Date(task.trigger.time).toLocaleString() : `Files: ${task.trigger.paths.join(", ")}`;
+      const detail = el("p", `${description} · ${status} · ${task.runs}/${task.maxRuns} runs`); detail.className = "cron-detail";
+      const expiry = el("p", `Expires ${new Date(task.expiresAt).toLocaleString()}${task.lastStatus ? ` · Last run: ${task.lastStatus}` : ""}`); expiry.className = "cron-detail";
+      const actions = el("div"); actions.className = "cron-actions";
+      for (const action of [task.enabled && task.lastStatus !== "running" ? "pause" : "resume", "delete"] as const) {
+        const button = el("button", action === "delete" ? "Delete" : action === "pause" ? "Pause" : "Resume");
+        button.type = "button"; button.dataset.inactive = String(inactive && action !== "delete");
+        button.onclick = () => { void this.api("automation/manage", { sessionId: task.sessionId, id: task.id, action }); };
+        actions.append(button);
+      }
+      const instructions = el("p", task.prompt); instructions.className = "cron-task-prompt"; instructions.title = task.prompt;
+      link.title = task.sessionTitle; detail.title = detail.textContent ?? ""; expiry.title = expiry.textContent ?? "";
+      card.append(link, instructions, detail, expiry, actions); this.list.append(card);
+    }
+    if (tasks.length > 1) {
+      const pager = el("nav"); pager.className = "cron-pagination"; pager.setAttribute("aria-label", "Scheduled task pages");
+      const previous = el("button", "Previous"); previous.type = "button";
+      const next = el("button", "Next"); next.type = "button";
+      previous.dataset.inactive = String(this.page === 0); next.dataset.inactive = String(this.page === tasks.length - 1);
+      previous.onclick = () => { this.page--; this.renderTasks(); this.updateControls(); };
+      next.onclick = () => { this.page++; this.renderTasks(); this.updateControls(); };
+      const position = el("span", `${this.page + 1} / ${tasks.length}`); position.setAttribute("aria-live", "polite");
+      pager.append(previous, position, next); this.list.append(pager);
+    }
+  }
+
+  private updateControls(): void {
     for (const input of this.dialog.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("form input, form select, form textarea, form button, .cron-list button")) {
-      input.disabled = disabled || this.pending || input.dataset.inactive === "true";
+      input.disabled = this.disabled || this.pending || input.dataset.inactive === "true";
     }
   }
 

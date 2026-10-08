@@ -10,7 +10,6 @@ import { PermissionMenu } from "./permission-menu.js";
 import { FilePreview } from "./preview.js";
 import { BrowserEvidenceView } from "./browser-evidence.js";
 import { CronPanel } from "./cron.js";
-import { WorkspaceDialog } from "./workspace-dialog.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -54,9 +53,9 @@ const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maxi
 const filePreview = new FilePreview(() => token);
 const browserEvidence = new BrowserEvidenceView(() => token);
 const cron = new CronPanel(api);
-const workspaceDialog = new WorkspaceDialog(() => token, (session, path) => api("session/workspace", { id: session.id, path }),
-  () => connected && !sending && !state?.busy);
-element("workspace-picker").addEventListener("click", () => { if (state) workspaceDialog.open(state.current); });
+element("workspace-picker").addEventListener("click", () => {
+  if (state) void api("session/choose-workspace", { id: state.current.id }, 310_000);
+});
 
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
 function controls(): void {
@@ -69,7 +68,6 @@ function controls(): void {
   newChat.disabled = !connected || sending || busy;
   if (state) sessionMenu.update(displaySessions(state));
   sessionDialog.update();
-  workspaceDialog.update();
   element<HTMLButtonElement>("workspace-picker").disabled = !connected || sending || busy;
   if (state) cron.update(state, !connected || sending || busy);
   permissionMenu.update(state?.permissionMode, !connected || sending || busy || Boolean(state?.approval));
@@ -80,11 +78,11 @@ function connection(ok: boolean): void {
   element("connection-dot").hidden = !ok;
   controls();
 }
-async function api(path: string, body: unknown): Promise<boolean> {
+async function api(path: string, body: unknown, timeout = 15_000): Promise<boolean> {
   if (sending) return false;
   sending = true; controls(); notice.hidden = true;
   try {
-    const response = await fetch(`/api/${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
+    const response = await fetch(`/api/${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
     if (!response.ok) throw new Error((await response.json() as { error: string }).error);
     await refresh(true);
     return true;
@@ -116,7 +114,8 @@ function renderTurn(turn: WebTurn): HTMLElement {
   if (turn.automation) article.append(node("div", "Scheduled task", "scheduled-turn-label"));
   article.append(node("div", turn.prompt, "user-message"));
   const label = node("div", undefined, "assistant-label");
-  label.append(node("span", "f.", "cat-mark"), node("span", "Fatcat")); article.append(label);
+  const logo = node("img", undefined, "cat-mark"); logo.src = "/mini-logo.png"; logo.alt = "";
+  label.append(logo, node("span", "Fatcat")); article.append(label);
   if (turn.answer) article.append(renderMarkdown(turn.answer));
   if (turn.error) article.append(node("p", `${turn.error}\nThis turn was not saved to model history. Completed operations remain in effect.`, "error"));
   if (turn.status === "running") article.append(node("p", "Working on it…", "waiting"));
@@ -269,6 +268,9 @@ function renderSessions(next: WebUiState): void {
   if (signature === sessionSignature) return;
   sessionSignature = signature;
   sessionList.replaceChildren();
+  if (sessions.length === 0) {
+    sessionList.append(node("p", "Your conversations will appear here after your first message.", "session-empty"));
+  }
   for (const session of sessions) {
     const button = node("button", undefined, "conversation");
     const selected = session.id === next.current.id;
@@ -324,16 +326,20 @@ function renderSessions(next: WebUiState): void {
   }
 }
 
-function closeSidebar(): void {
+function closeSidebar(restoreFocus = false): void {
   sessionMenu.close();
   document.body.classList.remove("sidebar-open");
   element("toggle-sidebar").setAttribute("aria-expanded", "false");
+  element("sidebar").removeAttribute("role");
+  element("sidebar").removeAttribute("aria-modal");
+  document.querySelector("main")!.inert = false;
+  if (restoreFocus) element("toggle-sidebar").focus();
 }
 
 function sessionChanged(): void { prompt.value = ""; resize(); requestAnimationFrame(() => prompt.focus()); closeSidebar(); }
 
 async function sessionAction(action: SessionAction, session: SessionSummary): Promise<void> {
-  if (action === "workspace") { workspaceDialog.open(session); return; }
+  if (action === "workspace") { await api("session/choose-workspace", { id: session.id }, 310_000); return; }
   if (action === "details") {
     if (!state) return;
     detailsSessionId = session.id;
@@ -383,18 +389,43 @@ newChat.addEventListener("click", () => {
 element("close-details").addEventListener("click", () => dialog.close());
 dialog.addEventListener("close", () => { detailsSessionId = undefined; });
 element("toggle-sidebar").addEventListener("click", () => {
-  const open = document.body.classList.toggle("sidebar-open");
-  element("toggle-sidebar").setAttribute("aria-expanded", String(open));
+  if (document.body.classList.contains("sidebar-open")) {
+    closeSidebar(true);
+    return;
+  }
+  document.body.classList.add("sidebar-open");
+  element("toggle-sidebar").setAttribute("aria-expanded", "true");
+  element("sidebar").setAttribute("role", "dialog");
+  element("sidebar").setAttribute("aria-modal", "true");
+  document.querySelector("main")!.inert = true;
+  element("close-sidebar").focus();
 });
-element("sidebar-backdrop").addEventListener("click", closeSidebar);
+element("close-sidebar").addEventListener("click", () => closeSidebar(true));
+element("sidebar-backdrop").addEventListener("click", () => closeSidebar(true));
+window.matchMedia("(max-width: 760px)").addEventListener("change", () => closeSidebar());
 document.addEventListener("click", (event) => {
-  if (event.target instanceof Element && !event.target.closest("aside, #toggle-sidebar, #session-menu, #session-action-dialog")) {
-    document.body.classList.remove("sidebar-open"); element("toggle-sidebar").setAttribute("aria-expanded", "false");
+  if (event.target instanceof Element && !event.target.closest("aside, #toggle-sidebar, #session-menu, dialog")) {
+    closeSidebar();
   }
 });
-document.addEventListener("keydown", (event) => { if (event.key === "Escape") { document.body.classList.remove("sidebar-open"); element("toggle-sidebar").setAttribute("aria-expanded", "false"); } });
-document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((button) => button.addEventListener("click", () => {
-  prompt.value = button.dataset.prompt!; resize(); prompt.focus();
-}));
+document.addEventListener("keydown", (event) => {
+  if (!document.body.classList.contains("sidebar-open") || document.querySelector("dialog[open]")) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeSidebar(true);
+    return;
+  }
+  if (event.key !== "Tab" || !element("session-menu").hidden) return;
+  const buttons = element("sidebar").querySelectorAll<HTMLElement>("a[href], button:not(:disabled)");
+  const first = buttons[0];
+  const last = buttons[buttons.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
+});
 async function poll(): Promise<void> { await refresh(); window.setTimeout(() => { void poll(); }, document.hidden ? 3000 : 700); }
 void poll();

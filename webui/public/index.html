@@ -5,14 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Fatcat — Your local coding companion</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/mini-logo.png" type="image/png">
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
   <button id="sidebar-backdrop" class="sidebar-backdrop" aria-label="Close sidebar" tabindex="-1"></button>
   <aside id="sidebar" aria-label="Workspace sidebar">
-    <a class="brand" href="/" aria-label="Fatcat home"><span class="cat-mark" aria-hidden="true">f.</span>fatcat<span class="local-tag">LOCAL</span></a>
+    <a class="brand" href="/" aria-label="Fatcat home"><img class="cat-mark" src="/mini-logo.png" alt="" width="36" height="36">fatcat<span class="local-tag">LOCAL</span></a>
+    <button id="close-sidebar" class="icon-button sidebar-close" aria-label="Close sidebar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#x"></use></svg></button>
     <button class="new-chat" id="new-chat"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> New chat </button>
     <button class="cron-entry" id="show-cron" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/icons.svg#clock"></use></svg> Cron tasks</button>
     <div class="section-label">Recent chats</div>
@@ -28,12 +29,12 @@
     </header>
     <div class="scroll-area" id="scroll-area">
       <section class="welcome" id="welcome">
-        <div class="welcome-icon" aria-hidden="true">f.</div>
-        <div class="eyebrow">A LITTLE CURIOSITY. A LOT OF POSSIBILITY.</div>
+        <img class="welcome-icon" src="/mini-logo.png" alt="" width="72" height="72">
+        <div class="eyebrow">YOUR LOCAL CODING COMPANION</div>
         <h1>What are we building today?</h1>
-        <p>Your codebase, a fresh perspective. Let’s make something good.</p>
-
+        <p>A fresh perspective on your code. A little help with what’s next.</p>
       </section>
+      <noscript class="no-script">Enable JavaScript to connect to your local Fatcat session and start a conversation.</noscript>
       <section id="messages" class="messages" aria-label="Conversation"></section>
       <section id="approval" class="approval" aria-label="Operation approval" hidden></section>
     </div>
@@ -56,12 +57,6 @@
           </div>
         </div>
       </form>
-        <div class="suggestions" aria-label="Ideas to get started">
-          <button data-prompt="Explore this workspace and explain its structure and main entry points."><span class="suggestion-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#folder"></use></svg></span><strong>Explore this project</strong><span>Find your way around the codebase</span></button>
-          <button data-prompt="Review this workspace for a concrete bug. Explain the evidence before proposing a fix."><span class="suggestion-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#search"></use></svg></span><strong>Find a bug</strong><span>A fresh pair of eyes on your code</span></button>
-          <button data-prompt="Inspect this project's tests and suggest the most useful missing test case."><span class="suggestion-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#list-checks"></use></svg></span><strong>Strengthen the tests</strong><span>Build confidence in your next change</span></button>
-          <button data-prompt="Read this project's documentation and suggest a small, useful next improvement."><span class="suggestion-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#compass"></use></svg></span><strong>Plan the next step</strong><span>Turn an idea into something concrete</span></button>
-        </div>
       <div class="composer-footer"><p class="footnote">Fatcat can make mistakes. Review changes and check the execution report.</p><span class="composer-shortcut">Shift + Enter for a new line</span></div>
     </div>
   </main>

@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { VERSION } from "./version.js";
 import { createTerminalInput } from "./terminal.js";
 import type { TerminalInput } from "./terminal.js";
 import type { ShellPermission } from "./tools/shell.js";
@@ -23,6 +24,7 @@ const help = `Fatcat - minimal Agent Harness
 
 Usage:
   pnpm start --help
+  pnpm start --version
   pnpm start --checkConfig
   pnpm start --chat
   pnpm start --continue
@@ -33,6 +35,7 @@ Usage:
   pnpm start "Use the sum tool to add 17 and 25."
   pnpm start --prompt "Explain what an agent loop does."
 
+Use --version (-v) to print the local Fatcat version without model credentials.
 Use --chat for a continuous conversation with /help, /cron, /skills, /new, /sessions, /resume, /rename, /fork, and /exit.
 Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
 Use --webui for the local browser interface at 127.0.0.1:3210; --port <1-65535> selects another port.
@@ -101,6 +104,7 @@ async function main(args: string[]): Promise<number> {
         args: optionalResumeArgs(args),
         options: {
           help: { type: "boolean", short: "h" },
+          version: { type: "boolean", short: "v" },
           checkConfig: { type: "boolean" },
           continue: { type: "boolean", short: "c" },
           resume: { type: "string", short: "r" },
@@ -128,10 +132,11 @@ async function main(args: string[]): Promise<number> {
     }
     const { values, positionals } = parsed;
     const hasSelection = Boolean(values.continue || values.resume !== undefined || values.name !== undefined);
-    if (hasSelection && !values.help && !values.checkConfig
+    if (hasSelection && !values.help && !values.version && !values.checkConfig
       && !values.tui && !values.webui && values.automation === undefined && values.prompt === undefined && positionals.length === 0) values.chat = true;
 
     const modes = Number(Boolean(values.help))
+      + Number(Boolean(values.version))
       + Number(Boolean(values.checkConfig))
       + Number(Boolean(values.chat))
       + Number(Boolean(values.tui))
@@ -140,7 +145,7 @@ async function main(args: string[]): Promise<number> {
       + Number(values.prompt !== undefined || positionals.length > 0);
 
     if (modes > 1 || (values.prompt !== undefined && positionals.length > 0)) {
-      throw new HarnessError("USAGE", "Choose one mode: help, config check, chat, TUI, Web UI, automation, or one prompt.");
+      throw new HarnessError("USAGE", "Choose one mode: help, version, config check, chat, TUI, Web UI, automation, or one prompt.");
     }
     if (values.workspace !== undefined && (!values.workspace.trim() || values.help || values.checkConfig
       || (!values.chat && !values.tui && !values.webui && values.automation === undefined && values.prompt === undefined && positionals.length === 0))) {
@@ -180,6 +185,10 @@ async function main(args: string[]): Promise<number> {
     }
     if (values["permission-mode"] === "freeToGo" && values["web-permission"] === "deny") {
       throw new HarnessError("USAGE", "Free to go cannot be combined with --web-permission deny.");
+    }
+    if (values.version) {
+      console.log(VERSION);
+      return 0;
     }
     if (values.help || args.length === 0) {
       console.log(help);

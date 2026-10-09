@@ -8,6 +8,23 @@ A TypeScript Agent Harness that runs natively on Windows.
 
 The near-term goal is a local coding agent that reads projects, makes controlled changes, runs verification, and delivers reviewable results through the CLI, optional TUI, or local Web UI. Workspace reading, bounded literal text search, and controlled text-file creation and editing are available. Foreground Windows PowerShell execution is available with separate command authorization. Bounded delegation is available by default, with the model choosing whether to use it for the task. App and channel work is deferred. See the [architecture overview](ARCHITECTURE/README.md) and [roadmap](ROADMAP.md).
 
+## Version and project badges
+
+The repository version is **0.1.0**, an early development version. `package.json` is the single source of truth; the package remains private and is run from a checkout. This version does not imply an npm publication or a GitHub release.
+
+```powershell
+pnpm start --version
+pnpm start -v
+# After building, print only the version without pnpm/build output:
+node dist/src/cli.js --version
+```
+
+Both flags work without provider credentials and do not create a session. The CLI reads Fatcat's manifest relative to its compiled module, even when launched in another workspace.
+
+Use `0.x.y` while the project is under active development: increase the patch for fixes and the minor version for new capabilities or compatibility changes. Document compatibility changes before upgrading; `1.0.0` is reserved for a defined stable compatibility contract. The application version is independent of saved-session and automation schema versions.
+
+The README's version, stars, and CI badges use live [Shields.io](https://shields.io/) data. Version and CI refer to **main**, not the local checkout or the current pull request; CI links to the existing Windows / Node 24 workflow. Runtime, package-manager, language, and platform badges describe repository requirements. Update the static Node.js and pnpm badges in both READMEs when changing those requirements. No package-download or license badge is displayed because this project has no published package or root license declaration.
+
 ## Current capabilities
 
 The CLI runs a single task or a persistent conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. Tasks, chat, TUI, and Web UI use the launch directory as the workspace unless `--workspace` selects another directory. The model can answer directly, call the pure `sum` tool, load local Skills, inspect workspace text files, propose a write, or run a command after approval in the active interface; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.

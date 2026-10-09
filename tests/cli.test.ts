@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -15,7 +15,7 @@ const transport = new URL("./fixtures/chat-transport.js", import.meta.url).href;
 function run(args: string[], overrides: NodeJS.ProcessEnv = {}, input?: string, cwd?: string) {
   const sessionDirectory = overrides.FATCAT_SESSION_DIR ?? mkdtempSync(join(tmpdir(), "fatcat-cli-sessions-"));
   try {
-    return spawnSync(process.execPath, [...(input === undefined ? [] : ["--import", transport]), cli, ...args], {
+    const result = spawnSync(process.execPath, [...(input === undefined ? [] : ["--import", transport]), cli, ...args], {
     encoding: "utf8",
     ...(cwd === undefined ? {} : { cwd }),
     ...(input === undefined ? {} : { input }),
@@ -24,8 +24,11 @@ function run(args: string[], overrides: NodeJS.ProcessEnv = {}, input?: string, 
       HOME: fileURLToPath(new URL("./fixtures/empty-skill-home", import.meta.url)),
       FATCAT_SESSION_DIR: sessionDirectory,
       HARNESS_REQUEST_TIMEOUT_MS: "60000", HARNESS_MAX_REQUEST_BYTES: "262144", ...overrides },
-    timeout: 5000,
+    // Includes Windows process startup and durable session writes on shared CI runners.
+    timeout: 30_000,
     });
+    assert.ifError(result.error);
+    return result;
   } finally {
     if (overrides.FATCAT_SESSION_DIR === undefined) {
       const target = resolve(sessionDirectory);
@@ -40,6 +43,7 @@ test("help works without credentials", () => {
   const result = run(["--help"]);
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Fatcat/);
+  assert.match(result.stdout, /--version/);
   assert.match(result.stdout, /--tui/);
   assert.match(result.stdout, /--webui/);
   assert.match(result.stdout, /--automation/);
@@ -54,6 +58,26 @@ test("help works without credentials", () => {
   assert.ok(!result.stdout.includes("--listSkills"));
   assert.ok(!result.stdout.includes("--listSessions"));
   assert.equal(result.stderr, "");
+});
+
+test("version uses the manifest without credentials or workspace state", async (t) => {
+  const { base, workspace } = await temporaryWorkspace(t);
+  const manifest = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
+  await writeFile(join(workspace, "package.json"), JSON.stringify({ version: "99.99.99" }));
+  const sessionDirectory = join(base, "version-sessions");
+  const env = { HARNESS_PROVIDER: "invalid-provider", FATCAT_SESSION_DIR: sessionDirectory };
+  for (const flag of ["--version", "-v"]) {
+    const result = run([flag], env, undefined, workspace);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), manifest.version);
+    assert.equal(result.stderr, "");
+  }
+  await assert.rejects(stat(sessionDirectory), { code: "ENOENT" });
+  for (const args of [["--version", "--chat"], ["--version", "--help"], ["-v", "--continue"], ["-v", "a task"]]) {
+    const result = run(args, env, undefined, workspace);
+    assert.equal(result.status, 2, result.stderr);
+    assert.equal(result.stdout, "");
+  }
 });
 
 test("automation configuration checks are credential-free and reject incompatible modes", async (t) => {

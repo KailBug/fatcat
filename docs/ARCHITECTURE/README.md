@@ -49,6 +49,8 @@
 
 ## 当前实现
 
+版本元数据由根 `package.json` 持有，`src/version.ts` 从编译模块相对路径读取，供 CLI `--version` / `-v` 使用；查询发生在供应商配置与 Session 初始化前。README 的动态版本及 CI 徽章展示 main 状态，区别于本地 checkout。版本策略见 [USAGE.md](../USAGE.md#version-and-project-badges)。
+
 2026-10-09 Session 职责重构：参考本地 pi 的会话数据、AgentSession 与运行环境划分，新增 `src/session/record.ts`、`agent-session.ts`、`automations.ts`，分别持有快照解码、活动回合提交及任务绑定策略。Manager 保留跨会话选择、工作区准备和操作互斥；Store 保留有界磁盘 I/O 与原子修订锁。入口 API 与 v1 快照兼容，运行时、依赖和权限边界不变。阶段计划及执行记录在 [REFACTOR_PLAN.md](../../src/session/REFACTOR_PLAN.md)，当前模块事实见 [SESSION.md](SESSION.md)，验证见 PROGRESS。
 
 会话跨工作区增量（2026-10-03）：Store 全局发现旧哈希目录中的快照，Manager 先准备目标 workspace 的运行配置，再切换活动状态。新增 `src/workspace-agent.ts` 缓存每工作区 Tools/journals 并重建 Skills/Agent；新建默认继承当前目录。chat/TUI `/workspace` 与 Web UI 用户目录选择共用此边界。2026-10-08 Web UI 改由 `folder-picker.ts` 和 `native-folder-dialog.ps1` 打开 Windows 原生文件夹窗口；认证路由与会话管理锁持有选择及取消流程，不作为模型工具。可选 storageWorkspace 固定原存储桶，workspace 作为可编辑执行位置，不搬移文件。详见 SESSION、WEBUI、TUI；自动任务仍只发现当前工作区。

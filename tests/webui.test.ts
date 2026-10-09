@@ -28,8 +28,13 @@ function tool(name: string, args: unknown): ModelTurn {
   return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
 }
 async function until(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 5000;
-  while (!await predicate()) { if (Date.now() > deadline) throw new Error("Fixture timed out."); await delay(10); }
+  // Scheduled turns and multi-request session checkpoints can exceed five seconds on CI.
+  const timeoutMs = 30_000;
+  const deadline = performance.now() + timeoutMs;
+  while (!await predicate()) {
+    if (performance.now() > deadline) throw new Error(`Fixture did not reach the expected state within ${timeoutMs} ms.`);
+    await delay(10);
+  }
 }
 
 test("Web UI Cron API binds existing or new sessions and background runs preserve the selected conversation", async (t) => {

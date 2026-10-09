@@ -11,6 +11,7 @@
 | `src/system-prompt.ts` | 父子 Loop 共用的英文 systemPrompt：CLI 编码协作、沟通、工具边界和证据化交付 |
 | `src/agent.ts` | `createAgent(config, baseTools?, transport?, skills?)` 装配父子模型与工具，内部包装 Skill read，返回 model / tools / maxIterations；工作目录、委派与 Skill 指导不进入保存历史 |
 | `src/cli.ts` | 解析任务文本、`--prompt`、`--chat`、帮助与配置检查；发现本地 Skills；管理 Ctrl+C；选择入口并输出退出码 |
+| `src/version.ts` | 从编译模块相对路径读取根 package.json 的版本；CLI `--version` / `-v` 在配置与会话初始化前输出，不依赖用户工作目录 |
 | `scripts/start.ts` | pnpm start 专用启动器：在导入 CLI 前根据 INIT_CWD 恢复调用目录；不承担工具装配、配置加载或权限规则 |
 | `src/chat.ts`、`src/session/session.ts` | 连续输入与单会话成功历史，详见 Session 文档 |
 | `src/session/manager.ts`、`store.ts`、`history.ts`、`commands.ts` | 2D-14 共享会话选择、磁盘持久化、恢复校验和本地命令；会话文件集中在 src/session，与 tools/skill 同级，不授予工具权限，详见 Session 文档 |

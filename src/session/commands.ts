@@ -1,7 +1,7 @@
 import { HarnessError } from "../errors.js";
 import type { Session } from "./session.js";
 import { SessionManager } from "./manager.js";
-import type { SessionSummary } from "./store.js";
+import type { SessionSummary } from "./record.js";
 
 export type Conversation = Session | SessionManager;
 

@@ -226,6 +226,8 @@ Channel、App 待核心任务能力稳定后再考虑；TUI 因用户明确要�
 
 ## 阶段 2D-14：Session 持久化与会话管理（离线和浏览器已验证，待 review）
 
+2026-10-09 内部重构按[Session 重构计划](../src/session/REFACTOR_PLAN.md)依次执行三个阶段：分离记录与存储、独立活动回合/提交边界、拆出自动任务策略并回归各入口。参考本地 pi 的职责划分，沿用当前持久格式、权限、草稿、恢复和后台目标行为。每阶段记录独立验收结果；不扩展为 pi 的 JSONL 树或压缩，也不据此完成整个 2D。实际结果以 PROGRESS 为准。
+
 按用户要求使用 `feat/session-perfection`，参考 [Claude Code 官方会话文档](https://code.claude.com/docs/en/sessions)，实现按规范工作目录隔离的本地持久对话。CLI、TUI、Web UI 共享 SessionManager；继续使用既有 Session、Loop、模型 SDK、工具和权限，不增加依赖或 Graph。
 
 - 默认保存完整成功历史，包括工具调用、结果及已加载的 Skill 正文；创建新 Session 保留原会话，可列出、命名、按 ID 或名称恢复、继续最近会话和创建独立分支。

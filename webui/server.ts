@@ -8,6 +8,8 @@ import { isPermissionMode } from "../src/permissions/policy.js";
 import { createPreviewStore, previewCsp } from "./preview.js";
 import { readBrowserEvidence } from "../src/browser/evidence.js";
 import { listWorkspaceDirectory } from "./workspaces.js";
+import { pickWorkspaceDirectory } from "./folder-picker.js";
+import type { WorkspacePicker } from "./folder-picker.js";
 
 const assets = new Map([
   ["/", ["./public/index.html", "text/html; charset=utf-8"]],
@@ -16,7 +18,6 @@ const assets = new Map([
   ["/markdown.js", ["./client/markdown.js", "text/javascript; charset=utf-8"]],
   ["/session-menu.js", ["./client/session-menu.js", "text/javascript; charset=utf-8"]],
   ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
-  ["/workspace-dialog.js", ["./client/workspace-dialog.js", "text/javascript; charset=utf-8"]],
   ["/cron.js", ["./client/cron.js", "text/javascript; charset=utf-8"]],
   ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
   ["/preview.js", ["./client/preview.js", "text/javascript; charset=utf-8"]],
@@ -24,7 +25,7 @@ const assets = new Map([
   ["/icons.js", ["./client/icons.js", "text/javascript; charset=utf-8"]],
   ["/icons.svg", ["./public/icons.svg", "image/svg+xml"]],
   ["/icons-LICENSE.txt", ["./public/icons-LICENSE.txt", "text/plain; charset=utf-8"]],
-  ["/favicon.svg", ["./public/favicon.svg", "image/svg+xml"]],
+  ["/mini-logo.png", ["./public/mini-logo.png", "image/png"]],
 ]);
 
 class HttpError extends Error {
@@ -54,7 +55,7 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 }
 
 /** Bind only to loopback. The fragment capability is never included in HTTP URLs. */
-export async function startWebUiServer(controller: WebUiController, port = 3210) {
+export async function startWebUiServer(controller: WebUiController, port = 3210, picker: WorkspacePicker = pickWorkspaceDirectory) {
   const token = randomBytes(32).toString("hex");
   const previews = await createPreviewStore(() => controller.info.workspace);
   const shutdown = new AbortController();
@@ -120,6 +121,20 @@ export async function startWebUiServer(controller: WebUiController, port = 3210)
       }
       json(response, 200, await listWorkspaceDirectory(body.path, controller.info.workspace));
       return;
+    } else if (path === "/api/session/choose-workspace") {
+      if (typeof body.id !== "string" || !body.id.trim() || body.id.length > 256 || Object.keys(body).length !== 1) {
+        throw new HttpError(400, "Expected a session ID.");
+      }
+      const disconnected = new AbortController();
+      const abort = () => disconnected.abort();
+      response.once("close", abort);
+      response.setTimeout(310_000);
+      try {
+        await controller.chooseWorkspace(body.id, picker, AbortSignal.any([shutdown.signal, disconnected.signal, AbortSignal.timeout(300_000)]));
+      } finally {
+        response.off("close", abort);
+        if (!response.destroyed) response.setTimeout(15_000);
+      }
     } else if (path === "/api/session/workspace") {
       if (typeof body.path !== "string" || !body.path.trim() || body.path.length > 4096
         || Object.keys(body).some((key) => !["path", "id"].includes(key))

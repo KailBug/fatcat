@@ -51,7 +51,7 @@
 
 2026-10-09 Session 职责重构：参考本地 pi 的会话数据、AgentSession 与运行环境划分，新增 `src/session/record.ts`、`agent-session.ts`、`automations.ts`，分别持有快照解码、活动回合提交及任务绑定策略。Manager 保留跨会话选择、工作区准备和操作互斥；Store 保留有界磁盘 I/O 与原子修订锁。入口 API 与 v1 快照兼容，运行时、依赖和权限边界不变。阶段计划及执行记录在 [REFACTOR_PLAN.md](../../src/session/REFACTOR_PLAN.md)，当前模块事实见 [SESSION.md](SESSION.md)，验证见 PROGRESS。
 
-会话跨工作区增量（2026-10-03）：Store 全局发现旧哈希目录中的快照，Manager 先准备目标 workspace 的运行配置，再切换活动状态。新增 `src/workspace-agent.ts` 缓存每工作区 Tools/journals 并重建 Skills/Agent；新建默认继承当前目录。chat/TUI `/workspace` 和 Web UI `workspaces.ts`、`client/workspace-dialog.ts` 提供用户目录选择，后者沿原 capability/Origin 路由而非模型工具。可选 storageWorkspace 固定原存储桶，workspace 作为可编辑执行位置，不搬移文件。详见 SESSION、WEBUI、TUI；自动任务仍只发现当前工作区。
+会话跨工作区增量（2026-10-03）：Store 全局发现旧哈希目录中的快照，Manager 先准备目标 workspace 的运行配置，再切换活动状态。新增 `src/workspace-agent.ts` 缓存每工作区 Tools/journals 并重建 Skills/Agent；新建默认继承当前目录。chat/TUI `/workspace` 与 Web UI 用户目录选择共用此边界。2026-10-08 Web UI 改由 `folder-picker.ts` 和 `native-folder-dialog.ps1` 打开 Windows 原生文件夹窗口；认证路由与会话管理锁持有选择及取消流程，不作为模型工具。可选 storageWorkspace 固定原存储桶，workspace 作为可编辑执行位置，不搬移文件。详见 SESSION、WEBUI、TUI；自动任务仍只发现当前工作区。
 
 2D-15 在 `src/automation/` 增加 cron 匹配、文件快照、有界调度、进程锁、持久任务字段、父模型 automation 工具和 ConversationAutomations 服务。自然语言、chat/TUI `/cron` 与 Web UI Cron 表单共用 SessionManager 绑定，之后触发继续目标会话，界面保留审批和展示所有权。配置和计数持久化，队列/基线仅在进程内。原独立 JSON CLI 保留高级用法。模块、权限、预算和未实现范围见 [AUTOMATION.md](AUTOMATION.md)，验证事实见 PROGRESS。
 
@@ -83,7 +83,7 @@ chat / TUI 通过 `src/commands.ts` 统一分发本地命令，`/skills` 展示�
 
 后续 Web UI 交互由 `session-dialog.ts` 持有页面弹窗，`open-browser.ts` 持有本机启动链接打开，`context-usage.ts` 观察最近父请求输入用量并匹配已核对的模型窗口。composer 分为消息和底部工具栏，左侧模式/带框工作区，右侧无框上下文/模型/发送，窄屏按组换行；`permission-menu.ts` 按 Plan、Manual、Accept edits、Free to go 展示服务端策略并提交选择。会话轮次和日期仅放在悬浮提示与无障碍描述中。这些视图不改变持久历史或原字节预算，界面当前英文，多语言切换仍为计划，见 [WEBUI.md](WEBUI.md)。
 
-Web UI 视觉统一增量新增 `webui/client/icons.ts`，通过 DOM SVG/use 引用本地 Lucide sprite；HTML/CSS/图标和许可证随已有 build 复制并由静态白名单提供。首页采用居中的输入布局，移动侧栏使用遮罩，会话行省略号与右键入口复用同一 SessionMenu；核心运行时和权限边界不变，细节见 [WEBUI.md](WEBUI.md)。
+Web UI 的 `webui/client/icons.ts` 通过 DOM SVG/use 引用本地 Lucide sprite；HTML/CSS/图标和许可证随已有 build 复制并由静态白名单提供。2026-10-08 在 `feat/webui-dev` 采用黑白灰、系统无衬线、分级圆角与减少动画适配，保留居中输入布局；按后续截图反馈移除建议卡片、统一指定猫咪 logo，并将 Cron 改为紧凑双栏/手机分视图与分页列表；侧栏增加关闭按钮、焦点循环和主区域 inert，会话行省略号与右键入口复用同一 SessionMenu。`scripts/verify-webui-design.ts` 提供真实 Edge、注入模型的独立验收命令。核心运行时和权限边界不变，细节见 [WEBUI.md](WEBUI.md)。
 
 2D-12 新增一个通用 web 工具，CLI / chat / TUI 默认开放公开搜索和页面文本读取，`--web-permission deny` 可独立关闭。程序化 createTools 第五个参数显式选择 web，未传时维持旧工具集合；父子模型共享相同工具边界。web.ts 负责协议、权限与调用期限，web-request.ts 负责公开地址检查、DNS 固定、HTTP(S) 与有界解码，web-content.ts 负责搜索/HTML 解析；Loop、Session 与执行报告的职责不变。新增 web/web-research 与 web/weather-lookup，当时内置 Skill 共六项；后续加入 browser/local-browser-check 后为七项。细节和未实现边界见 [WEB.md](WEB.md)、[BROWSER.md](BROWSER.md)。
 

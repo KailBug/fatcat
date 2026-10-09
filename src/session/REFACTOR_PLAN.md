@@ -112,3 +112,13 @@ and real installed Edge session-workspace verification passed.
   No live provider API, manual TUI or performance validation was performed.
   Existing snapshot size limits, full snapshot rewrites and process-bound
   automation remain. Further storage/context changes require a new scoped plan.
+- Main integration (2026-10-09): merged main at `952e1ed` into the feature
+  branch. Preserved both architecture/progress updates and main's native Windows
+  workspace picker; removed the obsolete browser workspace dialog. Session
+  record imports remain aligned with this refactor.
+- Integration checks: `pnpm run typecheck`, `pnpm test` (includes build; 418
+  passed, zero failed/skipped), `pnpm run verify:sessions`,
+  `pnpm run verify:webui`, and staged whitespace/conflict checks passed.
+  Both browser checks used real installed Edge with injected model decisions
+  and workspace pickers. Native dialog clicks and live provider requests were
+  not exercised. The user authorized pushing this integration to PR #76.

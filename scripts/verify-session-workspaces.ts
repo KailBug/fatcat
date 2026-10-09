@@ -30,7 +30,12 @@ const session = await SessionManager.open(await factory(workspace), { workspace,
   deferEmptySessions: true, agentForWorkspace: factory });
 const controller = await WebUiController.create({ workspace, provider: "deepseek", model: "offline", permission: "read-only",
   shellPermission: "deny", webPermission: "deny", maxIterations: 1, maxRequestBytes: 262144, skills: 0, warnings: [] }, session);
-const server = await startWebUiServer(controller, 0);
+const selections = [workspace, outside, null];
+const initialPaths: string[] = [];
+const server = await startWebUiServer(controller, 0, async (initialPath) => {
+  initialPaths.push(initialPath);
+  return selections.shift() ?? null;
+});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({ headless: true, channel: "msedge" });
@@ -41,20 +46,11 @@ try {
   await page.locator(`[data-session-id="${other.current.id}"]`).click();
   await page.waitForFunction((expected) => document.getElementById("workspace")?.textContent === expected, outside);
   await page.locator("#workspace-picker").click();
-  await page.locator("#workspace-directory-path").fill(workspace);
-  await page.getByRole("button", { name: "Open directory", exact: true }).click();
-  await page.getByRole("button", { name: "File: marker.txt", exact: true }).waitFor();
-  if (process.env.FATCAT_VERIFY_SCREENSHOT) await page.screenshot({ path: resolve(process.env.FATCAT_VERIFY_SCREENSHOT) });
-  await page.getByRole("button", { name: "Use this workspace", exact: true }).click();
   await page.waitForFunction((expected) => document.getElementById("workspace")?.textContent === expected, workspace);
   assert.equal(session.current.id, other.current.id);
   assert.equal((await store.loadAny(other.current.id)).workspace, workspace);
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.locator("#workspace-picker").click();
-  await page.locator("#workspace-directory-path").fill(outside);
-  await page.getByRole("button", { name: "Open directory", exact: true }).click();
-  await page.getByRole("button", { name: "File: marker.txt", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Use this workspace", exact: true }).click();
   await page.waitForFunction((expected) => document.getElementById("workspace")?.textContent === expected, outside);
   assert.equal(session.current.revision, 0);
   await page.locator("#prompt").fill("Read marker");
@@ -64,13 +60,12 @@ try {
   assert.equal(session.current.turnCount, 1);
   await page.getByRole("button", { name: "Actions for Project A", exact: true }).click();
   await page.getByRole("menuitem", { name: "Change workspace", exact: true }).click();
-  await page.getByRole("button", { name: "File: marker.txt", exact: true }).waitFor();
-  await page.setViewportSize({ width: 390, height: 844 });
-  const bounds = await page.locator("#workspace-dialog").boundingBox();
-  assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390);
-  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !(document.getElementById("workspace-picker") as HTMLButtonElement).disabled);
+  assert.deepEqual(initialPaths, [outside, workspace, workspace]);
+  assert.equal(session.current.workspace, outside);
+  if (process.env.FATCAT_VERIFY_SCREENSHOT) await page.screenshot({ path: resolve(process.env.FATCAT_VERIFY_SCREENSHOT) });
   assert.deepEqual(errors, []);
-  console.log("Verified real Edge: global session list, resume/workspace synchronization, existing and draft directory selection, actual workspace read, session menu, narrow-screen dialog and no page errors.");
+  console.log("Verified real Edge with an injected native picker: global session list, resume/workspace synchronization, existing and draft directory selection, actual workspace read, session menu cancellation and no page errors.");
 } finally {
   await browser?.close();
   await server.close();

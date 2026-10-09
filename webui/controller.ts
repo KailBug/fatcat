@@ -19,6 +19,7 @@ import type { SessionAutomation } from "../src/automation/tasks.js";
 import type { Activation } from "../src/automation/scheduler.js";
 import { FileChanges } from "../src/automation/files.js";
 import { automationCommandPrompt } from "../src/commands.js";
+import type { WorkspacePicker } from "./folder-picker.js";
 
 export type WebUiInfo = {
   provider: string; model: string; workspace: string;
@@ -52,6 +53,7 @@ export class WebUiController {
   private status = "Ready";
   private closed = false;
   private changing: Promise<void> | undefined;
+  private workspaceSelection: AbortController | undefined;
   private sessions: SessionSummary[] = [];
   private readonly contextUsage: WebContextUsage;
   private automationTasks: SessionAutomation[] = [];
@@ -167,6 +169,26 @@ export class WebUiController {
     return this.changeSession(() => this.session.setWorkspace(path, id), id === undefined || id === this.session.current.id);
   }
 
+  chooseWorkspace(id: string, picker: WorkspacePicker, signal: AbortSignal): Promise<void> {
+    return this.changeSession(async () => {
+      if (this.closed || signal.aborted) return;
+      const selected = id === this.session.current.id ? this.session.current : this.sessions.find((item) => item.id === id);
+      if (!selected) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists.");
+      const cancelled = new AbortController();
+      this.workspaceSelection = cancelled;
+      try {
+        const selectionSignal = AbortSignal.any([signal, cancelled.signal]);
+        const path = await picker(selected.workspace, selectionSignal);
+        if (path === null || selectionSignal.aborted) return;
+        await this.session.setWorkspace(path, id);
+        if (id === this.session.current.id) {
+          this.turns = restoredTurns(this.session.history, this.session.current.id);
+          this.contextUsage.reset();
+        }
+      } finally { this.workspaceSelection = undefined; }
+    }, false);
+  }
+
   private updateWorkspace(): void {
     this.info.workspace = this.session.current.workspace;
     if (this.session.skills) {
@@ -237,6 +259,7 @@ export class WebUiController {
 
   stop(): void {
     this.active?.abort.abort();
+    this.workspaceSelection?.abort();
     this.approvals.deny();
     if (this.active) this.status = "Stopping";
     this.revision++;

@@ -292,14 +292,14 @@ test("local HTTP boundary protects state and mutations and serves only built UI 
   assert.equal(state.status, 200);
   assert.ok(!(await state.text()).includes(token));
   assert.equal((await fetch(`${server.origin}/api/state`, { headers: { ...headers, "If-None-Match": state.headers.get("etag")! } })).status, 304);
-  for (const path of ["/", "/app.js", "/markdown.js", "/session-menu.js", "/session-dialog.js", "/styles.css", "/favicon.svg", "/icons.js", "/icons.svg", "/icons-LICENSE.txt"]) {
+  for (const path of ["/", "/app.js", "/markdown.js", "/session-menu.js", "/session-dialog.js", "/styles.css", "/mini-logo.png", "/icons.js", "/icons.svg", "/icons-LICENSE.txt"]) {
     const response = await fetch(server.origin + path);
     assert.equal(response.status, 200, path);
     assert.match(response.headers.get("content-security-policy")!, /frame-ancestors 'none'/);
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.ok(!(await response.text()).includes(token));
   }
-  for (const path of ["/.env", "/src/config.ts", "/../package.json", "/favicon.ico"]) assert.equal((await fetch(server.origin + path)).status, 404);
+  for (const path of ["/.env", "/src/config.ts", "/../package.json", "/favicon.ico", "/native-folder-dialog.ps1", "/workspace-dialog.js"]) assert.equal((await fetch(server.origin + path)).status, 404);
   const post = (path: string, body: string, custom = headers) => fetch(`${server.origin}/api/${path}`, { method: "POST", headers: custom, body });
   assert.equal((await post("message", '{"prompt":"test"}', { ...headers, Authorization: "Bearer wrong" })).status, 401);
   assert.equal((await post("message", '{"prompt":"test"}', { ...headers, "Content-Type": "text/plain" })).status, 415);

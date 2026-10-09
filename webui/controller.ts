@@ -4,7 +4,7 @@ import { createTurnReporter } from "../src/execution-report.js";
 import type { ExecutionReport, ReportEvent } from "../src/execution-report.js";
 import type { Message } from "../src/model.js";
 import type { SessionManager } from "../src/session/manager.js";
-import type { SessionSummary } from "../src/session/store.js";
+import type { SessionSummary } from "../src/session/record.js";
 import type { ShellRequest } from "../src/tools/shell.js";
 import type { WriteApprovalRequest } from "../src/tools/write.js";
 import { ApprovalCoordinator } from "../src/permissions/approval.js";

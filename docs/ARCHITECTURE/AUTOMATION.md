@@ -23,7 +23,9 @@ Node 24、pnpm 11.21.0、TypeScript、模型 SDK 不变，没有新依赖、Grap
 | `conversations.ts` | 工作区任务发现、触发、串行轮转、基线、运行锁和生命周期；界面保留渲染及审批所有权 |
 | `lock.ts` | 同一存储根和规范工作区的进程独占锁，交互服务与独立 runner 共用 |
 | `runner.ts` | 高级独立 JSON runner、独立 Session、日志及进程预算 |
-| `src/session/manager.ts`、`store.ts` | 创建绑定、原子保存领取与次数、继续目标历史、失败记录、修订冲突 |
+| `src/session/manager.ts` | 当前工作区任务发现、后台目标选择与操作互斥；后台回合不切换选中会话 |
+| `src/session/automations.ts`、`agent-session.ts` | 前者校验绑定变更，后者保存绑定、领取与次数，继续目标历史并处理检查点/失败；模型回合内更新和后续检查点使用同一个活动记录 |
+| `src/session/record.ts`、`store.ts` | 快照字段解码、原子发布与修订冲突；任务仍属于原 v1 快照 |
 | `src/agent.ts`、`src/commands.ts` | 父模型工具与时间提示；chat/TUI 命令分发 |
 | `src/chat.ts`、`tui/app.ts` | 空闲执行、输入与审批协调、自动回合和会话标记 |
 | `webui/controller.ts`、`server.ts` | 状态缓存、目标会话执行、认证的 create/manage API |

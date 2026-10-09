@@ -2,6 +2,8 @@
 
 ## 状态与范围
 
+2026-10-09 在 `feat/session-perfection` 参考本地 `D:/pi` 的 `core/session-manager.ts`、`core/agent-session.ts` 和 `core/agent-session-runtime.ts`，按[重构计划](../../src/session/REFACTOR_PLAN.md)分离记录校验、活动回合与会话选择。借鉴 pi 的状态所有权与显式类型/构造方式；保留 Fatcat 的 v1 原子 JSON、完整成功历史和独立 attempt，不迁移 pi 的 JSONL 树、压缩或扩展系统。具体阶段验证见计划与 PROGRESS。
+
 2D-15 增加可选 `automations` 字段和摘要 `automationCount`。SessionManager 负责创建/管理绑定、执行前持久领取与计数、继续目标历史；后台目标不同于选中会话时不改变选择。fork 不复制绑定，删除 Session 同时删除绑定，无持久化模式拒绝创建。触发 metadata 仅进入当次模型请求投影；重启不重放中断自动回合。详见 [AUTOMATION.md](AUTOMATION.md)。
 
 阶段 2A 的进程内 Session 与连续对话已通过离线、真实 DeepSeek 和 Windows 终端验证及用户 review。阶段 2D-14 按用户要求在 `feat/session-perfection` 增加本地持久化、新建、列表、命名、切换、继续最近会话和会话分支。实现与验证事实统一记录在 [PROGRESS.md](../PROGRESS.md)，不会以写入代码替代验证。
@@ -17,9 +19,12 @@
 | 模块 | 职责 |
 | --- | --- |
 | `src/session/session.ts` | 单个 Session 的成功模型历史、顺序执行和忙碌保护；在历史副本上调用 Loop，成功后才替换完整历史。 |
-| `src/session/store.ts` | 规范工作目录对应的本地文件、版本与修订校验、历史校验、原子发布和跨进程更新冲突。 |
+| `src/session/record.ts` | v1 快照与摘要类型、名称校验、工作区存储桶标识、记录解码；调用 history 校验完整历史及 attempt 关联，不做文件 I/O。 |
+| `src/session/store.ts` | 规范工作目录对应的本地文件、有界读取、修订锁、原子发布和跨进程更新冲突；通过 record 解码快照。 |
 | `src/session/history.ts`、`src/session/commands.ts` | 文本历史与工具关联的恢复校验，以及 CLI / TUI 共用的本地命令和安全列表文本。 |
-| `src/session/manager.ts` | 当前 Session 身份与持久状态；新建、列表、恢复、命名、分支及清空为新会话；处理最近未完成回合与恢复提示。 |
+| `src/session/manager.ts` | 各入口共用的活动会话选择、操作互斥、内存目录、工作区准备与后台目标路由；新建、列表、恢复、命名、分支与删除。 |
+| `src/session/agent-session.ts` | 单个活动记录的唯一所有者；组合内存 Session，领取回合、保存检查点、提交/失败处理、自动任务计数和请求侧恢复提示。通过 saveRecord 与 listAutomations 两个窄回调连接 Manager。 |
+| `src/session/automations.ts` | 校验会话任务操作、数量限制与监控文件；返回待保存记录及结果，读取列表不生成写入。由 AgentSession 完成保存，不持有第二份活动状态。 |
 | `src/loop.ts` | 执行一个用户回合，调用模型和工具，返回答案与完整历史；向持久化边界提供已发生消息的检查点，不负责选择会话或文件位置。 |
 | `src/agent.ts` | 按本次配置装配父子模型、Tools 和 Skills；不从会话文件恢复凭据或授权。 |
 | `src/commands.ts` | chat / TUI 的共享本地命令分发；/skills 展示启动目录元数据，会话命令委托 session/commands，不请求模型或修改历史。 |
@@ -27,7 +32,7 @@
 | `tui/` | 同一 SessionManager 上的终端交互、审批、显示与进程遥测。 |
 | `webui/` | 同一 SessionManager 上的浏览器会话列表、操作与状态快照；HTTP 与审批边界不变。 |
 
-Session、Manager、Store 分别回答“已成功完成的模型对话是什么”“当前在使用哪个会话”“如何可靠保存和读取”。Tools 保留进程内写入/命令事实，execution-report 汇总当前回合事件；这两类状态不归模型历史所有，也不会由恢复会话重新执行。
+Session、AgentSession、Manager、Store 分别回答“已成功完成的模型对话是什么”“本轮如何与活动记录一起保存”“当前在使用哪个会话”“如何可靠保存和读取”。Manager 不再保存独立可变的活动 record；需要完整数据时读取 AgentSession 的防御性快照，摘要与历史也通过其公开访问器获取。Tools 保留进程内写入/命令事实，execution-report 汇总当前回合事件；这两类状态不归模型历史所有，也不会由恢复会话重新执行。
 
 程序化 `new Session({ model, maxIterations, tools? })` 保持独立进程内会话入口。日常 CLI / TUI / Web UI 使用 `SessionManager.open(agent, { workspace, store?, selection?, persistence? })`，通过 `run()` 执行当前会话；管理方法为异步 `list()`、`newSession()`、`resume()`、`rename()`、`fork()` 和 `reset()`。`current` 是身份摘要，`history` 是完整历史副本，`persistent` 表示是否使用磁盘。选择条件包含 continue、resume、fork 和 name。
 
@@ -53,7 +58,7 @@ Session、Manager、Store 分别回答“已成功完成的模型对话是什么
 
 副作用与历史提交不是同一个事务。文件修改、shell 命令、已发送给模型的数据和已发生费用不会因为模型失败、取消、切换、新建或保存失败撤销。跨进程只恢复对话与未完成回合提醒，Tools 的实时 journals 和进程累计 token 不恢复；旧成功 tool 内容也不是当前文件或新测试通过的证据。
 
-Manager 暂存根 Loop 的 completed / stopped，待持久化成功或停止处理后才向观察器发出一次终止事件；子任务事件照旧透传。成功回答但最终写盘失败时报告 stopped / SESSION_STORAGE，并保留已观察用量与副作用，不把纯模型完成误报成已保存会话。开始记录失败也会以零模型请求的 stopped 报告结束。程序化普通 Session / Loop 保持原事件时机；回调抛错或强制终止不保证最终报告，发布成功后的回调异常不能撤销已保存历史。
+AgentSession 暂存根 Loop 的 completed 并过滤其 stopped；失败处理后发出一次 stopped，成功时将完成事件随结果交还 Manager，后者释放操作锁后再通知观察器。子任务事件照旧透传。成功回答但最终写盘失败时报告 stopped / SESSION_STORAGE，并保留已观察用量与副作用，不把纯模型完成误报成已保存会话。开始记录失败也会以零模型请求的 stopped 报告结束。程序化普通 Session / Loop 保持原事件时机；回调抛错或强制终止不保证最终报告，发布成功后的回调异常或取消不能撤销已保存历史。若失败记录本身也无法写盘，活动对象保留失败证据和此前成功历史，磁盘可能仍显示 running，不宣称故障记录已持久化。
 
 ## 入口与会话命令
 

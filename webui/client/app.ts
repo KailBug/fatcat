@@ -1,6 +1,6 @@
 import type { Approval, WebTurn, WebUiState } from "../controller.js";
 import { renderMarkdown } from "./markdown.js";
-import type { SessionSummary } from "../../src/session/store.js";
+import type { SessionSummary } from "../../src/session/record.js";
 import { SessionMenu } from "./session-menu.js";
 import type { SessionAction } from "./session-menu.js";
 import { SessionDialog } from "./session-dialog.js";

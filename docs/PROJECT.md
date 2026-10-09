@@ -14,6 +14,8 @@
 
 ## 当前工作边界
 
+2026-10-09 在用户指定的 `feat/session-perfection`，按 `src/session/REFACTOR_PLAN.md` 对 Session 做三个连续的内部重构阶段：记录/存储分离、活动回合生命周期分离、自动任务策略分离及入口验收。设计依据为本地 `D:/pi` 的现有源码，保留原 v1 JSON、会话与工具权限语义、Node/pnpm/SDK；不引入树形历史、压缩、Graph 或新用户功能。阶段结果见 PROGRESS 和 [Session 架构](ARCHITECTURE/SESSION.md)，整体 2D 仍进行中。
+
 2026-10-03 在 `feat/session-perfection` 修正会话工作区体验：默认展示同一存储根下全部会话，恢复目标会话时切换实际工作区；chat/TUI `/workspace [path]` 与 Web UI 目录选择器支持已有会话和新草稿。Session ID、历史和修订保护保留，工具、模型路径指导、Skills 同步更新，启动权限上限有效。自动任务仍限当前工作区，不因全局列表运行其他项目。验证事实见 PROGRESS。
 
 用户要求在 `feat/cron-dev` 增加 Cron 和事件触发，并明确文件变化优先。阶段 2D-15 支持会话内自然语言、chat/TUI 的 `/cron`和 Web UI Cron 表单创建绑定；定时或文件变化沿原 Agent/权限/报告继续目标 Session，结果保存在同一历史。Web UI 可绑定既有会话或新建会话，提供任务管理和标题右端时钟；TUI 提供状态标记。任务与计数持久化，进程内串行调度且不补跑离线任务。原独立 JSON CLI 保留高级用法；Node、pnpm、模型 SDK 不变且无新依赖。webhook、完成/失败链、系统服务和自动崩溃恢复未实现。细节见 [AUTOMATION.md](ARCHITECTURE/AUTOMATION.md)，验证事实见 PROGRESS。

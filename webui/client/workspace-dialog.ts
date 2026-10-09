@@ -1,4 +1,4 @@
-import type { SessionSummary } from "../../src/session/store.js";
+import type { SessionSummary } from "../../src/session/record.js";
 import type { WorkspaceDirectory } from "../workspaces.js";
 
 function button(text: string, action: () => void): HTMLButtonElement {

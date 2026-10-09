@@ -1,4 +1,4 @@
-import type { SessionSummary } from "../../src/session/store.js";
+import type { SessionSummary } from "../../src/session/record.js";
 
 import { icon } from "./icons.js";
 

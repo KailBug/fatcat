@@ -5,7 +5,7 @@ import type {
   ChatCompletionMessageFunctionToolCall,
   ChatCompletionMessageParam,
 } from "openai/resources/chat/completions";
-import { prepareRequestContext } from "./context.js";
+import { prepareRequestContext } from "./context/request.js";
 import { parseTokenUsage } from "./model-usage.js";
 import type { TokenUsage } from "./model-usage.js";
 import type { Config } from "./config.js";
@@ -25,7 +25,7 @@ export type ModelObservation =
   | { type: "model_usage"; usage: TokenUsage | null };
 export type Model = (messages: Message[], signal?: AbortSignal,
   observe?: (event: ModelObservation) => void,
-  options?: { toolChoice: "auto" | "none" }) => Promise<ModelTurn>;
+  options?: { toolChoice: "auto" | "none"; purpose?: "compaction" }) => Promise<ModelTurn>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -96,7 +96,7 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
       model: config.model,
       messages,
       // MiMo ignores non-auto tool_choice values; omit tools for a text-only request.
-      ...(options?.toolChoice === "none" && config.provider === "mimo" ? {} : {
+      ...(options?.purpose === "compaction" || (options?.toolChoice === "none" && config.provider === "mimo") ? {} : {
         tools: tools.definitions,
         tool_choice: options?.toolChoice ?? "auto",
       }),
@@ -111,7 +111,7 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
     const accepted = bytes <= config.maxRequestBytes;
     observe?.({ type: "model_input", bytes, limitBytes: config.maxRequestBytes, accepted });
     if (!accepted) {
-      throw new HarnessError("MODEL_CONTEXT_LIMIT", `Model request is ${bytes} bytes; the local limit is ${config.maxRequestBytes}. Use a smaller task or /reset in chat. Execution records survive reset and may still exceed the limit; review them before starting a new process or explicitly increasing HARNESS_MAX_REQUEST_BYTES. Eligible older read outputs were considered for omission; protected messages remain intact. This request was not sent.`);
+      throw new HarnessError("MODEL_CONTEXT_LIMIT", `Model request is ${bytes} bytes; the local limit is ${config.maxRequestBytes}. Use /compact in chat, TUI, or Web UI for older turns, or start a smaller task with /reset. Execution records survive reset and may still exceed the limit; review them before starting a new process or explicitly increasing HARNESS_MAX_REQUEST_BYTES. Eligible older read outputs were considered for omission; protected messages remain intact. This request was not sent.`);
     }
     checkCancellation(signal);
     const deadline = AbortSignal.timeout(config.requestTimeoutMs);

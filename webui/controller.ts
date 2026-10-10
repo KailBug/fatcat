@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HarnessError, formatError } from "../src/errors.js";
 import { createTurnReporter } from "../src/execution-report.js";
+import { isContextCommand, runContextCommand } from "../src/context/commands.js";
 import type { ExecutionReport, ReportEvent } from "../src/execution-report.js";
 import type { Message } from "../src/model.js";
 import type { SessionManager } from "../src/session/manager.js";
@@ -33,6 +34,7 @@ export type WebTurn = {
   status: "running" | "answered" | "stopped";
   activity: string[]; report?: ExecutionReport;
   automation?: boolean;
+  contextOperation?: boolean;
 };
 export type WebUiState = {
   revision: number; info: WebUiInfo; turns: WebTurn[]; busy: boolean;
@@ -122,8 +124,15 @@ export class WebUiController {
     if (!prompt.trim() || Buffer.byteLength(prompt) > 32_768) {
       throw new HarnessError("INPUT", "Enter a message of at most 32768 UTF-8 bytes.");
     }
-    if (!automatic && this.turns.length >= 100) throw new HarnessError("INPUT", "Start a new chat after 100 turns.");
-    const turn: WebTurn = { id: randomUUID(), prompt, status: "running", activity: [], ...(automatic ? { automation: true } : {}) };
+    const contextCommand = !automatic && isContextCommand(prompt);
+    if (!automatic && !contextCommand && this.turns.filter((turn) => !turn.contextOperation).length >= 100) {
+      throw new HarnessError("INPUT", "Start a new chat after 100 turns.");
+    }
+    if (contextCommand && this.turns.filter((turn) => turn.contextOperation).length >= 20) {
+      this.turns.splice(this.turns.findIndex((turn) => turn.contextOperation), 1);
+    }
+    const turn: WebTurn = { id: randomUUID(), prompt, status: "running", activity: [],
+      ...(automatic ? { automation: true } : {}), ...(contextCommand ? { contextOperation: true } : {}) };
     const visible = !automatic || automatic.task.sessionId === this.session.current.id;
     if (visible) this.turns.push(turn);
     this.runningSessionId = automatic?.task.sessionId ?? this.session.current.id;
@@ -132,10 +141,11 @@ export class WebUiController {
     // Install active state before the session can emit events or request approval.
     const done = Promise.resolve().then(async () => {
       try {
-        const options = { signal: abort.signal, onEvent: createTurnReporter((event) => this.observe(turn, event, false, visible)) };
-        turn.answer = automatic
+        const options = { signal: abort.signal, onEvent: createTurnReporter((event) => this.observe(turn, event, false, visible && !contextCommand)) };
+        turn.answer = contextCommand ? (await runContextCommand(this.session, prompt, options))!.text : automatic
           ? await this.session.runAutomation(automatic.task.sessionId, automatic.task.id, automatic.activation.scheduledAt, automatic.activation.paths ?? [], options)
           : await this.session.run(prompt, options);
+        if (contextCommand && /^\/compact(?:\s|$)/.test(prompt)) this.contextUsage.reset();
         turn.status = "answered";
         this.status = "Ready";
       } catch (error) {

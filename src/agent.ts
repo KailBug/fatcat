@@ -47,7 +47,8 @@ export function createAgent(config: Config, baseTools: Tools = defaultTools, tra
   const tools = withAutomationTool(createSubagentTools(sharedTools, childModel, config.maxIterations));
   const model = withGuidance(createModel(config, transport, tools),
     () => [delegationPolicy, sharedGuidance(), `Current local time: ${new Date().toString()}. For user-requested scheduled or event-triggered work, use automation to bind it to this session. Future runs continue this conversation. State the actual schedule, limits and process-lifetime requirement after successful creation.`].filter(Boolean).join("\n\n"));
-  return { tools, model, maxIterations: config.maxIterations };
+  return { tools, model, maxIterations: config.maxIterations,
+    compactionModel: createModel(config, transport), maxRequestBytes: config.maxRequestBytes };
 }
 
 function withGuidance(model: Model, guidance: string | (() => string)): Model {

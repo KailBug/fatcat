@@ -1,5 +1,5 @@
-import { checkCancellation } from "./errors.js";
-import type { Message } from "./model.js";
+import { checkCancellation } from "../errors.js";
+import type { Message } from "../model.js";
 
 function omission(content: Message["content"]): string | undefined {
   if (typeof content !== "string") return;

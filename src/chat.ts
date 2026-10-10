@@ -69,7 +69,9 @@ export async function runChat(
         error.write(`${commands}\n`);
       } else if (prompt.startsWith("/")) {
         try {
-          const result = await runInteractiveCommand(session, prompt, options.skills);
+          const result = await runInteractiveCommand(session, prompt, options.skills, {
+            signal, onEvent: createTurnReporter((event) => error.write(`${JSON.stringify({ operation: "compaction", ...event })}\n`)),
+          });
           error.write(result ? `${result.text}\n` : "Unknown command. Use /help.\n");
           if (result?.switched) error.write('{"type":"session_reset"}\n');
         } catch (cause) {

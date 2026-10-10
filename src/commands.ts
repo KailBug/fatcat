@@ -3,8 +3,10 @@ import { runSessionCommand, sessionCommandHelp } from "./session/commands.js";
 import type { Conversation } from "./session/commands.js";
 import type { SkillDescriptor } from "./skills.js";
 import { SessionManager } from "./session/manager.js";
+import { contextCommandHelp, runContextCommand } from "./context/commands.js";
+import type { CompactionOptions } from "./context/compaction.js";
 
-export const interactiveCommandHelp = `/cron [description]: create automation in this session; /cron list|pause <id>|resume <id>|delete <id>. /skills: list available skills; ${sessionCommandHelp}`;
+export const interactiveCommandHelp = `/cron [description]: create automation in this session; /cron list|pause <id>|resume <id>|delete <id>. /skills: list available skills; ${contextCommandHelp} ${sessionCommandHelp}`;
 
 export function automationCommandPrompt(prompt: string): string | undefined {
   const match = /^\/cron\s+([\s\S]+)$/.exec(prompt);
@@ -18,9 +20,11 @@ function quoted(value: string): string {
     (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
 
-/** Local commands display catalog metadata without loading instructions or changing history. */
+/** Dispatch host commands; only explicit compaction may request a model summary. */
 export async function runInteractiveCommand(session: Conversation, prompt: string,
-  skills: readonly SkillDescriptor[] = []): Promise<{ text: string; switched: boolean } | undefined> {
+  skills: readonly SkillDescriptor[] = [], options: CompactionOptions = {}): Promise<{ text: string; switched: boolean } | undefined> {
+  const context = await runContextCommand(session, prompt, options);
+  if (context) return context;
   const automation = /^\/cron(?:\s+(list|pause|resume|delete)(?:\s+(\S+))?)?\s*$/.exec(prompt);
   if (automation) {
     if (!(session instanceof SessionManager)) throw new HarnessError("AUTOMATION_UNAVAILABLE", "Automation requires a saved session.");

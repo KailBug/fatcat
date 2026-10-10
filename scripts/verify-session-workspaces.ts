@@ -21,7 +21,10 @@ await writeFile(join(workspace, "marker.txt"), "Workspace A");
 await writeFile(join(outside, "marker.txt"), "Workspace B");
 const factory = async (root: string) => {
   const tools = await createTools(root);
-  return { tools, maxIterations: 1, model: async () => ({ toolCalls: [], message: { role: "assistant" as const,
+  return { tools, maxIterations: 1,
+    compactionModel: async () => ({ toolCalls: [], message: { role: "assistant" as const,
+      content: "Keep the workspace marker requirement. Inspect current marker.txt before reporting its content." } }),
+    model: async () => ({ toolCalls: [], message: { role: "assistant" as const,
     content: JSON.stringify(await tools.execute("read", '{"path":"marker.txt"}')) } }) };
 };
 const store = new SessionStore({ root: join(base, "sessions") });
@@ -37,6 +40,13 @@ const server = await startWebUiServer(controller, 0, async (initialPath) => {
   return selections.shift() ?? null;
 });
 let browser: Browser | undefined;
+async function waitForIdle(): Promise<void> {
+  const deadline = performance.now() + 10000;
+  while (controller.snapshot().busy) {
+    if (performance.now() >= deadline) throw new Error("Session operation did not settle within 10 seconds.");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
 try {
   browser = await chromium.launch({ headless: true, channel: "msedge" });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -63,9 +73,33 @@ try {
   await page.waitForFunction(() => !(document.getElementById("workspace-picker") as HTMLButtonElement).disabled);
   assert.deepEqual(initialPaths, [outside, workspace, workspace]);
   assert.equal(session.current.workspace, outside);
+  await page.locator("#prompt").fill("Keep the workspace marker requirement. " + "Historical detail. ".repeat(500));
+  await page.locator("#prompt").press("Enter");
+  await page.waitForFunction(() => !(document.getElementById("prompt") as HTMLTextAreaElement).disabled);
+  await page.waitForFunction(() => document.getElementById("messages")?.textContent?.includes("Historical detail."));
+  // Wait for durable completion rather than relying on composer editing being enabled.
+  await waitForIdle();
+  await page.locator("#send").waitFor({ state: "visible" });
+  await page.locator("#prompt").fill("Read the current marker again");
+  await page.locator("#prompt").press("Enter");
+  await page.waitForFunction(() => document.getElementById("messages")?.textContent?.includes("Read the current marker again"));
+  await waitForIdle();
+  await page.locator("#send").waitFor({ state: "visible" });
+  const completeHistory = session.history;
+  await page.locator("#prompt").fill("/compact Preserve the marker requirement");
+  await page.locator("#prompt").press("Enter");
+  await page.waitForFunction(() => document.getElementById("messages")?.textContent?.includes("Context compacted"));
+  assert.deepEqual(session.history, completeHistory);
+  assert.ok(session.context.projectedBytes < session.context.historyBytes);
+  assert.equal(session.current.turnCount, 3);
+  assert.ok((await store.loadAny(session.current.id)).compaction);
+  await page.locator("#send").waitFor({ state: "visible" });
+  await page.locator("#prompt").fill("/context");
+  await page.locator("#prompt").press("Enter");
+  await page.waitForFunction(() => document.getElementById("messages")?.textContent?.includes("Full history:"));
   if (process.env.FATCAT_VERIFY_SCREENSHOT) await page.screenshot({ path: resolve(process.env.FATCAT_VERIFY_SCREENSHOT) });
   assert.deepEqual(errors, []);
-  console.log("Verified real Edge with an injected native picker: global session list, resume/workspace synchronization, existing and draft directory selection, actual workspace read, session menu cancellation and no page errors.");
+  console.log("Verified real Edge with injected models and a native picker: global sessions, workspace selection/read, manual compaction, context status, preserved history, saved summary, session menus and no page errors.");
 } finally {
   await browser?.close();
   await server.close();

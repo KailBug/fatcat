@@ -6,10 +6,14 @@ import type { SessionAutomation } from "../automation/tasks.js";
 import { withAutomationTool } from "../automation/tool.js";
 import { prepareSessionAutomation } from "./automations.js";
 import { Session } from "./session.js";
+import type { SessionOptions } from "./session.js";
+import { compactContext, prepareCompaction } from "../context/compaction.js";
+import type { CompactionOptions, CompactionResult } from "../context/compaction.js";
+import type { ContextStatus } from "../context/manager.js";
 import { sessionSummary } from "./record.js";
 import type { SessionAttempt, SessionRecord, SessionSummary } from "./record.js";
 
-export interface SessionAgentOptions extends Pick<LoopOptions, "model" | "maxIterations" | "tools"> {
+export interface SessionAgentOptions extends SessionOptions {
 	skills?: SkillCatalog;
 }
 
@@ -71,6 +75,29 @@ export class AgentSession {
 	}
 	get history(): Message[] {
 		return this.session.messages;
+	}
+	get context(): ContextStatus {
+		return this.session.context;
+	}
+
+	async compact(options: CompactionOptions = {}): Promise<CompactionResult> {
+		try {
+			const plan = prepareCompaction(this.record.history, this.record.compaction,
+				this.agent.maxRequestBytes, this.agent.maxIterations, options);
+			// Check the current revision before spending model budget. Final publication checks it again.
+			this.record = await this.options.saveRecord(this.record);
+			const candidate = await compactContext(this.agent.compactionModel ?? this.agent.model,
+				this.record.history, this.record.compaction, plan, options);
+			checkCancellation(options.signal);
+			this.record = await this.options.saveRecord({
+				...this.record, compaction: candidate, updatedAt: new Date().toISOString(),
+			});
+			this.restoreSession();
+			return { ...this.context, requests: plan.chunks.length };
+		} catch (error) {
+			options.onEvent?.({ type: "stopped", code: error instanceof HarnessError ? error.code : "INTERNAL" });
+			throw error;
+		}
 	}
 
 	async run(prompt: string, options: SessionRunOptions = {}): Promise<SessionTurnResult> {
@@ -227,6 +254,6 @@ export class AgentSession {
 				}
 				return this.agent.model(projected, signal, observe, requestOptions);
 			},
-		}, this.record.history);
+		}, this.record.history, this.record.compaction);
 	}
 }

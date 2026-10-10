@@ -60,6 +60,8 @@
 
 返回 `kind: "skill"`、name、path、baseDirectory 和包含 frontmatter 的完整 content。SKILL.md 不接受 offset、limit 或 query；超限即拒绝，不能把一部分指令当成完整激活。独立的 kind 使旧 read 投影只省略 file / directory / search 数据时保留技能指令。
 
+2026-10-10 的显式 `/compact` 是另一条上下文路径：用户选择压缩较早完整回合时，相关 Skill 正文仍完整保存在原始历史，但模型可能只收到摘要中的任务指导。摘要有损，需要完整规则时应重新 read 加载该 Skill。请求侧目录与权限始终使用当前运行配置，摘要不授予权限。内置 context-recovery 已同步这一边界，见 [CONTEXT.md](CONTEXT.md)。
+
 相对引用以技能根为基准，使用同一 read：
 
 ```json

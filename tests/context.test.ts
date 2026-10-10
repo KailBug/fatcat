@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createAgent } from "../src/agent.js";
 import { loadConfig } from "../src/config.js";
-import { prepareRequestContext } from "../src/context.js";
+import { prepareRequestContext } from "../src/context/request.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import type { ExecutionReport, ReportEvent } from "../src/execution-report.js";
 import { createDeepSeekModel } from "../src/model.js";

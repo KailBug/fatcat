@@ -1,18 +1,43 @@
-# Context：模型请求中的旧读取省略
+# Context：上下文投影与手动压缩
+
+## 2026-10-10：上下文管理与 compact
+
+本轮在 `feat/session-perfection` 将原请求投影迁入 `src/context/`，增加显式上下文状态、完整回合边界与手动压缩。参考本地 `D:/pi/packages/coding-agent/src/core/session-manager.ts` 的 `buildSessionProjection` / `CompactionEntry`，以及 `core/compaction/compaction.ts` 的摘要与保留区间设计。使用具名接口、明确状态所有权和直接模块引用；不引入 pi 运行时、JSONL 树或新的 SDK。实际验证见 PROGRESS。
+
+| 模块 | 职责 |
+| --- | --- |
+| `src/context/manager.ts` | 压缩状态解码、原始历史到模型历史的投影，以及两者的 JSON 字节/消息统计。纯函数，不持有第二份活动 Session。 |
+| `src/context/request.ts` | 原有完整请求体计量和旧成功 read 省略；最终精确预算仍由 Model 检查。 |
+| `src/context/compaction.ts` | 选择完整回合边界、预先规划有界摘要分段、生成候选摘要和检查实际缩减。无文件 I/O、工具执行或自动重试。 |
+| `src/context/commands.ts` | chat、TUI、Web UI 共用 `/context`、`/compact [instructions]`，命令不进入保存的用户历史。 |
+
+数据流：Session 完整历史 → Context 投影（摘要＋最近保留区间）→ Loop 附加当前执行事实和回合预算 → Agent 加入当前工作区/权限/Skills 指导 → Model 构造完整供应商请求 → request 按需省略旧 read → 精确字节检查 → SDK。Loop 的检查点与成功出口始终使用完整历史。
+
+`CompactionState` 记录版本、摘要、`firstKeptMessage` 和时间。边界是不可变前缀之后的原始消息下标，必须落在 user 消息，且前一消息是无工具调用的最终 assistant；不会拆开工具调用批次。Session 的 v1 JSON 增加可选 `compaction`，旧文件缺省为无压缩，新文件保留完整原文。恢复、命名、工作区切换与 fork 保留该字段，新会话/reset 清除。旧程序可能忽略摘要字段并恢复完整上下文，不承诺降级后的压缩状态保留。
+
+手动 compact 保留最近一个完整用户回合，只摘要更早内容。重复压缩以旧摘要加新进入压缩范围的原文为输入，避免把最早原文重复发送。摘要作为明确标识的历史上下文进入普通消息，不能成为 system 策略或恢复权限；运行时指导、工具事实和未完成 attempt 恢复提示继续独立加入。
+
+摘要使用当前 provider 的独立文本请求，不附加工具定义、委派/自动任务指导或真实工具执行。按源文本顺序分段，保留 Unicode；模型合并上一摘要和下一段。单次操作最多 `min(maxIterations, 8)` 个请求，规划超限时不发送任何摘要请求，不悄悄丢弃正文。摘要上限为 `min(8192, floor(maxRequestBytes / 8))` UTF-8 字节，附加指令上限 2048 字节；至少要求 4096 字节请求预算，实际仍须容纳提示和正文。规划预留供应商封装空间，SDK 发送前再次精确检查完整请求。工具调用、空摘要、超长摘要、无缩减、取消、传输失败均拒绝候选，无隐藏重试。
+
+持久会话通过 Manager 操作锁串行运行 compact。生成前保存原记录以验证修订，生成后再次以预期修订原子保存候选，再刷新活动投影。失败保留原历史、原摘要和原 attempt；生成前的修订领取可能已写盘。跨进程采用乐观修订检查，不持有贯穿模型调用的磁盘锁；其他进程更新后候选发布失败，不覆盖其内容，已消耗的模型费用不撤销。压缩本身不创建可重放 attempt，进程终止后使用最后成功保存的状态。
+
+chat 以 `operation: compaction` 输出请求/用量/执行报告；TUI 累计实际摘要消费但不增加已完成对话回合，清除摘要请求的上下文用量观测；Web UI 在当前页面显示操作及报告，恢复时仍展示原问答。Web UI 的 Stop、TUI 的 Escape/Ctrl+C 和 chat 取消信号传递到摘要请求。Web UI 不把摘要的输入 token 当作压缩后对话占用，成功后清空旧观测，等待下一次普通请求。`/context` 的数据不含工具定义、动态指导及执行 journals，不能充当完整请求或 token 估计。
+
+首版只提供用户显式压缩，没有自动阈值触发、溢出重试、长期记忆、树形历史或原文删除。摘要有损且模型生成，需通过任务验证判断质量；可能遗漏 Skill 细节，应按需重新加载。最新完整回合、当前回合、工具事实或摘要本身仍可能超预算。完整原文保留意味着内存与 64 MiB 快照上限不变；八请求内无法处理的历史需要提高显式预算或新建会话。本轮离线和浏览器证据不能证明真实模型摘要质量。
 
 ## 当前状态与范围
 
-阶段 2D-8 已实现并通过离线与真实多回合验证，随 PR #10 合入 main；详细证据见 [PROGRESS.md](../PROGRESS.md)。目前只有一个小型请求准备模块，不是完整上下文平台。目标是在连续对话累积较早 read 结果后，尽可能让下一次请求满足现有字节预算，同时保留任务要求、工具关联及执行事实。
+以下记录阶段 2D-8 的旧读取省略机制：已通过离线与真实多回合验证，随 PR #10 合入 main；详细证据见 [PROGRESS.md](../PROGRESS.md)。它继续作为手动压缩之后的请求容量防线，目标是在连续对话累积较早 read 结果后尽可能满足字节预算。
 
 后续 Web UI 的 context-usage.ts 仅观察最近父请求的有效 prompt tokens，并对照六个已核对精确模型的 token 窗口显示比例；未知用量/窗口不估算，恢复或切换后清空观测。它不计算草稿或最终响应 token，不作为当前完整历史的 token 测量；不改变本模块的完整 JSON 字节预算和省略规则，不增加 tokenizer 或模型请求。指标来源与容量依据见 [WEBUI.md](WEBUI.md)，TUI 的现有预算显示不随之改变。
 
 ## 职责与数据流
 
-`src/context.ts` 导出 `prepareRequestContext(body, limitBytes, signal?)`，接收包含 messages 的完整 JSON 请求体，返回 body、beforeBytes、bytes 和 omittedReadResults。无文件访问、网络请求、缓存或持久状态；使用 Node 的 JSON 序列化和 UTF-8 字节计量。
+`src/context/request.ts` 导出 `prepareRequestContext(body, limitBytes, signal?)`，接收包含 messages 的完整 JSON 请求体，返回 body、beforeBytes、bytes 和 omittedReadResults。无文件访问、网络请求、缓存或持久状态；使用 Node 的 JSON 序列化和 UTF-8 字节计量。
 
-Session 持有完整成功历史 → Loop 复制历史并附加当前消息与临时执行事实 → agent.ts 在父请求副本补充委派指导 → model.ts 组装含工具定义及生成参数的完整请求 → context.ts 测量并按需整理 → model.ts 发出元数据并检查最终预算 → 通过后才调用 SDK。
+Session 持有完整成功历史 → Loop 复制历史并附加当前消息与临时执行事实 → agent.ts 在父请求副本补充委派指导 → model.ts 组装含工具定义及生成参数的完整请求 → context/request.ts 测量并按需整理 → model.ts 发出元数据并检查最终预算 → 通过后才调用 SDK。
 
-Session / Loop 接口不变。context.ts 只复制消息数组及被替换的 tool 消息，不修改传入内容。返回原 body 或请求副本，均不作为 Loop 的保存历史；下一次请求重新准备。这将“保存了什么”与“本次发送什么”分开，不增加管理器或策略注册表。
+旧 read 省略本身不改变 Session / Loop 接口。context/request.ts 只复制消息数组及被替换的 tool 消息，不修改传入内容。返回原 body 或请求副本，均不作为 Loop 的保存历史；下一次请求重新准备。这将“保存了什么”与“本次发送什么”分开，不增加策略注册表。
 
 ## 已实现的选择规则
 
@@ -55,7 +80,7 @@ ok 表示原调用成功，不表示此请求仍有原正文；kind 明确区分
 
 完整历史仍驻留内存，构造、序列化和 JSON 解析也消耗内存；这不是内存硬上限。用户要求、assistant 复制的正文、非 read 结果、当前/最近回合和执行事实仍可能填满预算。请求字节不等于 token，符合本地预算仍可能被服务端拒绝。
 
-不删除或重写用户要求，不自动摘要，不检验 assistant 历史中的陈述是否仍成立，本模块不提供文件快照、索引、缓存、长期记忆或持久化；2D-14 的会话恢复由 SessionManager / Store 负责，恢复后的完整历史仍经过此请求投影。小样例只证明本轮行为，不证明大仓库成功率、最优选取或成本改善。
+旧读取省略本身不删除或重写用户要求、不做模型摘要。手动 compact 的有损摘要与持久化边界见本页开头；本模块仍不提供文件快照、索引、缓存或长期记忆。2D-14 的会话恢复由 SessionManager / Store 负责。小样例只证明相应行为，不证明大仓库成功率、最优选取或成本改善。
 
 2D-9 通过同一 Session 的多文件修复及后续需求记录具体行为和失败原因，不改变本模块。双回合样例要求重读当前文件；它的第一回合在第二回合仍属于受保护的最近完成回合，因此不要求触发旧读取省略，不能替代三回合的 verify:context。是否需要更完整的上下文组织或任务证据能力，继续由实际任务决定，不预建接口。
 

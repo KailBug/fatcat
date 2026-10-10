@@ -51,6 +51,43 @@ const settings = {
 };
 const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content }, toolCalls: [] });
 
+test("TUI compaction reports model usage without adding conversation turns and Escape cancels summaries", async (t) => {
+	const terminal = new FakeTerminal();
+	const app = new TuiApp({ ...settings, terminal, color: false });
+	let waiting = false;
+	let cancelNext = false;
+	const session = new Session({ maxIterations: 8, model: async () => answer(),
+		compactionModel: async (_messages, signal, observe) => {
+			observe?.({ type: "model_usage", usage: { promptTokens: 80, completionTokens: 20, totalTokens: 100 } });
+			if (cancelNext) {
+				waiting = true;
+				await new Promise<void>((resolve) => signal!.addEventListener("abort", () => resolve(), { once: true }));
+			}
+			return answer("Keep amber and verify current files.");
+		} });
+	await session.run("Keep amber " + "old content ".repeat(1000));
+	await session.run("Recent turn");
+	const done = app.run(session);
+	t.after(async () => { terminal.input("\x04"); await done; });
+	terminal.submit("/compact");
+	await until(() => app.telemetry.snapshot().turn.status === "answered");
+	assert.equal(session.messages.filter((message) => message.role === "user").length, 2);
+	assert.equal(app.telemetry.snapshot().conversation.completedTurns, 0);
+	assert.equal(app.telemetry.snapshot().session.tokenUsage.total.totals?.totalTokens, 100);
+	assert.equal(app.telemetry.snapshot().parentPromptTokens, null);
+	await session.run("Next turn " + "data ".repeat(1000));
+	const before = session.context;
+	cancelNext = true;
+	terminal.submit("/compact");
+	await until(() => waiting);
+	terminal.input("\x1b");
+	await until(() => app.telemetry.snapshot().turn.status === "stopped");
+	assert.deepEqual(session.context, before);
+	assert.equal(app.telemetry.snapshot().session.tokenUsage.total.totals?.totalTokens, 200);
+	terminal.submit("/exit");
+	assert.equal(await done, 0);
+});
+
 test("TUI lists all workspaces and changes the displayed workspace with sessions and local commands", async (t) => {
   const { base, workspace, outside } = await temporaryWorkspace(t);
   const store = new SessionStore({ root: join(base, "sessions") });

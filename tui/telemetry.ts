@@ -50,7 +50,7 @@ export type TuiTelemetrySnapshot = {
 export type TuiTelemetry = {
   beginTurn(): void;
   observe(event: ReportEvent): void;
-  finishTurn(outcome: "answered" | "stopped", stopCode?: string): void;
+  finishTurn(outcome: "answered" | "stopped", stopCode?: string, conversationTurn?: boolean): void;
   resetConversation(completedTurns?: number): void;
   snapshot(): TuiTelemetrySnapshot;
 };
@@ -195,13 +195,18 @@ export function createTuiTelemetry(): TuiTelemetry {
       if (event.type === "execution_report") lastReport = structuredClone(event.report);
       else observeLoop(event);
     },
-    finishTurn(outcome, stopCode) {
+    finishTurn(outcome, stopCode, conversationTurn = true) {
       if (turn.status !== "running") return;
       turn.status = outcome;
       turn.stopCode = outcome === "stopped" ? stopCode ?? turn.stopCode ?? "INTERNAL" : null;
       session[outcome]++;
       // Only Session.run resolving confirms that its history was actually committed.
-      if (outcome === "answered") conversation.completedTurns++;
+      if (outcome === "answered" && conversationTurn) conversation.completedTurns++;
+      if (!conversationTurn) {
+        // Summary input measures a maintenance request, not the next conversation context.
+        parentRequest = null;
+        parentPromptTokens = null;
+      }
     },
     resetConversation(completedTurns = 0) {
       if (turn.status === "running") throw new Error("Cannot reset telemetry while a turn is running.");

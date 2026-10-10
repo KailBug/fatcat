@@ -49,6 +49,8 @@
 
 ## 当前实现
 
+2026-10-10 将 `src/context.ts` 迁入 `src/context/request.ts`，补充 `manager.ts` 的纯投影/状态校验、`compaction.ts` 的有界摘要和 `commands.ts` 的共享入口。Session 保存完整历史与可选摘要边界，Loop 只对模型输入应用投影；Model 保留最终请求预算。手动 `/compact` 不执行工具，成功保存后才发布上下文变化，细节见 [CONTEXT.md](CONTEXT.md)。
+
 版本元数据由根 `package.json` 持有，`src/version.ts` 从编译模块相对路径读取，供 CLI `--version` / `-v` 使用；查询发生在供应商配置与 Session 初始化前。README 的动态版本及 CI 徽章展示 main 状态，区别于本地 checkout。版本策略见 [USAGE.md](../USAGE.md#version-and-project-badges)。
 
 2026-10-09 Session 职责重构：参考本地 pi 的会话数据、AgentSession 与运行环境划分，新增 `src/session/record.ts`、`agent-session.ts`、`automations.ts`，分别持有快照解码、活动回合提交及任务绑定策略。Manager 保留跨会话选择、工作区准备和操作互斥；Store 保留有界磁盘 I/O 与原子修订锁。入口 API 与 v1 快照兼容，运行时、依赖和权限边界不变。阶段计划及执行记录在 [REFACTOR_PLAN.md](../../src/session/REFACTOR_PLAN.md)，当前模块事实见 [SESSION.md](SESSION.md)，验证见 PROGRESS。

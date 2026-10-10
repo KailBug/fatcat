@@ -277,6 +277,7 @@ export class TuiApp {
       return;
     }
     if (prompt.startsWith("/")) {
+      this.turnController = new AbortController();
       this.state.busy = true;
       this.startedAt = Date.now();
       this.editor.disableSubmit = true;
@@ -327,14 +328,22 @@ export class TuiApp {
   }
 
   private async runLocalCommand(prompt: string): Promise<void> {
+    const compacting = /^\/compact(?:\s|$)/.test(prompt);
+    if (compacting) this.telemetry.beginTurn();
     try {
-      const result = await runInteractiveCommand(this.session!, prompt, this.options.skillCatalog);
+      const result = await runInteractiveCommand(this.session!, prompt, this.options.skillCatalog, {
+        signal: this.turnController!.signal,
+        onEvent: createTurnReporter((event) => this.observe(event)),
+      });
+      if (compacting) this.telemetry.finishTurn("answered", undefined, false);
       if (result?.switched) this.restoreConversation();
       else this.updateSessionFooter();
       this.message("system", result?.text ?? "Unknown command. Use /help.");
     } catch (cause) {
+      if (compacting) this.telemetry.finishTurn("stopped", cause instanceof HarnessError ? cause.code : "INTERNAL", false);
       this.message("error", formatError(cause));
     } finally {
+      this.turnController = undefined;
       this.state.busy = false;
       this.editor.disableSubmit = false;
       this.activity = "Ready";

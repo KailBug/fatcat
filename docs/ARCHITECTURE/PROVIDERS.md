@@ -8,6 +8,8 @@
 
 ## 模块职责
 
+2026-10-10 的手动 compact 使用当前 Config 创建独立 `compactionModel`，复用同一 SDK、端点、生成参数、精确请求预算、用量和取消逻辑。内部 `Model` 选项 `purpose: "compaction"` 不发送给供应商；它使四家摘要请求都省略 tools / tool_choice，摘要路径拒绝任何返回的工具调用。注入传输检查覆盖四家配置，不代表真实摘要服务或质量已验证。
+
 Web UI 的后续上下文指示器在独立 webui/context-usage.ts 中维护六个已核对精确模型的窗口数字，未知名称不猜测；只观察既有父 model_usage，不新增供应商请求字段、远程发现或配置。容量依据及时间见 [WEBUI.md](WEBUI.md)，本地 maxRequestBytes 仍是独立完整 JSON 字节预算。
 
 `src/providers.ts` 定义小型供应商 profile：配置字段、固定地址、默认模型和厂商专用请求字段。`src/config.ts` 只读取所选供应商的凭据/模型/区域与共享预算。`src/model.ts` 的 `createModel(config, transport?, tools?)` 创建共享客户端，负责请求容量、deadline、取消、SDK 调用、响应校验、用量观察和安全错误。原 `createDeepSeekModel` 保留兼容入口；CLI/createAgent 使用通用入口。

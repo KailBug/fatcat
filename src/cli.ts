@@ -36,7 +36,7 @@ Usage:
   pnpm start --prompt "Explain what an agent loop does."
 
 Use --version (-v) to print the local Fatcat version without model credentials.
-Use --chat for a continuous conversation with /help, /cron, /skills, /new, /sessions, /resume, /rename, /fork, and /exit.
+Use --chat for a continuous conversation with /help, /cron, /skills, /context, /compact, /new, /sessions, /resume, /rename, /fork, and /exit.
 Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
 Use --webui for the local browser interface at 127.0.0.1:3210; --port <1-65535> selects another port.
 
@@ -83,7 +83,9 @@ Search queries go to Bing (default) or DuckDuckGo; fetched URLs go to their host
 Each task emits an execution_report with request sizes, reported token usage, writes and command outcomes, even on failure.
 
 HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 262144 bytes); older read outputs may be replaced by explicit markers to fit.
-Current and recent turns, user instructions, and execution facts are preserved; full successful history is saved locally.
+Automatic read omission preserves current/recent turns, user instructions, and execution facts; full successful history is saved locally.
+Use /context in chat, TUI, or Web UI to inspect conversation bytes, or /compact [instructions] to summarize older turns manually.
+Manual compaction uses bounded model requests, retains original history and the latest complete turn, and can be cancelled.
 An answer or a zero exit code alone does not certify the task; inspect the recorded evidence.
 
 HARNESS_PROVIDER selects deepseek (default), kimi, mimo, or qwen for the entire session.

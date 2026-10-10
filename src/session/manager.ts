@@ -8,6 +8,8 @@ import type { SessionAgentOptions, SessionRunOptions, SessionTurnResult } from "
 import { SessionStore, canonicalWorkspace, processAlive } from "./store.js";
 import { sessionName, sessionSummary } from "./record.js";
 import type { SessionRecord, SessionSummary } from "./record.js";
+import type { CompactionOptions, CompactionResult } from "../context/compaction.js";
+import type { ContextStatus } from "../context/manager.js";
 import { taskIsEnabled } from "../automation/tasks.js";
 import type { SessionAutomation } from "../automation/tasks.js";
 import { FileChanges } from "../automation/files.js";
@@ -95,6 +97,22 @@ export class SessionManager {
 	}
 	get history(): Message[] {
 		return this.runtime.history;
+	}
+	get context(): ContextStatus {
+		return this.runtime.context;
+	}
+
+	async compact(options: CompactionOptions = {}): Promise<CompactionResult> {
+		this.requireIdle();
+		this.busy = true;
+		let result: CompactionResult;
+		try {
+			result = await this.runtime.compact(options);
+		} finally {
+			this.busy = false;
+		}
+		options.onEvent?.({ type: "completed", iterations: result.requests });
+		return result;
 	}
 	get skills(): SkillCatalog | undefined {
 		return this.agent.skills;

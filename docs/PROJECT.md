@@ -16,6 +16,8 @@
 
 ## 当前工作边界
 
+2026-10-10 按用户要求在 `feat/session-perfection` 完善 `src/context/` 并集成手动 compact。Context 负责历史投影、容量统计、原有旧 read 省略及有界摘要生成；Session 持有原始历史和持久摘要状态。chat/TUI/Web UI 共用 `/context` 与 `/compact [instructions]`，保持当前 provider、权限、字节预算、取消和原始历史。当前增量不包含自动压缩、树形历史、长期记忆或存储迁移，不代表完整阶段 3 已完成；详见 Context 架构与 PROGRESS。
+
 2026-10-09 在用户指定的 `feat/session-perfection`，按 `src/session/REFACTOR_PLAN.md` 对 Session 做三个连续的内部重构阶段：记录/存储分离、活动回合生命周期分离、自动任务策略分离及入口验收。设计依据为本地 `D:/pi` 的现有源码，保留原 v1 JSON、会话与工具权限语义、Node/pnpm/SDK；不引入树形历史、压缩、Graph 或新用户功能。阶段结果见 PROGRESS 和 [Session 架构](ARCHITECTURE/SESSION.md)，整体 2D 仍进行中。
 
 2026-10-08 按用户指定的 minimal-product-website 技能，在 `feat/webui-dev` 优化现有 Web UI：系统中英文字体、黑白灰深浅主题、留白、分级圆角、短入场/悬停动画及手机布局。覆盖 composer、消息、菜单、审批、Cron 与工作区/预览面板；补齐手机侧栏键盘焦点和关闭行为。后续截图反馈移除首页建议卡片，统一用户指定的猫咪 logo，用 Windows 原生文件夹窗口替换网页目录弹窗，并紧凑排布 Cron 全部创建字段与分页管理。仍属于阶段 2D 的本地交互增量，复用 Session/Loop/Tools 与现有 Node、pnpm 和 Playwright，不新增运行依赖；验收命令为 `pnpm run verify:webui`，事实见 PROGRESS。

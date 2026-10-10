@@ -2,6 +2,8 @@
 
 ## 状态与范围
 
+2026-10-10 增加 Context 投影与手动 compact：完整历史和最近未完成 attempt 保持原语义，v1 快照增加可选 `compaction`（摘要、完整回合保留边界与时间）。`Session.context` / `compact()` 与 Manager 对应方法供各入口共用；持久候选生成前后验证修订，只有最终保存成功才替换活动投影。失败或取消保留旧上下文，摘要请求消费仍报告。恢复和 fork 保留摘要，新建清除；不会恢复旧权限、重放工具或删除原文。模块、预算与限制见 [CONTEXT.md](CONTEXT.md)。
+
 2026-10-09 在 `feat/session-perfection` 参考本地 `D:/pi` 的 `core/session-manager.ts`、`core/agent-session.ts` 和 `core/agent-session-runtime.ts`，按[重构计划](../../src/session/REFACTOR_PLAN.md)分离记录校验、活动回合与会话选择。借鉴 pi 的状态所有权与显式类型/构造方式；保留 Fatcat 的 v1 原子 JSON、完整成功历史和独立 attempt，不迁移 pi 的 JSONL 树、压缩或扩展系统。具体阶段验证见计划与 PROGRESS。
 
 2D-15 增加可选 `automations` 字段和摘要 `automationCount`。SessionManager 负责创建/管理绑定、执行前持久领取与计数、继续目标历史；后台目标不同于选中会话时不改变选择。fork 不复制绑定，删除 Session 同时删除绑定，无持久化模式拒绝创建。触发 metadata 仅进入当次模型请求投影；重启不重放中断自动回合。详见 [AUTOMATION.md](AUTOMATION.md)。

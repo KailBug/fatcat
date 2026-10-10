@@ -4,6 +4,8 @@ import { HarnessError } from "../errors.js";
 import type { Message } from "../model.js";
 import { decodeBoundTasks } from "../automation/tasks.js";
 import type { BoundTask } from "../automation/tasks.js";
+import { decodeCompaction } from "../context/manager.js";
+import type { CompactionState } from "../context/manager.js";
 import { invalidSession, isRecord, validateHistory } from "./history.js";
 
 export const sessionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -32,6 +34,7 @@ export interface SessionRecord {
 	history: Message[];
 	attempt: SessionAttempt | null;
 	automations?: BoundTask[];
+	compaction?: CompactionState;
 }
 
 export interface SessionSummary {
@@ -87,6 +90,7 @@ export function decodeSessionRecord(value: unknown, workspace: string, id: strin
 		}
 	}
 	const history = validateHistory(value.history);
+	const compaction = value.compaction === undefined ? undefined : decodeCompaction(value.compaction, history);
 	let attempt: SessionAttempt | null = null;
 	if (value.attempt !== null) {
 		const raw = value.attempt;
@@ -106,6 +110,7 @@ export function decodeSessionRecord(value: unknown, workspace: string, id: strin
 			code: raw.code as string | null, messages };
 	}
 	return { version: 1, id, workspace: value.workspace, name, title: value.title, createdAt: value.createdAt,
+		...(compaction ? { compaction } : {}),
 		...(value.storageWorkspace === undefined ? {} : { storageWorkspace: String(value.storageWorkspace) }),
 		updatedAt: value.updatedAt, revision: Number(value.revision), forkedFrom: value.forkedFrom as string | null,
 		history, attempt, ...(value.automations === undefined ? {} : { automations: decodeBoundTasks(value.automations) }) };

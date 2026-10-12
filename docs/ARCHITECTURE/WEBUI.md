@@ -2,6 +2,8 @@
 
 ## 范围与现状
 
+2026-10-12：自动 compact 的开始、摘要请求、保存完成与续跑显示在原回合 activity 中，沿用 Stop 与原回合报告。`context-usage.ts` 根据 `model_request.purpose=compaction` 排除摘要输入 token，普通请求报告用量后恢复显示。完整原文仍进入恢复视图，不额外建立维护回合；后台自动任务仍只更新绑定会话，边界见 [CONTEXT.md](CONTEXT.md)。
+
 侧栏列出全部工作区会话，选择后 workspace/Tools/Skills 同步更新。2026-10-08 按用户反馈移除网页目录弹窗，点击 composer 工作区路径或会话菜单 Change workspace 经认证 `POST /api/session/choose-workspace`（仅 `{id}`）打开 Windows 原生资源管理器样式的文件夹窗口。选择结果仍由 SessionManager 校验和绑定；新草稿不提前落盘，已有会话保留 ID/历史和修订保护，未选中会话的修改不改变当前选择。取消保留目录、transcript 和报告。选择期间使用原会话管理锁，拒绝重复选择、模型执行和其他会话变更；断连、关服或 5 分钟期限会取消 helper。预览按当前目录解析，目录切换撤下旧预览/报告并拒绝旧工作区快照。原 `/api/workspaces`（最多 1000 项）及 `/api/session/workspace` 保留现有接口与校验，不再用于页面目录导航，也不是模型工具。
 
 2D-15 增加侧栏 Cron tasks 模块，`client/cron.ts` 用 DOM 构建可访问表单和任务管理，支持既有/新会话绑定、四类触发器、次数/期限和暂停/恢复/删除。会话标题最右端显示时钟。认证 `/api/automation/create`、`/api/automation/manage` 交由 controller 与 SessionManager 校验。共享 ConversationAutomations 空闲触发原回合与审批，后台目标不改变当前选择；WebUiState 发布任务、错误及 runningSessionId，自动回合显示来源。详见 [AUTOMATION.md](AUTOMATION.md)。

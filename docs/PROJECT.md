@@ -16,6 +16,8 @@
 
 ## 当前工作边界
 
+2026-10-12 用户确认继续自动压缩，在 `feat/session-perfection` 为本地请求字节超限增加每回合最多一次的压缩与续跑。复用 Context 摘要和 Session 持久发布，保留原文、最近完整回合、当前工具批次及权限；摘要计入原回合请求预算。默认开启且提供 `HARNESS_AUTO_COMPACT=false`，不包含主动 token 阈值或供应商错误重试。继续作为阶段 2D 增量，验收与限制见 PROGRESS 和 Context 架构。
+
 2026-10-10 按用户要求在 `feat/session-perfection` 完善 `src/context/` 并集成手动 compact。Context 负责历史投影、容量统计、原有旧 read 省略及有界摘要生成；Session 持有原始历史和持久摘要状态。chat/TUI/Web UI 共用 `/context` 与 `/compact [instructions]`，保持当前 provider、权限、字节预算、取消和原始历史。当前增量不包含自动压缩、树形历史、长期记忆或存储迁移，不代表完整阶段 3 已完成；详见 Context 架构与 PROGRESS。
 
 2026-10-09 在用户指定的 `feat/session-perfection`，按 `src/session/REFACTOR_PLAN.md` 对 Session 做三个连续的内部重构阶段：记录/存储分离、活动回合生命周期分离、自动任务策略分离及入口验收。设计依据为本地 `D:/pi` 的现有源码，保留原 v1 JSON、会话与工具权限语义、Node/pnpm/SDK；不引入树形历史、压缩、Graph 或新用户功能。阶段结果见 PROGRESS 和 [Session 架构](ARCHITECTURE/SESSION.md)，整体 2D 仍进行中。

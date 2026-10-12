@@ -49,6 +49,8 @@
 
 ## 当前实现
 
+2026-10-12 增加本地字节超限后的自动 compact：Model 提供拒绝证据，Loop 保留执行现场并最多请求一次恢复，Session 使用既有摘要模块，AgentSession 保存后发布候选。摘要请求与续跑共用回合额度，事件及消费经 CLI/TUI/Web UI 原报告链展示，摘要输入 token 不作为对话容量。默认开启、可配置关闭；不重试供应商错误或重放工具，见 [CONTEXT.md](CONTEXT.md)。
+
 2026-10-10 将 `src/context.ts` 迁入 `src/context/request.ts`，补充 `manager.ts` 的纯投影/状态校验、`compaction.ts` 的有界摘要和 `commands.ts` 的共享入口。Session 保存完整历史与可选摘要边界，Loop 只对模型输入应用投影；Model 保留最终请求预算。手动 `/compact` 不执行工具，成功保存后才发布上下文变化，细节见 [CONTEXT.md](CONTEXT.md)。
 
 版本元数据由根 `package.json` 持有，`src/version.ts` 从编译模块相对路径读取，供 CLI `--version` / `-v` 使用；查询发生在供应商配置与 Session 初始化前。README 的动态版本及 CI 徽章展示 main 状态，区别于本地 checkout。版本策略见 [USAGE.md](../USAGE.md#version-and-project-badges)。

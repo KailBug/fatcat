@@ -11,6 +11,12 @@ import { validateHistory } from "./history.js";
 export interface SessionOptions extends Pick<LoopOptions, "model" | "maxIterations" | "tools"> {
 	compactionModel?: Model;
 	maxRequestBytes?: number;
+	autoCompaction?: boolean;
+}
+
+export interface SessionExecutionOptions extends Pick<LoopOptions, "signal" | "onEvent" | "onCheckpoint"> {
+	/** Publish a generated context before using it in the running turn. */
+	onCompaction?: (compaction: CompactionState) => Promise<void>;
 }
 
 /** Own complete successful history and its model projection in a process-local conversation. */
@@ -34,12 +40,15 @@ export class Session {
 		return inspectContext(this.history, this.compaction);
 	}
 
-	async run(prompt: string, options: Pick<LoopOptions, "signal" | "onEvent" | "onCheckpoint"> = {}): Promise<string> {
+	async run(prompt: string, options: SessionExecutionOptions = {}): Promise<string> {
 		this.requireIdle();
 		this.running = true;
 		try {
 			const result = await runAgentTurn(prompt, this.history, {
 				...this.options, ...options, ...(this.compaction ? { compaction: this.compaction } : {}),
+				...(this.options.autoCompaction === false ? {} : {
+					onContextLimit: (maxRequests: number, iteration: number) => this.compactDuringTurn(maxRequests, iteration, options),
+				}),
 			});
 			checkCancellation(options.signal);
 			this.history = result.messages;
@@ -47,6 +56,26 @@ export class Session {
 		} finally {
 			this.running = false;
 		}
+	}
+
+	private async compactDuringTurn(maxRequests: number, iteration: number, options: SessionExecutionOptions) {
+		// Only successful history is eligible; the running prompt and tool results stay intact.
+		const boundary = this.history.findLastIndex((message) => message.role === "user");
+		if (boundary <= (this.compaction?.firstKeptMessage ?? 1)) return;
+		const plan = prepareCompaction(this.history, this.compaction, this.options.maxRequestBytes, maxRequests, options);
+		const beforeBytes = this.context.projectedBytes;
+		options.onEvent?.({ type: "compaction_start", reason: "request_limit" });
+		const candidate = await compactContext(this.options.compactionModel ?? this.options.model,
+			this.history, this.compaction, plan, {
+				...(options.signal ? { signal: options.signal } : {}),
+				onEvent: (event) => options.onEvent?.("iteration" in event ? { ...event, iteration: event.iteration + iteration } : event),
+			});
+		checkCancellation(options.signal);
+		await options.onCompaction?.(candidate);
+		this.compaction = candidate;
+		options.onEvent?.({ type: "compaction_end", requests: plan.chunks.length,
+			beforeBytes, afterBytes: this.context.projectedBytes });
+		return { compaction: candidate, requests: plan.chunks.length };
 	}
 
 	async compact(options: CompactionOptions = {}): Promise<CompactionResult> {

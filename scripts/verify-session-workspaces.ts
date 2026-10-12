@@ -7,6 +7,8 @@ import type { Browser } from "playwright";
 import { SessionManager } from "../src/session/manager.js";
 import { SessionStore } from "../src/session/store.js";
 import { createTools } from "../src/tools.js";
+import { HarnessError } from "../src/errors.js";
+import type { Model } from "../src/model.js";
 import { WebUiController } from "../webui/controller.js";
 import { startWebUiServer } from "../webui/server.js";
 
@@ -21,18 +23,25 @@ await writeFile(join(workspace, "marker.txt"), "Workspace A");
 await writeFile(join(outside, "marker.txt"), "Workspace B");
 const factory = async (root: string) => {
   const tools = await createTools(root);
-  return { tools, maxIterations: 1,
+  const model: Model = async (messages, _signal, observe) => {
+    if (messages.at(-1)?.content === "Continue with automatic compaction"
+      && JSON.stringify(messages).includes("Auto history detail.")) {
+      observe?.({ type: "model_input", bytes: 300000, limitBytes: 262144, accepted: false });
+      throw new HarnessError("MODEL_CONTEXT_LIMIT", "Injected local request limit");
+    }
+    return { toolCalls: [], message: { role: "assistant",
+      content: JSON.stringify(await tools.execute("read", '{"path":"marker.txt"}')) } };
+  };
+  return { tools, maxIterations: 8, model,
     compactionModel: async () => ({ toolCalls: [], message: { role: "assistant" as const,
-      content: "Keep the workspace marker requirement. Inspect current marker.txt before reporting its content." } }),
-    model: async () => ({ toolCalls: [], message: { role: "assistant" as const,
-    content: JSON.stringify(await tools.execute("read", '{"path":"marker.txt"}')) } }) };
+      content: "Keep the workspace marker requirement. Inspect current marker.txt before reporting its content." } }) };
 };
 const store = new SessionStore({ root: join(base, "sessions") });
 const other = await SessionManager.open(await factory(outside), { workspace: outside, store, selection: { name: "Project B" }, agentForWorkspace: factory });
 const session = await SessionManager.open(await factory(workspace), { workspace, store, selection: { name: "Project A" },
   deferEmptySessions: true, agentForWorkspace: factory });
 const controller = await WebUiController.create({ workspace, provider: "deepseek", model: "offline", permission: "read-only",
-  shellPermission: "deny", webPermission: "deny", maxIterations: 1, maxRequestBytes: 262144, skills: 0, warnings: [] }, session);
+  shellPermission: "deny", webPermission: "deny", maxIterations: 8, maxRequestBytes: 262144, skills: 0, warnings: [] }, session);
 const selections = [workspace, outside, null];
 const initialPaths: string[] = [];
 const server = await startWebUiServer(controller, 0, async (initialPath) => {
@@ -97,9 +106,23 @@ try {
   await page.locator("#prompt").fill("/context");
   await page.locator("#prompt").press("Enter");
   await page.waitForFunction(() => document.getElementById("messages")?.textContent?.includes("Full history:"));
+  for (const prompt of ["Auto history detail. ".repeat(500), "Retain the recent marker requirement", "Continue with automatic compaction"]) {
+    await waitForIdle();
+    await page.locator("#send").waitFor({ state: "visible" });
+    await page.locator("#prompt").fill(prompt);
+    await page.locator("#prompt").press("Enter");
+    await page.waitForFunction((expected) => document.getElementById("messages")?.textContent?.includes(expected), prompt.trim());
+    await waitForIdle();
+  }
+  await page.waitForFunction(() => document.getElementById("messages")?.textContent?.includes("compacting older turns"));
+  assert.equal(session.current.turnCount, 6);
+  assert.deepEqual(session.history.slice(0, completeHistory.length), completeHistory);
+  assert.equal(controller.snapshot().turns.at(-1)?.status, "answered");
+  assert.equal(controller.snapshot().turns.at(-1)?.report?.requestBytes.parent.rejected, 1);
+  assert.equal((await store.loadAny(session.current.id)).compaction?.firstKeptMessage, 9);
   if (process.env.FATCAT_VERIFY_SCREENSHOT) await page.screenshot({ path: resolve(process.env.FATCAT_VERIFY_SCREENSHOT) });
   assert.deepEqual(errors, []);
-  console.log("Verified real Edge with injected models and a native picker: global sessions, workspace selection/read, manual compaction, context status, preserved history, saved summary, session menus and no page errors.");
+  console.log("Verified real Edge with injected models and a native picker: global sessions, workspace selection/read, manual and automatic compaction, context status, preserved history, saved summary, session menus and no page errors.");
 } finally {
   await browser?.close();
   await server.close();

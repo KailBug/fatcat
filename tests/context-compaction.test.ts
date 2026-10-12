@@ -312,7 +312,7 @@ test("manual compaction lets an over-budget conversation continue through the SD
 		assert.equal(body.messages.at(-1)?.content, "Continue with the retained constraint");
 		return Response.json({ choices: [{ finish_reason: "stop", message: answer("Continued with amber").message }] });
 	});
-	const session = new Session(agent, history(45000));
+	const session = new Session({ ...agent, autoCompaction: false }, history(45000));
 	const original = session.messages;
 	await assert.rejects(session.run("Too large before compaction"), code("MODEL_CONTEXT_LIMIT"));
 	assert.equal(ordinary + summaries, 0);

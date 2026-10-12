@@ -16,7 +16,16 @@ test("accepts explicit settings and trims surrounding whitespace", () => {
     DEEPSEEK_API_KEY: ` ${fakeKey} `,
     DEEPSEEK_MODEL: " custom-model ",
     HARNESS_MAX_ITERATIONS: " 3 ",
-  }), { provider: "deepseek", region: "global", apiKey: fakeKey, model: "custom-model", maxIterations: 3, requestTimeoutMs: 60000, maxRequestBytes: 262144 });
+  }), { provider: "deepseek", region: "global", apiKey: fakeKey, model: "custom-model", autoCompaction: true, maxIterations: 3, requestTimeoutMs: 60000, maxRequestBytes: 262144 });
+});
+
+test("automatic compaction defaults on and accepts only explicit boolean settings", () => {
+  assert.equal(loadConfig({ DEEPSEEK_API_KEY: fakeKey }).autoCompaction, true);
+  assert.equal(loadConfig({ DEEPSEEK_API_KEY: fakeKey, HARNESS_AUTO_COMPACT: " false " }).autoCompaction, false);
+  for (const value of ["", "0", "yes", fakeKey]) {
+    assert.throws(() => loadConfig({ DEEPSEEK_API_KEY: fakeKey, HARNESS_AUTO_COMPACT: value }),
+      (error: unknown) => error instanceof Error && /HARNESS_AUTO_COMPACT/.test(error.message) && !error.message.includes(fakeKey));
+  }
 });
 
 test("rejects missing or blank credentials", () => {

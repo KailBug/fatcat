@@ -87,7 +87,7 @@ export async function compactContext(model: Model, history: readonly Message[], 
 	for (const [index, fragment] of plan.chunks.entries()) {
 		checkCancellation(options.signal);
 		const iteration = index + 1;
-		options.onEvent?.({ type: "model_request", iteration });
+		options.onEvent?.({ type: "model_request", iteration, purpose: "compaction" });
 		const response = await model(summaryMessages(summary, fragment, plan.instructions, plan.summaryBytes), options.signal,
 			(event) => options.onEvent?.({ ...event, iteration }), { toolChoice: "none", purpose: "compaction" });
 		checkCancellation(options.signal);

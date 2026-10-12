@@ -2,6 +2,8 @@
 
 ## 范围与取舍
 
+2026-10-12：显示同一回合内自动 compact 的开始、摘要请求和完成活动，Escape/Ctrl+C 沿原取消信号停止摘要。摘要请求及用量仍累计，但 `model_request.purpose=compaction` 期间不设置对话输入 token，续跑普通请求后恢复观测。只有原回合完成才增加一次对话计数；没有新增会话或模型工具，边界见 [CONTEXT.md](CONTEXT.md)。
+
 2026-10-03：`/sessions` 和无参数 `/resume` 展示全部工作区会话及其路径。恢复目标会话同步更新实际 Tools、Skills、界面路径及 `/status`；`/workspace` 显示当前路径，`/workspace <path>` 修改当前会话工作区（含空白新会话），相对路径基于当前工作区，含空格路径可加双引号。运行/审批中拒绝修改；历史保留，不移动项目文件，也不提升启动权限。
 
 2D-15 接入共享 ConversationAutomations：`/cron <描述>`通过模型绑定当前 Session，无参数列表，pause/resume/delete 本地管理。页脚、会话列表和自动回合显示 `[clock]`。空闲才运行自动任务，保留编辑器草稿，复用原审批、停止及遥测；结果保存到目标会话，后台执行不切换选中会话。详见 [AUTOMATION.md](AUTOMATION.md)。

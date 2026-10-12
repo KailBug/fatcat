@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+2026-10-12：Loop 在 Model 已报告本地拒绝且抛出 `MODEL_CONTEXT_LIMIT` 时，可通过 Session 提供的 `onContextLimit` 恢复一次。保留当前 messages、工具实例及调用 ID；摘要请求与拒绝/续跑尝试共用 maxIterations，最后请求仍禁用工具。Session 调用既有 Context 摘要模块，AgentSession 发布候选后才继续。新增 `compaction_start` / `compaction_end` 活动事件及 `model_request.purpose=compaction`，不提前发出 completed/stopped。完整边界见 [CONTEXT.md](CONTEXT.md)。
+
 最小 Loop 已通过离线测试、真实 DeepSeek 闭环验证和用户 review。阶段 2A 复用该 Loop 增加内存 Session 与连续对话，阶段 2A 已验证并通过用户 review；Session 独立记录在 [SESSION.md](SESSION.md)。这里只描述当前落地边界。
 
 ## 模块与接口
@@ -21,7 +23,7 @@
 | `src/providers.ts` | 四家供应商的配置描述、固定 endpoint 与专有请求参数；详见 PROVIDERS.md |
 | `src/model.ts` | `createModel(config, transport?, tools?): Model` 按配置创建客户端；检查完整请求大小、观察收到的用量、校验响应、转换服务错误；保留 createDeepSeekModel 兼容入口 |
 | `src/skills.ts` | 本地 Skill 元数据发现与校验、模型目录、read 包装与按需加载；详见 SKILLS.md |
-| `src/context.ts` | `prepareRequestContext(body, limitBytes, signal?)` 测量完整请求，仅超预算时省略受保护范围外的旧 read 内容；不修改历史，详见 CONTEXT.md |
+| `src/context/request.ts` | `prepareRequestContext(body, limitBytes, signal?)` 测量完整请求，仅超预算时省略受保护范围外的旧 read 内容；不修改历史，详见 CONTEXT.md |
 | `src/model-usage.ts` | 严格校验供应商 token 计数并转换为 TokenUsage；非法或缺失时为 null |
 | `src/tools.ts`、`src/tools/` | 创建内置工具集合，提供定义和异步执行；程序化省略工作目录时只有 sum，传入工作目录额外提供 read / write / shell 与规范 workspaceRoot；CLI 默认传入启动目录，执行处落实各自权限，详见 TOOLS.md |
 | `src/loop.ts` | `runAgentTurn(prompt, history, options)` 在副本上执行一轮用户任务，返回答案及完整历史；`runAgent(prompt, options): Promise<string>` 保持单次任务入口 |
@@ -44,7 +46,7 @@ pnpm 在包根运行 scripts，因此 start 命令先在包根构建并由 Node 
 
 1. CLI 从参数获得单个任务，或由 `--chat` 逐行交给 Session，加载本地配置。
 2. Loop 为单次任务建立新的 system 消息；Session 则提供此前成功历史。Loop 复制历史并追加新 user 消息，在副本上执行本轮任务。
-3. Loop 在开始回合时调用可选 tools.forTurn，为委派初始化独立额度；每次请求通过 getWrites / getCommands 获取独立写入和命令记录，作为临时数据消息提供给模型，不保存进 Session 历史。模型客户端组装包含 Skill 元数据目录的完整请求体，交由 context.ts 在需要时省略旧读取内容，校验最终字节预算后，携带请求消息和工具定义请求所选供应商；已收到的用量在答案解析前观察。
+3. Loop 在开始回合时调用可选 tools.forTurn，为委派初始化独立额度；每次请求通过 getWrites / getCommands 获取独立写入和命令记录，作为临时数据消息提供给模型，不保存进 Session 历史。模型客户端组装包含 Skill 元数据目录的完整请求体，交由 context/request.ts 在需要时省略旧读取内容，校验最终字节预算后，携带请求消息和工具定义请求所选供应商；已收到的用量在答案解析前观察。
 4. 最终回答时，Loop 返回内容与完整历史。Session 保存本轮成功历史，SessionManager 完成原子提交后交给界面；单次任务输出后结束，连续对话等待下一条输入。Loop 在模型/工具工作前后等待可选 onCheckpoint 保存最近未完成回合；失败不替换成功历史。底层 runAgent 仍支持不持久的单次调用。
 5. 工具调用时，先保留 assistant 消息，再顺序等待每个异步工具调用，执行后先报告新增或变化的执行记录，再检查取消；工具结果写成 role=tool 消息，保留原始 tool_call_id。
 6. 将包含关联结果的历史提交给下一轮模型，直到得到最终回答或明确失败。
@@ -104,13 +106,13 @@ CLI / chat 另通过 createTurnReporter 发出 execution_report。它基于本�
 
 HARNESS_MAX_REQUEST_BYTES 默认 262144（256 KiB），接受 1–16777216 的十进制正整数。Config 的 maxRequestBytes 也在创建客户端时校验，程序化调用不能用 NaN / Infinity 绕过检查。选择字节预算是为了用现有 Node/SDK 精确限制待发送正文，不增加 tokenizer 或猜测模型上下文容量；默认值是本地策略，可按任务显式调整。
 
-model.ts 在创建请求 deadline 和调用 SDK 前通过 context.ts 计算 `Buffer.byteLength(JSON.stringify(body))`：计入消息、system、父委派指导、工具定义、完整历史及临时写入/命令事实、模型名和生成参数；包括 JSON 转义和 UTF-8，不包含 HTTP 头与认证 Key。与当前安装 SDK 的 JSON 序列化方式一致，并以注入传输读到的实际正文验证。2D-8 在原始正文超限时先按 [CONTEXT.md](CONTEXT.md) 省略较早成功 read 的请求内容，再计算最终完整正文。等于上限允许，仍超出返回 MODEL_CONTEXT_LIMIT，给出字节数、上限及恢复建议；不重试、不生成摘要、不修改保存历史。
+model.ts 在创建请求 deadline 和调用 SDK 前通过 context/request.ts 计算 `Buffer.byteLength(JSON.stringify(body))`：计入消息、system、父委派指导、工具定义、完整历史及临时写入/命令事实、模型名和生成参数；包括 JSON 转义和 UTF-8，不包含 HTTP 头与认证 Key。与当前安装 SDK 的 JSON 序列化方式一致，并以注入传输读到的实际正文验证。2D-8 在原始正文超限时先按 [CONTEXT.md](CONTEXT.md) 省略较早成功 read 的请求内容，再计算最终完整正文。等于上限允许，仍超出返回 MODEL_CONTEXT_LIMIT，给出字节数、上限及恢复建议；模型层不重试、不生成摘要、不修改保存历史；Session 可按下述有界自动压缩路径恢复一次。
 
 ModelObservation 有三个分支：`context_reduction { beforeBytes, afterBytes, omittedReadResults }` 仅在本次投影实际替换内容时发出，不含路径或正文；`model_input { bytes, limitBytes, accepted }` 表示本地检查结果，accepted 不是服务端接受或计费确认；`model_usage { usage }` 表示收到响应时的已校验统计或 null。Loop 仅增加 iteration 并透传，子事件仍包装在 subagent_event 内；parentModel 包装器透传 observe，模型层不依赖 Loop 事件类型。
 
 用量按 [DeepSeek Chat Completions 文档](https://api-docs.deepseek.com/api/create-chat-completion/)中的 prompt_tokens、completion_tokens、total_tokens 提取。三项必须都是非负安全整数且总和一致，映射为 promptTokens / completionTokens / totalTokens；非法或缺失时为 null，不影响本来有效的答案。仅允许这些计数字段进入事件，不记录原始 usage 对象、ID 或其他供应商字段。收到响应后先观察用量，再检查取消/deadline 和解析答案，因此截断或协议错误仍可保留已收到统计；HTTP/网络错误及响应前取消可能没有统计。
 
-这不是 token/费用硬预算。未计缓存细分或金额，不估算未知请求；服务端可能仍因自身 token 限制拒绝较小正文。先构造和序列化完整正文才检查，Session 内存、用户输入及模型输出的分配不受这个字节预算控制。工具批次完成后才准备下一次模型请求，之前的副作用不会回滚；/reset 不清执行事实，事实本身超限时需先 review 后调整配置或新进程。当前只有请求侧的旧读取投影，完整分层上下文与自动摘要仍未实现。
+这不是 token/费用硬预算。未计缓存细分或金额，不估算未知请求；服务端可能仍因自身 token 限制拒绝较小正文。先构造和序列化完整正文才检查，Session 内存、用户输入及模型输出的分配不受这个字节预算控制。工具批次完成后才准备下一次模型请求，之前的副作用不会回滚；/reset 不清执行事实，事实本身超限时需先 review 后调整配置或新进程。请求侧还支持 Session 的手动及本地超限后的有界自动压缩；完整分层上下文、主动 token 阈值和供应商溢出恢复仍未实现。
 
 ## 验证与后续安排
 

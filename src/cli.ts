@@ -86,6 +86,7 @@ HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 26214
 Automatic read omission preserves current/recent turns, user instructions, and execution facts; full successful history is saved locally.
 Use /context in chat, TUI, or Web UI to inspect conversation bytes, or /compact [instructions] to summarize older turns manually.
 Manual compaction uses bounded model requests, retains original history and the latest complete turn, and can be cancelled.
+Local request-limit rejection can trigger one automatic compaction; summaries and continuation share the turn request budget. Set HARNESS_AUTO_COMPACT=false to disable it.
 An answer or a zero exit code alone does not certify the task; inspect the recorded evidence.
 
 HARNESS_PROVIDER selects deepseek (default), kimi, mimo, or qwen for the entire session.

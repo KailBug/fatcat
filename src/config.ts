@@ -10,6 +10,7 @@ export type Config = {
   maxIterations: number;
   requestTimeoutMs: number;
   maxRequestBytes: number;
+  autoCompaction?: boolean;
 };
 
 function positiveInteger(value: string, name: string, maximum: number): number {
@@ -35,11 +36,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!model) {
     throw new HarnessError("CONFIG", `${profile.modelEnv} must not be empty.`);
   }
+  const autoCompaction = (env.HARNESS_AUTO_COMPACT ?? "true").trim();
+  if (autoCompaction !== "true" && autoCompaction !== "false") {
+    throw new HarnessError("CONFIG", "HARNESS_AUTO_COMPACT must be true or false.");
+  }
   return {
     provider,
     region: region as ProviderRegion,
     apiKey,
     model,
+    autoCompaction: autoCompaction === "true",
     maxIterations: positiveInteger(env.HARNESS_MAX_ITERATIONS ?? "32", "HARNESS_MAX_ITERATIONS", Number.MAX_SAFE_INTEGER),
     maxRequestBytes: positiveInteger(env.HARNESS_MAX_REQUEST_BYTES ?? "262144", "HARNESS_MAX_REQUEST_BYTES", 16 * 1024 * 1024),
     requestTimeoutMs: positiveInteger(env.HARNESS_REQUEST_TIMEOUT_MS ?? "60000", "HARNESS_REQUEST_TIMEOUT_MS", 2_147_483_647),

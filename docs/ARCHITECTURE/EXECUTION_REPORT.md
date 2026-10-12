@@ -8,6 +8,8 @@
 
 ## 模块与数据流
 
+2026-10-12：回合内自动压缩发出 `compaction_start` / `compaction_end` 活动事件，不结束报告。摘要请求使用 `model_request.purpose=compaction`，与被拒绝及续跑尝试一起统计为 parent；收到的摘要用量照常累加。只有原回合最终 completed/stopped 产生一次报告；历史原文和任务完成计数不因摘要增加。手动 `/compact` 仍是独立操作报告，详见 [CONTEXT.md](CONTEXT.md)。
+
 `src/execution-report.ts` 导出 `createTurnReporter(emit): (event: LoopEvent) => void`、`ExecutionReport` 和 `ReportEvent`。只消费事件，不访问文件、请求模型或调用工具；2D-7 新增 model_input / model_usage 元数据观察，2D-8 增加 context_reduction。
 
 CLI 单次任务 / chat 每个用户回合创建观察器 → 传入 Loop / Session 的 onEvent → 转发原始事件并累积本回合数据 → 根 completed / stopped 后额外发出 execution_report → stderr。stdout 及 Loop / Session 的返回值不变。命令和写入的日志仍由 Tools 所有；观察器不改变它们。

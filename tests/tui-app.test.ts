@@ -51,6 +51,42 @@ const settings = {
 };
 const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content }, toolCalls: [] });
 
+test("TUI automatic compaction stays in the active turn and Escape cancels it", async (t) => {
+	const terminal = new FakeTerminal();
+	const app = new TuiApp({ ...settings, terminal, color: false });
+	let reject = false;
+	let waiting = false;
+	const session = new Session({ maxIterations: 8, model: async (_messages, _signal, observe) => {
+		if (reject) {
+			observe?.({ type: "model_input", bytes: 300000, limitBytes: 262144, accepted: false });
+			throw new HarnessError("MODEL_CONTEXT_LIMIT", "Injected local rejection");
+		}
+		return answer();
+	}, compactionModel: async (_messages, signal, observe) => {
+		observe?.({ type: "model_usage", usage: { promptTokens: 80, completionTokens: 20, totalTokens: 100 } });
+		waiting = true;
+		await new Promise<void>((resolve) => signal!.addEventListener("abort", () => resolve(), { once: true }));
+		return answer("Keep amber");
+	} });
+	await session.run("Old detail ".repeat(1000));
+	await session.run("Recent requirement");
+	const original = session.messages;
+	reject = true;
+	const done = app.run(session);
+	t.after(async () => { terminal.input("\x04"); await done; });
+	terminal.submit("Continue");
+	await until(() => waiting);
+	assert.match(terminal.plain, /compacting older turns/);
+	assert.equal(app.telemetry.snapshot().parentPromptTokens, null);
+	terminal.input("\x1b");
+	await until(() => app.telemetry.snapshot().turn.status === "stopped");
+	assert.deepEqual(session.messages, original);
+	assert.equal(session.context.summarizedMessages, 0);
+	assert.equal(app.telemetry.snapshot().conversation.completedTurns, 0);
+	assert.equal(app.telemetry.snapshot().session.tokenUsage.total.totals?.totalTokens, 100);
+	assert.equal(app.telemetry.snapshot().turn.stopCode, "CANCELLED");
+});
+
 test("TUI compaction reports model usage without adding conversation turns and Escape cancels summaries", async (t) => {
 	const terminal = new FakeTerminal();
 	const app = new TuiApp({ ...settings, terminal, color: false });

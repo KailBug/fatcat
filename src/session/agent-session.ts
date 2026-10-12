@@ -126,6 +126,11 @@ export class AgentSession {
 					}
 				},
 				onCheckpoint: (messages) => this.saveCheckpoint(messages),
+				onCompaction: async (compaction) => {
+					this.record = await this.options.saveRecord({
+						...this.record, compaction, updatedAt: new Date().toISOString(),
+					});
+				},
 			});
 			this.record = await this.options.saveRecord({
 				...this.record,

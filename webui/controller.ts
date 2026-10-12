@@ -308,7 +308,9 @@ export class WebUiController {
     if (event.type === "execution_report") turn.report = event.report;
     let message: string | undefined;
     const source = child ? "Subagent · " : "";
-    if (event.type === "model_request") message = `${source}Model request ${event.iteration}`;
+    if (event.type === "model_request") message = `${source}${event.purpose === "compaction" ? "Summary" : "Model"} request ${event.iteration}`;
+    if (event.type === "compaction_start") message = "Request limit reached; compacting older turns";
+    if (event.type === "compaction_end") message = `Context compacted: ${event.beforeBytes} to ${event.afterBytes} conversation bytes; continuing current request`;
     if (event.type === "tool_result") message = `${source}${event.tool} · ${event.ok ? "completed" : "failed"}`;
     if (event.type === "write_record") message = `${source}Write ${event.record.path} · ${event.record.status}`;
     if (event.type === "shell_record") message = `${source}Command · ${event.record.status}`;

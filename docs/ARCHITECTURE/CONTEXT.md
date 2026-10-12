@@ -1,4 +1,20 @@
-# Context：上下文投影与手动压缩
+# Context：上下文投影与有界压缩
+
+## 2026-10-12：请求超限后的自动压缩
+
+用户选择继续自动压缩，在 `feat/session-perfection` 的 `a82ff3b` 基线上实现。参考本地 pi `core/agent-session.ts` 的 `_checkCompaction` / `_runAutoCompaction`：区分手动与自动入口、共用摘要生成、最多恢复一次，并发出可观察的压缩事件。Fatcat 沿用自己的请求字节预算与成功历史，不复制 pi 的 token 阈值、服务端 overflow/length 恢复或 JSONL 树。
+
+当前默认启用；`HARNESS_AUTO_COMPACT=false` 或程序化 `SessionOptions.autoCompaction=false` 关闭自动路径，保留 `/compact`。只在 Model 已发出 `model_input.accepted=false` 且抛出本地 `MODEL_CONTEXT_LIMIT` 时考虑恢复。旧 read 省略先执行；供应商 HTTP 错误、截断、超时、连接失败和取消不触发自动压缩。普通 Session 与 Manager 的任务、chat、TUI、Web UI、绑定自动任务共用此路径；独立 `runAgent` 和子 Agent 没有可压缩的跨回合历史。
+
+Loop 每个回合最多调用一次 `onContextLimit`。Session 从完整成功历史规划摘要，保留最近完整回合；当前 prompt、assistant/tool 批次、执行 journals 和恢复提示均不进入摘要。Loop 继续持有当前消息、工具调用 ID 与 `forTurn` 工具实例，只重新构建被拒绝请求的投影，不重新开始回合或执行已经完成的工具。请求指导会按扣减后的预算重新生成；最后一次请求仍禁用工具。
+
+自动摘要与普通请求共用 `maxIterations`：本地被拒绝的尝试也占一次，摘要最多 `min(8, maxIterations - rejectedIteration - 1)` 次，保留一次续跑。少于一个摘要名额或没有更早完整回合时直接保留原超限错误；规划无法在余额内完成时，在调用摘要模型前失败。摘要请求自身不自动恢复，续跑再次超限立即停止，不形成重试循环。使用已有 `prepareCompaction` / `compactContext`，同一 provider、精确字节预算和取消信号有效。
+
+AgentSession 在回合开始/检查点已有修订领取，随后通过 `SessionExecutionOptions.onCompaction` 原子保存候选，保存成功后 Session 才更新投影并允许续跑。保存保留完整成功历史和当前 attempt，后续检查点仍保存原文。候选生成或发布失败保留旧摘要；若摘要已成功保存而续跑失败，则保留新摘要和失败 attempt，恢复/fork 沿用已保存投影。自动任务运行计数只在原回合开始时增加一次。权限不进入摘要或持久配置。
+
+`compaction_start` / `compaction_end` 是回合中的活动事件，不产生独立 completed/stopped；最终执行报告只有一次。所有摘要请求带 `purpose: compaction` 的 model_request 元数据并计入实际请求和用量，迭代编号在同一回合内递增；TUI/Web UI 不把摘要输入 token 当作对话容量，下一次普通请求恢复常规观测。摘要失败沿回合错误路径结束，已有模型费用和工具副作用不撤销。
+
+验收范围：四供应商注入 SDK、共享请求余额、工具执行后续跑、再次超限、配置关闭、取消、存储失败/修订冲突、恢复/fork、入口展示与真实 Edge 注入验证。实际结果以 PROGRESS 为准；真实模型摘要质量、主动阈值压缩和服务端上下文溢出恢复仍未验证或未实现。
 
 ## 2026-10-10：上下文管理与 compact
 
@@ -23,7 +39,7 @@
 
 chat 以 `operation: compaction` 输出请求/用量/执行报告；TUI 累计实际摘要消费但不增加已完成对话回合，清除摘要请求的上下文用量观测；Web UI 在当前页面显示操作及报告，恢复时仍展示原问答。Web UI 的 Stop、TUI 的 Escape/Ctrl+C 和 chat 取消信号传递到摘要请求。Web UI 不把摘要的输入 token 当作压缩后对话占用，成功后清空旧观测，等待下一次普通请求。`/context` 的数据不含工具定义、动态指导及执行 journals，不能充当完整请求或 token 估计。
 
-首版只提供用户显式压缩，没有自动阈值触发、溢出重试、长期记忆、树形历史或原文删除。摘要有损且模型生成，需通过任务验证判断质量；可能遗漏 Skill 细节，应按需重新加载。最新完整回合、当前回合、工具事实或摘要本身仍可能超预算。完整原文保留意味着内存与 64 MiB 快照上限不变；八请求内无法处理的历史需要提高显式预算或新建会话。本轮离线和浏览器证据不能证明真实模型摘要质量。
+首版只提供用户显式压缩；2026-10-12 增量的本地超限恢复见本页开头。仍没有主动阈值触发、服务端溢出重试、长期记忆、树形历史或原文删除。摘要有损且模型生成，需通过任务验证判断质量；可能遗漏 Skill 细节，应按需重新加载。最新完整回合、当前回合、工具事实或摘要本身仍可能超预算。完整原文保留意味着内存与 64 MiB 快照上限不变；八请求内无法处理的历史需要提高显式预算或新建会话。本轮离线和浏览器证据不能证明真实模型摘要质量。
 
 ## 当前状态与范围
 

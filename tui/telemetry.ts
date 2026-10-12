@@ -110,6 +110,7 @@ export function createTuiTelemetry(): TuiTelemetry {
   const conversation = { completedTurns: 0, resets: 0 };
   let parentRequest: TuiTelemetrySnapshot["parentRequest"] = null;
   let parentPromptTokens: number | null = null;
+  let parentCompaction = false;
   let lastReport: ExecutionReport | null = null;
   const children = new Map<string, "running" | "completed" | "stopped">();
   const sessionWrites = new Set<string>();
@@ -120,6 +121,7 @@ export function createTuiTelemetry(): TuiTelemetry {
   function clearTurnDetails(): void {
     parentRequest = null;
     parentPromptTokens = null;
+    parentCompaction = false;
     lastReport = null;
     children.clear();
     turnWrites.clear();
@@ -143,6 +145,7 @@ export function createTuiTelemetry(): TuiTelemetry {
         }
       }
       if (childId === undefined) {
+        parentCompaction = event.purpose === "compaction";
         turn.iteration = event.iteration;
         parentRequest = null;
         parentPromptTokens = null;
@@ -150,7 +153,7 @@ export function createTuiTelemetry(): TuiTelemetry {
     } else if (event.type === "model_input" && childId === undefined) {
       parentRequest = { iteration: event.iteration, bytes: event.bytes, limitBytes: event.limitBytes, accepted: event.accepted };
     } else if (event.type === "model_usage") {
-      if (childId === undefined && event.iteration === turn.iteration) parentPromptTokens = event.usage?.promptTokens ?? null;
+      if (childId === undefined && !parentCompaction && event.iteration === turn.iteration) parentPromptTokens = event.usage?.promptTokens ?? null;
       if (event.usage !== null) {
         for (const summary of [session, turn]) {
           addUsage(summary.tokenUsage[scope], event.usage);

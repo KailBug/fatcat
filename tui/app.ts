@@ -385,7 +385,9 @@ export class TuiApp {
     const child = event.type === "subagent_event";
     const detail = child ? event.event : event;
     const prefix = child ? "Child" : "Agent";
-    if (detail.type === "model_request") this.activity = `${prefix} request ${detail.iteration}`;
+    if (detail.type === "model_request") this.activity = `${prefix} ${detail.purpose === "compaction" ? "summary" : "request"} ${detail.iteration}`;
+    if (detail.type === "compaction_start") this.message("system", "Request limit reached; compacting older turns before continuing.", "CONTEXT");
+    if (detail.type === "compaction_end") this.message("system", `Context compacted: ${detail.beforeBytes} to ${detail.afterBytes} conversation bytes; continuing current request.`, "CONTEXT");
     if (detail.type === "model_usage") this.activity = `${prefix} processing response`;
     if (detail.type === "tool_result") this.message("tool", `${detail.tool}: ${detail.ok ? "OK" : "error"}`, prefix);
     if (detail.type === "write_record") {

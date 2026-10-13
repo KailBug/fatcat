@@ -31,6 +31,7 @@ export interface TuiViewState {
   model: string;
   provider: string;
   workspace: string;
+  scope?: string;
   status: string;
   busy: boolean;
   messages: TuiMessage[];
@@ -116,6 +117,7 @@ export class FatcatView implements Component {
       return [
         ` ${theme.accent(theme.bold("F A T C A T"))} ${theme.muted("/ ")}${theme.text(model)}`,
         ` ${theme.muted("workspace ")}${theme.text(workspace)}`,
+        ...(this.state.scope ? [` ${theme.muted(singleLine(this.state.scope))}`] : []),
         theme.border("─".repeat(width)),
       ];
     }
@@ -125,6 +127,7 @@ export class FatcatView implements Component {
       brand,
       ` ${theme.accent("( o.o ) ")} ${theme.purple(model)} ${theme.muted("·")} ${theme.muted(provider)}`,
       ` ${theme.accent(" > ^ <  ")} ${theme.muted("workspace ")}${theme.text(workspace)}`,
+      ...(this.state.scope ? [` ${theme.muted(singleLine(this.state.scope))}`] : []),
       theme.border("─".repeat(width)),
     ];
   }

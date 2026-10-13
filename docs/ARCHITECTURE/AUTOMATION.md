@@ -2,6 +2,8 @@
 
 ## 当前交互与范围
 
+2026-10-13 阶段 1 增加 Project/Session v2：任务仍归绑定 Session，执行时解析该 Session 的项目、目录和归属代次；UI 当前选择不改变后台或其子任务身份。独立会话迁入项目时，归属变更与已有自动任务暂停在同一记录中原子发布，旧队列激活失效。阶段 2–8 的附件、Memory、检索和音频/语音未实现，此处只建立实际执行身份，不表示已经实现资料隔离。
+
 用户在普通 chat、TUI 或 Web UI 会话中描述自动任务，父模型通过 `automation` 工具提交结构化触发器，Harness 校验后绑定当前持久 Session。之后每次触发继续该 Session 的历史并保存结果。模型工具成功返回才表示任务已保存；自然语言理解依赖所选模型。
 
 - chat/TUI 支持 `/cron <任务描述>`；无参数列出当前任务，`pause/resume/delete <id>` 本地管理。描述进入模型回合。
@@ -20,12 +22,12 @@ Node 24、pnpm 11.21.0、TypeScript、模型 SDK 不变，没有新依赖、Grap
 | `src/automation/config.ts`、`cron.ts` | 触发器与预算校验、五段数字 cron 和 local/UTC 匹配 |
 | `tasks.ts`、`tool.ts` | 持久任务字段、父模型工具定义及调用包装；未绑定的调用明确拒绝 |
 | `scheduler.ts`、`files.ts` | 注入时间的有界队列、去抖与文本文件内容快照 |
-| `conversations.ts` | 工作区任务发现、触发、串行轮转、基线、运行锁和生命周期；界面保留渲染及审批所有权 |
+| `conversations.ts` | 工作区任务发现、触发、串行轮转、基线、运行锁和生命周期；监控签名含绑定 Session 与归属代次，界面保留渲染及审批所有权 |
 | `lock.ts` | 同一存储根和规范工作区的进程独占锁，交互服务与独立 runner 共用 |
 | `runner.ts` | 高级独立 JSON runner、独立 Session、日志及进程预算 |
 | `src/session/manager.ts` | 当前工作区任务发现、后台目标选择与操作互斥；后台回合不切换选中会话 |
 | `src/session/automations.ts`、`agent-session.ts` | 前者校验绑定变更，后者保存绑定、领取与次数，继续目标历史并处理检查点/失败；模型回合内更新和后续检查点使用同一个活动记录 |
-| `src/session/record.ts`、`store.ts` | 快照字段解码、原子发布与修订冲突；任务仍属于原 v1 快照 |
+| `src/session/record.ts`、`store.ts` | v1/v2 字段解码、v2 原子发布与修订/运行 owner 检查；automations 仍属于 Session，Project 不复制任务列表 |
 | `src/agent.ts`、`src/commands.ts` | 父模型工具与时间提示；chat/TUI 命令分发 |
 | `src/chat.ts`、`tui/app.ts` | 空闲执行、输入与审批协调、自动回合和会话标记 |
 | `webui/controller.ts`、`server.ts` | 状态缓存、目标会话执行、认证的 create/manage API |
@@ -42,6 +44,8 @@ Session 可选 `automations` 数组兼容旧记录。任务保存 ID、prompt、
 在模型或工具执行前，任务领取、running 状态、尝试数及触发时间与 Session 一起原子保存。失败和取消消耗一次尝试，同一触发时间不能重复领取。成功答案沿原历史保存；失败保留原中断记录。崩溃遗留 running 不会自动重放，可核查副作用后显式恢复尚未耗尽的周期任务。不是跨任意存储根的恰好一次执行保证。
 
 fork 不复制任务，删除会话同时删除其中绑定；无持久化模式拒绝创建。配置和计数跨进程保存，但 pending 队列、文件基线和 cron 水位不保存。不补跑离线任务，过去的 at 跳过，interval 按创建时刻的周期相位继续。重启 chat/TUI/Web UI 会发现该工作区所有仍有效的保存任务；单次 CLI 任务退出后不会继续调度。
+
+迁入预览显示将暂停的任务；提交将 enabled 置为 false，保留 prompt、runs、lastScheduledAt 和期限。用户审阅新的目录、相对路径和范围后显式恢复；不能因旧路径在新目录仍存在就自动续跑。Session v2 升级与缺失项目处理遵循 [SESSION.md](SESSION.md)：旧记录首次持久写入才升级，缺失项目可看历史但不执行，恢复不补跑迁入期间事件。
 
 ## 调度、预算与权限
 
@@ -66,4 +70,6 @@ fork 不复制任务，删除会话同时删除其中绑定；无持久化模式
 
 ## 工作区切换
 
-全局会话列表不扩大自动执行范围：ConversationAutomations 仍只发现当前活动工作区内任务。切换目录后释放旧工作区租约、丢弃其队列/文件基线，在新目录重新建立监控；返回时不补跑离开期间事件。任务 workspace 进入监控签名，已有会话修改目录后重新建立基线。后台执行准备期间保持 Manager 忙碌，跨工作区过期激活拒绝执行；持久计数和原权限继续有效。
+全局会话列表不扩大自动执行范围：ConversationAutomations 仍按当前工作区发现任务，保留原独立会话行为；不是按 UI 当前 Project 授权。同目录的独立会话和不同项目可各有任务，运行时逐一解析绑定 Session。监控签名包含 sessionId、locationRevision、workspace 和触发配置；迁入即使未改目录也重建基线并丢弃旧激活。chat/TUI/Web UI 将发现时的代次传给 runAutomation，执行前重新校验，过期任务在模型请求前拒绝。项目缺失的任务不被发现或执行。
+
+切换目录释放旧工作区租约，在新目录建立监控；返回不补跑离开期间事件。后台准备保持 Manager 忙碌，自动回合和子任务使用目标会话的项目/目录/权限，前台选择不变。普通回合的 attempt 与手动 compact 的 activeOperation 都受同一持久领取保护；迁入不能越过正在运行或等待审批的操作。相关双进程验证及浏览器回归见 [SESSION.md](SESSION.md) 与 [PROGRESS.md](../PROGRESS.md)，不新增第二套调度或 Loop。

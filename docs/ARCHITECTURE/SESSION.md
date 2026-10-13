@@ -1,6 +1,6 @@
 # Session：持久对话与会话管理
 
-2026-10-13 计划新增 Project 与 Session 归属，尚未实现。建议的新 v2 记录、旧 v1 兼容、项目统一目录、迁入确认/下一轮通知及跨进程运行保护见 [PROJECTS.md](PROJECTS.md)；资料共享与私有范围见 [RAG.md](RAG.md)。项目关系不合并历史、不恢复授权。下文继续描述当前 Session 实现，不能将计划结构当作现有格式。
+2026-10-13 已实现资料计划的阶段 1：显式 Project、Session v2、项目统一目录、独立会话确认迁入、恢复和父子执行身份。项目关系不合并历史、不恢复授权。具体实现及限制见 [PROJECTS.md](PROJECTS.md)；阶段 2–8 的附件、解析、Memory、检索和音频/语音仍未实现，不能将执行身份传递视为已经交付资料隔离。设计边界见 [RAG.md](RAG.md)。以下带日期的旧条目保留演进背景，当前存储行为以本页 v2 说明为准。
 
 2026-10-12 在同一回合内增加本地请求超限后的有界自动压缩。Session 生成成功历史的候选摘要，AgentSession 以原修订保存完整 history/attempt 和新 compaction，保存成功才重试被拒绝的模型请求。Loop 不重启、工具不重放、自动任务计数不重复增加；摘要成功后即使续跑失败仍保留已保存投影。默认开启，可用 `HARNESS_AUTO_COMPACT=false` 关闭；摘要和续跑共用原回合请求额度。边界和验证范围见 [CONTEXT.md](CONTEXT.md)，实际验证见 PROGRESS。
 
@@ -25,12 +25,14 @@
 | 模块 | 职责 |
 | --- | --- |
 | `src/session/session.ts` | 单个 Session 的成功模型历史、顺序执行和忙碌保护；在历史副本上调用 Loop，成功后才替换完整历史。 |
-| `src/session/record.ts` | v1 快照与摘要类型、名称校验、工作区存储桶标识、记录解码；调用 history 校验完整历史及 attempt 关联，不做文件 I/O。 |
+| `src/session/record.ts` | v1/v2 读取与 v2 编码、互斥 location、归属代次/变更记录、activeOperation、名称与历史/attempt 校验；不做文件 I/O。 |
 | `src/session/store.ts` | 规范工作目录对应的本地文件、有界读取、修订锁、原子发布和跨进程更新冲突；通过 record 解码快照。 |
 | `src/session/history.ts`、`src/session/commands.ts` | 文本历史与工具关联的恢复校验，以及 CLI / TUI 共用的本地命令和安全列表文本。 |
 | `src/session/manager.ts` | 各入口共用的活动会话选择、操作互斥、内存目录、工作区准备与后台目标路由；新建、列表、恢复、命名、分支与删除。 |
 | `src/session/agent-session.ts` | 单个活动记录的唯一所有者；组合内存 Session，领取回合、保存检查点、提交/失败处理、自动任务计数和请求侧恢复提示。通过 saveRecord 与 listAutomations 两个窄回调连接 Manager。 |
 | `src/session/automations.ts` | 校验会话任务操作、数量限制与监控文件；返回待保存记录及结果，读取列表不生成写入。由 AgentSession 完成保存，不持有第二份活动状态。 |
+| `src/project/record.ts`、`store.ts`、`operations.ts` | Project 记录及唯一工作目录、独立持久化和元数据锁；迁入预览与已确认记录转换。Project 不维护第二份 Session 成员列表。 |
+| `src/session/execution.ts` | 捕获实际 Session ID、Project ID/修订、归属代次和目录；请求侧传递给父子模型，不从 UI 选择推断执行身份。 |
 | `src/loop.ts` | 执行一个用户回合，调用模型和工具，返回答案与完整历史；向持久化边界提供已发生消息的检查点，不负责选择会话或文件位置。 |
 | `src/agent.ts` | 按本次配置装配父子模型、Tools 和 Skills；不从会话文件恢复凭据或授权。 |
 | `src/commands.ts` | chat / TUI 的共享本地命令分发；/skills 展示启动目录元数据，会话命令委托 session/commands，不请求模型或修改历史。 |
@@ -40,19 +42,25 @@
 
 Session、AgentSession、Manager、Store 分别回答“已成功完成的模型对话是什么”“本轮如何与活动记录一起保存”“当前在使用哪个会话”“如何可靠保存和读取”。Manager 不再保存独立可变的活动 record；需要完整数据时读取 AgentSession 的防御性快照，摘要与历史也通过其公开访问器获取。Tools 保留进程内写入/命令事实，execution-report 汇总当前回合事件；这两类状态不归模型历史所有，也不会由恢复会话重新执行。
 
-程序化 `new Session({ model, maxIterations, tools? })` 保持独立进程内会话入口。日常 CLI / TUI / Web UI 使用 `SessionManager.open(agent, { workspace, store?, selection?, persistence? })`，通过 `run()` 执行当前会话；管理方法为异步 `list()`、`newSession()`、`resume()`、`rename()`、`fork()` 和 `reset()`。`current` 是身份摘要，`history` 是完整历史副本，`persistent` 表示是否使用磁盘。选择条件包含 continue、resume、fork 和 name。
+程序化 `new Session({ model, maxIterations, tools? })` 保持独立进程内会话入口。日常 CLI / TUI / Web UI 使用 `SessionManager.open(agent, { workspace, store?, selection?, persistence?, explicitWorkspace? })`，通过 `run()` 执行当前会话；管理方法包括 `list()`、`newSession()`、`resume()`、`rename()`、`fork()`、`reset()`、`listProjects()`、`createProject()`、`previewProjectJoin()` 和 `joinProject()`。`current` 是含项目及可用状态的摘要，`history` 是完整历史副本。selection.project 用于新项目会话，与 continue/resume 和禁用持久化互斥。
 
 同一个 Manager 同时只允许一个活动回合。运行中不切换、不新建、不清空、不重命名或分支；错误明确返回，不排队或隐式合并操作。恢复失败保持原活动会话。不同持久会话历史相互独立；分支复制原会话的完整已完成历史并获得新 ID，后续更新写到分支，原会话保留。
 
 ## 本地存储
 
-默认根目录为 Node 用户主目录下的 `.fatcat/sessions`；`FATCAT_SESSION_DIR` 可覆盖根目录。每个规范工作目录使用 SHA-256 子目录，目录内每个 Session 使用 UUID 命名的 JSON 快照。工作目录按实际 realpath 规范化；历史可从任意启动目录恢复，列表覆盖同一存储根下全部工作区；同名匹配有歧义时必须使用 ID。可选 storageWorkspace 保留原存储桶，workspace 保存可编辑的执行位置；修改目录沿原锁和修订发布单文件，不搬移快照。`--workspace` 与启动目录规则沿用原入口，存储不会扩大 read/write/shell 范围。
+默认根目录为 Node 用户主目录下的 `.fatcat/sessions`；`FATCAT_SESSION_DIR` 可覆盖根目录。原 SHA-256 工作目录桶内保留 UUID Session JSON，v2 的 storageWorkspace 固定原桶；Project 另存于根下 `projects/<id>.json`。v2 的 location 只能是独立会话 `{kind: standalone, workspace}` 或项目成员 `{kind: project, projectId}`；项目有效目录从 Project 解析，不能通过 Session 保存另一份可覆盖值。列表覆盖全部桶，同名有歧义时使用 ID。目录以 realpath 规范化，迁入/独立会话改目录不搬移快照或工作文件，也不扩大工具权限。
 
-快照保存格式版本、Session ID、名称、时间、工作目录、修订号、完整成功历史和最近未完成回合。后者含 prompt、startedAt、updatedAt、status、code、已产生 messages 和 ownerPid。API 凭据、环境变量、模型客户端、工具权限、审批答复及进程遥测不写入快照。历史包括用户提示、模型答案、工具参数与结果、读取的文件/网页和完整已加载 Skill；采用本地明文 JSON，不加密或自动清理。
+新记录使用 v2。旧 v1 读取映射为独立会话，保留 ID、历史、中断记录、自动任务、compaction 和原桶；仅列表/读取不改文件。第一次成功持久写入（包括回合或 compact 领取）原子升级，后续模型失败不回写 v1。旧版程序拒绝 v2；升级使用前应停止旧实例，不支持新旧程序并发写同一存储根。项目工作目录首版固定；显式 `--workspace` 与项目目录不一致在创建/执行前拒绝，普通启动目录不覆盖项目。
+
+快照保存格式版本、Session ID、名称、时间、location/原桶、修订号、完整成功历史和最近未完成回合。后者含 prompt、startedAt、updatedAt、status、code、已产生 messages 和 ownerPid。归属代次及有界 locationChanges 记录迁入事实和待通知状态；手动 compact 使用可选 activeOperation 保存类型、唯一领取 ID、ownerPid 和时间。API 凭据、环境变量、模型客户端、工具权限、审批答复及进程遥测不写入快照。历史包括用户提示、模型答案、工具参数与结果、读取的文件/网页和完整已加载 Skill；采用本地明文 JSON，不加密或自动清理。
 
 每个快照最多 64 MiB，先检查文件大小再读取和解析；不将模型请求字节预算当作磁盘或历史内存上限。读取检查格式、版本、身份、工作目录、修订号、文本消息与工具关联。成功历史只能由完整用户回合构成；工具结果必须与所在 assistant 批次关联，未完成或孤立调用不能混入成功历史；调用 ID 在同一用户回合不能重复，跨成功回合可复用。恢复时使用当前 systemPrompt，避免旧 system 指令替代当前程序规则。
 
 更新在短时跨进程锁内核对预期修订号，写临时文件并原子发布；旧实例不能覆盖其他进程已经提交的新版本。活动回合保存 ownerPid，其他进程不能把仍在执行的会话当作已中断历史恢复。确认 ownerPid 已退出后通过独占恢复门重新检查并清理陈旧事务锁，避免两个恢复者删除彼此的新锁。不完整 `store.lock` 或恢复进程崩溃留下的 `store.lock.recovery` 保守报忙，提示确认没有存储操作后再人工移除；不按超时猜测并删除活动锁。磁盘故障作为会话错误呈现；不会假称未确认保存的答案已经持久化。此边界解决正常多进程误覆盖，不提供抵御恶意本机进程的 OS 隔离。
+
+项目写入固定按 Project 元数据锁 → Session 桶锁排序，锁内复查项目修订、Session 修订和活动 owner；不跨用户确认或模型请求持有磁盘锁。手动 compact 在外部请求前持久领取，迁入及其他修改不能绕过；正常、失败或取消均核对领取 ID 后收尾。收尾写盘失败保留该 runtime 的待提交状态，后续执行或管理操作必须先重试持久释放，不能切换丢失领取。崩溃后只在 owner 已退出时允许恢复，不重放摘要或工具。
+
+迁入先展示明确 Session/Project、旧/新目录、未来资料共享提示和自动任务影响，再携带预览修订提交；运行、审批或 compact 中拒绝迁入。归属、目录变更事实和自动任务暂停保存于同一个 Session 更新，旧激活随 locationRevision 失效。历史及来源路径原样保留，下一轮模型收到变更通知，成功提交才确认已通知；项目资料上传尚不存在。缺失/损坏 Project 或目录保留列表和历史可见性，但拒绝执行、文件预览及成员目录覆盖，不回退 cwd。
 
 ## 回合与中断边界
 
@@ -70,9 +78,9 @@ AgentSession 暂存根 Loop 的 completed 并过滤其 stopped；失败处理后
 
 正常任务、`--chat`、`--tui` 默认新建持久会话；`--webui` 默认进入未保存的空白草稿，首次提交才保存。继续已有对话需要显式选择。`--continue` / `-c` 使用全部工作区最近会话，`--resume` / `-r` 按 ID 或名称恢复，`--name` / `-n` 命名，`--fork-session` 在恢复后创建独立分支。`/sessions` 在 chat / TUI 内本地列表，命令不调用模型，但交互启动仍要求正常 provider 配置；bare `--resume` 保留无需凭据的终端选择/管道列表路径。`--no-session-persistence` 使用临时进程内历史。具体参数互斥和交互命令见 [USAGE.md](../USAGE.md)。
 
-chat 与 TUI 的 `/new`、`/clear`、`/reset` 开始新会话并保留原会话，`/sessions` 列表，`/resume` 切换，`/rename` 命名，`/fork` 分支。未知斜杠命令只提示，不发给模型。新建不撤销操作或清除工具事实；同一进程切换会话采用目标 workspace，重新发现 Skills 并装配 Agent；provider 和权限沿用当前启动。`/workspace [path]` 显示或修改工作区，新建继承当前目录，历史与 Session ID 保留。
+chat 与 TUI 的 `/new`、`/clear`、`/reset` 继承当前项目/独立归属及目录，新历史不合并旧会话；`/new --standalone [name]` 显式创建独立会话。`/projects` 和 `/project create/use/join/confirm/cancel` 共用 Manager，迁入确认不成为工具授权。`/sessions` 列表、`/resume` 切换、`/rename` 命名、`/fork` 继承来源项目并复制独立历史。未知斜杠命令只提示，不发给模型。切换重新发现 Skills 并装配 Agent，provider/权限沿用启动；`/workspace [path]` 仅允许独立会话改目录，项目成员只可查看。
 
-Web UI 各标签共享一个 Manager 和活动会话。入口设置 `deferEmptySessions: true`：未命名的新 Session 只在 Manager 内持有 revision 0 的草稿，不进入 Store 或内存列表。New chat 和删除活动会话也进入此状态，前端不把草稿补进侧栏。首次 `run()` 沿用原开始记录保存，在模型/工具执行前取得持久修订；失败和中断保留记录。显式命名和分支仍立即保存，空草稿的显式分支不引用不存在的源快照。CLI / TUI 默认未启用此选项，存储格式不变。旧空快照不会自动清理。
+Web UI 各标签共享一个 Manager 和活动会话。入口设置 `deferEmptySessions: true`：未命名新 Session 只持有 revision 0 草稿，不进入保存列表。顶层 New chat 显式独立，项目组新建按钮创建项目草稿；删除活动会话后的草稿保留原项目。首次 `run()` 在模型/工具执行前保存并复查项目，失败/中断保留记录。显式命名和分支仍立即保存，空草稿的分支不引用不存在的源快照。CLI/TUI 默认未启用延迟创建；旧空快照不会自动清理。
 
 侧栏选择已有会话，命名与分支调用相同管理器；刷新从服务状态重新连接。浏览器关闭不取消回合，终端 Ctrl+C 停止服务和当前模型/审批。界面显示记录、报告和模型历史仍是不同状态；重启恢复对话不等于恢复全部旧活动和遥测。细节见 [WEBUI.md](WEBUI.md)。
 
@@ -88,6 +96,8 @@ Skills 目录在启动及选择工作区时发现，元数据只加入请求指�
 
 ## 验收与限制
 
+阶段 1 最终类型检查、构建及 487 项离线测试通过，包含 2 项真实第二进程运行/compact 与迁入互斥用例；`verify:sessions`、`verify:webui`、`verify:projects` 使用真实 Edge 和注入模型通过。详情以 [PROGRESS.md](../PROGRESS.md) 为准，不将这些结果表述为真实模型或附件检索验收。
+
 验收覆盖真实临时目录中的跨实例保存/恢复、新建保留、列表、名称、分支独立、工具关联、非法/损坏/超大数据、原子写入失败、取消、中断记录、并发和修订冲突，以及 CLI / TUI / Web UI 的共有行为。自动模型检查使用虚构凭据与注入传输；Windows 终端、浏览器和真实模型验证分别在 PROGRESS 中记录，不能用旧阶段 API 验收证明本轮持久化已在线验证。
 
-恢复支持全部工作区；目录不可访问时保留当前会话，可通过 Web UI 会话菜单修改该会话目录。没有 Claude Code transcript 导入、历史全文搜索、Git worktree 自动关联、文件检查点、撤销、自动工具重放、恢复后台任务、跨进程审批、主动阈值摘要、导出菜单、保留期管理或远程同步。存储内容可能含项目与对话私密数据；使用 `--no-session-persistence` 可关闭本次保存。会话文件是内部版本化格式，当前不承诺外部应用的稳定导入协议。
+恢复支持全部工作区；独立会话目录不可访问时可通过 Web UI 菜单修改目录，项目成员必须恢复项目记录/原目录。首版不开放退出项目、跨项目迁移、删除项目或项目改目录。没有 Claude Code transcript 导入、历史全文搜索、Git worktree 自动关联、文件检查点、撤销、自动工具重放、恢复后台任务、跨进程审批、主动阈值摘要、导出菜单、保留期管理或远程同步。存储内容可能含私密数据；`--no-session-persistence` 仅支持独立临时会话。内部版本化格式不承诺外部稳定导入协议。

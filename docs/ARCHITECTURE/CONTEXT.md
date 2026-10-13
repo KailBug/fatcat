@@ -1,5 +1,13 @@
 # Context：上下文投影与有界压缩
 
+## 2026-10-13：Project 执行身份与 compact 持久领取
+
+阶段 1 已实现 Project 与 Session v2。Context 继续只持有历史投影规则；归属、项目唯一目录和有界变更事件归 Session/Project，不进入摘要充当授权。每轮父子请求通过 `src/session/execution.ts` 绑定实际 Session、Project/修订、locationRevision 和目录；后台请求不采用 UI 当前会话。迁入保留旧消息与来源路径，AgentSession 在后续请求加入目录/归属变更通知，成功回合保存后才确认已通知，不用压缩重写旧路径。
+
+手动 compact 在摘要请求前保存 `activeOperation: {kind: compact, id, ownerPid, startedAt}`。Store 在同一桶锁内验证修订和活动 owner，迁入、回合开始及其他修改不能把摘要期间的会话视为空闲；有项目时遵循 Project 元数据锁 → Session 桶锁，模型请求期间不持有磁盘锁。候选成功才保存新投影并按领取 ID 清除占用；失败/取消保留旧投影并持久收尾。收尾失败保留 runtime 的 pendingSettlement，后续执行及管理/切换先重试同一领取的释放，失败不静默解锁；owner 退出后允许按崩溃状态恢复，但不自动重放摘要。
+
+自动 compact 沿用普通回合已有的 attempt 领取，不额外创建可并行操作。v1 读取仍兼容，但首次持久领取即写入 v2，旧程序不能继续读取升级记录；使用前停止旧实例。项目缺失/目录不可用时可查看历史和上下文统计，模型执行及 compact 被拒绝，不回退 cwd。阶段 2–8 的附件、Memory、RAG 和音频/语音未实现；摘要不是跨会话 Memory，身份投影也不是资料索引或访问控制实现。阶段 1 最终 487 项离线回归通过，包含真实双进程 2/2；浏览器/专项结果见 [SESSION.md](SESSION.md) 与 [PROGRESS.md](../PROGRESS.md)。
+
 ## 2026-10-12：请求超限后的自动压缩
 
 用户选择继续自动压缩，在 `feat/session-perfection` 的 `a82ff3b` 基线上实现。参考本地 pi `core/agent-session.ts` 的 `_checkCompaction` / `_runAutoCompaction`：区分手动与自动入口、共用摘要生成、最多恢复一次，并发出可观察的压缩事件。Fatcat 沿用自己的请求字节预算与成功历史，不复制 pi 的 token 阈值、服务端 overflow/length 恢复或 JSONL 树。
@@ -29,13 +37,13 @@ AgentSession 在回合开始/检查点已有修订领取，随后通过 `Session
 
 数据流：Session 完整历史 → Context 投影（摘要＋最近保留区间）→ Loop 附加当前执行事实和回合预算 → Agent 加入当前工作区/权限/Skills 指导 → Model 构造完整供应商请求 → request 按需省略旧 read → 精确字节检查 → SDK。Loop 的检查点与成功出口始终使用完整历史。
 
-`CompactionState` 记录版本、摘要、`firstKeptMessage` 和时间。边界是不可变前缀之后的原始消息下标，必须落在 user 消息，且前一消息是无工具调用的最终 assistant；不会拆开工具调用批次。Session 的 v1 JSON 增加可选 `compaction`，旧文件缺省为无压缩，新文件保留完整原文。恢复、命名、工作区切换与 fork 保留该字段，新会话/reset 清除。旧程序可能忽略摘要字段并恢复完整上下文，不承诺降级后的压缩状态保留。
+`CompactionState` 记录版本、摘要、`firstKeptMessage` 和时间。边界是不可变前缀之后的原始消息下标，必须落在 user 消息，且前一消息是无工具调用的最终 assistant；不会拆开工具调用批次。2026-10-10 首次在 v1 JSON 增加可选 compaction，旧文件缺省为无压缩；2026-10-13 起继续在 v2 保留完整原文及该字段，旧版拒绝 v2，不能把早期忽略摘要字段的行为当作降级兼容承诺。恢复、命名、独立会话改目录、迁入与 fork 保留摘要，新会话/reset 清除。
 
 手动 compact 保留最近一个完整用户回合，只摘要更早内容。重复压缩以旧摘要加新进入压缩范围的原文为输入，避免把最早原文重复发送。摘要作为明确标识的历史上下文进入普通消息，不能成为 system 策略或恢复权限；运行时指导、工具事实和未完成 attempt 恢复提示继续独立加入。
 
 摘要使用当前 provider 的独立文本请求，不附加工具定义、委派/自动任务指导或真实工具执行。按源文本顺序分段，保留 Unicode；模型合并上一摘要和下一段。单次操作最多 `min(maxIterations, 8)` 个请求，规划超限时不发送任何摘要请求，不悄悄丢弃正文。摘要上限为 `min(8192, floor(maxRequestBytes / 8))` UTF-8 字节，附加指令上限 2048 字节；至少要求 4096 字节请求预算，实际仍须容纳提示和正文。规划预留供应商封装空间，SDK 发送前再次精确检查完整请求。工具调用、空摘要、超长摘要、无缩减、取消、传输失败均拒绝候选，无隐藏重试。
 
-持久会话通过 Manager 操作锁串行运行 compact。生成前保存原记录以验证修订，生成后再次以预期修订原子保存候选，再刷新活动投影。失败保留原历史、原摘要和原 attempt；生成前的修订领取可能已写盘。跨进程采用乐观修订检查，不持有贯穿模型调用的磁盘锁；其他进程更新后候选发布失败，不覆盖其内容，已消耗的模型费用不撤销。压缩本身不创建可重放 attempt，进程终止后使用最后成功保存的状态。
+持久会话通过 Manager 操作锁串行运行 compact。2026-10-10 首版生成前后只校验修订；2026-10-13 已补充本页开头的 activeOperation 持久领取，封闭模型调用期间与另一进程迁入的竞态。摘要成功发布后才刷新活动投影，失败保留原历史和摘要；已退出 owner 遗留的 running attempt 可记录为中断，不继续执行。费用不会因持久冲突撤销，进程终止后只恢复最后保存状态，不重放摘要。
 
 chat 以 `operation: compaction` 输出请求/用量/执行报告；TUI 累计实际摘要消费但不增加已完成对话回合，清除摘要请求的上下文用量观测；Web UI 在当前页面显示操作及报告，恢复时仍展示原问答。Web UI 的 Stop、TUI 的 Escape/Ctrl+C 和 chat 取消信号传递到摘要请求。Web UI 不把摘要的输入 token 当作压缩后对话占用，成功后清空旧观测，等待下一次普通请求。`/context` 的数据不含工具定义、动态指导及执行 journals，不能充当完整请求或 token 估计。
 

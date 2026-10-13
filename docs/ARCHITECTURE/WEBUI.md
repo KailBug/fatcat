@@ -1,6 +1,6 @@
 # 本地 Web UI
 
-2026-10-13 的后续计划在同一 controller/SessionManager 上增加 Project 分组、项目创建、独立会话拖入及等价菜单入口，目录变化与共享范围由服务端预览/确认；附件阶段再接入绑定发起目标的上传和来源/覆盖展示。详见 [PROJECTS.md](PROJECTS.md)、[RAG.md](RAG.md)。这些尚未实现，下文现有界面行为不代表已经支持项目或附件。
+2026-10-13 已实现阶段 1 的 Project 创建/分组、项目内新会话、独立会话拖入及等价菜单入口，目录变化与未来资料共享范围由服务端预览/确认。Project 统一工作目录，历史按 Session 独立保存；实现边界见 [PROJECTS.md](PROJECTS.md)。阶段 2–8 的上传、解析、Memory、检索和音频/语音仍为计划，见 [RAG.md](RAG.md)；本阶段不宣称已有附件访问或资料隔离能力。
 
 ## 范围与现状
 
@@ -25,6 +25,7 @@
 | `webui/client/app.ts` | DOM 视图、草稿、多行输入、轮询、重连、审批按钮、会话列表与操作、窄屏侧栏及会话详情；不执行工具或保存模型历史。 |
 | `webui/client/session-menu.ts` | 针对所点会话的一份右键菜单，持有菜单定位、键盘导航、关闭和焦点恢复；操作由 app 提交到原控制器。 |
 | `webui/client/session-dialog.ts` | 页面内命名、分支、删除弹窗；目标快照、校验、提交锁、错误和取消；权限及持久写入仍由原服务边界落实。 |
+| `webui/projects.ts`、`webui/client/projects.ts` | 服务端保存有界、过期的一次性迁入确认 token 及预览；客户端处理项目名称/目录选择、目标选择、范围/路径确认、错误和取消。归属仍由 SessionManager 持有。 |
 | `webui/client/permission-menu.ts` | 按 Plan / Manual / Accept edits / Free to go 展示菜单、描述、启动限制、键盘/焦点及关闭；只提交服务端选择，不在浏览器执行授权。 |
 | `webui/preview.ts` | 工作区 HTML/HTM/SVG 受控读取、短期单次快照及预览响应 CSP；独立于模型工具、会话和可切换的扩大访问策略。 |
 | `webui/client/preview.ts` | 用户预览面板、相对路径输入、刷新、错误和关闭；只装载隔离 iframe，不将页面结果传给模型。 |
@@ -50,17 +51,24 @@
 - `POST /api/permission-mode` 只接受 `{mode: "default" | "acceptEdits" | "plan" | "freeToGo"}`，沿用相同认证、来源和 JSON 边界；活动回合、审批或会话管理中返回 409，超出显式启动限制拒绝。state.permissionMode 包含当前模式、有效 write/shell 权限、fileAccess/networkAccess 及可选模式，info 中的权限同步更新，各标签轮询同一版本。
 - 2D-14 的 `/api/session/new`、`/api/session/resume`、`/api/session/rename` 和 `/api/session/fork` 复用同一 capability、来源与 JSON 参数校验。state 包含当前会话与工作目录列表；管理操作期间使用忙碌保护，运行或审批中拒绝切换和新建。
 - 同阶段菜单增量加入 `/api/session/delete`，使用所点会话 ID 与菜单快照 revision；rename/fork 可带目标 id，省略仍操作当前会话。删除复用 Store 锁、修订和工作目录隔离，不向模型提供删除工具。旧 revision 无法删除其他进程已更新的会话。
+- 阶段 1 增加 `/api/project/create`（名称＋原生目录选择）、`/api/project/join-preview`（明确 Session/Project ID）和 `/api/project/join`（服务端 token＋confirmed）。预览的路径、修订和归属代次保留在服务端，提交重新核对；token 一次性、有期限，冲突后需重新预览。`/api/session/new` 的 projectId 指定项目，null 显式独立，省略继承当前归属。均复用原认证、忙碌、取消和权限边界。
 - 管理操作失败时尽力刷新保存列表，保留原错误及当前历史/报告；列表、菜单和详情使用同一保存元数据。修订冲突后用户可重新打开菜单确认最新 revision，删除再次读取该 ID 并在 Store 锁内复查，不自动恢复或重放当前历史。其他进程的变更没有后台推送。
 
 这不是多用户或远程服务器。链接持有者可查看当前会话并操作授权范围；本机其他用户与程序的隔离不由此应用提供。浏览器页面关闭不会自动停止模型或拒绝审批，用户可以重新打开带令牌的链接继续；终端 Ctrl+C 才关闭服务。
 
 ## 状态和交互
 
+ProjectStore 保存项目目录，state.projects 提供项目元数据；成员从 Session 归属派生，不由浏览器保存第二张关系表。侧栏 New project 创建项目且不切换会话；项目组按钮新建该项目草稿，顶层 New chat 显式新建独立草稿，普通 `/new`/reset 继承项目。顶栏展示当前项目/Independent chat，项目成员的 workspace picker 与 Change workspace 禁用，服务端同样拒绝覆盖。成员 fork 保持项目；不同项目即使目录相同也不会自动合并。
+
+独立会话可拖到项目组，或通过 Move to project/Shift+F10 菜单迁入；当前独立会话的项目标签也打开同一弹窗。Review move 明确展示旧/新完整目录、未来上传共享和已有自动任务暂停，Confirm move 才提交。取消无持久变更；迁入非活动行不切换正在看的会话。运行、审批和 compact 中拒绝迁入，旧确认不能覆盖较新记录。成功后不移动/复制目录文件、不改历史或来源路径；Manager 原子暂停任务并记录下一轮模型通知，旧审批不继续使用。当前没有附件，预览明确说明不存在待分享附件。
+
+缺失/损坏项目或项目目录时允许列出及查看保存历史，显示项目不可用；模型执行、新建成员和文件访问停止。`controller.fileWorkspace` 对不可用项目不提供目录；预览和浏览器证据接口据此拒绝，不回退进程 cwd。退出项目、项目间移动、项目删除和改目录首版不开放。
+
 共享 Loop 将配置内的最后一次模型请求用于文字交付，避免文件已经生成后仍追加工具而直接耗尽额度。正常回复显示并保存到会话，可说明未完成/未验证部分；这不是任务成功认证。若模型仍请求工具或发生服务错误、截断、取消，仍显示失败并保留中断记录，不重放操作或提高上限。实现与供应商差异见 [AGENT_LOOP.md](AGENT_LOOP.md)。
 
 控制器保存显示状态，SessionManager 持有活动会话并保存完整成功历史及最近未完成回合。失败/取消的提示和错误可见，但不替换成功模型历史。Web UI 入口启用 `deferEmptySessions`，默认启动与 New chat 进入 revision 0 的未保存草稿；前端不将它补进会话列表，原会话仍在列表。首次提交在模型/工具执行前保存开始记录，失败或中断也保留；显式命名、分支仍立即保存，启动 continue/resume 仍恢复指定历史。旧空会话不自动清理。切换、命名、分支通过同一 Manager，运行/审批中拒绝操作。工具事实独立保存，不撤销修改/命令、不重置 journals 上限。单会话最多 100 个显示回合，需要 New chat 后继续；每回合活动保留最近 100 项，完整报告保留写入、命令和父子请求事实。
 
-会话操作集中在左侧每一行的同一菜单（右键或省略号按钮打开）：详情、命名、分支和删除。右键和 Shift+F10 / ContextMenu 不会先切换活动会话；操作明确绑定该行 ID，删除还带打开菜单时的 revision。详情只读取 state 中的该会话元数据及本次启动配置，不请求模型或恢复历史。删除前浏览器确认；删除未活动会话保留当前历史、显示与草稿，删除活动会话后回到未保存的欢迎页，不创建替代快照或重放操作。分支所点会话会打开新分支，命名未活动会话不会切换。
+会话操作集中在左侧每行同一菜单（右键或省略号）：详情、命名、工作目录、迁入项目、分支和删除。项目成员禁用改目录及再次迁入。右键和 Shift+F10 / ContextMenu 不会先切换活动会话；操作绑定该行 ID，删除还带菜单 revision。详情读取 state 元数据及启动配置，不请求模型或恢复历史。删除前确认；删除未活动会话保留当前显示与草稿，删除活动会话回到保留原项目的未保存欢迎页，不创建替代快照或重放操作，也不删除 Project。分支所点会话会打开新分支，命名未活动会话不会切换。
 
 菜单只在需要时显示，定位限制在视口内；支持方向键、Home/End、Enter、Escape 和焦点恢复，点击外部、列表滚动、窗口缩放或目标修订改变后关闭。执行/审批中禁用变更操作，详情仍可读取。会话行只渲染名称；轮次与更新日期加入按钮 title，悬浮时由浏览器提示，并以 aria-description 提供无障碍描述。原侧栏命名/分支按钮、工作区卡片和详情按钮已移除。
 
@@ -82,7 +90,7 @@ Enter 提交，Shift+Enter 换行，composition 期间不提交；执行时允�
 
 顶部 Preview 可输入工作区相对 `.html` / `.htm` / `.svg` 路径；当前执行报告的 committed write 记录另显示文件按钮，仅为工作区内文件提供快捷入口。恢复历史没有执行报告、shell 创建文件或既有文件使用路径入口。面板在宽屏侧置，1200px 及以下覆盖右侧；不持久保存选中文件。Refresh 重新读取当前文件，替换 iframe 并重启动画；失败清除旧页面，关闭卸载 iframe 并取消待完成请求。聊天消息依旧按文本/Markdown 渲染，不执行其中的 HTML。
 
-认证的 `POST /api/preview` 只接受 `{path: string}`，最多 1024 字符。服务从启动工作区创建固定受限 Workspace，复用路径校验和 text-file 的 1 MiB 有界 UTF-8 读取、文件身份和硬链接检查。text-file reader 可接收调用方扩展名集合，原工具默认集合不变。此入口拒绝越界、绝对/隐藏/依赖目录路径、符号/硬链接以及非文本/超大文件；Free to go 不放宽预览范围。最多 4 个并发读取，每次有 5 秒期限，断连或关服取消；不运行命令、触发模型、写文件、改变会话版本或审批状态。
+认证的 `POST /api/preview` 只接受 `{path: string}`，最多 1024 字符。服务从当前会话的有效目录创建受限 Workspace，复用路径校验和 text-file 的 1 MiB 有界 UTF-8 读取、文件身份和硬链接检查。项目不可用时拒绝；目录变化使旧快照失效，不使用启动目录兜底。text-file reader 可接收调用方扩展名集合，原工具默认集合不变。此入口拒绝越界、绝对/隐藏/依赖目录路径、符号/硬链接以及非文本/超大文件；Free to go 不放宽预览范围。最多 4 个并发读取，每次有 5 秒期限，断连或关服取消；不运行命令、触发模型、写文件、改变会话版本或审批状态。
 
 读取返回规范相对路径、字节数和 `/preview/<32-byte random id>`。内存最多保留 8 个待取快照，60 秒后不可领取，准备/领取时清理过期项，满额淘汰最旧项，关闭清空。`GET /preview/<id>` 只消费一次不可变快照；不接收文件路径，不使用聊天令牌，不映射目录，不支持子资源。HTML 与 SVG 分别按 text/html 和 image/svg+xml 输出，并保留 no-store / nosniff / no-referrer。
 
@@ -115,6 +123,8 @@ Cron 桌面弹窗为任务列表和紧凑创建表单双栏：触发类型/参�
 原生 helper 采用 [Windows Common Item Dialog](https://learn.microsoft.com/en-us/windows/win32/shell/common-file-dialog) 的文件夹选择模式，固定 `execFile` 参数、`shell: false`、32 KiB 输出上限和安全错误。选择器属于本地用户界面，不增加模型工具或放宽 shell 权限。使用系统自带 PowerShell/.NET Framework，不新增依赖；操作系统策略若禁止 helper，则页面显示失败信息。
 
 `pnpm run verify:webui` 使用现有 Playwright 和真实 Edge，在临时工作区与独立会话库中检查四种宽度、深浅色、菜单/弹窗、抽屉键盘焦点、发送/停止、写入审批、预览和工作区入口。模型决策注入，不读取凭据或请求模型；可用 `FATCAT_VERIFY_SCREENSHOTS` 指定截图输出目录。它不随普通离线 `pnpm test` 自动启动浏览器；实际检查结果见 PROGRESS。
+
+阶段 1 最终 487 项离线测试通过，含 2 项真实双进程领取/迁入互斥；`verify:sessions`、`verify:webui` 及新增 `verify:projects` 真实 Edge 验证通过。专项覆盖项目创建/分组、固定目录、取消/双标签旧确认拒绝、拖入、非活动会话迁入和手机实际草稿迁入。检查中修正了无关对话滚动关闭侧栏菜单及手机确认按钮被遮挡，重跑通过。模型决策和目录选择均为注入，不代替真实模型质量或原生目录弹窗人工验收；详见 [PROGRESS.md](../PROGRESS.md)。
 
 [Lucide](https://lucide.dev/license) 的 19 个公开图标保存于 `webui/public/icons.svg`；完整 ISC 与 Feather 衍生 MIT 通知见同目录 `icons-LICENSE.txt`。静态 HTML 和 `icons.ts` 创建的 SVG/use 都引用同源 sprite，装饰图标标记 aria-hidden，按钮保留文字或可访问名称。已有构建复制资源与许可证，HTTP 仅白名单开放三个新资源；CSP、自身来源限制、依赖和锁文件保持不变。没有引入字体下载或 CDN。
 

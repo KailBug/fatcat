@@ -29,6 +29,7 @@ Usage:
   pnpm start --chat
   pnpm start --continue
   pnpm start --resume <id-or-name>
+  pnpm start --project <id-or-name>
   pnpm start --tui
   pnpm start --webui
   pnpm start --chat --workspace examples/workspace
@@ -36,7 +37,7 @@ Usage:
   pnpm start --prompt "Explain what an agent loop does."
 
 Use --version (-v) to print the local Fatcat version without model credentials.
-Use --chat for a continuous conversation with /help, /cron, /skills, /context, /compact, /new, /sessions, /resume, /rename, /fork, and /exit.
+Use --chat for a continuous conversation with /help, /cron, /skills, /context, /compact, /new, /sessions, /projects, /project, /resume, /rename, /fork, and /exit.
 Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
 Use --webui for the local browser interface at 127.0.0.1:3210; --port <1-65535> selects another port.
 
@@ -57,6 +58,11 @@ Use --continue (-c) to continue the latest session, or --resume (-r) <id-or-name
 Bare --resume shows a session picker in a terminal or a local list for pipes, without model credentials.
 Use --name (-n) <name> to name a session; --fork-session with --continue or --resume copies history into a new session.
 Use /sessions in chat or TUI to list all saved sessions; --no-session-persistence keeps a new session in memory.
+Use --project <id-or-name> to start a new session in an existing project; /projects lists projects.
+Use /project create "name" "directory" to create a project, then /project use <id-or-name> to start its session.
+Project sessions share one fixed workspace and keep separate histories. /new inherits the project; /new --standalone creates a separate independent session.
+Use /project join <id-or-name> to review a standalone session's migration, then /project confirm <token> or /project cancel.
+Projects require persistence; --project cannot combine with --continue or --resume. Project deletion, detachment and workspace changes are not available yet.
 Session storage defaults to ~/.fatcat/sessions; FATCAT_SESSION_DIR selects another local store.
 Restored sessions use their saved workspace with the current launch's provider and permission settings.
 Use /workspace <path> in chat or TUI, or click the Web UI workspace path, to change the session workspace.
@@ -112,6 +118,7 @@ async function main(args: string[]): Promise<number> {
           continue: { type: "boolean", short: "c" },
           resume: { type: "string", short: "r" },
           name: { type: "string", short: "n" },
+          project: { type: "string" },
           "fork-session": { type: "boolean" },
           "no-session-persistence": { type: "boolean" },
           prompt: { type: "string" },
@@ -134,7 +141,7 @@ async function main(args: string[]): Promise<number> {
       throw new HarnessError("USAGE", "Invalid arguments. Run pnpm start --help.");
     }
     const { values, positionals } = parsed;
-    const hasSelection = Boolean(values.continue || values.resume !== undefined || values.name !== undefined);
+    const hasSelection = Boolean(values.continue || values.resume !== undefined || values.name !== undefined || values.project !== undefined);
     if (hasSelection && !values.help && !values.version && !values.checkConfig
       && !values.tui && !values.webui && values.automation === undefined && values.prompt === undefined && positionals.length === 0) values.chat = true;
 
@@ -169,6 +176,9 @@ async function main(args: string[]): Promise<number> {
       || (values["no-session-persistence"] && (values.continue || values.resume !== undefined || values["fork-session"]))
       || (values.name !== undefined && !values.name.trim())) {
       throw new HarnessError("USAGE", "Choose --continue or --resume; --fork-session requires one. Resume/fork requires persistence and names must be non-empty.");
+    }
+    if (values.project !== undefined && (!values.project.trim() || values.continue || values.resume !== undefined || values["no-session-persistence"])) {
+      throw new HarnessError("USAGE", "Use --project with a non-empty ID or name and persistence, without --continue or --resume.");
     }
     if (values["web-permission"] !== undefined && (!hasTask || !["allow", "deny"].includes(values["web-permission"]))) {
       throw new HarnessError("USAGE", "Use --web-permission allow or deny with a prompt, --chat, --tui, or --webui.");
@@ -225,6 +235,7 @@ async function main(args: string[]): Promise<number> {
       ...(values.resume === undefined ? {} : { resume: values.resume }),
       ...(values["fork-session"] ? { fork: true } : {}),
       ...(values.name === undefined ? {} : { name: values.name }),
+      ...(values.project === undefined ? {} : { project: values.project }),
     };
     if (values.resume === "") {
       process.on("SIGINT", cancel);
@@ -240,7 +251,7 @@ async function main(args: string[]): Promise<number> {
       selection.resume = selector.trim();
       if (values.tui || values.webui) { terminal.close(); terminal = undefined; }
     }
-    const sessionOptions = { selection, persistence: !values["no-session-persistence"] };
+    const sessionOptions = { selection, persistence: !values["no-session-persistence"], explicitWorkspace: values.workspace !== undefined };
     const workspace = values.workspace ?? process.cwd();
     const automation = values.automation === undefined ? undefined : await loadAutomationConfig(workspace, values.automation, controller.signal);
     if (automation) {

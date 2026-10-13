@@ -3,11 +3,18 @@ import { mkdir, open, readFile, readdir, realpath, rename, stat, unlink } from "
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { HarnessError } from "../errors.js";
+import { ProjectStore } from "../project/store.js";
+import type { ProjectRecord } from "../project/record.js";
 import { invalidSession, isRecord } from "./history.js";
-import { decodeSessionRecord, sessionIdPattern, sessionSummary, workspaceKey } from "./record.js";
+import { decodeSessionRecord, encodeSessionRecord, projectIdOf, sessionIdPattern, sessionSummary, workspaceKey } from "./record.js";
 import type { SessionRecord, SessionSummary } from "./record.js";
 
 const maxFileBytes = 64 * 1024 * 1024;
+
+export interface SessionSaveOptions {
+  attemptOwner?: { ownerPid: number; startedAt: string };
+  operationId?: string;
+}
 export function processAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; }
   catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
@@ -24,10 +31,12 @@ export async function canonicalWorkspace(workspace: string): Promise<string> {
 /** Versioned atomic snapshots; no credentials, permission grants, or live handles. */
 export class SessionStore {
   readonly root: string;
+  readonly projects: ProjectStore;
   constructor(options: { root?: string } = {}) {
     const root = options.root ?? process.env.FATCAT_SESSION_DIR ?? join(homedir(), ".fatcat", "sessions");
     if (!root.trim()) throw new HarnessError("SESSION_STORAGE", "FATCAT_SESSION_DIR must not be empty.");
     this.root = resolve(root);
+    this.projects = new ProjectStore({ root: this.root });
   }
 
   async list(workspace: string): Promise<SessionSummary[]> {
@@ -95,7 +104,25 @@ export class SessionStore {
     return this.loadAny(records[0]!.id);
   }
 
-  async save(record: SessionRecord, expectedRevision: number, forkSource?: Pick<SessionRecord, "id" | "revision">): Promise<SessionRecord> {
+  async save(record: SessionRecord, expectedRevision: number, forkSource?: Pick<SessionRecord, "id" | "revision">,
+    options: SessionSaveOptions = {}): Promise<SessionRecord> {
+    const projectId = projectIdOf(record);
+    if (projectId) {
+      if (record.projectRevision === undefined) throw new HarnessError("PROJECT_CONFLICT", "Refresh the project before saving its session.");
+      return this.projects.withProject(projectId, record.projectRevision, async (project) => {
+        const workspace = await canonicalWorkspace(project.workspace);
+        if (workspaceKey(record.workspace) !== workspaceKey(workspace)) {
+          throw new HarnessError("PROJECT_CONFLICT", "The session workspace does not match its project. Refresh it before continuing.");
+        }
+        return this.saveLocked(record, expectedRevision, forkSource, options, project);
+      });
+    }
+    return this.saveLocked(record, expectedRevision, forkSource, options);
+  }
+
+  private async saveLocked(record: SessionRecord, expectedRevision: number,
+    forkSource: Pick<SessionRecord, "id" | "revision"> | undefined, options: SessionSaveOptions,
+    project?: ProjectRecord): Promise<SessionRecord> {
     const workspace = record.storageWorkspace ?? await canonicalWorkspace(record.workspace);
     if (!sessionIdPattern.test(record.id)) return invalidSession();
     const directory = this.directory(workspace);
@@ -110,8 +137,10 @@ export class SessionStore {
         if (source.revision !== forkSource.revision) {
           throw new HarnessError("SESSION_CONFLICT", "The source session changed in another process. Resume it again before forking.");
         }
-        if (source.attempt?.status === "running" && processAlive(source.attempt.ownerPid)) {
-          throw new HarnessError("SESSION_BUSY", "That session is running in another process. Wait for it to finish before forking.");
+        this.requireAvailable(source);
+        if (source.projectError) throw new HarnessError("PROJECT_UNAVAILABLE", source.projectError);
+        if (projectIdOf(source) !== projectIdOf(record)) {
+          throw new HarnessError("PROJECT_LOCATION", "A fork must retain its source session's project.");
         }
       }
       try { previous = await this.read(workspace, record.id); }
@@ -119,13 +148,18 @@ export class SessionStore {
       if ((previous?.revision ?? 0) !== expectedRevision) {
         throw new HarnessError("SESSION_CONFLICT", "The saved session changed in another process. Resume it again or fork before continuing.");
       }
+      if (previous) this.requireAvailable(previous, options);
+      if (previous && projectIdOf(previous) && projectIdOf(previous) !== projectIdOf(record)) {
+        throw new HarnessError("PROJECT_LOCATION", "Leaving or moving between projects is not supported yet.");
+      }
       if (record.name && previous?.name !== record.name
         && (await this.records(workspace)).some((item) => item.id !== record.id && item.name === record.name)) {
         throw new HarnessError("SESSION_NAME", "That session name is already used in this workspace. Choose another name.");
       }
-      const saved = decodeSessionRecord({ ...record, revision: expectedRevision + 1 }, workspace, record.id);
+      const saved = decodeSessionRecord(encodeSessionRecord({ ...record, revision: expectedRevision + 1,
+        storageWorkspace: workspace }), workspace, record.id);
       await this.publish(directory, saved);
-      return structuredClone(saved);
+      return this.projectProjection(saved, project);
     } catch (error) {
       if (error instanceof HarnessError) throw error;
       throw new HarnessError("SESSION_STORAGE", "Could not save session data. Check the local session directory and available disk space.");
@@ -136,6 +170,18 @@ export class SessionStore {
 
   /** Remove only an exact workspace ID, optionally publishing an empty replacement first. */
   async delete(workspace: string, id: string, expectedRevision: number, replacement?: SessionRecord): Promise<SessionRecord | undefined> {
+    if (!sessionIdPattern.test(id)) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
+    const previous = await this.read(workspace, id);
+    const projectId = projectIdOf(previous);
+    if (projectId) {
+      return this.projects.withProject(projectId, previous.projectRevision,
+        () => this.deleteLocked(workspace, id, expectedRevision, replacement));
+    }
+    return this.deleteLocked(workspace, id, expectedRevision, replacement);
+  }
+
+  private async deleteLocked(workspace: string, id: string, expectedRevision: number,
+    replacement?: SessionRecord): Promise<SessionRecord | undefined> {
     const canonical = workspace;
     if (!sessionIdPattern.test(id)) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
     const directory = this.directory(canonical);
@@ -148,20 +194,30 @@ export class SessionStore {
       if (previous.revision !== expectedRevision) {
         throw new HarnessError("SESSION_CONFLICT", "The saved session changed in another process. Refresh it before deleting.");
       }
-      if (previous.attempt?.status === "running" && processAlive(previous.attempt.ownerPid)) {
-        throw new HarnessError("SESSION_BUSY", "That session is running in another process. Wait for it to finish before deleting.");
-      }
+      this.requireAvailable(previous);
       if (replacement) {
         if (replacement.revision !== 0 || replacement.id === id || !sessionIdPattern.test(replacement.id)
           || workspaceKey(replacement.storageWorkspace ?? replacement.workspace) !== workspaceKey(canonical)
           || replacement.name !== null || replacement.history.length || replacement.attempt !== null) return invalidSession();
+        if (projectIdOf(replacement) !== projectIdOf(previous)) {
+          throw new HarnessError("PROJECT_LOCATION", "The replacement session must retain the current project.");
+        }
         try {
           await this.read(canonical, replacement.id);
           throw new HarnessError("SESSION_CONFLICT", "The replacement session already exists. Try deleting again.");
         } catch (error) {
           if (!(error instanceof HarnessError && error.code === "SESSION_NOT_FOUND")) throw error;
         }
-        published = decodeSessionRecord({ ...replacement, revision: 1 }, canonical, replacement.id);
+        const projectId = projectIdOf(replacement);
+        if (projectId) {
+          // A replacement keeps the deleted session's project; this operation never joins another project.
+          if (projectId !== projectIdOf(previous) || replacement.projectRevision !== previous.projectRevision
+            || replacement.workspace !== previous.workspace || previous.projectError) {
+            throw new HarnessError("PROJECT_CONFLICT", "The replacement session must retain the current project and workspace.");
+          }
+        }
+        published = decodeSessionRecord(encodeSessionRecord({ ...replacement, revision: 1,
+          storageWorkspace: canonical }), canonical, replacement.id);
         await this.publish(directory, published);
       }
       try { await unlink(join(directory, `${id}.json`)); }
@@ -169,7 +225,7 @@ export class SessionStore {
         if (published) await unlink(join(directory, `${published.id}.json`)).catch(() => {});
         throw error;
       }
-      return published && structuredClone(published);
+      return published && this.projectProjection(published);
     } catch (error) {
       if (error instanceof HarnessError) throw error;
       throw new HarnessError("SESSION_STORAGE", "Could not delete session data. Check the local session directory.");
@@ -177,7 +233,7 @@ export class SessionStore {
   }
 
   private async publish(directory: string, record: SessionRecord): Promise<void> {
-    const json = JSON.stringify(record);
+    const json = JSON.stringify(encodeSessionRecord(record));
     if (Buffer.byteLength(json) > maxFileBytes) throw new HarnessError("SESSION_LIMIT", "Session data exceeds the 64 MiB storage limit. Start a new session.");
     const temporary = join(directory, `${record.id}.${randomUUID()}.tmp`);
     try {
@@ -230,10 +286,10 @@ export class SessionStore {
       if (!Buffer.from(json, "utf8").equals(bytes.subarray(0, count))) return invalidSession();
       let parsed: unknown;
       try { parsed = JSON.parse(json); } catch { return invalidSession(); }
-      if (!isRecord(parsed) || typeof parsed.workspace !== "string") return invalidSession();
+      if (!isRecord(parsed) || (parsed.version === 1 ? typeof parsed.workspace !== "string" : typeof parsed.storageWorkspace !== "string")) return invalidSession();
       const storageWorkspace = String(parsed.storageWorkspace ?? parsed.workspace);
       if (this.directory(storageWorkspace) !== directory) return invalidSession();
-      return decodeSessionRecord(parsed, storageWorkspace, id);
+      return this.projectProjection(decodeSessionRecord(parsed, storageWorkspace, id));
     } catch (error) {
       if (error instanceof HarnessError) throw error;
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -241,6 +297,32 @@ export class SessionStore {
       }
       throw new HarnessError("SESSION_STORAGE", "Could not read the saved session.");
     } finally { await handle?.close(); }
+  }
+
+  private requireAvailable(record: SessionRecord, options: SessionSaveOptions = {}): void {
+    const attempt = record.attempt;
+    if (attempt?.status === "running" && processAlive(attempt.ownerPid)
+      && (attempt.ownerPid !== process.pid || options.attemptOwner?.ownerPid !== attempt.ownerPid
+        || options.attemptOwner.startedAt !== attempt.startedAt)) {
+      throw new HarnessError("SESSION_BUSY", "That session has an active turn. Wait for it to finish before managing it.");
+    }
+    const operation = record.activeOperation;
+    if (operation && processAlive(operation.ownerPid) && (operation.ownerPid !== process.pid || options.operationId !== operation.id)) {
+      throw new HarnessError("SESSION_BUSY", "That session has an active compaction. Wait for it to finish before managing it.");
+    }
+  }
+
+  private async projectProjection(record: SessionRecord, project?: ProjectRecord): Promise<SessionRecord> {
+    const id = projectIdOf(record);
+    if (!id) return structuredClone(record);
+    try {
+      const selected = project ?? await this.projects.load(id);
+      const workspace = await canonicalWorkspace(selected.workspace);
+      return { ...structuredClone(record), workspace, projectName: selected.name, projectRevision: selected.revision };
+    } catch (error) {
+      if (!(error instanceof HarnessError)) throw error;
+      return { ...structuredClone(record), workspace: "", projectError: `${error.code}: ${error.message}` };
+    }
   }
 
   private async lock(directory: string): Promise<() => Promise<void>> {

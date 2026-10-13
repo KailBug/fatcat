@@ -5,7 +5,7 @@ import type { Readable, Writable } from "node:stream";
 import { checkCancellation, formatError } from "./errors.js";
 import { SessionManager } from "./session/manager.js";
 import { runInteractiveCommand, interactiveCommandHelp, automationCommandPrompt } from "./commands.js";
-import { sessionLabel } from "./session/commands.js";
+import { sessionLabel, sessionScopeLabel } from "./session/commands.js";
 import type { Conversation } from "./session/commands.js";
 import type { SkillDescriptor } from "./skills.js";
 import { ConversationAutomations } from "./automation/conversations.js";
@@ -40,6 +40,7 @@ export async function runChat(
         try {
           output.write(`${await session.runAutomation(task.sessionId, task.id, activation.scheduledAt, activation.paths ?? [], {
             signal: AbortSignal.any([signal, backgroundAbort.signal]),
+            ...(task.locationRevision === undefined ? {} : { locationRevision: task.locationRevision }),
             onEvent: createTurnReporter((event) => error.write(`${JSON.stringify({ automation: task.id, sessionId: task.sessionId, ...event })}\n`)),
           })}\n`);
         } catch (cause) { error.write(`${formatError(cause)}\n`); }
@@ -51,7 +52,7 @@ export async function runChat(
   try {
     automation?.start();
     error.write(`Chat started. ${session instanceof SessionManager
-      ? `Session: ${sessionLabel(session.current)}. Workspace: ${JSON.stringify(session.current.workspace)}. ${session.persistent ? "History is saved locally." : "Persistence is disabled."}`
+      ? `Session: ${sessionLabel(session.current)}. ${sessionScopeLabel(session.current)}. Workspace: ${JSON.stringify(session.current.workspace)}. ${session.persistent ? "History is saved locally." : "Persistence is disabled."}`
       : "History stays in memory."} ${commands}\n`);
     if (session instanceof SessionManager && session.current.interrupted) {
       error.write("The last turn was interrupted. Inspect workspace files before repeating operations.\n");

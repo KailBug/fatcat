@@ -6,8 +6,13 @@ import type { Message } from "../model.js";
 import { AgentSession } from "./agent-session.js";
 import type { SessionAgentOptions, SessionRunOptions, SessionTurnResult } from "./agent-session.js";
 import { SessionStore, canonicalWorkspace, processAlive } from "./store.js";
-import { sessionName, sessionSummary } from "./record.js";
+import { projectIdOf, sessionName, sessionSummary, workspaceKey } from "./record.js";
 import type { SessionRecord, SessionSummary } from "./record.js";
+import type { SessionSaveOptions } from "./store.js";
+import type { ProjectRecord } from "../project/record.js";
+import { joinedProjectRecord, projectJoinPreview } from "../project/operations.js";
+import type { ProjectJoinPreview } from "../project/operations.js";
+import { executionIdentity, withSessionIdentity } from "./execution.js";
 import type { CompactionOptions, CompactionResult } from "../context/compaction.js";
 import type { ContextStatus } from "../context/manager.js";
 import { taskIsEnabled } from "../automation/tasks.js";
@@ -16,6 +21,7 @@ import { FileChanges } from "../automation/files.js";
 import type { SkillCatalog } from "../skills.js";
 
 export interface SessionSelection {
+	project?: string;
 	continue?: boolean;
 	resume?: string;
 	fork?: boolean;
@@ -24,6 +30,7 @@ export interface SessionSelection {
 
 export interface SessionOpenOptions {
 	workspace: string;
+	explicitWorkspace?: boolean;
 	store?: SessionStore;
 	selection?: SessionSelection;
 	persistence?: boolean;
@@ -33,7 +40,8 @@ export interface SessionOpenOptions {
 }
 
 function available(record: SessionRecord): void {
-	if (record.attempt?.status === "running" && processAlive(record.attempt.ownerPid)) {
+	if ((record.attempt?.status === "running" && processAlive(record.attempt.ownerPid))
+		|| (record.activeOperation && processAlive(record.activeOperation.ownerPid))) {
 		throw new HarnessError("SESSION_BUSY", "That session is running in another process. Wait for it to finish before managing it.");
 	}
 }
@@ -45,6 +53,7 @@ export class SessionManager {
 	private readonly memory = new Map<string, SessionRecord>();
 	private agent: SessionAgentOptions;
 	private workspace: string;
+	private readonly launchWorkspace: string;
 	private readonly store: SessionStore;
 	readonly persistent: boolean;
 	private readonly deferEmptySessions: boolean;
@@ -54,6 +63,7 @@ export class SessionManager {
 		persistent: boolean, deferEmptySessions: boolean, agentForWorkspace?: SessionOpenOptions["agentForWorkspace"]) {
 		this.agent = agent;
 		this.workspace = workspace;
+		this.launchWorkspace = workspace;
 		this.store = store;
 		this.persistent = persistent;
 		this.deferEmptySessions = deferEmptySessions;
@@ -62,6 +72,9 @@ export class SessionManager {
 
 	static async open(agent: SessionAgentOptions, options: SessionOpenOptions): Promise<SessionManager> {
 		const selection = options.selection ?? {};
+		if (selection.project !== undefined && (selection.continue || selection.resume !== undefined || options.persistence === false)) {
+			throw new HarnessError("USAGE", "Use --project for a new persistent session; resumed sessions retain their saved project.");
+		}
 		if (selection.continue && selection.resume !== undefined) {
 			throw new HarnessError("USAGE", "Choose either --continue or --resume.");
 		}
@@ -82,7 +95,17 @@ export class SessionManager {
 		} else if (selection.resume !== undefined) {
 			await manager.resume(selection.resume);
 		} else {
-			await manager.newSession(selection.name);
+			if (selection.project !== undefined) {
+				const project = await manager.selectProject(selection.project);
+				if (options.explicitWorkspace && workspaceKey(project.workspace) !== workspaceKey(manager.workspace)) {
+					throw new HarnessError("USAGE", "--workspace cannot override a project's working directory.");
+				}
+			}
+			await manager.newSession(selection.name, selection.project);
+		}
+		if (options.explicitWorkspace && manager.current.projectId
+			&& workspaceKey(manager.current.workspace) !== workspaceKey(await canonicalWorkspace(options.workspace))) {
+			throw new HarnessError("USAGE", "--workspace cannot override a project's working directory.");
 		}
 		if (selection.fork) {
 			await manager.fork(selection.name);
@@ -107,6 +130,7 @@ export class SessionManager {
 		this.busy = true;
 		let result: CompactionResult;
 		try {
+			await this.prepareExecution();
 			result = await this.runtime.compact(options);
 		} finally {
 			this.busy = false;
@@ -132,13 +156,14 @@ export class SessionManager {
 		const result: SessionAutomation[] = [];
 		for (const summary of await this.list()) {
 			// Listing sessions globally must not start automation in unrelated projects.
-			if (summary.workspace !== workspace) continue;
+			if (summary.projectError || summary.workspace !== workspace) continue;
 			if (!summary.automationCount) continue;
 			const record = this.persistent ? await this.store.loadAny(summary.id) : await this.selectedRecord(summary.id);
 			if (record.workspace !== workspace) continue;
 			result.push(...(record.automations ?? []).map((task) => ({
 				...structuredClone(task),
 				workspace: record.workspace,
+				locationRevision: record.locationRevision ?? 0,
 				sessionId: record.id,
 				sessionTitle: record.name ?? record.title,
 			})));
@@ -176,14 +201,15 @@ export class SessionManager {
 	}
 
 	async runAutomation(sessionId: string, taskId: string, scheduledAt: number, paths: string[],
-		options: Pick<LoopOptions, "signal" | "onEvent"> = {}): Promise<string> {
+		options: Pick<LoopOptions, "signal" | "onEvent"> & { locationRevision?: number } = {}): Promise<string> {
 		this.requireIdle();
 		this.busy = true;
 		try {
 			if (sessionId === this.current.id && this.persistent) {
 				const latest = await this.store.loadAny(sessionId);
 				available(latest);
-				if (latest.workspace !== this.workspace) {
+				if (latest.projectError || latest.workspace !== this.workspace
+					|| (latest.locationRevision ?? 0) !== (this.current.locationRevision ?? 0)) {
 					throw new HarnessError("AUTOMATION_INACTIVE", "The session workspace changed. Resume it before running its automation.");
 				}
 				if (latest.revision !== this.current.revision) {
@@ -192,7 +218,9 @@ export class SessionManager {
 			}
 			const target = sessionId === this.current.id ? this : await this.automationSession(sessionId);
 			const task = target.runtime.snapshot.automations?.find((item) => item.id === taskId);
-			if (target.workspace !== this.workspace || !task || !taskIsEnabled(task) || task.lastStatus === "running"
+			if (target.workspace !== this.workspace
+				|| (options.locationRevision !== undefined && options.locationRevision !== (target.current.locationRevision ?? 0))
+				|| !task || !taskIsEnabled(task) || task.lastStatus === "running"
 				|| (task.lastScheduledAt !== undefined && scheduledAt <= task.lastScheduledAt)) {
 				throw new HarnessError("AUTOMATION_INACTIVE", "This activation is no longer eligible in the selected workspace.");
 			}
@@ -212,12 +240,83 @@ export class SessionManager {
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
 	}
 
-	async newSession(name?: string): Promise<void> {
+	async listProjects(): Promise<ProjectRecord[]> {
+		return this.persistent ? this.store.projects.list() : [];
+	}
+
+	async createProject(name: string, workspace: string): Promise<ProjectRecord> {
+		let created!: ProjectRecord;
 		await this.change(async () => {
-			const empty = this.emptyRecord(name);
+			this.requirePersistentProject();
+			created = await this.store.projects.create(name, resolve(this.workspace || this.launchWorkspace, workspace));
+		});
+		return created;
+	}
+
+	private async selectProject(selector: string): Promise<ProjectRecord> {
+		this.requirePersistentProject();
+		const projects = await this.store.projects.list();
+		const exact = projects.find((project) => project.id === selector);
+		if (exact) return this.store.projects.load(exact.id);
+		const matches = projects.filter((project) => project.name === selector);
+		if (matches.length > 1) throw new HarnessError("PROJECT_AMBIGUOUS", "More than one project has that name. Use its exact ID.");
+		if (!matches.length) throw new HarnessError("PROJECT_NOT_FOUND", "No matching project exists. Use /projects.");
+		return this.store.projects.load(matches[0]!.id);
+	}
+
+	async newSession(name?: string, projectId?: string | null): Promise<void> {
+		await this.change(async () => {
+			const target = projectId === undefined ? this.runtime?.current.projectId : projectId;
+			const project = target ? await this.selectProject(target) : undefined;
+			const workspace = project ? project.workspace : this.workspace || this.launchWorkspace;
+			const agent = await this.prepareWorkspace(workspace);
+			const empty = this.emptyRecord(name, project, workspace);
 			const record = this.deferEmptySessions && name === undefined ? empty : await this.persist(empty);
+			this.agent = agent;
 			this.activate(record);
 		});
+	}
+
+	async previewProjectJoin(projectId: string, sessionId?: string): Promise<ProjectJoinPreview> {
+		let preview!: ProjectJoinPreview;
+		await this.change(async () => {
+			const record = await this.joinTarget(sessionId);
+			available(record);
+			const project = await this.selectProject(projectId);
+			await this.prepareWorkspace(project.workspace);
+			preview = projectJoinPreview(record, project);
+		});
+		return preview;
+	}
+
+	async joinProject(preview: ProjectJoinPreview): Promise<void> {
+		await this.change(async () => {
+			this.requirePersistentProject();
+			const selected = await this.joinTarget(preview.sessionId);
+			available(selected);
+			const project = await this.store.projects.load(preview.projectId);
+			if (projectIdOf(selected) === project.id) return;
+			const current = projectJoinPreview(selected, project);
+			if (Object.keys(current).some((key) => current[key as keyof ProjectJoinPreview] !== preview[key as keyof ProjectJoinPreview])) {
+				throw new HarnessError("SESSION_CONFLICT", "The session or project changed. Review a fresh move preview before confirming.");
+			}
+			const agent = await this.prepareWorkspace(project.workspace);
+			const updated = joinedProjectRecord(selected, project);
+			const saved = selected.revision === 0 ? updated : await this.persist(updated);
+			if (selected.id === this.current.id) {
+				this.agent = agent;
+				this.activate(saved);
+			}
+		});
+	}
+
+	private requirePersistentProject(): void {
+		if (!this.persistent) throw new HarnessError("PROJECT_UNAVAILABLE", "Projects require persistent sessions.");
+	}
+
+	private async joinTarget(id?: string): Promise<SessionRecord> {
+		const selected = await this.selectedRecord(id);
+		return this.persistent && selected.revision > 0 ? this.store.loadAny(selected.id) : selected;
 	}
 
 	async reset(): Promise<void> {
@@ -240,8 +339,7 @@ export class SessionManager {
 				record = structuredClone(records[0]!);
 			}
 			available(record);
-			const agent = await this.prepareWorkspace(record.workspace);
-			this.agent = agent;
+			if (!record.projectError) this.agent = await this.prepareWorkspace(record.workspace);
 			this.activate(record);
 		});
 	}
@@ -262,6 +360,9 @@ export class SessionManager {
 		await this.change(async () => {
 			const selected = await this.selectedRecord(id);
 			available(selected);
+			if (projectIdOf(selected)) {
+				throw new HarnessError("PROJECT_WORKSPACE", "Project sessions use the project's fixed working directory. Session overrides are not supported.");
+			}
 			const workspace = await canonicalWorkspace(resolve(selected.workspace, path));
 			const agent = await this.prepareWorkspace(workspace);
 			for (const task of selected.automations ?? []) {
@@ -269,7 +370,8 @@ export class SessionManager {
 					await FileChanges.open(workspace, task.trigger.paths);
 				}
 			}
-			const updated = { ...selected, workspace, storageWorkspace: selected.storageWorkspace ?? selected.workspace,
+			const updated = { ...selected, workspace, location: { kind: "standalone" as const, workspace },
+				locationRevision: (selected.locationRevision ?? 0) + 1, storageWorkspace: selected.storageWorkspace ?? selected.workspace,
 				updatedAt: new Date().toISOString() };
 			const saved = selected.revision === 0 ? updated : await this.persist(updated);
 			if (selected.id === this.current.id) {
@@ -296,7 +398,8 @@ export class SessionManager {
 			available(selected);
 			const agent = await this.prepareWorkspace(selected.workspace);
 			const now = new Date().toISOString();
-			const record = await this.persist({ ...selected, id: randomUUID(), name: name === undefined ? null : sessionName(name),
+			const { activeOperation: _operation, ...source } = selected;
+			const record = await this.persist({ ...source, id: randomUUID(), name: name === undefined ? null : sessionName(name),
 				title: name === undefined ? `${selected.title.slice(0, 110)} (fork)` : sessionName(name),
 				forkedFrom: selected.revision === 0 ? null : selected.id, createdAt: now, updatedAt: now, revision: 0, automations: [] },
 			selected.revision === 0 ? undefined : selected);
@@ -317,6 +420,8 @@ export class SessionManager {
 			}
 			available(selected);
 			const active = id === this.current.id;
+			const project = projectIdOf(selected) ? await this.store.projects.load(projectIdOf(selected)!) : undefined;
+			if (selected.projectError) throw new HarnessError("PROJECT_UNAVAILABLE", selected.projectError);
 			if (this.deferEmptySessions) {
 				// A draft has revision zero and has never entered the saved-session list.
 				if (selected.revision > 0) {
@@ -327,14 +432,14 @@ export class SessionManager {
 					}
 				}
 				if (active) {
-					this.activate(this.emptyRecord());
+					this.activate(this.emptyRecord(undefined, project));
 				}
 				return;
 			}
 			let replacement: SessionRecord | undefined;
 			if (this.persistent) {
 				replacement = await this.store.delete(selected.storageWorkspace ?? selected.workspace, id, selected.revision,
-					active ? { ...this.emptyRecord(), storageWorkspace: selected.storageWorkspace ?? selected.workspace } : undefined);
+					active ? { ...this.emptyRecord(undefined, project), storageWorkspace: selected.storageWorkspace ?? selected.workspace } : undefined);
 			} else {
 				if (active) {
 					replacement = await this.persist(this.emptyRecord());
@@ -352,6 +457,7 @@ export class SessionManager {
 		this.busy = true;
 		let result: SessionTurnResult;
 		try {
+			await this.prepareExecution();
 			result = await this.runtime.run(prompt, options);
 		} finally {
 			this.busy = false;
@@ -361,9 +467,28 @@ export class SessionManager {
 		return result.answer;
 	}
 
-	private async persist(record: SessionRecord, forkSource?: Pick<SessionRecord, "id" | "revision">): Promise<SessionRecord> {
+	private async prepareExecution(): Promise<void> {
+		await this.runtime.retrySettlement();
+		const record = this.runtime.snapshot;
+		if (record.projectError) throw new HarnessError("PROJECT_UNAVAILABLE", record.projectError);
+		if (projectIdOf(record)) {
+			const project = await this.store.projects.load(projectIdOf(record)!);
+			if (project.revision !== record.projectRevision || workspaceKey(project.workspace) !== workspaceKey(record.workspace)) {
+				throw new HarnessError("SESSION_CONFLICT", "The project changed. Resume the session before continuing.");
+			}
+			await canonicalWorkspace(project.workspace);
+		}
+		if (this.persistent && record.revision > 0) {
+			const latest = await this.store.loadAny(record.id);
+			available(latest);
+			if (latest.revision !== record.revision) throw new HarnessError("SESSION_CONFLICT", "The saved session changed. Resume it before continuing.");
+		}
+	}
+
+	private async persist(record: SessionRecord, forkSource?: Pick<SessionRecord, "id" | "revision">,
+		options?: SessionSaveOptions): Promise<SessionRecord> {
 		if (this.persistent) {
-			return this.store.save(record, record.revision, forkSource);
+			return this.store.save(record, record.revision, forkSource, options);
 		}
 		if (record.name && [...this.memory.values()].some((item) => item.id !== record.id && item.name === record.name)) {
 			throw new HarnessError("SESSION_NAME", "That session name is already used. Choose another name.");
@@ -373,10 +498,13 @@ export class SessionManager {
 		return saved;
 	}
 
-	private emptyRecord(name?: string): SessionRecord {
+	private emptyRecord(name?: string, project?: ProjectRecord, workspace = this.workspace): SessionRecord {
 		const now = new Date().toISOString();
 		const validated = name === undefined ? null : sessionName(name);
-		return { version: 1, id: randomUUID(), workspace: this.workspace, name: validated,
+		const location = project ? { kind: "project" as const, projectId: project.id }
+			: { kind: "standalone" as const, workspace };
+		return { version: 2, id: randomUUID(), workspace, location, locationRevision: 0, name: validated,
+			...(project ? { projectName: project.name, projectRevision: project.revision } : {}),
 			title: validated ?? "New session", createdAt: now, updatedAt: now, revision: 0,
 			forkedFrom: null, history: [], attempt: null };
 	}
@@ -393,9 +521,12 @@ export class SessionManager {
 	}
 
 	private activate(record: SessionRecord): void {
-		const runtime = new AgentSession(record, this.agent, {
+		const identity = executionIdentity(record);
+		const agent = this.agent.forSession ? this.agent.forSession(identity, this.agent)
+			: { ...this.agent, model: withSessionIdentity(this.agent.model, identity) };
+		const runtime = new AgentSession(record, agent, {
 			persistent: this.persistent,
-			saveRecord: (next) => this.persist(next),
+			saveRecord: (next, options) => this.persist(next, undefined, options),
 			listAutomations: () => this.listAutomations(),
 		});
 		this.runtime = runtime;
@@ -406,6 +537,7 @@ export class SessionManager {
 		this.requireIdle();
 		this.busy = true;
 		try {
+			await this.runtime?.retrySettlement();
 			await operation();
 		} finally {
 			this.busy = false;

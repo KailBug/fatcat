@@ -163,9 +163,10 @@ test("preflight conflicts avoid model calls and final save failure leaves the ol
 	const { base, workspace } = await temporaryWorkspace(t);
 	class FailingStore extends SessionStore {
 		fail = false;
-		override async save(record: Parameters<SessionStore["save"]>[0], revision: number) {
+		override async save(...args: Parameters<SessionStore["save"]>) {
+			const [record] = args;
 			if (this.fail && record.compaction) throw new HarnessError("SESSION_STORAGE", "Injected save failure");
-			return super.save(record, revision);
+			return super.save(...args);
 		}
 	}
 	const store = new FailingStore({ root: join(base, "sessions") });
@@ -210,7 +211,7 @@ test("busy guards and cancellation apply throughout summary generation", async (
 	await session.run("After cancellation");
 });
 
-test("a concurrent durable update during compaction wins without losing its history", async (t) => {
+test("a durable compaction claim blocks concurrent updates until its own successful release", async (t) => {
 	const { base, workspace } = await temporaryWorkspace(t);
 	const store = new SessionStore({ root: join(base, "sessions") });
 	let entered!: () => void;
@@ -222,18 +223,22 @@ test("a concurrent durable update during compaction wins without losing its hist
 	} }, { workspace, store });
 	await session.run("old content ".repeat(1000));
 	await session.run("Recent");
-	const previous = session.context;
+	const previous = session.history;
+	const other = await SessionManager.open(ordinary, { workspace, store, selection: { resume: session.current.id } });
 	const pending = session.compact();
 	await ready;
 	await assert.rejects(session.fork(), code("SESSION_BUSY"));
-	const other = await SessionManager.open(ordinary, { workspace, store, selection: { resume: session.current.id } });
-	await other.run("Concurrent new turn");
+	await assert.rejects(other.run("Concurrent new turn"), code("SESSION_BUSY"));
+	await assert.rejects(SessionManager.open(ordinary, { workspace, store, selection: { resume: session.current.id } }), code("SESSION_BUSY"));
 	finish(answer());
-	await assert.rejects(pending, code("SESSION_CONFLICT"));
-	assert.deepEqual(session.context, previous);
+	await pending;
 	const saved = await store.load(workspace, session.current.id);
-	assert.ok(saved.history.some((message) => message.content === "Concurrent new turn"));
-	assert.equal(saved.compaction, undefined);
+	assert.deepEqual(saved.history, previous);
+	assert.ok(saved.compaction);
+	assert.equal(saved.activeOperation, undefined);
+	await other.resume(session.current.id);
+	await other.run("After successful release");
+	assert.ok((await store.load(workspace, session.current.id)).history.some((message) => message.content === "After successful release"));
 });
 
 test("compacting after an interrupted turn preserves recovery evidence outside the summary", async (t) => {

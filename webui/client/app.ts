@@ -10,6 +10,7 @@ import { PermissionMenu } from "./permission-menu.js";
 import { FilePreview } from "./preview.js";
 import { BrowserEvidenceView } from "./browser-evidence.js";
 import { CronPanel } from "./cron.js";
+import { ProjectDialog } from "./projects.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -22,6 +23,7 @@ const prompt = element<HTMLTextAreaElement>("prompt");
 const send = element<HTMLButtonElement>("send");
 const stop = element<HTMLButtonElement>("stop");
 const newChat = element<HTMLButtonElement>("new-chat");
+const newProject = element<HTMLButtonElement>("new-project");
 const sessionList = element("sessions");
 const scroll = element("scroll-area");
 const messages = element("messages");
@@ -53,22 +55,29 @@ const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maxi
 const filePreview = new FilePreview(() => token);
 const browserEvidence = new BrowserEvidenceView(() => token);
 const cron = new CronPanel(api);
+const projectDialog = new ProjectDialog(request, () => connected && !sending && !state?.busy);
 element("workspace-picker").addEventListener("click", () => {
   if (state) void api("session/choose-workspace", { id: state.current.id }, 310_000);
 });
 
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
 function controls(): void {
-  filePreview.update(connected);
+  filePreview.update(connected && !state?.current.projectError);
   const busy = Boolean(state?.busy);
   prompt.disabled = !connected;
   send.hidden = busy; stop.hidden = !busy;
-  send.disabled = !connected || sending || !prompt.value.trim();
+  send.disabled = !connected || sending || !prompt.value.trim() || Boolean(state?.current.projectError);
   stop.disabled = !connected || sending;
   newChat.disabled = !connected || sending || busy;
+  newProject.disabled = !connected || sending || busy || !state?.persistent;
+  element<HTMLButtonElement>("current-project").disabled = !connected || sending || busy || !state?.persistent || Boolean(state?.current.projectId);
   if (state) sessionMenu.update(displaySessions(state));
   sessionDialog.update();
-  element<HTMLButtonElement>("workspace-picker").disabled = !connected || sending || busy;
+  projectDialog.update();
+  element<HTMLButtonElement>("workspace-picker").disabled = !connected || sending || busy || Boolean(state?.current.projectId);
+  sessionList.querySelectorAll<HTMLButtonElement>(".project-new-chat").forEach((button) => {
+    button.disabled = !connected || sending || busy;
+  });
   if (state) cron.update(state, !connected || sending || busy);
   permissionMenu.update(state?.permissionMode, !connected || sending || busy || Boolean(state?.approval));
 }
@@ -79,16 +88,21 @@ function connection(ok: boolean): void {
   controls();
 }
 async function api(path: string, body: unknown, timeout = 15_000): Promise<boolean> {
-  if (sending) return false;
+  try { await request(path, body, timeout); return true; }
+  catch (error) {
+    showError(error instanceof Error ? error.message : "Request failed. Check the local server.");
+    return false;
+  }
+}
+async function request<T>(path: string, body: unknown, timeout = 15_000): Promise<T> {
+  if (sending) throw new Error("Wait for the current request to finish.");
   sending = true; controls(); notice.hidden = true;
   try {
     const response = await fetch(`/api/${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
     if (!response.ok) throw new Error((await response.json() as { error: string }).error);
+    const result = await response.json() as T;
     await refresh(true);
-    return true;
-  } catch (error) {
-    showError(error instanceof Error ? error.message : "Request failed. Check the local server.");
-    return false;
+    return result;
   } finally { sending = false; controls(); }
 }
 async function refresh(force = false): Promise<void> {
@@ -192,10 +206,14 @@ function render(next: WebUiState): void {
   renderContextUsage(next);
   element("workspace").textContent = next.info.workspace;
   element("workspace").title = `${next.info.workspace}\nWrite ${next.info.permission} · Shell ${next.info.shellPermission} · Web ${next.info.webPermission}`;
+  element("current-project").textContent = next.current.projectName ?? (next.current.projectId ? "Unavailable project" : "Independent chat");
+  element("current-project").title = next.current.projectId ? "This chat belongs to its project." : "Move this chat to a project";
+  element("current-project").setAttribute("aria-label", next.current.projectId ? `Project: ${next.current.projectName ?? "Unavailable project"}` : "Move current chat to project");
+  element("workspace-picker").title = next.current.projectId ? "This chat uses its project folder. Project folders cannot be changed in this version." : "Change workspace";
   renderSessions(next);
   const warning = element("session-warning");
-  warning.hidden = !next.current.interrupted || next.busy;
-  warning.textContent = "A turn in this session was interrupted. Model history contains only successful turns. Check current files and commands before retrying; completed operations were not undone.";
+  warning.hidden = (!next.current.interrupted && !next.current.projectError) || next.busy;
+  warning.textContent = next.current.projectError ?? "A turn in this session was interrupted. Model history contains only successful turns. Check current files and commands before retrying; completed operations were not undone.";
   element("run-status").textContent = next.busy ? next.status : next.automationNotice;
   for (const [id, previous] of rendered) {
     if (!next.turns.some((turn) => turn.id === id)) { previous.element.remove(); rendered.delete(id); }
@@ -242,6 +260,7 @@ function renderDetails(next: WebUiState): void {
   if (!selected) { dialog.close(); return; }
   const content = element("details-content"); content.replaceChildren();
   for (const [key, value] of Object.entries({ Provider: next.info.provider, Model: next.info.model, Workspace: selected.workspace,
+    Project: selected.projectName ?? selected.projectId ?? "Independent session", "Project status": selected.projectError ?? "Available",
     "Session ID": selected.id, "Session name": selected.name ?? selected.title,
     "Active session": selected.id === next.current.id ? "Yes" : "No",
     "Saved locally": next.persistent ? "Yes" : "No", "Successful turns": selected.turnCount,
@@ -264,11 +283,52 @@ function displaySessions(next: WebUiState): SessionSummary[] {
 
 function renderSessions(next: WebUiState): void {
   const sessions = displaySessions(next);
-  const signature = JSON.stringify([next.current.id, sessions]);
+  const signature = JSON.stringify([next.current.id, sessions, next.projects]);
   if (signature === sessionSignature) return;
   sessionSignature = signature;
   sessionList.replaceChildren();
-  if (sessions.length === 0) {
+  const groups = new Map<string, HTMLElement>();
+  for (const project of next.projects) {
+    const group = node("section", undefined, "project-group");
+    group.dataset.projectId = project.id;
+    group.setAttribute("aria-label", `Project ${project.name}`);
+    const heading = node("div", undefined, "project-heading");
+    const name = node("span", project.name, "project-name");
+    name.title = `${project.name}\n${project.workspace}`;
+    const create = node("button", undefined, "project-new-chat icon-button");
+    create.type = "button";
+    create.setAttribute("aria-label", `New chat in ${project.name}`);
+    create.title = `New chat in ${project.name}`;
+    create.append(icon("plus"));
+    create.addEventListener("click", () => {
+      void api("session/new", { projectId: project.id }).then((accepted) => { if (accepted) sessionChanged(); });
+    });
+    heading.append(name, create);
+    group.append(heading);
+    group.addEventListener("dragover", (event) => {
+      if (!connected || sending || state?.busy || !event.dataTransfer?.types.includes("application/x-fatcat-session")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      group.classList.add("project-drop-target");
+    });
+    group.addEventListener("dragleave", (event) => {
+      if (!(event.relatedTarget instanceof Node) || !group.contains(event.relatedTarget)) group.classList.remove("project-drop-target");
+    });
+    group.addEventListener("drop", (event) => {
+      event.preventDefault();
+      group.classList.remove("project-drop-target");
+      const id = event.dataTransfer?.getData("application/x-fatcat-session");
+      const selected = state && displaySessions(state).find((session) => session.id === id);
+      if (state && selected) projectDialog.join(selected, state, project.id);
+    });
+    groups.set(project.id, group);
+    sessionList.append(group);
+  }
+  const independent = node("section", undefined, "independent-sessions");
+  independent.setAttribute("aria-label", "Independent chats");
+  if (next.projects.length) independent.append(node("div", "Independent chats", "section-label"));
+  sessionList.append(independent);
+  if (sessions.length === 0 && next.projects.length === 0) {
     sessionList.append(node("p", "Your conversations will appear here after your first message.", "session-empty"));
   }
   for (const session of sessions) {
@@ -279,6 +339,16 @@ function renderSessions(next: WebUiState): void {
     button.title = `${session.name ?? session.title}\n${metadata}\n${session.id}`;
     button.setAttribute("aria-description", metadata);
     button.dataset.sessionId = session.id;
+    button.draggable = !session.projectId;
+    button.addEventListener("dragstart", (event) => {
+      if (!connected || sending || state?.busy || session.projectId) { event.preventDefault(); return; }
+      event.dataTransfer?.setData("application/x-fatcat-session", session.id);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+      sessionMenu.close();
+    });
+    button.addEventListener("dragend", () => {
+      sessionList.querySelectorAll(".project-drop-target").forEach((group) => group.classList.remove("project-drop-target"));
+    });
     button.setAttribute("aria-haspopup", "menu");
     const copy = node("span", undefined, "session-copy");
     copy.append(node("span", session.name ?? session.title, "session-name"));
@@ -322,7 +392,13 @@ function renderSessions(next: WebUiState): void {
       clock.append(icon("clock"));
       row.append(clock);
     }
-    sessionList.append(row);
+    if (session.projectId && !groups.has(session.projectId)) {
+      const missing = node("section", undefined, "project-group");
+      missing.append(node("div", session.projectName ?? "Unavailable project", "project-heading"));
+      groups.set(session.projectId, missing);
+      sessionList.insertBefore(missing, independent);
+    }
+    (session.projectId ? groups.get(session.projectId)! : independent).append(row);
   }
 }
 
@@ -340,6 +416,7 @@ function sessionChanged(): void { prompt.value = ""; resize(); requestAnimationF
 
 async function sessionAction(action: SessionAction, session: SessionSummary): Promise<void> {
   if (action === "workspace") { await api("session/choose-workspace", { id: session.id }, 310_000); return; }
+  if (action === "project") { if (state) projectDialog.join(session, state); return; }
   if (action === "details") {
     if (!state) return;
     detailsSessionId = session.id;
@@ -369,7 +446,7 @@ async function sessionMutation(action: SessionMutation, session: SessionSummary,
 function resize(): void { prompt.style.height = "auto"; prompt.style.height = `${Math.min(prompt.scrollHeight, 180)}px`; controls(); }
 element<HTMLFormElement>("composer").addEventListener("submit", (event) => {
   event.preventDefault();
-  if (!connected || state?.busy || sending || !prompt.value.trim()) return;
+  if (!connected || state?.busy || sending || !prompt.value.trim() || state?.current.projectError) return;
   const draft = prompt.value;
   void api("message", { prompt: draft }).then((accepted) => {
     if (accepted && prompt.value === draft) { prompt.value = ""; resize(); }
@@ -384,8 +461,10 @@ prompt.addEventListener("keydown", (event) => {
 });
 stop.addEventListener("click", () => { void api("stop", {}); });
 newChat.addEventListener("click", () => {
-  void api("session/new", {}).then((accepted) => { if (accepted) sessionChanged(); });
+  void api("session/new", { projectId: null }).then((accepted) => { if (accepted) sessionChanged(); });
 });
+newProject.addEventListener("click", () => projectDialog.create());
+element("current-project").addEventListener("click", () => { if (state) projectDialog.join(state.current, state); });
 element("close-details").addEventListener("click", () => dialog.close());
 dialog.addEventListener("close", () => { detailsSessionId = undefined; });
 element("toggle-sidebar").addEventListener("click", () => {

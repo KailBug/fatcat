@@ -18,6 +18,7 @@ const assets = new Map([
   ["/markdown.js", ["./client/markdown.js", "text/javascript; charset=utf-8"]],
   ["/session-menu.js", ["./client/session-menu.js", "text/javascript; charset=utf-8"]],
   ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
+  ["/projects.js", ["./client/projects.js", "text/javascript; charset=utf-8"]],
   ["/cron.js", ["./client/cron.js", "text/javascript; charset=utf-8"]],
   ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
   ["/preview.js", ["./client/preview.js", "text/javascript; charset=utf-8"]],
@@ -57,7 +58,7 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 /** Bind only to loopback. The fragment capability is never included in HTTP URLs. */
 export async function startWebUiServer(controller: WebUiController, port = 3210, picker: WorkspacePicker = pickWorkspaceDirectory) {
   const token = randomBytes(32).toString("hex");
-  const previews = await createPreviewStore(() => controller.info.workspace);
+  const previews = await createPreviewStore(() => controller.fileWorkspace);
   const shutdown = new AbortController();
   let origin = "";
   const server = createServer({ requestTimeout: 10_000, headersTimeout: 10_000, maxHeaderSize: 8192 }, (request, response) => {
@@ -68,12 +69,18 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
     void route(request, response).catch((error: unknown) => {
       if (response.destroyed) return;
       const status = error instanceof HttpError ? error.status
-        : error instanceof HarnessError ? (["SESSION_BUSY", "SESSION_CONFLICT", "STALE_APPROVAL", "CLOSED"].includes(error.code) ? 409 : 400) : 500;
+        : error instanceof HarnessError ? (["SESSION_BUSY", "SESSION_CONFLICT", "PROJECT_BUSY", "PROJECT_CONFLICT", "STALE_APPROVAL", "CLOSED"].includes(error.code) ? 409 : 400) : 500;
       json(response, status, { error: error instanceof HttpError || error instanceof HarnessError ? error.message : "The local server could not complete the request." });
     });
   });
   server.maxConnections = 32;
   server.timeout = 15_000;
+
+  function fileWorkspace(): string {
+    const workspace = controller.fileWorkspace;
+    if (!workspace) throw new HttpError(400, "The session workspace is unavailable. Restore its project before accessing files.");
+    return workspace;
+  }
 
   async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
     if (request.headers.host !== new URL(origin).host) throw new HttpError(403, "Invalid local host.");
@@ -100,7 +107,9 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
     const evidence = /^\/api\/browser-evidence\/([a-f0-9]{32})\/(report|screenshot)$/.exec(path);
     if (request.method === "GET" && evidence) {
       try {
-        const file = await readBrowserEvidence(controller.info.workspace, evidence[1]!, evidence[2] as "report" | "screenshot");
+        const workspace = fileWorkspace();
+        const file = await readBrowserEvidence(workspace, evidence[1]!, evidence[2] as "report" | "screenshot");
+        if (controller.fileWorkspace !== workspace) throw new HttpError(404, "The workspace changed. Open the evidence again.");
         response.writeHead(200, { "Content-Type": evidence[2] === "report" ? "application/json; charset=utf-8" : "image/png" });
         response.end(file.bytes);
       } catch { throw new HttpError(404, "Browser evidence is unavailable. The file may have been removed or changed."); }
@@ -119,8 +128,34 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
       if (typeof body.path !== "string" || body.path.length > 4096 || Object.keys(body).length !== 1) {
         throw new HttpError(400, "Expected a directory path.");
       }
-      json(response, 200, await listWorkspaceDirectory(body.path, controller.info.workspace));
+      json(response, 200, await listWorkspaceDirectory(body.path, fileWorkspace()));
       return;
+    } else if (path === "/api/project/create") {
+      if (typeof body.name !== "string" || !body.name.trim() || body.name.length > 120
+        || /[\x00-\x1f\x7f]/.test(body.name) || Object.keys(body).length !== 1) {
+        throw new HttpError(400, "Expected a project name of at most 120 characters without control characters.");
+      }
+      const disconnected = new AbortController();
+      const abort = () => disconnected.abort();
+      response.once("close", abort);
+      response.setTimeout(310_000);
+      try {
+        await controller.chooseProjectWorkspace(body.name, picker,
+          AbortSignal.any([shutdown.signal, disconnected.signal, AbortSignal.timeout(300_000)]));
+      } finally {
+        response.off("close", abort);
+        if (!response.destroyed) response.setTimeout(15_000);
+      }
+    } else if (path === "/api/project/join-preview") {
+      if (typeof body.projectId !== "string" || !body.projectId.trim() || body.projectId.length > 256
+        || typeof body.sessionId !== "string" || !body.sessionId.trim() || body.sessionId.length > 256
+        || Object.keys(body).length !== 2) throw new HttpError(400, "Expected a project ID and session ID.");
+      json(response, 200, await controller.previewProjectJoin(body.projectId, body.sessionId));
+      return;
+    } else if (path === "/api/project/join") {
+      if (typeof body.token !== "string" || body.token.length > 256 || body.confirmed !== true
+        || Object.keys(body).length !== 2) throw new HttpError(400, "Expected a project confirmation token and explicit confirmation.");
+      await controller.joinProject(body.token);
     } else if (path === "/api/session/choose-workspace") {
       if (typeof body.id !== "string" || !body.id.trim() || body.id.length > 256 || Object.keys(body).length !== 1) {
         throw new HttpError(400, "Expected a session ID.");
@@ -157,12 +192,13 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
       if (Object.keys(body).length) throw new HttpError(400, "Expected an empty object.");
       if (path === "/api/stop") controller.stop(); else await controller.reset();
     } else if (path === "/api/session/new" || path === "/api/session/fork") {
-      const fields = path === "/api/session/new" ? ["name"] : ["name", "id"];
+      const fields = path === "/api/session/new" ? ["name", "projectId"] : ["name", "id"];
       if (Object.keys(body).some((key) => !fields.includes(key)) || (body.name !== undefined && typeof body.name !== "string")
-        || (body.id !== undefined && (typeof body.id !== "string" || !body.id.trim()))) {
+        || (body.id !== undefined && (typeof body.id !== "string" || !body.id.trim()))
+        || (body.projectId !== undefined && body.projectId !== null && (typeof body.projectId !== "string" || !body.projectId.trim() || body.projectId.length > 256))) {
         throw new HttpError(400, "Expected an optional session name and, when forking, session ID.");
       }
-      if (path === "/api/session/new") await controller.newSession(body.name as string | undefined);
+      if (path === "/api/session/new") await controller.newSession(body.name as string | undefined, body.projectId as string | null | undefined);
       else await controller.fork(body.name as string | undefined, body.id as string | undefined);
     } else if (path === "/api/session/resume") {
       if (typeof body.id !== "string" || !body.id.trim() || Object.keys(body).length !== 1) {

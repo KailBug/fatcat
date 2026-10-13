@@ -20,9 +20,18 @@ export interface SessionAttempt {
 }
 
 export interface SessionRecord {
-	version: 1;
+	version: 1 | 2;
 	id: string;
+	/** Resolved execution directory. Project sessions never persist this projection. */
 	workspace: string;
+	location?: SessionLocation;
+	locationRevision?: number;
+	locationChanges?: SessionLocationChange[];
+	activeOperation?: SessionActiveOperation;
+	/** Project projections are refreshed from ProjectStore and never persisted. */
+	projectName?: string;
+	projectRevision?: number;
+	projectError?: string;
 	name: string | null;
 	title: string;
 	/** Original storage bucket, retained when the execution workspace changes. */
@@ -37,6 +46,34 @@ export interface SessionRecord {
 	compaction?: CompactionState;
 }
 
+export type SessionLocation = { kind: "standalone"; workspace: string } | { kind: "project"; projectId: string };
+
+export interface SessionLocationChange {
+	id: string;
+	from: SessionLocation;
+	to: SessionLocation;
+	fromWorkspace: string;
+	toWorkspace: string;
+	changedAt: string;
+	acknowledged: boolean;
+}
+
+export interface SessionActiveOperation {
+	kind: "compact";
+	id: string;
+	ownerPid: number;
+	startedAt: string;
+}
+
+export function locationOf(record: SessionRecord): SessionLocation {
+	return record.location ?? { kind: "standalone", workspace: record.workspace };
+}
+
+export function projectIdOf(record: SessionRecord): string | undefined {
+	const location = locationOf(record);
+	return location.kind === "project" ? location.projectId : undefined;
+}
+
 export interface SessionSummary {
 	id: string;
 	workspace: string;
@@ -49,13 +86,21 @@ export interface SessionSummary {
 	forkedFrom: string | null;
 	interrupted: boolean;
 	automationCount?: number;
+	projectId?: string;
+	projectName?: string;
+	projectError?: string;
+	locationRevision?: number;
 }
 
 export function sessionSummary(record: SessionRecord): SessionSummary {
 	return { id: record.id, workspace: record.workspace, name: record.name, title: record.title,
 		createdAt: record.createdAt, updatedAt: record.updatedAt, revision: record.revision,
 		turnCount: record.history.filter((message) => message.role === "user").length,
-		forkedFrom: record.forkedFrom, interrupted: record.attempt !== null,
+		forkedFrom: record.forkedFrom, interrupted: record.attempt !== null || record.activeOperation !== undefined,
+		...(projectIdOf(record) ? { projectId: projectIdOf(record)! } : {}),
+		...(record.projectName === undefined ? {} : { projectName: record.projectName }),
+		...(record.projectError === undefined ? {} : { projectError: record.projectError }),
+		...(record.locationRevision === undefined ? {} : { locationRevision: record.locationRevision }),
 		...(record.automations?.length ? { automationCount: record.automations.length } : {}) };
 }
 
@@ -74,14 +119,24 @@ function isDate(value: unknown): value is string {
 	return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value));
 }
 export function decodeSessionRecord(value: unknown, workspace: string, id: string): SessionRecord {
-	if (!isRecord(value) || value.version !== 1 || value.id !== id || !sessionIdPattern.test(id)
-		|| typeof value.workspace !== "string"
+	if (!isRecord(value) || (value.version !== 1 && value.version !== 2) || value.id !== id || !sessionIdPattern.test(id)
 		|| (value.storageWorkspace !== undefined && (typeof value.storageWorkspace !== "string" || !isAbsolute(value.storageWorkspace)))
 		|| workspaceKey(String(value.storageWorkspace ?? value.workspace)) !== workspaceKey(workspace)
-		|| !isAbsolute(value.workspace) || (value.name !== null && typeof value.name !== "string")
+		|| (value.name !== null && typeof value.name !== "string")
 		|| typeof value.title !== "string" || value.title.length > 120 || /[\x00-\x1f\x7f]/.test(value.title)
 		|| !isDate(value.createdAt) || !isDate(value.updatedAt) || !Number.isSafeInteger(value.revision)
 		|| Number(value.revision) < 1 || (value.forkedFrom !== null && (typeof value.forkedFrom !== "string" || !sessionIdPattern.test(value.forkedFrom)))) return invalidSession();
+	let location: SessionLocation;
+	if (value.version === 1) {
+		if (typeof value.workspace !== "string" || !isAbsolute(value.workspace)) return invalidSession();
+		location = { kind: "standalone", workspace: value.workspace };
+	} else {
+		if (typeof value.storageWorkspace !== "string" || value.workspace !== undefined) return invalidSession();
+		location = decodeLocation(value.location);
+	}
+	if (value.locationRevision !== undefined && (!Number.isSafeInteger(value.locationRevision) || Number(value.locationRevision) < 0)) return invalidSession();
+	const locationChanges = value.locationChanges === undefined ? undefined : decodeLocationChanges(value.locationChanges);
+	const activeOperation = value.activeOperation === undefined ? undefined : decodeActiveOperation(value.activeOperation);
 	let name: string | null = null;
 	if (value.name !== null) {
 		try { name = sessionName(value.name as string); } catch { return invalidSession(); }
@@ -109,9 +164,53 @@ export function decodeSessionRecord(value: unknown, workspace: string, id: strin
 			ownerPid: Number(raw.ownerPid), status: raw.status as SessionAttempt["status"],
 			code: raw.code as string | null, messages };
 	}
-	return { version: 1, id, workspace: value.workspace, name, title: value.title, createdAt: value.createdAt,
+	if (activeOperation && attempt?.status === "running") return invalidSession();
+	return { version: value.version, id, workspace: location.kind === "standalone" ? location.workspace : "",
+		location, locationRevision: Number(value.locationRevision ?? 0), name, title: value.title, createdAt: value.createdAt,
+		...(locationChanges ? { locationChanges } : {}), ...(activeOperation ? { activeOperation } : {}),
 		...(compaction ? { compaction } : {}),
 		...(value.storageWorkspace === undefined ? {} : { storageWorkspace: String(value.storageWorkspace) }),
 		updatedAt: value.updatedAt, revision: Number(value.revision), forkedFrom: value.forkedFrom as string | null,
 		history, attempt, ...(value.automations === undefined ? {} : { automations: decodeBoundTasks(value.automations) }) };
+}
+
+function decodeLocation(value: unknown): SessionLocation {
+	if (!isRecord(value)) return invalidSession();
+	if (value.kind === "standalone" && typeof value.workspace === "string" && isAbsolute(value.workspace)
+		&& value.projectId === undefined) return { kind: "standalone", workspace: value.workspace };
+	if (value.kind === "project" && typeof value.projectId === "string" && sessionIdPattern.test(value.projectId)
+		&& value.workspace === undefined) return { kind: "project", projectId: value.projectId };
+	return invalidSession();
+}
+
+function decodeLocationChanges(value: unknown): SessionLocationChange[] {
+	if (!Array.isArray(value) || value.length > 100) return invalidSession();
+	const ids = new Set<string>();
+	return value.map((raw: unknown) => {
+		if (!isRecord(raw) || typeof raw.id !== "string" || !sessionIdPattern.test(raw.id) || ids.has(raw.id)
+			|| typeof raw.fromWorkspace !== "string" || !isAbsolute(raw.fromWorkspace)
+			|| typeof raw.toWorkspace !== "string" || !isAbsolute(raw.toWorkspace)
+			|| !isDate(raw.changedAt) || typeof raw.acknowledged !== "boolean") return invalidSession();
+		ids.add(raw.id);
+		return { id: raw.id, from: decodeLocation(raw.from), to: decodeLocation(raw.to), fromWorkspace: raw.fromWorkspace,
+			toWorkspace: raw.toWorkspace, changedAt: raw.changedAt, acknowledged: raw.acknowledged };
+	});
+}
+
+function decodeActiveOperation(value: unknown): SessionActiveOperation {
+	if (!isRecord(value) || value.kind !== "compact" || typeof value.id !== "string" || !sessionIdPattern.test(value.id)
+		|| !Number.isSafeInteger(value.ownerPid) || Number(value.ownerPid) < 1 || !isDate(value.startedAt)) return invalidSession();
+	return { kind: "compact", id: value.id, ownerPid: Number(value.ownerPid), startedAt: value.startedAt };
+}
+
+/** Explicit disk shape excludes credentials, projections and unknown fields. */
+export function encodeSessionRecord(record: SessionRecord): Record<string, unknown> {
+	return { version: 2, id: record.id, location: locationOf(record), locationRevision: record.locationRevision ?? 0,
+		storageWorkspace: record.storageWorkspace ?? record.workspace, name: record.name, title: record.title,
+		createdAt: record.createdAt, updatedAt: record.updatedAt, revision: record.revision,
+		forkedFrom: record.forkedFrom, history: record.history, attempt: record.attempt,
+		...(record.locationChanges === undefined ? {} : { locationChanges: record.locationChanges }),
+		...(record.activeOperation === undefined ? {} : { activeOperation: record.activeOperation }),
+		...(record.automations === undefined ? {} : { automations: record.automations }),
+		...(record.compaction === undefined ? {} : { compaction: record.compaction }) };
 }

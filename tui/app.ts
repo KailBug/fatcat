@@ -5,7 +5,7 @@ import { createTurnReporter } from "../src/execution-report.js";
 import type { ReportEvent } from "../src/execution-report.js";
 import { SessionManager } from "../src/session/manager.js";
 import { interactiveCommandHelp, runInteractiveCommand, automationCommandPrompt } from "../src/commands.js";
-import { sessionLabel } from "../src/session/commands.js";
+import { sessionLabel, sessionScopeLabel } from "../src/session/commands.js";
 import type { Conversation } from "../src/session/commands.js";
 import type { SkillDescriptor } from "../src/skills.js";
 import { ApprovalCoordinator } from "../src/permissions/approval.js";
@@ -264,7 +264,7 @@ export class TuiApp {
     if (prompt === "/exit") { this.exit(); return; }
     if (prompt === "/help") { this.message("system", help, "HELP"); return; }
     if (prompt === "/status") {
-      this.message("system", (this.session instanceof SessionManager ? `Session: ${sessionLabel(this.session.current)}\n` : "")
+      this.message("system", (this.session instanceof SessionManager ? `Session: ${sessionLabel(this.session.current)}\n${sessionScopeLabel(this.session.current)}\n` : "")
         + statusText(this.telemetry.snapshot(), this.options), "STATUS");
       return;
     }
@@ -307,6 +307,7 @@ export class TuiApp {
     this.activity = "Ready";
     this.updateSessionFooter();
     this.message("system", `Session: ${sessionLabel(this.session.current)}. `
+      + `${sessionScopeLabel(this.session.current)}. `
       + (this.session.persistent ? "History is saved locally." : "Persistence is disabled."));
     if (this.session.current.interrupted) {
       this.message("system", "The last turn was interrupted. Inspect workspace files before repeating operations.");
@@ -318,6 +319,7 @@ export class TuiApp {
     if (!(this.session instanceof SessionManager)) return;
     this.options.workspace = this.session.current.workspace;
     this.state.workspace = this.session.current.workspace;
+    this.state.scope = sessionScopeLabel(this.session.current);
     if (this.session.skills) {
       this.options.skills = this.session.skills.skills.length;
       this.options.skillCatalog = this.session.skills.skills;
@@ -356,7 +358,9 @@ export class TuiApp {
     try {
       const options = { signal, onEvent: createTurnReporter((event) => this.observe(event)) };
       const answer = automatic && this.session instanceof SessionManager
-        ? await this.session.runAutomation(automatic.task.sessionId, automatic.task.id, automatic.activation.scheduledAt, automatic.activation.paths ?? [], options)
+        ? await this.session.runAutomation(automatic.task.sessionId, automatic.task.id, automatic.activation.scheduledAt, automatic.activation.paths ?? [], {
+          ...options, ...(automatic.task.locationRevision === undefined ? {} : { locationRevision: automatic.task.locationRevision }),
+        })
         : await this.session!.run(prompt, options);
       this.telemetry.finishTurn("answered");
       this.message("assistant", answer, automatic ? `[clock] ${automatic.task.sessionTitle}` : undefined);

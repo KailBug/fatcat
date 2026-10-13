@@ -21,6 +21,9 @@ import type { Activation } from "../src/automation/scheduler.js";
 import { FileChanges } from "../src/automation/files.js";
 import { automationCommandPrompt } from "../src/commands.js";
 import type { WorkspacePicker } from "./folder-picker.js";
+import type { ProjectRecord } from "../src/project/record.js";
+import { ProjectJoinConfirmations } from "./projects.js";
+import type { ProjectJoinConfirmation } from "./projects.js";
 
 export type WebUiInfo = {
   provider: string; model: string; workspace: string;
@@ -44,6 +47,7 @@ export type WebUiState = {
   permissionMode: ReturnType<PermissionPolicy["snapshot"]>;
   automations: SessionAutomation[]; automationNotice: string;
   runningSessionId: string | null;
+  projects: ProjectRecord[];
 };
 
 /** Browser tabs share one selected session, active turn and pending approval. */
@@ -57,6 +61,8 @@ export class WebUiController {
   private changing: Promise<void> | undefined;
   private workspaceSelection: AbortController | undefined;
   private sessions: SessionSummary[] = [];
+  private projects: ProjectRecord[] = [];
+  private readonly projectConfirmations = new ProjectJoinConfirmations();
   private readonly contextUsage: WebContextUsage;
   private automationTasks: SessionAutomation[] = [];
   private automationNotice = "";
@@ -77,6 +83,7 @@ export class WebUiController {
     controller.updateWorkspace();
     controller.turns = restoredTurns(session.history, session.current.id);
     controller.sessions = await session.list();
+    controller.projects = await session.listProjects();
     controller.automationTasks = await session.listAutomations();
     controller.automationService = new ConversationAutomations(session, {
       idle: () => !controller.active && !controller.changing && !controller.closed,
@@ -102,7 +109,11 @@ export class WebUiController {
       busy: Boolean(this.active || this.changing), approval: this.approvals.snapshot(), status: this.status,
       current: this.session.current, sessions: this.sessions, persistent: this.session.persistent,
       contextUsage: this.contextUsage.snapshot(), permissionMode, automations: this.automationTasks,
-      automationNotice: this.automationNotice, runningSessionId: this.runningSessionId });
+      automationNotice: this.automationNotice, runningSessionId: this.runningSessionId, projects: this.projects });
+  }
+
+  get fileWorkspace(): string | undefined {
+    return this.session.current.projectError ? undefined : this.info.workspace || undefined;
   }
 
   selectPermissionMode(mode: PermissionMode): void {
@@ -143,7 +154,8 @@ export class WebUiController {
       try {
         const options = { signal: abort.signal, onEvent: createTurnReporter((event) => this.observe(turn, event, false, visible && !contextCommand)) };
         turn.answer = contextCommand ? (await runContextCommand(this.session, prompt, options))!.text : automatic
-          ? await this.session.runAutomation(automatic.task.sessionId, automatic.task.id, automatic.activation.scheduledAt, automatic.activation.paths ?? [], options)
+          ? await this.session.runAutomation(automatic.task.sessionId, automatic.task.id, automatic.activation.scheduledAt, automatic.activation.paths ?? [],
+            { ...options, ...(automatic.task.locationRevision === undefined ? {} : { locationRevision: automatic.task.locationRevision }) })
           : await this.session.run(prompt, options);
         if (contextCommand && /^\/compact(?:\s|$)/.test(prompt)) this.contextUsage.reset();
         turn.status = "answered";
@@ -167,8 +179,40 @@ export class WebUiController {
 
   reset(): Promise<void> { return this.newSession(); }
 
-  newSession(name?: string): Promise<void> {
-    return this.changeSession(() => this.session.newSession(name));
+  newSession(name?: string, projectId?: string | null): Promise<void> {
+    return this.changeSession(() => this.session.newSession(name, projectId));
+  }
+
+  chooseProjectWorkspace(name: string, picker: WorkspacePicker, signal: AbortSignal): Promise<void> {
+    return this.changeSession(async () => {
+      if (this.closed || signal.aborted) return;
+      if (!this.session.persistent) throw new HarnessError("INPUT", "Projects require persistent sessions.");
+      const cancelled = new AbortController();
+      this.workspaceSelection = cancelled;
+      try {
+        const selectionSignal = AbortSignal.any([signal, cancelled.signal]);
+        const path = await picker(this.session.current.workspace, selectionSignal);
+        if (path === null || selectionSignal.aborted) return;
+        await this.session.createProject(name, path);
+      } finally { this.workspaceSelection = undefined; }
+    }, false);
+  }
+
+  async previewProjectJoin(projectId: string, sessionId: string): Promise<ProjectJoinConfirmation> {
+    let confirmation: ProjectJoinConfirmation | undefined;
+    await this.changeSession(async () => {
+      confirmation = this.projectConfirmations.create(await this.session.previewProjectJoin(projectId, sessionId));
+    }, false);
+    return confirmation!;
+  }
+
+  joinProject(token: string): Promise<void> {
+    return this.changeSession(async () => {
+      const preview = this.projectConfirmations.take(token);
+      await this.session.joinProject(preview);
+      this.approvals.deny();
+      if (preview.sessionId === this.session.current.id) this.contextUsage.reset();
+    }, false);
   }
 
   resume(selector: string): Promise<void> {
@@ -184,6 +228,7 @@ export class WebUiController {
       if (this.closed || signal.aborted) return;
       const selected = id === this.session.current.id ? this.session.current : this.sessions.find((item) => item.id === id);
       if (!selected) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists.");
+      if (selected.projectId) throw new HarnessError("INPUT", "Project sessions use the project workspace. It cannot be changed per session.");
       const cancelled = new AbortController();
       this.workspaceSelection = cancelled;
       try {
@@ -250,6 +295,7 @@ export class WebUiController {
           this.contextUsage.reset();
         }
         this.sessions = await this.session.list();
+        this.projects = await this.session.listProjects();
         this.automationTasks = await this.session.listAutomations();
         this.status = "Ready";
       } catch (error) {

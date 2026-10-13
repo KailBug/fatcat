@@ -40,9 +40,9 @@ CLI events and TUI/Web UI activity show automatic compaction as part of the orig
 
 Successful summaries survive resume and fork. Original messages remain available and still count toward the 64 MiB session-file limit. Cancellation, invalid summaries, failed storage, or revision conflicts retain the previous projection; model usage already consumed is still reported. Use Escape/Ctrl+C in TUI, Stop in Web UI, or the chat cancellation signal. Compaction reports are process-local, and restored Web UI history displays the original question/answer turns. TUI process operation totals include compactions; completed conversation turns do not. The context-token display is cleared after compaction until a new ordinary model request supplies actual usage.
 
-The CLI runs a single task or a persistent conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. Tasks, chat, TUI, and Web UI use the launch directory as the workspace unless `--workspace` selects another directory. The model can answer directly, call the pure `sum` tool, load local Skills, inspect workspace text files, propose a write, or run a command after approval in the active interface; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
+The CLI runs a single task or a persistent conversation through DeepSeek (default), Kimi, MiMo, or Qwen Chat Completions. New independent sessions use the launch directory unless `--workspace` selects another directory; resumed sessions restore their directory, and project sessions use the project's fixed directory. The model can answer directly, call the pure `sum` tool, load local Skills, inspect workspace text files, propose a write, or run a command after approval in the active interface; the harness validates arguments, executes the tool, returns the associated result, and continues until a final answer or a bounded failure.
 
-The implementation includes isolated persistent sessions with local listing, naming, resume and branching, continuous chat, an optional terminal interface with configuration and usage panels, a local browser interface, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. It has no plugins, channels, long-term memory, file recovery checkpoints, or Graph engine.
+The implementation includes persistent Projects with a fixed working directory and independently saved member sessions, local session listing, naming, resume and branching, continuous chat, an optional terminal interface with configuration and usage panels, a local browser interface, a shared asynchronous tool collection, paged workspace reading, guarded writing, and bounded command execution, multiple sequential tool calls, a per-turn iteration limit, request deadlines, cancellation, basic event logs, and deterministic per-turn execution reports. Oversized requests can omit older successful read payloads with explicit markers while preserving full saved history. The model can delegate focused tasks to bounded subagents with isolated history. Attachment upload, document parsing, Memory, and RAG remain planned; ordinary workspace text reading is available. It has no plugins, channels, file recovery checkpoints, or Graph engine.
 
 The shared system prompt asks Fatcat to respond concisely in your language, inspect relevant code before edits, complete authorized implementation work, and report checks actually performed. It avoids unsolicited edits for review-only questions and keeps assumptions separate from observed facts. This is model guidance, not a guarantee of correctness or an additional permission mechanism. Restart the CLI after changing the prompt source and rebuilding.
 
@@ -191,7 +191,7 @@ Writes and commands use the existing independent permission policies. With the d
 
 All tabs using this server link share one active session. The sidebar lists all sessions in the same session store, regardless of launch directory. Selecting a session changes the active workspace to its saved directory. Starting Web UI without a session selection, clicking New chat, or deleting the active session opens an unsaved welcome screen; these actions do not add empty sessions to the sidebar or disk. The first submitted message saves the session before model or tool execution, including failed or interrupted attempts. New chat retains the previous conversation. Explicit naming (`--name` or the session API) and forking still save a session immediately; `--continue` and `--resume` still select saved history. Existing empty saved sessions remain available until explicitly deleted.
 
-Right-click a session to open **Session details**, **Rename session**, **Fork session**, or **Delete session**. Keyboard users can focus a session and press Shift+F10 or the context-menu key, then use arrow keys and Enter; Escape or clicking outside closes the menu. Each action targets the selected row, including an inactive session. Renaming or deleting an inactive session leaves the active conversation unchanged; forking opens the new branch. Deleting requires confirmation and permanently removes that session's saved conversation. Session changes do not undo files or commands, or clear process-local journals; management actions are disabled during a turn or approval.
+Right-click a session to open **Session details**, **Rename session**, **Change workspace**, **Move to project**, **Fork session**, or **Delete session**. Keyboard users can focus a session and press Shift+F10 or the context-menu key, then use arrow keys and Enter; Escape or clicking outside closes the menu. Each action targets the selected row, including an inactive session. Renaming or deleting an inactive session leaves the active conversation unchanged; forking opens the new branch. Deleting requires confirmation and permanently removes that session's saved conversation. Project members cannot change their workspace or move to another project. Session changes do not undo files or commands, or clear process-local journals; management actions are disabled during a turn or approval. Project creation, grouped chats and confirmed migration are described in [Projects and session scope](#projects-and-session-scope).
 
 Rename, Fork, and Delete use centered in-page dialogs with English buttons. Rename accepts a new name; Fork optionally accepts a branch name. Cancel or Escape sends no request. Delete focuses Cancel initially and requires explicit confirmation. Validation or server errors remain visible inside the dialog; submissions cannot be duplicated while pending.
 
@@ -441,7 +441,7 @@ pnpm start --chat --workspace examples/workspace
 
 `--workspace` works with a single prompt, `--chat`, `--tui` or `--webui`; it cannot be used alone or with help/configuration checks. Without it, Fatcat uses the directory where you invoked `pnpm start`, even though pnpm runs package scripts from the package root. An explicit absolute workspace overrides that directory; a relative workspace resolves from it. For example, from `D:\fatcat\examples`, `pnpm start --chat` uses `D:\fatcat\examples`, and `pnpm start --chat --workspace workspace` uses `D:\fatcat\examples\workspace`.
 
-The parent has `sum`, `read`, `write`, `shell`, and `delegate_task`; children share the same workspace tools and permissions without recursive delegation. A path that cannot be resolved to an existing directory fails configuration before any model request. New sessions and `/reset` inherit the current workspace. Use `/workspace <path>` to change it; resuming a session selects its saved workspace. Directly running the compiled `dist/src/cli.js` uses that Node process's current directory and ignores inherited `INIT_CWD`; only the package start launcher restores pnpm's invocation directory.
+The parent has `sum`, `read`, `write`, `shell`, and `delegate_task`; children share the same workspace tools and permissions without recursive delegation. A path that cannot be resolved to an existing directory fails configuration before any model request. `/new` and `/reset` inherit the current workspace and Project, when present. Use `/workspace <path>` to change an independent session's directory; project sessions keep the project directory. Resuming selects the saved session's effective workspace. Directly running the compiled `dist/src/cli.js` uses that Node process's current directory and ignores inherited `INIT_CWD`; only the package start launcher restores pnpm's invocation directory.
 
 The canonical workspace root is included in parent and child model request guidance, so the model can answer which directory it is using without executing a command or inferring the path from a listing. Tool paths still use workspace-relative paths. The TUI displays the same canonical root. Help and configuration checks do not create a workspace or accept workspace/permission options.
 
@@ -555,9 +555,58 @@ Commands inherit an allowlist of OS/runtime environment variables, excluding the
 
 Command records survive failed turns and `/reset`, and are shared with children. Each keeps the command, cwd, outcome, and at most 1000 Unicode code points per output stream with an explicit summary-truncation flag. After 20 launch attempts, further commands are rejected without dropping old facts. Records disappear on process exit and describe historical runs, not proof that current files still pass verification.
 
+## Projects and session scope
+
+A Project explicitly groups sessions and owns one working directory. Sessions in the same project keep independent conversation histories; identical directory paths do not automatically associate sessions or projects. The directory is the default base for file operations and commands. Project membership does not change launch permission limits or approve file, command or browser operations.
+
+Create a project in chat or TUI, using an existing accessible directory:
+
+```text
+/project create "Research" "D:\my research"
+/projects
+/project use Research
+/rename First investigation
+```
+
+Creation saves the project without switching the current session or creating a directory. The two creation arguments may be quoted; Windows backslashes are literal. Names are limited to 120 characters. Project names can repeat, so use the project ID from `/projects` when a name is ambiguous. `/project use` opens a new session in the selected project. These commands stay local and make no model request; starting chat/TUI still requires provider configuration.
+
+| Command | Behavior |
+| --- | --- |
+| `/projects` | List project IDs, names and directories. |
+| `/project` | Show the current project or independent scope and effective directory. |
+| `/project create "name" "directory"` | Persist a project with a fixed existing directory. |
+| `/project use <id-or-name>` | Start a new project session with independent history. |
+| `/new [name]`, `/clear`, `/reset` | Start another session in the current project, or another independent session when outside a project. |
+| `/new --standalone [name]` | Start a separate independent session in the current directory; the previous session retains its project. |
+| `/project join <id-or-name>` | Preview moving the current independent session into a project. |
+| `/project confirm <token>`, `/project cancel` | Confirm the displayed migration with its returned token, or discard it. |
+
+To start a new session in an existing project from PowerShell:
+
+```powershell
+pnpm start --project Research
+pnpm start --tui --project Research
+pnpm start --webui --project Research
+pnpm start --project Research --name review --prompt "Inspect this project's code."
+```
+
+`--project` accepts an ID or an unambiguous name. Without another mode it starts chat. Do not combine it with `--continue`, `--resume`, or `--no-session-persistence`; resume already restores the saved affiliation. An explicit `--workspace` must match the project directory, including when resuming a member session. A different launch directory does not override the project. Chat feedback and the TUI header/status show the actual project and directory. Fork inherits the source project and completed history but does not copy its automatic tasks.
+
+In Web UI, choose **New project**, enter a name, and choose its directory in the native Windows folder picker. Creating a project leaves the current chat selected. Each project has a **New chat in [project name]** button and its own group of saved sessions. The top-level **New chat** button creates an independent chat; the `/new` command inherits the current affiliation. Unnamed new project chats remain drafts until their first submission, just like independent Web UI chats. The project label and workspace path show the active affiliation; the path picker is disabled for project members.
+
+Drag an independent session onto a project group, or use its **Move to project** menu action. The menu is also available with Shift+F10 or the context-menu key; the active independent chat's project label opens the same dialog. **Review move** shows both full directories and the scope change; **Confirm move** commits it. Cancel or Escape leaves the session unchanged. Confirmation targets that specific session even when another chat is selected. If the session or project changes before confirmation, review a fresh preview.
+
+Migration changes subsequent execution to the project directory without moving or copying workspace files or rewriting past messages and source paths. Existing automatic tasks are paused in the same saved change; review their prompts, relative paths and limits before resuming them. Running sessions, active compaction and pending operation approvals must finish or be cancelled before migration. Old approvals do not carry across the change; subsequent operations use normal current permissions. The next model turn receives the recorded directory and affiliation change. Background tasks and delegated work use their actual bound Session identity, not the chat currently selected in the interface.
+
+The preview explains that future uploaded materials will be project-shared. **Attachments are not implemented in this stage**, so there are no uploaded materials to transfer yet. Project membership does not merge other sessions' histories or introduce Memory or RAG.
+
+This version supports creation, new member sessions, restoration and confirmed migration from an independent session. Leaving a project, moving between projects, deleting a Project, and changing its directory are unavailable. Deleting an individual session remains available and does not delete the Project. If a project record or directory is missing or invalid, its saved sessions remain listable and their histories viewable, but execution is blocked with an unavailable-project error; Fatcat does not fall back to the launch directory. Restore the missing project record or original directory, then resume the session.
+
+See [Project architecture](ARCHITECTURE/PROJECTS.md) for compatibility and execution boundaries, and the [roadmap](ROADMAP.md) for the later attachment, Memory and retrieval stages.
+
 ## Saved sessions
 
-Tasks, chat, TUI and Web UI save sessions by default. Starting without a selection creates a new session; earlier conversations remain available. Sessions store their canonical workspace but are listed globally across all workspace directories in the same session store. Resume from any launch directory to select a session and its saved workspace.
+Tasks, chat, TUI and Web UI save sessions by default. Starting without a selection creates a new independent session; earlier conversations remain available. Independent sessions store their canonical workspace; project sessions store their affiliation and resolve the project's directory. All are listed globally across workspace buckets in the same session store. Resume from any launch directory to restore a session and its effective workspace.
 
 ```powershell
 pnpm start --chat --name auth-refactor
@@ -578,6 +627,7 @@ pnpm start --chat --no-session-persistence
 | `--resume <id-or-name>`, `-r <id-or-name>` | Resume an exact session ID, explicit name or local title. Ambiguous matches require an ID. |
 | `--resume`, `-r` | List sessions and ask for an ID or name in an interactive terminal. With redirected input or stderr, print the list and exit without model credentials. |
 | `--name <name>`, `-n <name>` | Name a new session, rename a resumed one, or name the new branch with `--fork-session`. |
+| `--project <id-or-name>` | Start a new persistent session in an existing project; cannot combine with continue or resume. |
 | `--fork-session` | Combine with continue or resume to copy history into a new session and preserve the source. |
 | `--no-session-persistence` | Keep new sessions only in this process. Startup resume, continue and fork selection cannot be combined with it. |
 
@@ -590,7 +640,9 @@ $env:FATCAT_SESSION_DIR = 'D:\fatcat-session-data'
 pnpm start --chat
 ```
 
-The root retains separate SHA-256 storage buckets for compatibility. Editing a workspace keeps the original bucket (recorded as storageWorkspace) and changes only the execution workspace. No session or project files are moved. Files are versioned atomic JSON snapshots, limited to 64 MiB each. History includes prompts, answers, tool calls/results, read file and web content, and loaded Skill instructions. Data is local plaintext and has no automatic retention cleanup. The harness does not serialize provider credentials, permission policies or approval answers; user or tool content can still contain sensitive data. `--no-session-persistence` disables disk saving for the current run and allows in-process new/list/resume/rename/fork.
+The root retains separate SHA-256 storage buckets for compatibility. Editing an independent workspace or joining a project keeps the original bucket (recorded as storageWorkspace) and changes only the execution location. No session or workspace files are moved. Project metadata is stored separately under `<session-store-root>/projects/<project-id>.json`, so `FATCAT_SESSION_DIR` selects both stores. Session files are versioned atomic JSON snapshots, limited to 64 MiB each. History includes prompts, answers, tool calls/results, read file and web content, and loaded Skill instructions. Data is local plaintext and has no automatic retention cleanup. The harness does not serialize provider credentials, permission policies or approval answers; user or tool content can still contain sensitive data. `--no-session-persistence` disables disk saving for the current run and allows in-process new/list/resume/rename/fork, but Projects require persistence.
+
+New sessions use storage format v2. Existing v1 sessions load as independent sessions without changing their ID, history or original storage bucket; listing or reading does not rewrite them. Their first successful durable write upgrades them to v2, including a turn or compaction claim before model work. Failed publication leaves the previous file intact; a later model failure does not downgrade an already saved v2 record. **Older Fatcat versions cannot read upgraded v2 sessions. Stop old Fatcat instances before using this version against their session store; concurrent old/new writers are not supported.** There is no automatic downgrade or rollback of session files.
 
 Resuming restores full completed model history using the session's saved workspace and refreshed Skills catalog, with the current launch's provider and permissions. It does not restore old authorization grants, file contents, pending approvals, tool processes, live journals, activity reports or process token totals. The latest failed, cancelled or abandoned turn retains partial messages separately and displays an interrupted warning; the next model request receives a bounded recovery notice to inspect current state before repeating operations. Nothing runs automatically on resume, and the warning clears after the next successful turn. This is not a permanent failure audit log or a file rollback feature.
 
@@ -610,8 +662,10 @@ Enter one task per line. For example, ask `Use the sum tool to add 17 and 25.`, 
 | --- | --- |
 | /help | Show local chat commands |
 | /skills | List discovered Skill metadata locally, without loading instructions or calling the model |
-| /new [name] | Create a new session, retaining the old one |
-| /clear, /reset | Start a new unnamed session |
+| /new [name] | Create a new session in the current project/scope, retaining the old one |
+| /new --standalone [name] | Create a separate independent session in the current directory |
+| /clear, /reset | Start a new unnamed session in the current project/scope |
+| /projects, /project | List projects or show current scope; creation, selection and migration commands are described above |
 | /sessions, /resume | List all workspace sessions |
 | /resume <id-or-name> | Switch to a saved session |
 | /rename <name> | Rename the active session |
@@ -647,7 +701,9 @@ Enter sends the prompt; Alt+Enter inserts a newline. Up/Down recalls prompts, an
 | /help | Show local commands and editor shortcuts. |
 | /status | Show effective configuration and current telemetry. |
 | /skills | List discovered Skill metadata without a model request or history change. |
-| /new [name], /clear, /reset | Start a new session; retain the old history, consumed usage and execution records. |
+| /new [name], /clear, /reset | Start a new session in the current project/scope; retain the old history, consumed usage and execution records. |
+| /new --standalone [name] | Create a separate independent session in the current directory. |
+| /projects, /project | List projects or show current scope; use the same project commands as chat. |
 | /sessions, /resume | List all workspace sessions. |
 | /resume <id-or-name> | Switch to an existing session. |
 | /rename <name> | Rename the active session. |
@@ -662,6 +718,7 @@ Escape or Ctrl+C cancels a running TUI turn, propagates to the parent, children,
 | --- | --- |
 | Provider / model / region | The actual startup configuration, fixed for the Session. |
 | Workspace / write / shell | The explicitly authorized directory and independent permission policies. |
+| Project / independent scope | The active Session's affiliation, separate from its history and tool permissions. |
 | Skills / iteration / timeout | Discovered catalog size and configured per-turn / per-request limits. |
 | Turn / process usage | Valid provider input, output, and total tokens, including children, with reporting coverage; process totals survive reset. |
 | Parent / child requests | Loop request attempts, including local budget rejections; not confirmed billing or HTTP counts. |
@@ -700,6 +757,8 @@ pnpm test
 ```
 
 Automated tests use fake credentials and injected transports; they do not load `.env` or call a model service. They include local Skill loading and SDK request contracts for all four providers. The Kimi, MiMo and Qwen additions use this offline verification only in the current increment; no online API calls are needed for their acceptance. Offline passing tests do not establish real credentials, connectivity or model task behavior.
+
+For the Project interface, run `pnpm run verify:projects`. This separate check uses installed Edge, temporary project/session data, injected model decisions and folder selections. It covers project creation, grouped chats with independent histories, fixed-directory binding, migration cancellation and confirmation, a stale preview across tabs, drag/drop, an inactive session's migration, and mobile controls. No model credentials or online model requests are used. Ordinary `pnpm test` remains browser-free; manually selecting or cancelling the native Windows folder dialog is a separate desktop check. Actual verification outcomes are recorded in [PROGRESS.md](PROGRESS.md).
 
 With a real local key, explicitly run:
 
@@ -757,6 +816,7 @@ Provider protocols use openai 7.18.0 as a compatibility client, with thinking an
 - [Architecture overview](ARCHITECTURE/README.md)
 - [Agent Loop architecture](ARCHITECTURE/AGENT_LOOP.md)
 - [Session architecture](ARCHITECTURE/SESSION.md)
+- [Project architecture](ARCHITECTURE/PROJECTS.md)
 - [Tools architecture](ARCHITECTURE/TOOLS.md)
 - [Subagent architecture](ARCHITECTURE/SUBAGENT.md)
 - [Execution reports](ARCHITECTURE/EXECUTION_REPORT.md)
@@ -770,10 +830,10 @@ All repository text outside docs/ must be English. Chinese is allowed only under
 
 ## Changing a session workspace
 
-Use `/workspace` to show the current directory, or `/workspace D:\my-project` in chat/TUI to change it. Relative paths resolve from the current workspace; paths with spaces may be wrapped in double quotes. Use `/new` before changing the directory to start a separate conversation; changing an existing session retains its ID and history.
+Use `/workspace` to show the current directory, or `/workspace D:\my-project` in chat/TUI to change an independent session's directory. Relative paths resolve from the current workspace; paths with spaces may be wrapped in double quotes. Project members cannot override their project directory. Use `/new --standalone` for a separate independent conversation before choosing a different workspace; changing an existing independent session retains its ID and history.
 
-In Web UI, click the workspace path to open the native Windows folder picker. Browse with Explorer's navigation or enter a directory in its address bar, then choose **Select folder**. Cancel keeps the current directory and conversation unchanged. The session menu also has **Change workspace**, including for inactive sessions or sessions whose old directory no longer exists. New chat starts in the current workspace; changing its directory keeps it an unsaved draft until the first message. Session changes and new turns wait until the picker closes. The picker runs on the Windows machine hosting Fatcat and closes after five minutes or when the requesting page disconnects; it requires an interactive Windows desktop.
+In Web UI, click an independent chat's workspace path to open the native Windows folder picker. Browse with Explorer's navigation or enter a directory in its address bar, then choose **Select folder**. Cancel keeps the current directory and conversation unchanged. The session menu also has **Change workspace**, including for inactive independent sessions or those whose old directory no longer exists; it is disabled for project members. Top-level New chat starts independently in the current workspace; changing its directory keeps it an unsaved draft until the first message. Session changes and new turns wait until the picker closes. The picker runs on the Windows machine hosting Fatcat and closes after five minutes or when the requesting page disconnects; it requires an interactive Windows desktop.
 
-Directory changes are unavailable while a turn or approval is running. Reads, writes, shell cwd, browser checks, preview and Skills follow the selected workspace under current launch permissions. Returning to a previously visited workspace retains its process tool journals. Automation discovery remains limited to the active workspace and rebuilds its file baselines on workspace changes; listing all sessions does not start jobs in other projects.
+Directory changes are unavailable while a turn or approval is running. Reads, writes, shell cwd, browser checks, preview and Skills follow the selected workspace under current launch permissions. Returning to a previously visited workspace retains its process tool journals. Automation discovery remains limited to the active workspace and rebuilds its file baselines on workspace or affiliation changes; same-directory sessions may each have tasks, but each task executes with its own Session identity. Listing all sessions does not start jobs in unrelated directories.
 
 Run `pnpm run verify:sessions` for the explicit real Edge workflow check with temporary workspaces and injected model decisions and folder selections. No model credentials or model requests are used. This checks session bindings; manually selecting and cancelling the native Windows dialog is a separate desktop check.

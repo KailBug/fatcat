@@ -1289,6 +1289,19 @@ dialog[open],.session-menu:not([hidden]),.permission-menu:not([hidden]) { animat
 @media(prefers-reduced-motion:reduce) {
   *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important }
 }
+.project-group { margin-bottom:12px; border-radius:12px; border:1px solid transparent; padding:4px }
+.project-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 8px; color:var(--muted); font-size:12px; font-weight:600 }
+.project-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.project-new-chat { flex:none; width:28px; height:28px }
+.project-drop-target { border-color:var(--accent); background:var(--accent-soft) }
+.current-project { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; border:0; background:none; padding:6px }
+.current-project:disabled { opacity:1; cursor:default }
+.project-move-preview { color:var(--muted); font-size:13px; line-height:1.6 }
+.project-move-preview dl { display:block; padding:12px; border:1px solid var(--border); border-radius:10px }
+.project-move-preview dt { font-weight:600; color:var(--ink) }
+.project-move-preview dd { margin:2px 0 10px; overflow-wrap:anywhere; white-space:pre-wrap }
+.project-move-preview dd:last-child { margin-bottom:0 }
+.project-dialog .session-dialog-actions { position:sticky; bottom:0; background:var(--surface); padding-top:12px }
 @media(prefers-color-scheme:dark) {
   :root {
     --ink:#ededed;

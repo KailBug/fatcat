@@ -16,7 +16,8 @@
     <button id="close-sidebar" class="icon-button sidebar-close" aria-label="Close sidebar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#x"></use></svg></button>
     <button class="new-chat" id="new-chat"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> New chat </button>
     <button class="cron-entry" id="show-cron" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/icons.svg#clock"></use></svg> Cron tasks</button>
-    <div class="section-label">Recent chats</div>
+    <button class="cron-entry" id="new-project" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/icons.svg#folder"></use></svg> New project</button>
+    <div class="section-label">Projects and chats</div>
     <nav id="sessions" class="session-list" aria-label="Saved sessions"></nav>
     <div class="sidebar-bottom">
       <div class="profile"><span class="avatar">Y</span><div>You<span>Local developer</span></div><span class="private-label">Personal</span></div>
@@ -24,7 +25,7 @@
   </aside>
   <main>
     <header class="topbar">
-      <div class="topbar-left"><button id="toggle-sidebar" class="icon-button" aria-label="Toggle sidebar" aria-expanded="false" aria-controls="sidebar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#panel-left"></use></svg></button><span class="app-name">Fatcat</span></div>
+      <div class="topbar-left"><button id="toggle-sidebar" class="icon-button" aria-label="Toggle sidebar" aria-expanded="false" aria-controls="sidebar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#panel-left"></use></svg></button><span class="app-name">Fatcat</span><button id="current-project" class="current-project" type="button" aria-label="Move current chat to project" disabled></button></div>
       <div class="topbar-actions"><button id="show-preview" class="preview-entry" aria-controls="file-preview" aria-expanded="false" disabled>Preview</button><div class="connection"><span class="status-dot" id="connection-dot"></span><span id="connection">Connecting</span></div></div>
     </header>
     <div class="scroll-area" id="scroll-area">

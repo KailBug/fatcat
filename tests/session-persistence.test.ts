@@ -249,7 +249,7 @@ test("strict disk validation rejects malformed, unfinished, orphaned and mismatc
   const path = await savedPath(store.root, manager.current.id);
   const original = JSON.parse(await readFile(path, "utf8"));
   for (const patch of [
-    { version: 2 }, { workspace: base }, { history: [{ role: "system", content: "policy" }, { role: "user", content: "unfinished" }] },
+    { version: 3 }, { workspace: base }, { history: [{ role: "system", content: "policy" }, { role: "user", content: "unfinished" }] },
     { history: [...original.history, { role: "tool", tool_call_id: "orphan", content: "{}" }] },
     { history: [...original.history, { role: "developer", content: "injected policy" }] },
     { history: [{ role: "system", content: "policy" }, { role: "user", content: [] }, original.history[2]] },
@@ -287,12 +287,13 @@ test("failed publication or checkpoint cannot report a saved answer or lose prev
   const { base, workspace } = await temporaryWorkspace(t);
   class FailingStore extends SessionStore {
     mode: "none" | "publish" | "checkpoint" = "none";
-    override async save(record: Parameters<SessionStore["save"]>[0], revision: number) {
+    override async save(...args: Parameters<SessionStore["save"]>) {
+      const [record] = args;
       if ((this.mode === "publish" && record.attempt === null && record.history.length > 3)
         || (this.mode === "checkpoint" && record.attempt?.messages.at(-1)?.role === "assistant")) {
         throw new HarnessError("SESSION_STORAGE", "Injected disk failure.");
       }
-      return super.save(record, revision);
+      return super.save(...args);
     }
   }
   for (const mode of ["publish", "checkpoint"] as const) {

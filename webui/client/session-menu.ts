@@ -2,7 +2,7 @@ import type { SessionSummary } from "../../src/session/record.js";
 
 import { icon } from "./icons.js";
 
-export type SessionAction = "details" | "rename" | "fork" | "delete" | "workspace";
+export type SessionAction = "details" | "rename" | "fork" | "delete" | "workspace" | "project";
 
 /** A single menu owns pointer placement, keyboard navigation, and focus restoration. */
 export class SessionMenu {
@@ -17,13 +17,13 @@ export class SessionMenu {
     this.title.className = "session-menu-title";
     menu.append(this.title);
     for (const [action, label] of [["details", "Session details"], ["rename", "Rename session"],
-      ["workspace", "Change workspace"], ["fork", "Fork session"], ["delete", "Delete session"]] as const) {
+      ["workspace", "Change workspace"], ["project", "Move to project"], ["fork", "Fork session"], ["delete", "Delete session"]] as const) {
       const button = document.createElement("button");
       button.type = "button";
       button.role = "menuitem";
       button.tabIndex = -1;
       button.dataset.action = action;
-      button.append(icon(({ details: "info", rename: "pencil", workspace: "folder", fork: "git-branch", delete: "trash" } as const)[action]), document.createTextNode(label));
+      button.append(icon(({ details: "info", rename: "pencil", workspace: "folder", project: "folder", fork: "git-branch", delete: "trash" } as const)[action]), document.createTextNode(label));
       button.addEventListener("click", () => {
         const session = this.selected;
         if (!session || (action !== "details" && !this.canManage())) return;
@@ -56,7 +56,8 @@ export class SessionMenu {
       if (event.target instanceof Element && !event.target.closest("[data-session-id]")) this.close();
     });
     document.addEventListener("scroll", (event) => {
-      if (event.target instanceof Node && !menu.contains(event.target)) this.close();
+      // Only scrolling the trigger's ancestors changes the menu's anchor position.
+      if (event.target instanceof Node && this.trigger && event.target.contains(this.trigger)) this.close();
     }, true);
     window.addEventListener("resize", () => this.close());
   }
@@ -68,7 +69,7 @@ export class SessionMenu {
     trigger.setAttribute("aria-expanded", "true");
     this.title.textContent = session.name ?? session.title;
     this.title.title = this.title.textContent;
-    this.buttons.forEach((button) => { button.disabled = button.dataset.action !== "details" && !this.canManage(); });
+    this.updateButtons(session);
     this.menu.hidden = false;
     const bounds = this.menu.getBoundingClientRect();
     this.menu.style.left = `${Math.max(8, Math.min(x, innerWidth - bounds.width - 8))}px`;
@@ -81,10 +82,17 @@ export class SessionMenu {
     const latest = sessions.find((session) => session.id === this.selected!.id);
     if (!latest || latest.revision !== this.selected.revision) { this.close(); return; }
     const focused = document.activeElement;
-    this.buttons.forEach((button) => { button.disabled = button.dataset.action !== "details" && !this.canManage(); });
+    this.updateButtons(latest);
     if (this.buttons.some((button) => button.disabled && button === focused)) {
       this.buttons[0]?.focus({ preventScroll: true });
     }
+  }
+
+  private updateButtons(session: SessionSummary): void {
+    this.buttons.forEach((button) => {
+      const action = button.dataset.action;
+      button.disabled = action !== "details" && (!this.canManage() || (Boolean(session.projectId) && (action === "project" || action === "workspace")));
+    });
   }
 
   close(restoreFocus = false): void {

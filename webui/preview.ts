@@ -10,10 +10,11 @@ const maxSnapshots = 8;
 type Snapshot = { content: Buffer; contentType: string; expiresAt: number; workspace: string };
 
 /** Only explicit workspace files become short-lived, single-use frame documents. */
-export async function createPreviewStore(root: string | (() => string)) {
+export async function createPreviewStore(root: string | (() => string | undefined)) {
   // Preview never inherits Free to go access outside the workspace.
   const getRoot = typeof root === "string" ? () => root : root;
-  await createWorkspace(getRoot());
+  const initialRoot = getRoot();
+  if (initialRoot !== undefined) await createWorkspace(initialRoot);
   const snapshots = new Map<string, Snapshot>();
   let reading = 0;
   let closed = false;
@@ -32,6 +33,7 @@ export async function createPreviewStore(root: string | (() => string)) {
       reading++;
       try {
         const selectedRoot = getRoot();
+        if (!selectedRoot) throw new HarnessError("PREVIEW_PATH", "The session workspace is unavailable. Restore its project before opening a preview.");
         const workspace = await createWorkspace(selectedRoot);
         const target = await workspace.resolvePath(path, signal);
         if (!target.stat.isFile()) throw new HarnessError("PREVIEW_PATH", "Select an HTML or SVG file, not a directory.");

@@ -4,7 +4,7 @@
 
 架构文档统一放在 `docs/ARCHITECTURE/` 下，本文件作为总览和索引，记录整体边界、跨系统关系及共享决策。
 
-- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md`、`WEBUI.md`、`BROWSER.md` 和 `AUTOMATION.md`；其他系统文档在需要时建立。
+- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md`、`WEBUI.md`、`BROWSER.md`、`AUTOMATION.md`，以及计划设计 `PROJECTS.md`、`RAG.md`；其他系统文档在需要时建立。
 - 系统文档记录该系统的职责、设计决策、接口与数据流，以及分步实现安排和验收方式；按当前需要展开，不要求提前填满所有内容。
 - 每份文档明确区分当前已实现内容和计划设计，具体实现安排也标注状态；验证与完成事实以 [PROGRESS.md](../PROGRESS.md) 为准，避免重复维护进度记录。
 - 新增系统文档时更新本文件的索引。项目阶段目标仍放在 [ROADMAP.md](../ROADMAP.md)，系统内部的实现安排放在对应架构文档中。
@@ -28,6 +28,8 @@
 
 ## 当前文档索引
 
+2026-10-13 的 [RAG.md](RAG.md) 明确项目共享/会话私有资料、原件/解析/索引/历史/Memory 的独立所有者、任务驱动的读取与识别、稳定引用及外部服务边界，保留 nanobot/pi 源码与 Codex 官方契约的证据范围。[PROJECTS.md](PROJECTS.md) 细化首个增量：显式项目、统一项目目录、Session v2 兼容、迁入与执行身份。八阶段依赖及可执行验收见 [ROADMAP.md](../ROADMAP.md)。产品范围已确认，技术建议和待决问题单列；这些均为设计，Project、附件、Memory、检索及音频尚未实现。
+
 新增 [BROWSER.md](BROWSER.md)：共享 Playwright browser 工具、工作区资源路由、执行审批、DOM/几何采集与 JSON/PNG 证据。它属于 Tools 执行层，CLI/TUI/Web UI 复用；第一步 Preview 仍只是用户预览。Windows 使用已安装 Edge，新增固定生产依赖 playwright 1.63.0，原因与边界见该文档。图像输入和多时刻动画验证仍未实现。
 
 | 文档 | 内容 | 状态 |
@@ -46,6 +48,8 @@
 | [WEB.md](WEB.md) | 公开搜索、网页读取、DNS / HTTP 边界、网络权限及联网 Skills | 2D-12 已实现；离线和公网验证事实见 PROGRESS |
 | [WEBUI.md](WEBUI.md) | 本地浏览器、HTTP 边界、单 Session 控制、逐次审批与回合报告 | 2D-13 首版已实现；离线和浏览器验证事实见 PROGRESS |
 | [BROWSER.md](BROWSER.md) | 工作区页面执行、基本交互、运行诊断、DOM/几何与截图证据 | 第二步已实现；离线/真实 Edge 验证见 PROGRESS，模型视觉输入未实现 |
+| [PROJECTS.md](PROJECTS.md) | 阶段 1 项目归属、唯一目录、持久兼容、迁入与执行身份 | 产品范围已确认，设计及验收计划，未实现 |
+| [RAG.md](RAG.md) | 资料所有权、解析/视觉/Memory/检索/音频边界与参考研究 | 产品范围已确认，分阶段设计，未实现 |
 
 ## 当前实现
 

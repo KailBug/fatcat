@@ -1,5 +1,7 @@
 # Session：持久对话与会话管理
 
+2026-10-13 计划新增 Project 与 Session 归属，尚未实现。建议的新 v2 记录、旧 v1 兼容、项目统一目录、迁入确认/下一轮通知及跨进程运行保护见 [PROJECTS.md](PROJECTS.md)；资料共享与私有范围见 [RAG.md](RAG.md)。项目关系不合并历史、不恢复授权。下文继续描述当前 Session 实现，不能将计划结构当作现有格式。
+
 2026-10-12 在同一回合内增加本地请求超限后的有界自动压缩。Session 生成成功历史的候选摘要，AgentSession 以原修订保存完整 history/attempt 和新 compaction，保存成功才重试被拒绝的模型请求。Loop 不重启、工具不重放、自动任务计数不重复增加；摘要成功后即使续跑失败仍保留已保存投影。默认开启，可用 `HARNESS_AUTO_COMPACT=false` 关闭；摘要和续跑共用原回合请求额度。边界和验证范围见 [CONTEXT.md](CONTEXT.md)，实际验证见 PROGRESS。
 
 ## 状态与范围

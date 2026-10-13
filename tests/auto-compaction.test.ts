@@ -197,13 +197,14 @@ test("durable auto-compaction saves before continuation, survives failed turns a
 	assert.ok(resumed.context.summarizedMessages > 0);
 });
 
-for (const failure of ["cancelled", "invalid", "storage", "conflict"] as const) {
+for (const failure of ["cancelled", "invalid", "storage"] as const) {
 	test(`automatic compaction ${failure} preserves old projection and does not continue`, async (t) => {
 		const { base, workspace } = await temporaryWorkspace(t);
 		class FailingStore extends SessionStore {
-			override async save(record: Parameters<SessionStore["save"]>[0], revision: number) {
+			override async save(...args: Parameters<SessionStore["save"]>) {
+				const [record] = args;
 				if (failure === "storage" && record.compaction) throw new HarnessError("SESSION_STORAGE", "Injected storage failure");
-				return super.save(record, revision);
+				return super.save(...args);
 			}
 		}
 		const store = new FailingStore({ root: join(base, "sessions") });
@@ -217,25 +218,48 @@ for (const failure of ["cancelled", "invalid", "storage", "conflict"] as const) 
 			compactionModel: async () => {
 				await assert.rejects(session.newSession(), code("SESSION_BUSY"));
 				if (failure === "cancelled") abort.abort();
-				if (failure === "conflict") {
-					const concurrent = await store.load(workspace, seed.current.id);
-					await store.save({ ...concurrent, name: "Concurrent revision" }, concurrent.revision);
-				}
 				return answer(failure === "invalid" ? " " : "Keep amber");
 			} }, { workspace, store, selection: { resume: seed.current.id } });
 		const before = session.context;
 		const events: ReportEvent[] = [];
 		await assert.rejects(session.run("Continue", { signal: abort.signal, onEvent: createTurnReporter((event) => events.push(event)) }),
-			code({ cancelled: "CANCELLED", invalid: "CONTEXT_COMPACTION_RESPONSE", storage: "SESSION_STORAGE", conflict: "SESSION_CONFLICT" }[failure]));
+			code({ cancelled: "CANCELLED", invalid: "CONTEXT_COMPACTION_RESPONSE", storage: "SESSION_STORAGE" }[failure]));
 		assert.equal(calls, 1);
 		assert.deepEqual(session.context, before);
 		assert.equal(events.filter((event) => event.type === "execution_report").length, 1);
 		assert.ok(!events.some((event) => event.type === "completed" || event.type === "compaction_end"));
 		const saved = await store.load(workspace, seed.current.id);
 		assert.equal(saved.compaction, undefined);
-		if (failure === "conflict") assert.equal(saved.name, "Concurrent revision");
 	});
 }
+
+test("automatic compaction keeps the turn claim while refusing another writer", async (t) => {
+	const { base, workspace } = await temporaryWorkspace(t);
+	const store = new SessionStore({ root: join(base, "sessions") });
+	const seed = await SessionManager.open({ maxIterations: 8, model: async () => answer() }, { workspace, store });
+	await seed.run("old data ".repeat(2000));
+	await seed.run("Recent");
+	const original = seed.history;
+	let calls = 0;
+	const session = await SessionManager.open({ maxIterations: 8,
+		model: async (_messages, _signal, observe) => {
+			if (++calls === 1) return rejectRequest(observe);
+			return answer("Continued");
+		},
+		compactionModel: async () => {
+			const concurrent = await store.load(workspace, seed.current.id);
+			assert.equal(concurrent.attempt?.status, "running");
+			await assert.rejects(store.save({ ...concurrent, name: "Concurrent revision" }, concurrent.revision), code("SESSION_BUSY"));
+			return answer("Keep amber");
+		} }, { workspace, store, selection: { resume: seed.current.id } });
+	assert.equal(await session.run("Continue"), "Continued");
+	const saved = await store.load(workspace, seed.current.id);
+	assert.equal(calls, 2);
+	assert.equal(saved.name, null);
+	assert.equal(saved.attempt, null);
+	assert.ok(saved.compaction);
+	assert.deepEqual(saved.history.slice(0, original.length), original);
+});
 
 test("chat and Web UI expose automatic compaction inside the original conversation turn", async (t) => {
 	const model: Model = async (messages, _signal, observe) => {

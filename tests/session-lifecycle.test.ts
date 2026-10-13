@@ -73,14 +73,16 @@ test("a schedule created by a failed turn survives checkpoints and recovery stay
 	assert.ok(!JSON.stringify(requests.at(-1)).includes("Harness session recovery notice"));
 });
 
-test("failed failure-record persistence retains old history and releases the manager", async (t) => {
+test("failed failure-record persistence retains history and blocks work until durable release succeeds", async (t) => {
 	const { base, workspace } = await temporaryWorkspace(t);
 	class FailingStore extends SessionStore {
-		override async save(record: SessionRecord, revision: number): Promise<SessionRecord> {
-			if (record.attempt?.status === "failed") {
+		rejectFailure = true;
+		override async save(...args: Parameters<SessionStore["save"]>): Promise<SessionRecord> {
+			const [record] = args;
+			if (this.rejectFailure && record.attempt?.status === "failed") {
 				throw new HarnessError("SESSION_STORAGE", "Injected failure-record write error.");
 			}
-			return super.save(record, revision);
+			return super.save(...args);
 		}
 	}
 	const store = new FailingStore({ root: join(base, "sessions") });
@@ -100,6 +102,9 @@ test("failed failure-record persistence retains old history and releases the man
 	const saved = await store.loadAny(manager.current.id);
 	assert.equal(saved.attempt?.status, "running");
 	assert.deepEqual(saved.history, manager.history);
+	await assert.rejects(manager.run("Storage still unavailable"), /Injected failure-record write error/);
+	assert.equal((await store.loadAny(manager.current.id)).attempt?.status, "running");
+	store.rejectFailure = false;
 	await manager.run("Continue after storage recovers");
 	assert.equal(manager.current.turnCount, 2);
 	assert.equal((await store.loadAny(manager.current.id)).attempt, null);
@@ -109,11 +114,11 @@ test("failed schedule publication leaves active and saved tasks unchanged and li
 	const { base, workspace } = await temporaryWorkspace(t);
 	class FailingStore extends SessionStore {
 		rejectWrites = false;
-		override async save(record: SessionRecord, revision: number): Promise<SessionRecord> {
+		override async save(...args: Parameters<SessionStore["save"]>): Promise<SessionRecord> {
 			if (this.rejectWrites) {
 				throw new HarnessError("SESSION_STORAGE", "Injected schedule publication failure.");
 			}
-			return super.save(record, revision);
+			return super.save(...args);
 		}
 	}
 	const store = new FailingStore({ root: join(base, "sessions") });

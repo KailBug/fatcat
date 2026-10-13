@@ -50,6 +50,8 @@ test("help works without credentials", () => {
   assert.match(result.stdout, /--web-permission/);
   assert.match(result.stdout, /--permission-mode/);
   assert.match(result.stdout, /--continue/);
+  assert.match(result.stdout, /--project/);
+  assert.match(result.stdout, /\/project create/);
   assert.match(result.stdout, /\/skills/);
   assert.match(result.stdout, /\/sessions/);
   assert.match(result.stdout, /--no-session-persistence/);
@@ -58,6 +60,48 @@ test("help works without credentials", () => {
   assert.ok(!result.stdout.includes("--listSkills"));
   assert.ok(!result.stdout.includes("--listSessions"));
   assert.equal(result.stderr, "");
+});
+
+test("CLI project selection shares the project workspace and preserves independent histories", async (t) => {
+	const { base, workspace, outside } = await temporaryWorkspace(t);
+	const env = { FATCAT_SESSION_DIR: join(base, "sessions"), DEEPSEEK_API_KEY: "offline-project-only" };
+	const create = run(["--chat"], env,
+		`/project create "Shared work" "${outside}"\n/project use Shared work\n/rename First\nkeep\n/exit\n`, workspace);
+	assert.equal(create.status, 0, create.stderr);
+	assert.match(create.stderr, /Project created:/);
+	assert.match(create.stderr, /Project: "Shared work"/);
+	const first = (await new SessionStore({ root: env.FATCAT_SESSION_DIR }).listAll()).find((session) => session.name === "First")!;
+	assert.ok(first.projectId);
+	assert.equal(first.workspace, outside);
+	const next = run(["--project", "Shared work", "--name", "Second"], env, "history\n/exit\n", workspace);
+	assert.equal(next.status, 0, next.stderr);
+	assert.deepEqual(JSON.parse(next.stdout), []);
+	const listed = await new SessionStore({ root: env.FATCAT_SESSION_DIR }).listAll();
+	const second = listed.find((session) => session.name === "Second")!;
+	assert.equal(second.projectId, first.projectId);
+	assert.equal(second.workspace, outside);
+	assert.notEqual(first.id, second.id);
+	const resume = run(["--resume", first.id], env, "/project\n/exit\n", workspace);
+	assert.equal(resume.status, 0, resume.stderr);
+	assert.match(resume.stderr, /workspace is fixed/);
+	const conflict = run(["--resume", first.id, "--workspace", workspace], env, "/exit\n", workspace);
+	assert.equal(conflict.status, 2, conflict.stderr);
+	assert.match(conflict.stderr, /project/i);
+	const beforeRejectedCreate = (await new SessionStore({ root: env.FATCAT_SESSION_DIR }).listAll()).length;
+	const conflictingNew = run(["--project", first.projectId!, "--workspace", workspace], env, "/exit\n", workspace);
+	assert.equal(conflictingNew.status, 2, conflictingNew.stderr);
+	assert.equal((await new SessionStore({ root: env.FATCAT_SESSION_DIR }).listAll()).length, beforeRejectedCreate);
+	assert.ok(!(create.stdout + create.stderr + next.stdout + next.stderr).includes("offline-project-only"));
+});
+
+test("CLI rejects incompatible project selection before loading credentials", () => {
+	for (const args of [["--project", ""], ["--project", "example", "--continue"],
+		["--project", "example", "--resume", "old"], ["--project", "example", "--no-session-persistence"],
+		["--project", "example", "--automation", "automation.json"]]) {
+		const result = run(args);
+		assert.equal(result.status, 2, result.stderr);
+		assert.doesNotMatch(result.stderr, /DEEPSEEK_API_KEY/);
+	}
 });
 
 test("version uses the manifest without credentials or workspace state", async (t) => {

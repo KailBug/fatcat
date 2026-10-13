@@ -51,6 +51,34 @@ const settings = {
 };
 const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content }, toolCalls: [] });
 
+test("TUI project commands display scope and new sessions inherit it until explicitly standalone", async (t) => {
+	const { base, workspace, outside } = await temporaryWorkspace(t);
+	const manager = await SessionManager.open({ maxIterations: 1, model: async () => answer() },
+		{ workspace, store: new SessionStore({ root: join(base, "sessions") }) });
+	const project = await manager.createProject("Visible project", outside);
+	const terminal = new FakeTerminal();
+	const app = new TuiApp({ ...settings, workspace, terminal, color: false });
+	const done = app.run(manager);
+	try {
+		terminal.submit(`/project use ${project.id}`);
+		await until(() => terminal.plain.includes('Project: "Visible project"'));
+		assert.equal(manager.current.workspace, outside);
+		const first = manager.current.id;
+		terminal.submit("/new Second member");
+		await until(() => manager.current.name === "Second member" && terminal.plain.includes("Second member"));
+		assert.notEqual(manager.current.id, first);
+		assert.equal(manager.current.projectId, project.id);
+		terminal.submit("/new --standalone Private work");
+		await until(() => manager.current.name === "Private work" && terminal.plain.includes("Private work"));
+		assert.equal(manager.current.projectId, undefined);
+		assert.match(terminal.plain, /Standalone session/);
+		assert.equal(app.telemetry.snapshot().session.answered, 0);
+	} finally {
+		terminal.input("\x04");
+		await done;
+	}
+});
+
 test("TUI automatic compaction stays in the active turn and Escape cancels it", async (t) => {
 	const terminal = new FakeTerminal();
 	const app = new TuiApp({ ...settings, terminal, color: false });

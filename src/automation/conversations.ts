@@ -65,7 +65,8 @@ export class ConversationAutomations {
     for (const task of tasks) {
       if (this.closed || !this.host.idle() || this.session.isBusy || workspace !== this.session.automationWorkspace) return;
       try {
-        const signature = JSON.stringify([task.workspace, task.trigger, task.enabled, task.createdAt, task.expiresAt, task.maxRuns]);
+        const signature = JSON.stringify([task.sessionId, task.locationRevision, task.workspace,
+          task.trigger, task.enabled, task.createdAt, task.expiresAt, task.maxRuns]);
         let entry = this.entries.get(task.id);
         if (!entry || entry.signature !== signature) {
           const now = Date.now();

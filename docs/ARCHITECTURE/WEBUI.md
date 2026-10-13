@@ -1,5 +1,7 @@
 # 本地 Web UI
 
+2026-10-13 的后续计划在同一 controller/SessionManager 上增加 Project 分组、项目创建、独立会话拖入及等价菜单入口，目录变化与共享范围由服务端预览/确认；附件阶段再接入绑定发起目标的上传和来源/覆盖展示。详见 [PROJECTS.md](PROJECTS.md)、[RAG.md](RAG.md)。这些尚未实现，下文现有界面行为不代表已经支持项目或附件。
+
 ## 范围与现状
 
 2026-10-12：自动 compact 的开始、摘要请求、保存完成与续跑显示在原回合 activity 中，沿用 Stop 与原回合报告。`context-usage.ts` 根据 `model_request.purpose=compaction` 排除摘要输入 token，普通请求报告用量后恢复显示。完整原文仍进入恢复视图，不额外建立维护回合；后台自动任务仍只更新绑定会话，边界见 [CONTEXT.md](CONTEXT.md)。

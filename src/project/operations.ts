@@ -14,6 +14,9 @@ export interface ProjectJoinPreview {
 	toWorkspace: string;
 	locationRevision: number;
 	automationCount: number;
+	attachmentCount: number;
+	attachmentRevision: number;
+	attachmentFingerprint: string;
 	alreadyJoined: boolean;
 }
 
@@ -32,6 +35,9 @@ export function projectJoinPreview(record: SessionRecord, project: ProjectRecord
 		toWorkspace: project.workspace,
 		locationRevision: record.locationRevision ?? 0,
 		automationCount: record.automations?.filter((task) => task.enabled).length ?? 0,
+		attachmentCount: 0,
+		attachmentRevision: 0,
+		attachmentFingerprint: "",
 		alreadyJoined: currentProject === project.id,
 	};
 }

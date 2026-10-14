@@ -11,6 +11,9 @@ import { FilePreview } from "./preview.js";
 import { BrowserEvidenceView } from "./browser-evidence.js";
 import { CronPanel } from "./cron.js";
 import { ProjectDialog } from "./projects.js";
+import { ProjectMenu } from "./project-menu.js";
+import { ProjectActionDialog } from "./project-actions.js";
+import { AttachmentsPanel } from "./attachments.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -56,6 +59,10 @@ const filePreview = new FilePreview(() => token);
 const browserEvidence = new BrowserEvidenceView(() => token);
 const cron = new CronPanel(api);
 const projectDialog = new ProjectDialog(request, () => connected && !sending && !state?.busy);
+const projectActions = new ProjectActionDialog(request, () => connected && !sending && !state?.busy);
+const projectMenu = new ProjectMenu(element("project-menu"), (action, project) => projectActions.open(action, project),
+  () => connected && !sending && !state?.busy);
+const attachments = new AttachmentsPanel(() => token, () => refresh(true));
 element("workspace-picker").addEventListener("click", () => {
   if (state) void api("session/choose-workspace", { id: state.current.id }, 310_000);
 });
@@ -74,8 +81,11 @@ function controls(): void {
   if (state) sessionMenu.update(displaySessions(state));
   sessionDialog.update();
   projectDialog.update();
+  projectActions.update();
+  if (state) projectMenu.update(state.projects);
+  if (state) attachments.update(state, connected);
   element<HTMLButtonElement>("workspace-picker").disabled = !connected || sending || busy || Boolean(state?.current.projectId);
-  sessionList.querySelectorAll<HTMLButtonElement>(".project-new-chat").forEach((button) => {
+  sessionList.querySelectorAll<HTMLButtonElement>(".project-new-chat,.project-more").forEach((button) => {
     button.disabled = !connected || sending || busy;
   });
   if (state) cron.update(state, !connected || sending || busy);
@@ -130,7 +140,12 @@ function renderTurn(turn: WebTurn): HTMLElement {
   const label = node("div", undefined, "assistant-label");
   const logo = node("img", undefined, "cat-mark"); logo.src = "/mini-logo.png"; logo.alt = "";
   label.append(logo, node("span", "Fatcat")); article.append(label);
-  if (turn.answer) article.append(renderMarkdown(turn.answer));
+  if (turn.answer) {
+    const sessionId = state?.current.id;
+    article.append(renderMarkdown(turn.answer, (reference) => {
+      if (sessionId) void attachments.openReference(reference, sessionId);
+    }));
+  }
   if (turn.error) article.append(node("p", `${turn.error}\nThis turn was not saved to model history. Completed operations remain in effect.`, "error"));
   if (turn.status === "running") article.append(node("p", "Working on it…", "waiting"));
   if (turn.activity.length) {
@@ -209,7 +224,7 @@ function render(next: WebUiState): void {
   element("current-project").textContent = next.current.projectName ?? (next.current.projectId ? "Unavailable project" : "Independent chat");
   element("current-project").title = next.current.projectId ? "This chat belongs to its project." : "Move this chat to a project";
   element("current-project").setAttribute("aria-label", next.current.projectId ? `Project: ${next.current.projectName ?? "Unavailable project"}` : "Move current chat to project");
-  element("workspace-picker").title = next.current.projectId ? "This chat uses its project folder. Project folders cannot be changed in this version." : "Change workspace";
+  element("workspace-picker").title = next.current.projectId ? "This chat uses its project folder. Use the project menu to change it for every project chat." : "Change workspace";
   renderSessions(next);
   const warning = element("session-warning");
   warning.hidden = (!next.current.interrupted && !next.current.projectError) || next.busy;
@@ -303,7 +318,32 @@ function renderSessions(next: WebUiState): void {
     create.addEventListener("click", () => {
       void api("session/new", { projectId: project.id }).then((accepted) => { if (accepted) sessionChanged(); });
     });
-    heading.append(name, create);
+    const more = node("button", undefined, "project-more icon-button");
+    more.type = "button";
+    more.dataset.projectActionId = project.id;
+    more.setAttribute("aria-label", `Actions for project ${project.name}`);
+    more.setAttribute("aria-haspopup", "menu");
+    more.setAttribute("aria-controls", "project-menu");
+    more.setAttribute("aria-expanded", "false");
+    more.title = "Project actions";
+    more.append(icon("ellipsis"));
+    const openProjectMenu = () => {
+      sessionMenu.close();
+      const bounds = more.getBoundingClientRect();
+      projectMenu.open(project, more, bounds.left, bounds.bottom + 4);
+    };
+    more.addEventListener("click", openProjectMenu);
+    more.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+        event.preventDefault(); openProjectMenu();
+      }
+    });
+    heading.addEventListener("contextmenu", (event) => {
+      event.preventDefault(); openProjectMenu();
+    });
+    const actions = node("div", undefined, "project-heading-actions");
+    actions.append(create, more);
+    heading.append(name, actions);
     group.append(heading);
     group.addEventListener("dragover", (event) => {
       if (!connected || sending || state?.busy || !event.dataTransfer?.types.includes("application/x-fatcat-session")) return;

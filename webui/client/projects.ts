@@ -66,7 +66,7 @@ export class ProjectDialog {
 	create(): void {
 		if (!this.open("create")) return;
 		this.title.textContent = "Create project";
-		this.description.textContent = "Choose a name, then select the project folder. Every chat in this project will use that folder. Project folders cannot be changed in this version.";
+		this.description.textContent = "Choose a name, then select the project folder. Every chat in this project will use that folder. You can manage it from the project menu.";
 		this.label.textContent = "Project name";
 		this.label.htmlFor = this.name.id;
 		this.name.value = "";
@@ -144,7 +144,7 @@ export class ProjectDialog {
 				const { preview } = result;
 				const paths = node("dl");
 				paths.append(node("dt", "Current folder"), node("dd", preview.fromWorkspace), node("dt", "Project folder"), node("dd", preview.toWorkspace));
-				this.preview.replaceChildren(node("p", `Move to "${preview.projectName}". Future uploads will be shared with this project. Attachments are not available yet, so there are no existing attachments to share.`),
+				this.preview.replaceChildren(node("p", `Move to "${preview.projectName}". Future uploads will be shared with this project. ${preview.attachmentCount} existing attachment(s) will become project-shared.`),
 					paths, node("p", "Conversation histories stay separate. Existing files are not moved or copied, and historical paths are unchanged. Future operations use the project folder with your existing permissions."),
 					node("p", preview.automationCount ? `${preview.automationCount} automation task(s) will be paused. Review them before resuming.` : "This session has no automation tasks to pause."));
 			}

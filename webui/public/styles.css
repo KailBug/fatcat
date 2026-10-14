@@ -1293,6 +1293,8 @@ dialog[open],.session-menu:not([hidden]),.permission-menu:not([hidden]) { animat
 .project-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 8px; color:var(--muted); font-size:12px; font-weight:600 }
 .project-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .project-new-chat { flex:none; width:28px; height:28px }
+.project-heading-actions { display:flex; align-items:center; flex:none; gap:2px }
+.project-more { flex:none; width:28px; height:28px }
 .project-drop-target { border-color:var(--accent); background:var(--accent-soft) }
 .current-project { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; border:0; background:none; padding:6px }
 .current-project:disabled { opacity:1; cursor:default }
@@ -1302,6 +1304,35 @@ dialog[open],.session-menu:not([hidden]),.permission-menu:not([hidden]) { animat
 .project-move-preview dd { margin:2px 0 10px; overflow-wrap:anywhere; white-space:pre-wrap }
 .project-move-preview dd:last-child { margin-bottom:0 }
 .project-dialog .session-dialog-actions { position:sticky; bottom:0; background:var(--surface); padding-top:12px }
+.attachments-dialog,.attachment-source-dialog { width:min(760px,calc(100vw - 32px)); max-width:760px }
+.attachments-dialog .session-dialog-actions,.attachment-source-dialog .session-dialog-actions { position:sticky; bottom:0; padding-top:14px; background:var(--surface) }
+.attachment-list { display:grid; gap:12px; margin-top:22px }
+.attachment-row { padding:16px; border:1px solid var(--border); border-radius:12px }
+.attachment-row h3 { font-size:15px; margin:0 0 8px; overflow-wrap:anywhere }
+.attachment-note { color:var(--muted); font-size:12px; line-height:1.6; margin:8px 0 }
+.attachment-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 }
+.attachment-actions button,.attachment-upload button { font-size:12px; border:1px solid var(--border); border-radius:7px; padding:6px 9px; background:var(--surface); color:var(--ink) }
+.attachment-actions button:hover,.attachment-upload button:hover { background:var(--hover) }
+.attachment-reference { color:var(--muted); font-size:11px; font-family:monospace; overflow-wrap:anywhere }
+.attachment-coverage { font-size:13px; font-weight:600 }
+.attachment-source-text { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; font-size:12px; overflow:auto; max-height:48vh; white-space:pre-wrap; overflow-wrap:anywhere }
+.attachment-citation { border:0; background:var(--accent-soft); color:var(--accent); border-radius:4px; font:inherit; padding:1px 5px; cursor:pointer }
+.attachment-uploads:empty { display:none }
+.attachment-uploads { max-height:140px; overflow:auto; margin-bottom:10px }
+.attachment-upload { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; padding:8px 0; border-bottom:1px solid var(--border) }
+.attachment-upload>span { min-width:0; overflow-wrap:anywhere }
+.attachment-upload>div { display:flex; gap:6px; flex:none }
+#attachment-files { max-width:100%; font-size:13px }
+#attachment-files::file-selector-button { margin:0 8px 0 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--ink); padding:7px 10px; cursor:pointer }
+@media(max-width:760px) {
+  .topbar-actions .connection { display:none }
+  .current-project { max-width:150px }
+}
+@media(max-width:420px) {
+  .current-project { max-width:114px }
+  .attachments-dialog,.attachment-source-dialog { padding:18px }
+  .attachment-upload { align-items:flex-start; flex-direction:column; gap:6px }
+}
 @media(prefers-color-scheme:dark) {
   :root {
     --ink:#ededed;

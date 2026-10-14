@@ -16,6 +16,7 @@ import type { Tool, ToolResult } from "./tools/types.js";
 import { createBrowserTool } from "./tools/browser.js";
 import type { BrowserOptions } from "./tools/browser.js";
 import type { BrowserRecord } from "./browser/protocol.js";
+import { readAttachmentSource } from "./attachments/import.js";
 
 export type { ToolResult } from "./tools/types.js";
 export type Tools = {
@@ -25,6 +26,7 @@ export type Tools = {
   getWrites?: () => WriteRecord[];
   getCommands?: () => CommandRecord[];
   getBrowserChecks?: () => BrowserRecord[];
+  readImportFile?: (path: string, signal?: AbortSignal) => Promise<{ name: string; bytes: Uint8Array }>;
   execute: (name: string, argumentsJson: string, signal?: AbortSignal, callId?: string) => Promise<ToolResult>;
   forTurn?: (onEvent?: (event: LoopEvent) => void) => Tools;
 };
@@ -89,6 +91,7 @@ export async function createTools(workspace?: string, permission: WorkspacePermi
   const browserTools = browser ? await createBrowserTool(scope.root, sharedPolicy, browser) : undefined;
   return { ...collectTools([sumTool, createReadTool(scope), writer.tool, commands.tool, ...webTools, ...(browserTools ? [browserTools.tool] : [])]),
     ...(browserTools ? { getBrowserChecks: browserTools.getBrowserChecks } : {}),
+    readImportFile: (path, signal) => readAttachmentSource(scope, path, signal),
     workspaceRoot: scope.root, getWrites: writer.getWrites, getCommands: commands.getCommands,
     getPermissionState: () => sharedPolicy.snapshot() };
 }

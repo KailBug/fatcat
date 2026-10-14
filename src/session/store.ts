@@ -2,18 +2,29 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, realpath, rename, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { AttachmentStore } from "../attachments/store.js";
 import { HarnessError } from "../errors.js";
 import { ProjectStore } from "../project/store.js";
+import { projectName } from "../project/record.js";
 import type { ProjectRecord } from "../project/record.js";
+import { maxProjectMembers, movedProjectSession, projectMemberFingerprint } from "../project/management.js";
+import type { ProjectDeletePreview, ProjectImpact, ProjectSessionMove, ProjectWorkspacePreview } from "../project/management.js";
 import { invalidSession, isRecord } from "./history.js";
 import { decodeSessionRecord, encodeSessionRecord, projectIdOf, sessionIdPattern, sessionSummary, workspaceKey } from "./record.js";
 import type { SessionRecord, SessionSummary } from "./record.js";
 
 const maxFileBytes = 64 * 1024 * 1024;
 
+interface ProjectMember extends SessionSummary {
+  storageWorkspace: string;
+  enabledAutomationCount: number;
+  allAutomationCount: number;
+}
+
 export interface SessionSaveOptions {
   attemptOwner?: { ownerPid: number; startedAt: string };
   operationId?: string;
+  attachmentRevisionExpected?: number;
 }
 export function processAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; }
@@ -32,11 +43,27 @@ export async function canonicalWorkspace(workspace: string): Promise<string> {
 export class SessionStore {
   readonly root: string;
   readonly projects: ProjectStore;
+  readonly attachments: AttachmentStore;
   constructor(options: { root?: string } = {}) {
     const root = options.root ?? process.env.FATCAT_SESSION_DIR ?? join(homedir(), ".fatcat", "sessions");
     if (!root.trim()) throw new HarnessError("SESSION_STORAGE", "FATCAT_SESSION_DIR must not be empty.");
     this.root = resolve(root);
     this.projects = new ProjectStore({ root: this.root });
+    this.attachments = new AttachmentStore({ root: this.root, sessions: {
+      load: (id) => this.loadAnyUnlocked(id),
+      prepareDraft: (record) => this.prepareAttachmentDraft(record),
+      publish: async (record) => {
+        const directory = this.directory(record.storageWorkspace ?? record.workspace);
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        await this.publish(directory, record);
+      },
+      remove: async (id, workspace) => {
+        if (!sessionIdPattern.test(id)) return invalidSession();
+        await unlink(join(this.directory(workspace), `${id}.json`)).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+      },
+    } });
   }
 
   async list(workspace: string): Promise<SessionSummary[]> {
@@ -44,7 +71,112 @@ export class SessionStore {
     return (await this.listAll()).filter((item) => workspaceKey(item.workspace) === workspaceKey(canonical));
   }
 
+  async renameProject(id: string, name: string, expectedRevision: number): Promise<ProjectRecord> {
+    const normalized = projectName(name);
+    return this.projectManagement(id, expectedRevision, async (project) => {
+      if (project.name === normalized) return project;
+      const updated = { ...project, name: normalized, updatedAt: new Date().toISOString(), revision: project.revision + 1 };
+      await this.attachments.publishProject(updated);
+      return updated;
+    });
+  }
+
+  async previewProjectWorkspace(id: string, path: string, expectedRevision?: number): Promise<ProjectWorkspacePreview> {
+    return this.projectManagement(id, expectedRevision, async (project, members) => ({
+      ...await this.projectImpact(project, members), fromWorkspace: project.workspace,
+      toWorkspace: await canonicalWorkspace(resolve(project.workspace, path)),
+    }));
+  }
+
+  async changeProjectWorkspace(preview: ProjectWorkspacePreview): Promise<ProjectRecord> {
+    return this.projectManagement(preview.projectId, preview.projectRevision, async (project, members) => {
+      const workspace = await canonicalWorkspace(preview.toWorkspace);
+      const current: ProjectWorkspacePreview = { ...await this.projectImpact(project, members),
+        fromWorkspace: project.workspace, toWorkspace: workspace };
+      this.requireProjectPreview(current, preview);
+      if (workspaceKey(project.workspace) === workspaceKey(workspace)) return project;
+      const now = new Date().toISOString();
+      const updated = { ...project, workspace, revision: project.revision + 1, updatedAt: now };
+      const moves: ProjectSessionMove[] = [];
+      for (const member of members) {
+        const move: ProjectSessionMove = { id: member.id, storageWorkspace: member.storageWorkspace,
+          projectId: project.id, expectedRevision: member.revision, locationRevision: member.locationRevision ?? 0,
+          fromWorkspace: project.workspace, toWorkspace: workspace, changedAt: now, changeId: randomUUID() };
+        const record = await this.read(member.storageWorkspace, member.id);
+        const moved = movedProjectSession(record, move);
+        const encoded = encodeSessionRecord(moved);
+        if (Buffer.byteLength(JSON.stringify(encoded)) > maxFileBytes) {
+          throw new HarnessError("SESSION_LIMIT", "A project session cannot fit another directory change within the 64 MiB storage limit.");
+        }
+        decodeSessionRecord(encoded, member.storageWorkspace, member.id);
+        moves.push(move);
+      }
+      await this.attachments.publishProject(updated, moves);
+      return updated;
+    });
+  }
+
+  async previewProjectDelete(id: string, expectedRevision?: number): Promise<ProjectDeletePreview> {
+    return this.projectManagement(id, expectedRevision, async (project, members) => {
+      const impact = await this.projectImpact(project, members, true);
+      return { ...impact, workspace: project.workspace,
+        deleteAttachmentCount: impact.attachmentCount - impact.retainedAttachmentCount };
+    });
+  }
+
+  async deleteProject(preview: ProjectDeletePreview): Promise<void> {
+    await this.projectManagement(preview.projectId, preview.projectRevision, async (project, members) => {
+      const impact = await this.projectImpact(project, members, true);
+      const current: ProjectDeletePreview = { ...impact, workspace: project.workspace,
+        deleteAttachmentCount: impact.attachmentCount - impact.retainedAttachmentCount };
+      this.requireProjectPreview(current, preview);
+      await this.attachments.deleteProject(project.id, members.map((member) => ({ id: member.id, storageWorkspace: member.storageWorkspace })));
+    });
+  }
+
+  private async projectManagement<T>(id: string, expectedRevision: number | undefined,
+    operation: (project: ProjectRecord, members: ProjectMember[]) => Promise<T>): Promise<T> {
+    return this.attachments.withMetadata(() => this.projects.withProjectUnlocked(id, expectedRevision,
+      async (project) => operation(project, await this.projectMembers(project.id))));
+  }
+
+  private async projectMembers(projectId: string): Promise<ProjectMember[]> {
+    const members: ProjectMember[] = [];
+    for (const directory of await this.directories()) {
+      for (const file of await readdir(directory)) {
+        if (!file.endsWith(".json") || !sessionIdPattern.test(file.slice(0, -5))) continue;
+        // A corrupt snapshot may hide membership; management fails closed instead of leaving it orphaned.
+        const record = await this.readDirectory(directory, file.slice(0, -5));
+        if (projectIdOf(record) !== projectId) continue;
+        this.requireAvailable(record);
+        if (members.some((member) => member.id === record.id)) throw new HarnessError("SESSION_AMBIGUOUS", "Duplicate project session identity in storage.");
+        if (members.length >= maxProjectMembers) throw new HarnessError("PROJECT_LIMIT", "A project operation supports at most 1000 saved sessions.");
+        members.push({ ...sessionSummary(record), storageWorkspace: record.storageWorkspace ?? record.workspace,
+          enabledAutomationCount: record.automations?.filter((task) => task.enabled).length ?? 0,
+          allAutomationCount: record.automations?.length ?? 0 });
+      }
+    }
+    return members.sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  private async projectImpact(project: ProjectRecord, members: ProjectMember[], allAutomations = false): Promise<ProjectImpact> {
+    return { projectId: project.id, projectRevision: project.revision, projectName: project.name,
+      sessionCount: members.length, automationCount: members.reduce((total, member) => total
+        + (allAutomations ? member.allAutomationCount : member.enabledAutomationCount), 0),
+      memberFingerprint: projectMemberFingerprint(members), ...await this.attachments.projectImpact(project.id, members.map((member) => member.id)) };
+  }
+
+  private requireProjectPreview<T extends ProjectImpact>(current: T, supplied: T): void {
+    if (Object.keys(current).some((key) => current[key as keyof T] !== supplied[key as keyof T])) {
+      throw new HarnessError("PROJECT_CONFLICT", "The project, its sessions or its attachments changed. Review a fresh project preview before confirming.");
+    }
+  }
+
   async listAll(): Promise<SessionSummary[]> {
+    return this.attachments.withMetadata(() => this.listAllUnlocked(), false);
+  }
+
+  private async listAllUnlocked(): Promise<SessionSummary[]> {
     const summaries: SessionSummary[] = [];
     for (const directory of await this.directories()) {
       for (const file of await readdir(directory)) {
@@ -59,11 +191,15 @@ export class SessionStore {
   }
 
   async loadAny(selector: string): Promise<SessionRecord> {
+    return this.attachments.withMetadata(() => this.loadAnyUnlocked(selector), false);
+  }
+
+  private async loadAnyUnlocked(selector: string): Promise<SessionRecord> {
     if (!sessionIdPattern.test(selector)) {
-      const matches = (await this.listAll()).filter((item) => item.name === selector || item.title === selector);
+      const matches = (await this.listAllUnlocked()).filter((item) => item.name === selector || item.title === selector);
       if (!matches.length) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists. Use /sessions.");
       if (matches.length > 1) throw new HarnessError("SESSION_AMBIGUOUS", "More than one session matches. Resume with the exact session ID.");
-      return this.loadAny(matches[0]!.id);
+      return this.loadAnyUnlocked(matches[0]!.id);
     }
     let selected: SessionRecord | undefined;
     for (const directory of await this.directories()) {
@@ -93,23 +229,33 @@ export class SessionStore {
 
   async load(workspace: string, selector: string): Promise<SessionRecord> {
     const canonical = await canonicalWorkspace(workspace);
+    return this.attachments.withMetadata(() => this.loadUnlocked(canonical, selector), false);
+  }
+
+  private async loadUnlocked(canonical: string, selector: string): Promise<SessionRecord> {
     if (sessionIdPattern.test(selector)) {
-      const record = await this.loadAny(selector);
+      const record = await this.loadAnyUnlocked(selector);
       if (workspaceKey(record.workspace) !== workspaceKey(canonical)) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace.");
       return record;
     }
-    const records = (await this.list(canonical)).filter((record) => record.name === selector || record.title === selector);
+    const records = (await this.listAllUnlocked()).filter((record) => workspaceKey(record.workspace) === workspaceKey(canonical)
+      && (record.name === selector || record.title === selector));
     if (!records.length) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
     if (records.length > 1) throw new HarnessError("SESSION_AMBIGUOUS", "More than one session matches. Resume with the exact session ID.");
-    return this.loadAny(records[0]!.id);
+    return this.loadAnyUnlocked(records[0]!.id);
   }
 
   async save(record: SessionRecord, expectedRevision: number, forkSource?: Pick<SessionRecord, "id" | "revision">,
     options: SessionSaveOptions = {}): Promise<SessionRecord> {
+    return this.attachments.withMetadata(() => this.saveWithProject(record, expectedRevision, forkSource, options));
+  }
+
+  private async saveWithProject(record: SessionRecord, expectedRevision: number,
+    forkSource: Pick<SessionRecord, "id" | "revision"> | undefined, options: SessionSaveOptions): Promise<SessionRecord> {
     const projectId = projectIdOf(record);
     if (projectId) {
       if (record.projectRevision === undefined) throw new HarnessError("PROJECT_CONFLICT", "Refresh the project before saving its session.");
-      return this.projects.withProject(projectId, record.projectRevision, async (project) => {
+      return this.projects.withProjectUnlocked(projectId, record.projectRevision, async (project) => {
         const workspace = await canonicalWorkspace(project.workspace);
         if (workspaceKey(record.workspace) !== workspaceKey(workspace)) {
           throw new HarnessError("PROJECT_CONFLICT", "The session workspace does not match its project. Refresh it before continuing.");
@@ -131,9 +277,10 @@ export class SessionStore {
       await mkdir(directory, { recursive: true, mode: 0o700 });
       release = await this.lock(directory);
       let previous: SessionRecord | undefined;
+      let source: SessionRecord | undefined;
       if (forkSource) {
         if (!sessionIdPattern.test(forkSource.id)) return invalidSession();
-        const source = await this.read(workspace, forkSource.id);
+        source = await this.read(workspace, forkSource.id);
         if (source.revision !== forkSource.revision) {
           throw new HarnessError("SESSION_CONFLICT", "The source session changed in another process. Resume it again before forking.");
         }
@@ -158,7 +305,7 @@ export class SessionStore {
       }
       const saved = decodeSessionRecord(encodeSessionRecord({ ...record, revision: expectedRevision + 1,
         storageWorkspace: workspace }), workspace, record.id);
-      await this.publish(directory, saved);
+      await this.attachments.publishSession(saved, previous, source, options.attachmentRevisionExpected);
       return this.projectProjection(saved, project);
     } catch (error) {
       if (error instanceof HarnessError) throw error;
@@ -170,11 +317,16 @@ export class SessionStore {
 
   /** Remove only an exact workspace ID, optionally publishing an empty replacement first. */
   async delete(workspace: string, id: string, expectedRevision: number, replacement?: SessionRecord): Promise<SessionRecord | undefined> {
+    return this.attachments.withMetadata(() => this.deleteWithProject(workspace, id, expectedRevision, replacement));
+  }
+
+  private async deleteWithProject(workspace: string, id: string, expectedRevision: number,
+    replacement?: SessionRecord): Promise<SessionRecord | undefined> {
     if (!sessionIdPattern.test(id)) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
     const previous = await this.read(workspace, id);
     const projectId = projectIdOf(previous);
     if (projectId) {
-      return this.projects.withProject(projectId, previous.projectRevision,
+      return this.projects.withProjectUnlocked(projectId, previous.projectRevision,
         () => this.deleteLocked(workspace, id, expectedRevision, replacement));
     }
     return this.deleteLocked(workspace, id, expectedRevision, replacement);
@@ -218,13 +370,8 @@ export class SessionStore {
         }
         published = decodeSessionRecord(encodeSessionRecord({ ...replacement, revision: 1,
           storageWorkspace: canonical }), canonical, replacement.id);
-        await this.publish(directory, published);
       }
-      try { await unlink(join(directory, `${id}.json`)); }
-      catch (error) {
-        if (published) await unlink(join(directory, `${published.id}.json`)).catch(() => {});
-        throw error;
-      }
+      await this.attachments.deleteSession(previous, published);
       return published && this.projectProjection(published);
     } catch (error) {
       if (error instanceof HarnessError) throw error;
@@ -241,6 +388,33 @@ export class SessionStore {
       try { await handle.writeFile(json, "utf8"); await handle.sync(); } finally { await handle.close(); }
       await rename(temporary, join(directory, `${record.id}.json`));
     } finally { await unlink(temporary).catch(() => {}); }
+  }
+
+  private async prepareAttachmentDraft(record: SessionRecord): Promise<SessionRecord> {
+    if (record.revision !== 0 || !sessionIdPattern.test(record.id)) return invalidSession();
+    try {
+      await this.loadAnyUnlocked(record.id);
+      throw new HarnessError("SESSION_CONFLICT", "The upload draft was already saved. Refresh the session before continuing.");
+    } catch (error) {
+      if (!(error instanceof HarnessError && error.code === "SESSION_NOT_FOUND")) throw error;
+    }
+    const workspace = record.storageWorkspace ?? await canonicalWorkspace(record.workspace);
+    const prepare = async (project?: ProjectRecord): Promise<SessionRecord> => {
+      const resolved = await canonicalWorkspace(project?.workspace ?? record.workspace);
+      if (workspaceKey(resolved) !== workspaceKey(record.workspace) || record.projectError) {
+        throw new HarnessError("PROJECT_CONFLICT", "The upload draft's workspace changed. Refresh the session before continuing.");
+      }
+      if (record.name && (await this.records(workspace)).some((item) => item.name === record.name)) {
+        throw new HarnessError("SESSION_NAME", "That session name is already used in this workspace. Choose another name.");
+      }
+      const saved = decodeSessionRecord(encodeSessionRecord({ ...record, revision: 1,
+        storageWorkspace: workspace }), workspace, record.id);
+      return this.projectProjection(saved, project);
+    };
+    const projectId = projectIdOf(record);
+    if (!projectId) return prepare();
+    if (record.projectRevision === undefined) throw new HarnessError("PROJECT_CONFLICT", "Refresh the project before saving its session.");
+    return this.projects.withProjectUnlocked(projectId, record.projectRevision, prepare);
   }
 
   private directory(workspace: string): string { return join(this.root, workspaceKey(workspace)); }
@@ -316,7 +490,7 @@ export class SessionStore {
     const id = projectIdOf(record);
     if (!id) return structuredClone(record);
     try {
-      const selected = project ?? await this.projects.load(id);
+      const selected = project ?? await this.projects.loadUnlocked(id);
       const workspace = await canonicalWorkspace(selected.workspace);
       return { ...structuredClone(record), workspace, projectName: selected.name, projectRevision: selected.revision };
     } catch (error) {

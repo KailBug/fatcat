@@ -86,7 +86,7 @@ export class SessionDialog {
     this.title.textContent = action === "rename" ? "Rename session" : action === "fork" ? "Fork session" : "Delete session";
     this.description.textContent = action === "rename" ? `Choose a name for "${name}".`
       : action === "fork" ? `Create a copy of "${name}" and open it as a new session.`
-      : `Delete "${name}" and its saved conversation? This cannot be undone. Files and commands stay in effect.`;
+      : `Delete "${name}" and its saved conversation? This cannot be undone. Private attachment associations are removed; project-shared files remain available. Workspace files and commands stay in effect.`;
     this.field.hidden = action === "delete";
     this.input.value = action === "rename" ? name : "";
     this.input.placeholder = action === "fork" ? "Optional name; leave blank to use the default" : "Session name";

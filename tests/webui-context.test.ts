@@ -107,6 +107,19 @@ test("Web UI context reflects the latest parent request without child or cumulat
   assert.equal(controller.snapshot().contextUsage.promptTokens, 75);
 });
 
+test("auxiliary document usage is not presented as conversation context capacity", () => {
+  const meter = new WebContextUsage("kimi", "kimi-k2.6");
+  meter.observe({ type: "model_request", iteration: 1 });
+  meter.observe({ type: "model_usage", iteration: 1, usage: usage(90) });
+  assert.equal(meter.snapshot().promptTokens, 90);
+  meter.observe({ type: "model_request", iteration: 2, purpose: "document" });
+  meter.observe({ type: "model_usage", iteration: 2, usage: usage(1800) });
+  assert.deepEqual(meter.snapshot(), { promptTokens: null, capacityTokens: 262_144 });
+  meter.observe({ type: "model_request", iteration: 3 });
+  meter.observe({ type: "model_usage", iteration: 3, usage: usage(140) });
+  assert.equal(meter.snapshot().promptTokens, 140);
+});
+
 test("active session changes clear context telemetry while inactive management preserves it", async (t) => {
   let requests = 0;
   const controller = await controllerFor(t, async (_messages, _signal, observe) => {

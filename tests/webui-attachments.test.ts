@@ -140,14 +140,14 @@ test("project files are shared, private scopes are isolated, originals and text 
 	assert.equal((await list(reader)).length, 2);
 });
 
-test("binary originals are downloadable and unsupported or invalid text is never presented as empty", async (t) => {
+test("binary originals remain downloadable and corrupt documents or invalid text are never presented as empty", async (t) => {
 	const { manager, upload, post } = await setup(t);
 	const sessionId = manager.current.id;
 	const binary = await upload(sessionId, "scan.pdf", "%PDF-1.7\nnot parsed");
 	const reference = attachmentReference(binary);
 	const parsed = await post("attachments/read", { sessionId, reference });
 	assert.equal(parsed.status, 400);
-	assert.match(await parsed.text(), /not available yet/);
+	assert.match(await parsed.text(), /corrupt|invalid|failed|PDF/i);
 	assert.equal(await (await post("attachments/download", { sessionId, reference })).text(), "%PDF-1.7\nnot parsed");
 	const invalid = await upload(sessionId, "invalid.md", "\u0000binary");
 	const result = await post("attachments/read", { sessionId, reference: attachmentReference(invalid) });

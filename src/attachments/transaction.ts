@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { HarnessError } from "../errors.js";
 import { decodeSessionRecord, encodeSessionRecord, projectIdOf, workspaceKey } from "../session/record.js";
@@ -162,6 +162,8 @@ export class AttachmentTransactions {
 		if (change.projectDelete) await removeFile(join(this.root, "projects", `${change.projectDelete}.json`));
 		for (const ref of change.purge ?? []) {
 			await unlink(this.blobPath(ref)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+			// blobPath validates both identifiers before this fixed-root derived path is removed.
+			await rm(join(this.directory, "derived", ref.attachmentId, ref.contentVersion), { recursive: true, force: true });
 		}
 	}
 

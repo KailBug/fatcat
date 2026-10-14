@@ -28,6 +28,8 @@
 
 ## 当前文档索引
 
+2026-10-14 的阶段 3 设计补充：图片/扫描页优先复用已验证的聊天多模态能力，独立视觉/OCR 服务按需接入；文字提取可由多模态模型完成，与部署专用 OCR 服务分开。来源、覆盖、派生版本及预算要求继续保留，文本检索与原生多模态检索分别验收。详见 [RAG.md](RAG.md)、[PROVIDERS.md](PROVIDERS.md) 和 [ROADMAP.md](../ROADMAP.md)；本次仅更新规划，没有实现视觉或检索能力。
+
 2026-10-13 的 [PROJECTS.md](PROJECTS.md) 记录阶段 1：显式项目、统一目录、Session v2 兼容、确认迁入与执行身份；[ATTACHMENTS.md](ATTACHMENTS.md) 记录当前阶段 2：不可变原件、项目/私有关联、上传/导入、有界文本读取、来源及删除保护。`src/attachments/` 独立持有资料，Session 持有历史与归属，两者由短元数据锁和恢复日志协调。Agent 在目录 Tools 缓存之外绑定实际父子执行范围。[RAG.md](RAG.md) 保留后续解析/索引/Memory 所有者及 nanobot/pi/Codex 研究。八阶段依赖和验收见 [ROADMAP.md](../ROADMAP.md)；Office/PDF 解析、视觉、Memory、检索及音频尚未实现。
 
 同日追加项目管理已开放重命名、项目统一改目录和确认级联删除；Web UI 项目菜单复用 SessionManager，目录 patch/项目/附件元数据共用读前恢复。删除保留工作目录文件及仍被外部会话引用的原件。原生目录选择器补齐 PMv2 和隐藏 owner，修复缩放模糊及 PowerShell 任务栏按钮；真实 Win32 与 Edge 分别验证，见 PROJECTS 第 8 节和 PROGRESS。

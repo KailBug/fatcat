@@ -12,6 +12,7 @@ import type { ProjectDeletePreview, ProjectImpact, ProjectSessionMove, ProjectWo
 import { invalidSession, isRecord } from "./history.js";
 import { decodeSessionRecord, encodeSessionRecord, projectIdOf, sessionIdPattern, sessionSummary, workspaceKey } from "./record.js";
 import type { SessionRecord, SessionSummary } from "./record.js";
+import type { SessionExecutionIdentity } from "./execution.js";
 
 const maxFileBytes = 64 * 1024 * 1024;
 
@@ -25,6 +26,7 @@ export interface SessionSaveOptions {
   attemptOwner?: { ownerPid: number; startedAt: string };
   operationId?: string;
   attachmentRevisionExpected?: number;
+  memoryFingerprintExpected?: string;
 }
 export function processAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; }
@@ -194,6 +196,32 @@ export class SessionStore {
     return this.attachments.withMetadata(() => this.loadAnyUnlocked(selector), false);
   }
 
+  /** Keep Memory access and project/session management under the same identity gate. */
+  async withMemorySession<T>(identity: SessionExecutionIdentity, operation: () => Promise<T>, draft?: SessionRecord,
+    owner?: { ownerPid: number; startedAt: string }): Promise<T> {
+    return this.attachments.withMetadata(async () => {
+      let record: SessionRecord;
+      try {
+        record = await this.loadAnyUnlocked(identity.sessionId);
+      } catch (error) {
+        if (!(error instanceof HarnessError && error.code === "SESSION_NOT_FOUND")
+          || draft?.revision !== 0 || draft.id !== identity.sessionId) throw error;
+        if (await this.attachments.isSessionDeletedUnlocked(identity.sessionId)) throw error;
+        record = await this.projectProjection(draft);
+      }
+      if (record.projectError) throw new HarnessError("PROJECT_UNAVAILABLE", record.projectError);
+      if (projectIdOf(record) !== identity.projectId || (record.locationRevision ?? 0) !== identity.locationRevision
+        || record.projectRevision !== identity.projectRevision || workspaceKey(record.workspace) !== workspaceKey(identity.workspace)) {
+        throw new HarnessError("MEMORY_SCOPE_CHANGED", "The executing session's Memory scope changed. Resume it before continuing.");
+      }
+      if (owner && (record.attempt?.status !== "running" || record.attempt.ownerPid !== owner.ownerPid
+        || record.attempt.startedAt !== owner.startedAt)) {
+        throw new HarnessError("MEMORY_SOURCE", "The user turn no longer owns this session's Memory operation.");
+      }
+      return operation();
+    }, false);
+  }
+
   private async loadAnyUnlocked(selector: string): Promise<SessionRecord> {
     if (!sessionIdPattern.test(selector)) {
       const matches = (await this.listAllUnlocked()).filter((item) => item.name === selector || item.title === selector);
@@ -305,7 +333,7 @@ export class SessionStore {
       }
       const saved = decodeSessionRecord(encodeSessionRecord({ ...record, revision: expectedRevision + 1,
         storageWorkspace: workspace }), workspace, record.id);
-      await this.attachments.publishSession(saved, previous, source, options.attachmentRevisionExpected);
+      await this.attachments.publishSession(saved, previous, source, options.attachmentRevisionExpected, options.memoryFingerprintExpected);
       return this.projectProjection(saved, project);
     } catch (error) {
       if (error instanceof HarnessError) throw error;

@@ -1,10 +1,10 @@
 # 本地 Web UI
 
-2026-10-13 已实现阶段 1 的 Project 组织与确认迁入，以及阶段 2 的资料上传/清单/分页/版本来源/下载和生命周期管理。Project 统一工作目录，历史按 Session 独立保存；资料在项目内共享，独立会话私有。实现边界见 [PROJECTS.md](PROJECTS.md)和[ATTACHMENTS.md](ATTACHMENTS.md)。解析、视觉、Memory、检索和音频/语音仍为后续计划，见 [RAG.md](RAG.md)。
+2026-10-13 已实现阶段 1 的 Project 组织与确认迁入，以及阶段 2 的资料上传/清单/分页/版本来源/下载和生命周期管理。Project 统一工作目录，历史按 Session 独立保存；资料在项目内共享，独立会话私有。实现边界见 [PROJECTS.md](PROJECTS.md)和[ATTACHMENTS.md](ATTACHMENTS.md)。阶段 3 解析/视觉见 [DOCUMENTS.md](DOCUMENTS.md)；阶段 4 支持 composer 中的自然语言 Memory 保存、修改和遗忘，/memory 是可选管理入口，见 [MEMORY.md](MEMORY.md)。检索和音频/语音仍为计划。
 
 附件 HTTP 由 `attachment-http.ts` 与 `attachments.ts` 持有，复用现有认证/capability 和 Manager。begin 校验发起 Session ID、归属代次及 Project，生成最多 4 个/120 秒 ticket；流上传单文件 16 MiB，不扩大普通 JSON 的 64 KiB/10 秒边界。客户端上传队列独立于 UI 选择，初次与重试都固定同一目标；取消后的接收占位保留到实际流清理完成。`attachment-upload.ts` 管理传输，`attachments.ts` 展示当前范围和操作确认。未保存项目草稿可立即浏览已有共享资料，上传成功才保存发起草稿；非持久模式显示内存暂存及服务退出丢失。
 
-回答中只识别合法的 `attachment:<uuid>@<sha256>#Lx-Ly` 引用，由当前 Session 重新授权后打开纯文本来源，不直接导航本地存储路径或执行附件 HTML。预览展示行范围、截断和下一页；不等同于完整读取事件报表。移除和删除确认携带 locationRevision/scopeRevision，范围改变拒绝旧弹窗。PDF、现代/旧 Office、图片仅保存/下载，读取明确提示尚未解析。
+纯文本来源使用合法的 `attachment:<uuid>@<sha256>#Lx-Ly` 引用，由当前 Session 重新授权后打开纯文本来源，不直接导航本地存储路径或执行附件 HTML。预览展示行范围、截断和下一页；不等同于完整读取事件报表。移除和删除确认携带 locationRevision/scopeRevision，范围改变拒绝旧弹窗。阶段 3 另支持固定解析/视觉来源：PDF 与现代 Office 的受控解析、图片/选定扫描页的当前模型视觉路径，实际格式、定位及覆盖边界见 [DOCUMENTS.md](DOCUMENTS.md)；旧 Office 保留原件并要求转换。
 
 ## 范围与现状
 

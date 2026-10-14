@@ -2,7 +2,7 @@ import { parseSourceReference } from "./attachments.js";
 
 /** A deliberately small Markdown subset. Every untrusted fragment becomes a text node. */
 function inline(text: string, parent: HTMLElement, openSource?: (reference: string) => void): void {
-  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^\s)]+\)|attachment:[a-f0-9-]+@[a-f0-9]+(?:#L[0-9]+-L[0-9]+)?)/g;
+  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^\s)]+\)|attachment:[a-f0-9-]+@[a-f0-9]+(?:#(?:L[0-9]+-L[0-9]+|parse=[a-zA-Z0-9._%-]+&unit=[a-zA-Z0-9._%-]+))?)/g;
   const source = (reference: string, label: string): boolean => {
     if (!openSource || !parseSourceReference(reference)) return false;
     const button = document.createElement("button");

@@ -132,6 +132,28 @@ test("parent context measurements never inherit child tokens or stale request ob
   assert.equal(state.turn.stopCode, "MODEL_CONTEXT_LIMIT");
 });
 
+test("document requests contribute usage without posing as conversation context", () => {
+  const telemetry = createTuiTelemetry();
+  telemetry.beginTurn();
+  request(telemetry, 1, basic);
+  assert.equal(telemetry.snapshot().parentPromptTokens, 100);
+  telemetry.observe({ type: "model_request", iteration: 2, purpose: "document" });
+  telemetry.observe({ type: "model_input", iteration: 2, bytes: 20000, limitBytes: 262144, accepted: true });
+  telemetry.observe({ type: "model_usage", iteration: 2,
+    usage: { promptTokens: 5000, completionTokens: 100, totalTokens: 5100 } });
+  let state = telemetry.snapshot();
+  assert.equal(state.parentPromptTokens, null);
+  assert.equal(state.parentRequest?.bytes, 20000);
+  assert.equal(state.turn.modelRequests.parent, 2);
+  assert.equal(state.turn.tokenUsage.parent.totals?.totalTokens, 5220);
+  request(telemetry, 3, { promptTokens: 200, completionTokens: 20, totalTokens: 220 });
+  state = telemetry.snapshot();
+  assert.equal(state.parentPromptTokens, 200);
+  assert.equal(state.turn.modelRequests.parent, 3);
+  assert.equal(state.turn.tokenUsage.parent.totals?.totalTokens, 5440);
+  assert.equal(state.turn.tokenUsage.parent.coverage, "complete");
+});
+
 test("failed turns and reset preserve process consumption and clear current conversation context", () => {
   const telemetry = createTuiTelemetry();
   telemetry.beginTurn();

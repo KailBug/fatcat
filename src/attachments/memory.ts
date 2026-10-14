@@ -4,12 +4,15 @@ import type { SessionRecord } from "../session/record.js";
 import { executionIdentity } from "../session/execution.js";
 import { attachmentIdPattern, attachmentName, attachmentMediaType, extractAttachmentReferences, maxAttachmentBytes, sameAttachmentTarget } from "./record.js";
 import type { AttachmentInfo, AttachmentRef, AttachmentTarget, AttachmentUploadMetadata, StagedAttachment } from "./record.js";
+import { MemoryDocumentCache } from "../documents/cache.js";
+import type { DocumentCache } from "../documents/cache.js";
 
 interface MemoryAsset {
 	staged: StagedAttachment;
 	bytes?: Uint8Array;
 	bindings: Map<string, boolean>;
 	pins: Set<string>;
+	documents?: MemoryDocumentCache;
 }
 
 /** Non-persistent sessions keep originals in memory; no temporary history or files reach disk. */
@@ -122,6 +125,19 @@ export class MemoryAttachments {
 		}
 	}
 
+	async withDocumentCache<T>(target: AttachmentTarget, ref: AttachmentRef, operation: (cache: DocumentCache) => Promise<T>): Promise<T> {
+		await this.validate(target);
+		const asset = this.find(target, ref);
+		if (!asset.bindings.get(target.sessionId) || !asset.bytes) throw new HarnessError("ATTACHMENT_UNAVAILABLE", "This original is no longer available in this session.");
+		asset.documents ??= new MemoryDocumentCache();
+		const cache = asset.documents;
+		return operation({ load: (version) => cache.load(version), transcripts: () => cache.transcripts(), save: async (snapshot, page) => {
+			const size = [...this.assets.values()].reduce((sum, value) => sum + (value.documents?.size ?? 0), 0);
+			if (!(await cache.load(snapshot.parserVersion)) && size + Buffer.byteLength(JSON.stringify(snapshot)) > 64 * 1024 * 1024) throw new HarnessError("DOCUMENT_LIMIT", "In-memory derived content exceeds 64 MiB.");
+			return cache.save(snapshot, page);
+		} });
+	}
+
 	async delete(target: AttachmentTarget, ref: AttachmentRef, expectedRevision?: number): Promise<void> {
 		await this.validate(target);
 		this.checkRevision(target, expectedRevision);
@@ -130,6 +146,7 @@ export class MemoryAttachments {
 			throw new HarnessError("ATTACHMENT_REFERENCED", "Other active associations or retained session history still reference this original. Remove the current association instead.");
 		}
 		delete asset.bytes;
+		delete asset.documents;
 		asset.bindings.set(target.sessionId, false);
 		this.bump(target.sessionId);
 	}

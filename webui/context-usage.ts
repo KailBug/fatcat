@@ -21,21 +21,21 @@ const capacities = new Map<string, number>([
 /** Observe the latest parent request, rather than cumulative turn or subagent usage. */
 export class WebContextUsage {
   private promptTokens: number | null = null;
-  private compaction = false;
+  private auxiliary = false;
   private readonly capacityTokens: number | null;
 
   constructor(provider: string, model: string) {
     this.capacityTokens = capacities.get(`${provider}/${model}`) ?? null;
   }
 
-  reset(): void { this.promptTokens = null; this.compaction = false; }
+  reset(): void { this.promptTokens = null; this.auxiliary = false; }
 
   observe(event: ReportEvent): void {
     if (event.type === "model_request") {
       this.reset();
-      this.compaction = event.purpose === "compaction";
+      this.auxiliary = event.purpose === "compaction" || event.purpose === "document";
     }
-    if (event.type === "model_usage" && !this.compaction) {
+    if (event.type === "model_usage" && !this.auxiliary) {
       const usage = event.usage && parseTokenUsage({ prompt_tokens: event.usage.promptTokens,
         completion_tokens: event.usage.completionTokens, total_tokens: event.usage.totalTokens });
       this.promptTokens = usage?.promptTokens ?? null;

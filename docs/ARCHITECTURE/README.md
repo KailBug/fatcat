@@ -4,7 +4,7 @@
 
 架构文档统一放在 `docs/ARCHITECTURE/` 下，本文件作为总览和索引，记录整体边界、跨系统关系及共享决策。
 
-- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md`、`WEBUI.md`、`BROWSER.md`、`AUTOMATION.md`、`PROJECTS.md`、`ATTACHMENTS.md`，以及后续资料计划 `RAG.md`；其他系统文档在需要时建立。
+- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md`、`WEBUI.md`、`BROWSER.md`、`AUTOMATION.md`、`PROJECTS.md`、`ATTACHMENTS.md`、`DOCUMENTS.md`，以及后续资料计划 `RAG.md`；其他系统文档在需要时建立。
 - 系统文档记录该系统的职责、设计决策、接口与数据流，以及分步实现安排和验收方式；按当前需要展开，不要求提前填满所有内容。
 - 每份文档明确区分当前已实现内容和计划设计，具体实现安排也标注状态；验证与完成事实以 [PROGRESS.md](../PROGRESS.md) 为准，避免重复维护进度记录。
 - 新增系统文档时更新本文件的索引。项目阶段目标仍放在 [ROADMAP.md](../ROADMAP.md)，系统内部的实现安排放在对应架构文档中。
@@ -28,13 +28,15 @@
 
 ## 当前文档索引
 
-2026-10-14 的阶段 3 设计补充：图片/扫描页优先复用已验证的聊天多模态能力，独立视觉/OCR 服务按需接入；文字提取可由多模态模型完成，与部署专用 OCR 服务分开。来源、覆盖、派生版本及预算要求继续保留，文本检索与原生多模态检索分别验收。详见 [RAG.md](RAG.md)、[PROVIDERS.md](PROVIDERS.md) 和 [ROADMAP.md](../ROADMAP.md)；本次仅更新规划，没有实现视觉或检索能力。
+2026-10-14 实现阶段 3：[DOCUMENTS.md](DOCUMENTS.md) 记录本地现代 Office/PDF/Markdown 解析、同聊天模型图片与选定页面理解、按需转写缓存、通用读取/搜索、固定来源版本和覆盖。复用现有 Loop、Session 作用域和用量，派生数据由 `src/documents/` 持有，附件所有者负责授权及删除。真实模型识别质量未验收；Memory、Embedding、音频和语音入口仍为计划。
 
-2026-10-13 的 [PROJECTS.md](PROJECTS.md) 记录阶段 1：显式项目、统一目录、Session v2 兼容、确认迁入与执行身份；[ATTACHMENTS.md](ATTACHMENTS.md) 记录当前阶段 2：不可变原件、项目/私有关联、上传/导入、有界文本读取、来源及删除保护。`src/attachments/` 独立持有资料，Session 持有历史与归属，两者由短元数据锁和恢复日志协调。Agent 在目录 Tools 缓存之外绑定实际父子执行范围。[RAG.md](RAG.md) 保留后续解析/索引/Memory 所有者及 nanobot/pi/Codex 研究。八阶段依赖和验收见 [ROADMAP.md](../ROADMAP.md)；Office/PDF 解析、视觉、Memory、检索及音频尚未实现。
+2026-10-14 的阶段 3 设计补充：图片/扫描页优先复用已验证的聊天多模态能力，独立视觉/OCR 服务按需接入；文字提取可由多模态模型完成，与部署专用 OCR 服务分开。来源、覆盖、派生版本及预算要求继续保留，文本检索与原生多模态检索分别验收。详见 [RAG.md](RAG.md)、[PROVIDERS.md](PROVIDERS.md) 和 [ROADMAP.md](../ROADMAP.md)；该条保留此前设计依据；视觉适配随后按 DOCUMENTS.md 实现，检索仍未实现。
+
+2026-10-13 的 [PROJECTS.md](PROJECTS.md) 记录阶段 1：显式项目、统一目录、Session v2 兼容、确认迁入与执行身份；[ATTACHMENTS.md](ATTACHMENTS.md) 记录当前阶段 2：不可变原件、项目/私有关联、上传/导入、有界文本读取、来源及删除保护。`src/attachments/` 独立持有资料，Session 持有历史与归属，两者由短元数据锁和恢复日志协调。Agent 在目录 Tools 缓存之外绑定实际父子执行范围。[RAG.md](RAG.md) 保留后续解析/索引/Memory 所有者及 nanobot/pi/Codex 研究。八阶段依赖和验收见 [ROADMAP.md](../ROADMAP.md)；Office/PDF 解析与视觉适配随后进入阶段 3；Memory、检索及音频尚未实现。
 
 同日追加项目管理已开放重命名、项目统一改目录和确认级联删除；Web UI 项目菜单复用 SessionManager，目录 patch/项目/附件元数据共用读前恢复。删除保留工作目录文件及仍被外部会话引用的原件。原生目录选择器补齐 PMv2 和隐藏 owner，修复缩放模糊及 PowerShell 任务栏按钮；真实 Win32 与 Edge 分别验证，见 PROJECTS 第 8 节和 PROGRESS。
 
-新增 [BROWSER.md](BROWSER.md)：共享 Playwright browser 工具、工作区资源路由、执行审批、DOM/几何采集与 JSON/PNG 证据。它属于 Tools 执行层，CLI/TUI/Web UI 复用；第一步 Preview 仍只是用户预览。Windows 使用已安装 Edge，新增固定生产依赖 playwright 1.63.0，原因与边界见该文档。图像输入和多时刻动画验证仍未实现。
+新增 [BROWSER.md](BROWSER.md)：共享 Playwright browser 工具、工作区资源路由、执行审批、DOM/几何采集与 JSON/PNG 证据。它属于 Tools 执行层，CLI/TUI/Web UI 复用；第一步 Preview 仍只是用户预览。Windows 使用已安装 Edge，新增固定生产依赖 playwright 1.63.0，原因与边界见该文档。该 browser 工具的截图模型输入和多时刻动画验证仍未实现；附件图片输入属于 DOCUMENTS.md 的独立资料路径。
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
@@ -54,7 +56,8 @@
 | [BROWSER.md](BROWSER.md) | 工作区页面执行、基本交互、运行诊断、DOM/几何与截图证据 | 第二步已实现；离线/真实 Edge 验证见 PROGRESS，模型视觉输入未实现 |
 | [PROJECTS.md](PROJECTS.md) | 阶段 1 项目归属、唯一目录、持久兼容、迁入与执行身份 | 最小范围已实现，离线及真实 Edge 验证通过，待 review |
 | [ATTACHMENTS.md](ATTACHMENTS.md) | 阶段 2 持久原件、共享/隔离、通用文本读取、来源与生命周期 | 已实现；验证与限制见 PROGRESS |
-| [RAG.md](RAG.md) | 资料所有权、解析/视觉/Memory/检索/音频边界与参考研究 | 阶段 1–2 已接入；后续设计未实现 |
+| [DOCUMENTS.md](DOCUMENTS.md) | 阶段 3 本地文档解析、同模型视觉/转写、固定来源、缓存与覆盖 | 已实现；本地/注入 SDK/Edge 验证见 PROGRESS，真实模型质量未验收 |
+| [RAG.md](RAG.md) | 资料所有权、解析/视觉/Memory/检索/音频边界与参考研究 | 阶段 1–3 已接入；Memory/检索/音频等仍是计划 |
 
 ## 当前实现
 

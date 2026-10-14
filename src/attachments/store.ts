@@ -8,6 +8,8 @@ import type { ProjectRecord } from "../project/record.js";
 import type { ProjectSessionMove } from "../project/management.js";
 import { AttachmentTransactions, atomicJson, boundedJson } from "./transaction.js";
 import type { AttachmentSessionAccess } from "./transaction.js";
+import { diskDocumentCache } from "../documents/cache.js";
+import type { DocumentCache } from "../documents/cache.js";
 import { attachmentIdPattern, attachmentMediaType, attachmentName, decodeStagedAttachment, extractAttachmentReferences, maxAttachmentBytes,
 	parseAttachmentReference, sameAttachmentTarget, scopeKey, scopeOfTarget, validateAttachmentTarget } from "./record.js";
 import type { AttachmentBinding, AttachmentCatalog, AttachmentInfo, AttachmentRecord, AttachmentRef,
@@ -184,6 +186,17 @@ export class AttachmentStore {
 		return this.withMetadata(async () => {
 			await this.currentSession(target);
 			return this.sharing(await this.transactions.catalog(), scopeOfTarget(target));
+		}, false);
+	}
+
+	/** Derived content never grants access independently of the original. No parsing or network work runs under this gate. */
+	async withDocumentCache<T>(target: AttachmentTarget, ref: AttachmentRef, operation: (cache: DocumentCache) => Promise<T>, draft?: SessionRecord): Promise<T> {
+		return this.withMetadata(async () => {
+			await this.currentSession(target, draft);
+			const catalog = await this.transactions.catalog();
+			this.binding(catalog, target, ref);
+			if (this.asset(catalog, ref).deletedAt) throw new HarnessError("ATTACHMENT_UNAVAILABLE", "This original was permanently deleted.");
+			return operation(diskDocumentCache(join(this.transactions.directory, "derived", ref.attachmentId, ref.contentVersion)));
 		}, false);
 	}
 

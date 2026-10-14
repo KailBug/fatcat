@@ -1315,6 +1315,15 @@ dialog[open],.session-menu:not([hidden]),.permission-menu:not([hidden]) { animat
 .attachment-actions button:hover,.attachment-upload button:hover { background:var(--hover) }
 .attachment-reference { color:var(--muted); font-size:11px; font-family:monospace; overflow-wrap:anywhere }
 .attachment-coverage { font-size:13px; font-weight:600 }
+.attachment-warning { padding:10px 12px; border-left:3px solid var(--accent); background:var(--panel); font-size:12px; line-height:1.6; overflow-wrap:anywhere }
+.attachment-document-unit { margin:18px 0; border-top:1px solid var(--border); padding-top:14px }
+.attachment-document-unit h3 { margin:0 0 8px; font-size:13px; line-height:1.5; overflow-wrap:anywhere }
+.attachment-cell-values { display:grid; grid-template-columns:minmax(90px,1fr) 3fr; gap:6px 12px; font-size:12px; overflow-wrap:anywhere }
+.attachment-cell-values dt { color:var(--muted) }
+.attachment-cell-values dd { margin:0; white-space:pre-wrap }
+.attachment-sources { margin:14px 0; font-size:12px }
+.attachment-sources ul { padding-left:18px; display:grid; gap:10px }
+.attachment-sources p { margin:4px 0; color:var(--muted); line-height:1.5 }
 .attachment-source-text { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; font-size:12px; overflow:auto; max-height:48vh; white-space:pre-wrap; overflow-wrap:anywhere }
 .attachment-citation { border:0; background:var(--accent-soft); color:var(--accent); border-radius:4px; font:inherit; padding:1px 5px; cursor:pointer }
 .attachment-uploads:empty { display:none }

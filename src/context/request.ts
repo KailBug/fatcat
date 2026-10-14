@@ -6,13 +6,15 @@ function omission(content: Message["content"]): string | undefined {
   try {
     const value = JSON.parse(content) as { ok?: unknown; result?: Record<string, unknown> } | null;
     const result = value?.result;
-    if (value?.ok !== true || !result || typeof result.kind !== "string" || !["file", "directory", "search"].includes(result.kind)
+    if (value?.ok !== true || !result || typeof result.kind !== "string" || !["file", "directory", "search", "document"].includes(result.kind)
       || typeof result.path !== "string") return;
     if ((result.kind === "file" && typeof result.content !== "string")
       || (result.kind === "directory" && !Array.isArray(result.entries))
-      || (result.kind === "search" && !Array.isArray(result.matches))) return;
+      || (result.kind === "search" && !Array.isArray(result.matches))
+      || (result.kind === "document" && (!Array.isArray(result.units) || typeof result.parserVersion !== "string"))) return;
     return JSON.stringify({ ok: true, result: {
       kind: "context_omitted", originalKind: result.kind, path: result.path,
+      ...(result.kind === "document" ? { parserVersion: result.parserVersion } : {}),
       notice: "Earlier read output omitted from this request to fit the byte budget. It is not evidence of current file contents. Repeat the original read, or a narrower read, if needed; files may have changed.",
     } });
   } catch {

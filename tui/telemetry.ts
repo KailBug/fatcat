@@ -145,7 +145,7 @@ export function createTuiTelemetry(): TuiTelemetry {
         }
       }
       if (childId === undefined) {
-        parentCompaction = event.purpose === "compaction";
+        parentCompaction = event.purpose === "compaction" || event.purpose === "document";
         turn.iteration = event.iteration;
         parentRequest = null;
         parentPromptTokens = null;

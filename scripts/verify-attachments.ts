@@ -141,8 +141,12 @@ try {
 	const pdf = (await manager.listAttachments(privateId))[0]!;
 	const pdfRow = page.locator(`[data-attachment-id="${pdf.id}"]`);
 	await pdfRow.waitFor();
-	assert.match(await pdfRow.innerText(), /analysis unavailable/);
+	assert.match(await pdfRow.innerText(), /document parsing available/);
 	assert.equal(await pdfRow.getByRole("button", { name: "View text", exact: true }).count(), 0);
+	await pdfRow.getByRole("button", { name: "View source", exact: true }).click();
+	await page.locator("#attachment-source .session-dialog-error").waitFor();
+	assert.match(await page.locator("#attachment-source").innerText(), /corrupt|invalid|failed|PDF/i);
+	await page.getByRole("button", { name: "Close source", exact: true }).click();
 	await pdfRow.getByRole("button", { name: "Remove from chat", exact: true }).click();
 	await page.getByRole("button", { name: "Confirm removal", exact: true }).click();
 	await page.locator("#attachment-confirm").waitFor({ state: "hidden" });
@@ -165,7 +169,7 @@ try {
 	await page.locator("#attachment-confirm").getByRole("button", { name: "Cancel", exact: true }).click();
 	await page.getByRole("button", { name: "Close attachments", exact: true }).click();
 	assert.deepEqual(errors, []);
-	console.log("Verified real Edge: upload and download exact originals, project sharing including a new draft chat, private scope isolation, versioned source links and line paging, async upload across session switch, cancellation cleanup, unsupported PDF status, separate remove/delete confirmations, and mobile layout. The model and one stream pause were injected; no live API calls.");
+	console.log("Verified real Edge: upload and download exact originals, project sharing including a new draft chat, private scope isolation, versioned source links and line paging, async upload across session switch, cancellation cleanup, corrupt PDF error, separate remove/delete confirmations, and mobile layout. The model and one stream pause were injected; no live API calls.");
 } catch (error) {
 	if (browser && process.env.FATCAT_VERIFY_SCREENSHOT) {
 		const page = browser.contexts()[0]?.pages()[0];

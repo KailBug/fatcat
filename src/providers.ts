@@ -46,6 +46,19 @@ const profiles: Record<Provider, ProviderProfile> = {
   },
 };
 
+// Exact models verified against the official image and non-thinking API contracts.
+// A configurable model name alone does not establish image or native file support.
+const imageModels: Record<Provider, readonly string[]> = {
+  deepseek: [],
+  kimi: ["kimi-k2.6"],
+  mimo: ["mimo-v2.6-flash", "mimo-v2.6-pro", "mimo-v2.6-pro-ultraspeed", "mimo-v2.5"],
+  qwen: ["qwen3-vl-plus", "qwen3-vl-flash"],
+};
+
+export function getModelInputCapabilities(provider: Provider, model: string): { image: boolean; nativeFile: false } {
+  return { image: imageModels[parseProvider(provider)].includes(model), nativeFile: false };
+}
+
 export function parseProvider(value: string): Provider {
   if (value === "deepseek" || value === "kimi" || value === "mimo" || value === "qwen") return value;
   throw new HarnessError("CONFIG", "HARNESS_PROVIDER must be deepseek, kimi, mimo, or qwen.");

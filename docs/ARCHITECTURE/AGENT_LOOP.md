@@ -104,6 +104,8 @@ CLI / chat 另通过 createTurnReporter 发出 execution_report。它基于本�
 
 ## 模型请求预算与用量观察（2D-7 已实现）
 
+2026-10-14 阶段 3 增量：`Tools.forTurn(onEvent, context)` 为资料辅助请求提供当前回合的 `documentRequest()` 预留。视觉/转写占用同一 `maxIterations` 计数，保留最后一次回答，发出 `model_request { purpose: document }` 及原有字节/用量事件。Skills、附件、自动任务及委派包装传递上下文；子任务仍使用既有最多三次的独立子预算，其视觉请求也计入该三次。没有增加另一套 Loop 或隐式 API 重试。图像请求内容保持临时，历史只有带来源的文字工具结果；辅助输入 token 不作为聊天上下文容量。详见 [DOCUMENTS.md](DOCUMENTS.md)。
+
 HARNESS_MAX_REQUEST_BYTES 默认 262144（256 KiB），接受 1–16777216 的十进制正整数。Config 的 maxRequestBytes 也在创建客户端时校验，程序化调用不能用 NaN / Infinity 绕过检查。选择字节预算是为了用现有 Node/SDK 精确限制待发送正文，不增加 tokenizer 或猜测模型上下文容量；默认值是本地策略，可按任务显式调整。
 
 model.ts 在创建请求 deadline 和调用 SDK 前通过 context/request.ts 计算 `Buffer.byteLength(JSON.stringify(body))`：计入消息、system、父委派指导、工具定义、完整历史及临时写入/命令事实、模型名和生成参数；包括 JSON 转义和 UTF-8，不包含 HTTP 头与认证 Key。与当前安装 SDK 的 JSON 序列化方式一致，并以注入传输读到的实际正文验证。2D-8 在原始正文超限时先按 [CONTEXT.md](CONTEXT.md) 省略较早成功 read 的请求内容，再计算最终完整正文。等于上限允许，仍超出返回 MODEL_CONTEXT_LIMIT，给出字节数、上限及恢复建议；模型层不重试、不生成摘要、不修改保存历史；Session 可按下述有界自动压缩路径恢复一次。

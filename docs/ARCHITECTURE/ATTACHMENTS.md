@@ -1,14 +1,14 @@
 # 持久附件与共享读取：阶段 2
 
-状态：2026-10-13，沿用 `feat/rag-dev`，从 `03b56d8` 实现资料计划阶段 2。本文记录实际模块和边界；验收结果以 [PROGRESS.md](../PROGRESS.md) 为准。后续解析、视觉、Memory、Embedding、音频仍未实现，研究与依赖保留在 [RAG.md](RAG.md) 和 [ROADMAP.md](../ROADMAP.md)。
+状态：2026-10-13，沿用 `feat/rag-dev`，从 `03b56d8` 实现资料计划阶段 2。本文记录实际模块和边界；验收结果以 [PROGRESS.md](../PROGRESS.md) 为准。阶段 3 的解析和视觉实现见 [DOCUMENTS.md](DOCUMENTS.md)；Memory、Embedding、音频仍未实现，研究与依赖保留在 [RAG.md](RAG.md) 和 [ROADMAP.md](../ROADMAP.md)。
 
 ## 可用范围
 
 Web UI 的 Attachments 面板提供上传、进度、取消、重试、清单、文本分页、来源预览、原件下载、移除关联和确认永久删除。chat/TUI 通过共享命令 `/attach "path"`、`/attachments`、`/attachment remove <reference>` 和 `/attachment delete <reference> --confirm` 使用同一核心；CLI 恢复会话后的模型读取也走该核心。导入源文件只读，不搬动或修改原路径。
 
-单原件最多 16 MiB。允许保存 `.txt/.md/.markdown/.csv/.tsv/.pdf/.doc/.docx/.xls/.xlsx/.ppt/.pptx` 及 `.png/.jpg/.jpeg/.gif/.webp/.bmp/.tif/.tiff`；扩展名决定服务端媒体类型，不信任浏览器提供的 MIME。**内容读取仅支持有效 UTF-8 的 `.txt/.md/.markdown`**。CSV、现代与旧 Office、PDF 和图片当前只能保存/下载，读取返回明确的尚不支持分析错误；接收成功不表示文件格式、文档正文或图片内容已经解析。
+单原件最多 16 MiB。允许保存 `.txt/.md/.markdown/.csv/.tsv/.pdf/.doc/.docx/.xls/.xlsx/.ppt/.pptx` 及 `.png/.jpg/.jpeg/.gif/.webp/.bmp/.tif/.tiff`；扩展名决定服务端媒体类型，不信任浏览器提供的 MIME。阶段 2 原有逐行文本读取继续兼容；阶段 3 扩展 UTF-8 CSV/TSV、现代 Office、PDF 和 PNG/JPEG 的解析/视觉路径，格式与覆盖矩阵见 DOCUMENTS.md。旧 Office 和额外图片格式仍仅保存/下载；接收成功不表示文件已被解析或完整分析。
 
-没有新依赖、模型配置或外部 API 请求。原件在选定的本地 Session 根中以明文保存，与既有明文历史采取相同本地信任边界；这不是多用户服务或 OS 文件隔离。上传不会授予工具任意目录访问权。
+阶段 2 当时没有新增依赖或 API 请求；阶段 3 的解析依赖和按任务触发的当前聊天模型图片请求分别记录于 DOCUMENTS.md/PROVIDERS.md，无独立 OCR 配置。原件在选定的本地 Session 根中以明文保存，与既有明文历史采取相同本地信任边界；这不是多用户服务或 OS 文件隔离。上传不会授予工具任意目录访问权。
 
 追加的项目管理支持确认级联删除：项目/成员关联与成员 pin 一并解除，只有没有外部有效关联或 pin 的原件才销毁；其他会话引用的原件保留并在确认前计数。项目工作目录中的文件完全不参与删除。改项目目录不移动附件原件，但所有成员及当前草稿的目录代次更新，旧上传必须重新发起。细节见 [PROJECTS.md](PROJECTS.md#8-追加项目管理增量2026-10-13)。
 
@@ -28,7 +28,7 @@ Web UI 的 Attachments 面板提供上传、进度、取消、重试、清单、
 | `webui/attachments.ts`、`attachment-http.ts` | 短期上传 ticket、认证和有界 HTTP 流；不自行推导项目所有权 |
 | `webui/client/attachment-upload.ts`、`attachments.ts`、`markdown.ts` | 上传行生命周期、资料界面、严格引用链接与按当前 Session 重新授权的预览 |
 
-Project 持有项目身份与统一工作目录，附件 catalog 持有原件及项目/私有关联，Session 持有原历史。解析结果、索引及 Memory 没有占位实现，也未混入原件目录或历史字段。
+Project 持有项目身份与统一工作目录，附件 catalog 持有原件及项目/私有关联，Session 持有原历史。阶段 3 的解析快照存于 attachments/derived，原件实际永久销毁时由同一恢复事务删除派生目录；缓存读取/发布均重新检查原件授权。索引及 Memory 仍未实现，未混入原件或历史。
 
 ## 身份、读取和覆盖
 

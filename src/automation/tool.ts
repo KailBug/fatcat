@@ -30,7 +30,7 @@ export function withAutomationTool(base: Tools = defaultTools,
   execute?: (args: unknown, signal?: AbortSignal) => Promise<unknown>): Tools {
   return { ...base,
     definitions: [...base.definitions.filter((tool) => tool.function.name !== "automation"), automationDefinition],
-    forTurn: (event) => withAutomationTool(base.forTurn?.(event) ?? base, execute),
+    forTurn: (event, context) => withAutomationTool(base.forTurn?.(event, context) ?? base, execute),
     execute: async (name, json, signal, callId) => {
       if (name !== "automation") return base.execute(name, json, signal, callId);
       checkCancellation(signal);

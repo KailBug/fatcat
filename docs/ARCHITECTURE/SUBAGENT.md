@@ -56,3 +56,7 @@
 ## 旧读取投影（2D-8 已实现）
 
 父子客户端复用同一请求准备函数及预算。当前子任务总是从空历史开始，整个子任务属于受保护的当前回合，没有可省略的旧读取；超限仍按既有错误边界回传。父 Session 的较早 read 结果可被请求投影，delegate_task 的最终答案不属于 read，不会被省略。context_reduction 元数据若出现仍经 subagent_event 分开汇总，不扩大权限、不共享父消息。
+
+## 阶段 3 的委派资料证据（2026-10-14）
+
+子任务通用 read 仍绑定实际执行 Session。子 Loop 调用 base Tools 的 forTurn，视觉/转写使用子任务自身最多三次请求额度，父事件通过 subagent_event 统计。成功委派返回 answer，以及实际子 read 结果的有界 attachmentReads；最多 8 条、8 KiB 来源元数据，每条最多 4 个来源链接，省略计数明确返回，不复制正文。Web UI 标记 subagent 并在父会话恢复后保留这些来源，不把子答案中的口头声称当读取证据。失败子任务仍报告失败，当前没有保存完整子历史或失败子任务来源面板。资料结构见 [DOCUMENTS.md](DOCUMENTS.md)。

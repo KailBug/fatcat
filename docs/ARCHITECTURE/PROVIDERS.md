@@ -64,15 +64,32 @@ Qwen 使用 max_tokens，是因为所选 qwen-plus 的兼容范围不统一支�
 
 这些规范约束当前小型 profile 和共享模型边界，不要求预建抽象基类、插件接口或复杂能力矩阵。
 
-## 阶段 3 的多模态输入与可选识别服务（计划，未实现）
+## 阶段 3 的图片请求与可选识别服务（已实现，离线合约已验证）
 
-2026-10-14 设计澄清：优先复用当前聊天模型的多模态能力，独立视觉/OCR 服务不作为必需配置。当前 Fatcat 的会话输入与恢复仍是文本路径；仅修改模型名称不会自动启用图片、PDF 或其他原生文件输入。具体模型能力、供应商 API 支持和 Fatcat 内容适配必须同时成立，图片与原生文件分别验证。
+2026-10-14 按此前确认的设计，`src/documents/vision.ts` 复用当前 Config 与 `createModel`，处理已获准的 PNG/JPEG 或本地渲染的 PDF 页面。`mode: visual` 回答图片问题，`mode: transcribe` 生成可复用文字。独立视觉/OCR 服务没有新增配置，也不是使用此功能的前提。详细资料、缓存和来源边界见 [DOCUMENTS.md](DOCUMENTS.md)。
 
-实施时在内容类型、历史引用、请求投影和供应商转换边界增加当前格式实际需要的能力，保留工具调用关联；不把大块原件内联到持久会话。视觉分析可直接使用获准图片/页面，需要可搜索文字时再生成可复用转写；原生提取、模型转写和解释分别标注。内容版本、页及真实定位由资料层持有，缺失的坐标或置信度不能由适配层虚构。完整边界见 [RAG.md](RAG.md)，验收见 [ROADMAP.md](../ROADMAP.md) 的 S3-02、S3-06、S3-08 和 S3-09。
+**源码事实：** `getModelInputCapabilities` 使用以下精确模型白名单，不按模型名称前缀推测能力。白名单之外在发送前返回 `DOCUMENT_VISION_UNAVAILABLE`，保留原生文本读取能力且说明未覆盖的图片/扫描内容；不会切换供应商或选用另一组凭据。
 
-复用聊天配置的视觉/转写辅助请求仍受实际 Session 作用域、材料发送范围、请求次数、字节/图片/页数、时间和输出预算约束，接入同一任务的取消与用量记录。需要新参数或内容结构时先核对官方协议，再用假凭据及注入传输检查真实请求；不因 SDK 可序列化就视作供应商支持。真实质量使用代表性样例另验，不将离线合约通过等同于识别质量通过。
+| 当前供应商 | 已适配的图片模型精确名称 | 其余情况 |
+| --- | --- | --- |
+| Kimi | `kimi-k2.6` | 其他名称没有因此获得图片适配；需独立核对非思考与工具协议 |
+| MiMo | `mimo-v2.6-flash`、`mimo-v2.6-pro`、`mimo-v2.6-pro-ultraspeed`、`mimo-v2.5` | 包括 `mimo-v2.5-pro` 在内的其他名称不猜测图片支持 |
+| Qwen | `qwen3-vl-plus`、`qwen3-vl-flash` | 默认 `qwen-plus` 保持文本路径；日期快照和其他别名不自动匹配 |
+| DeepSeek | 无 | 默认聊天配置不发送图片 |
 
-只有现有模型不可用或样例证明质量、定位、成本、延迟存在缺口时，才考虑接入独立视觉/OCR 服务，并为实际实现增加独立配置和凭据；不隐式切换厂商，不预建未使用的 provider 接口。在线 Embedding 仍与聊天独立配置，聊天视觉能力不代表检索模型支持图片。本次仅更新设计，没有添加环境变量、依赖或可用多模态配置。
+四家 `nativeFileInput` 均为 false：当前没有原生 PDF/Office 文件 API 适配。图片能力不代表原生文件、音频或多模态检索能力。已有环境变量继续选择聊天模型；没有附加视觉 Key、独立 OCR endpoint 或隐式模型发现。
+
+**请求与持久化事实：** 图片只在本次辅助请求中转换成 OpenAI-compatible `image_url` data URL。`purpose: document` 是内部选项，四家请求均省略 tools/tool_choice，不传递 purpose 字段。Session 保存的是带版本、定位和生成方式的文字结果/引用，不保存图片 base64 或 API Key；辅助请求不承接整个会话历史。文字提取标为 `model-transcription`，图像解释标为 `model-description`；两者都不能冒充精确原文或自动获得“全文已读”状态。
+
+Loop 的 `ToolTurnContext.documentRequest()` 在传输前占用同一回合的请求次数，包括本地字节拒绝，并保留最后一次回答请求。子任务沿其既有最多三次请求的额度执行，观察事件继续归入 children，不挪用父回合的额度；父子仍使用同一个 Session 资料作用域。Skills、automation、delegation 和附件包装均透传 turn context。辅助请求发送 `model_request`（purpose 为 document）、`model_input` 和 `model_usage`，消费计入现有报告；TUI/Web 的会话上下文指标不把这些孤立图片请求当作聊天历史容量。
+
+视觉设施单次最多四张图片、合计 8 MiB 二进制内容，单图像素与本地解码/渲染上限见 DOCUMENTS。资料读取按页调用，每页消耗一次辅助请求，以便单独缓存和报告部分成功。完整 JSON（包括 base64）仍受 `HARNESS_MAX_REQUEST_BYTES` 限制，默认 262144 字节；超限在发送前拒绝，不自动放宽。继续使用共享 deadline、取消、禁重试、安全错误和 2048 输出 token 上限，并拒绝超过 32 KiB 的最终文字或返回工具调用的异常响应。解析/图片上限不代表一定能装入较小的请求字节预算。
+
+**公开文档依据（2026-10-14 核对）：** [Kimi Chat API](https://platform.kimi.com/docs/api/chat) 与[视觉输入](https://platform.kimi.com/docs/guide/use-kimi-vision-model)说明多部分消息、base64 图片及模型约束；[MiMo 图片理解](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)列出上述四个模型和 base64 输入，[Chat API](https://mimo.mi.com/docs/en-US/api/chat/openai-api)约束非思考请求；[Qwen 视觉理解](https://help.aliyun.com/zh/model-studio/vision)及[OpenAI 兼容协议](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions/)支持上述 VL 模型的 image_url 与 enable_thinking。该白名单是 Fatcat 对公开协议的保守实现选择，不是所有厂商模型能力的完整清单。
+
+**验证边界：** `tests/document-vision.test.ts`、`tests/document-budget.test.ts` 与原 provider 测试使用假凭据、注入传输，验证实际 SDK JSON、认证/端点、能力拒绝、原生文件不支持、预算、取消、超时、用量及错误脱敏；没有执行真实视觉 API 请求。因此账号可用性、复杂图表理解与转写准确率没有据此得到在线验证，完整执行记录以 PROGRESS 为准。
+
+**未来计划：** 只有当前聊天视觉不可用，或代表性样例证明质量、定位、成本、延迟存在缺口时，才评估独立视觉/OCR 服务，按实际实现新增配置。在线 Embedding 仍与聊天独立配置，尚未实现；不会把聊天视觉直接当作检索模型。此处保留此前可选 OCR 的设计依据，不预建未使用的 provider 框架。
 
 ## 官方依据
 

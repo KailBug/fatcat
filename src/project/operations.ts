@@ -17,6 +17,8 @@ export interface ProjectJoinPreview {
 	attachmentCount: number;
 	attachmentRevision: number;
 	attachmentFingerprint: string;
+	memoryCount: number;
+	memoryFingerprint: string;
 	alreadyJoined: boolean;
 }
 
@@ -38,6 +40,8 @@ export function projectJoinPreview(record: SessionRecord, project: ProjectRecord
 		attachmentCount: 0,
 		attachmentRevision: 0,
 		attachmentFingerprint: "",
+		memoryCount: 0,
+		memoryFingerprint: "",
 		alreadyJoined: currentProject === project.id,
 	};
 }

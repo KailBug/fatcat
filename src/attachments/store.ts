@@ -6,8 +6,9 @@ import { projectIdOf } from "../session/record.js";
 import type { SessionRecord } from "../session/record.js";
 import type { ProjectRecord } from "../project/record.js";
 import type { ProjectSessionMove } from "../project/management.js";
+import { MemoryStore } from "../memory/store.js";
 import { AttachmentTransactions, atomicJson, boundedJson } from "./transaction.js";
-import type { AttachmentSessionAccess } from "./transaction.js";
+import type { AttachmentSessionAccess, MetadataCommit } from "./transaction.js";
 import { diskDocumentCache } from "../documents/cache.js";
 import type { DocumentCache } from "../documents/cache.js";
 import { attachmentIdPattern, attachmentMediaType, attachmentName, decodeStagedAttachment, extractAttachmentReferences, maxAttachmentBytes,
@@ -30,6 +31,11 @@ export class AttachmentStore {
 	/** SessionStore uses the same gate; callbacks inside it must use its unlocked helpers. */
 	withMetadata<T>(operation: () => Promise<T>, create = true): Promise<T> {
 		return this.transactions.withLock(operation, create);
+	}
+
+	/** The caller must hold the shared metadata gate. */
+	async isSessionDeletedUnlocked(id: string): Promise<boolean> {
+		return (await this.transactions.catalog()).deletedSessions.includes(id);
 	}
 
 	async stageUpload(target: AttachmentTarget, metadata: AttachmentUploadMetadata,
@@ -236,11 +242,14 @@ export class AttachmentStore {
 
 	/** Called only while SessionStore owns the metadata and session locks. */
 	async publishSession(record: SessionRecord, previous?: SessionRecord, forkSource?: SessionRecord,
-		expectedAttachmentRevision?: number): Promise<void> {
+		expectedAttachmentRevision?: number, expectedMemoryFingerprint?: string): Promise<void> {
 		const catalog = await this.transactions.catalog();
 		if (catalog.deletedSessions.includes(record.id)) throw new HarnessError("SESSION_NOT_FOUND", "The session was deleted and cannot be recreated by an old operation.");
 		let changed = false;
+		let memoryMove: MetadataCommit["memoryMove"];
 		if (previous && !projectIdOf(previous) && projectIdOf(record)) {
+			memoryMove = { sessionId: record.id, projectId: projectIdOf(record)! };
+			await new MemoryStore(this.root).previewSessionMove(memoryMove.sessionId, memoryMove.projectId, expectedMemoryFingerprint);
 			const privateScope: AttachmentScope = { kind: "session", sessionId: record.id };
 			const sharedScope: AttachmentScope = { kind: "project", projectId: projectIdOf(record)! };
 			const owned = catalog.bindings.filter((binding) => scopeKey(binding.scope) === scopeKey(privateScope));
@@ -278,7 +287,7 @@ export class AttachmentStore {
 			catalog.revision++;
 			changed = true;
 		}
-		if (changed) await this.transactions.commit({ catalog, writes: [record] });
+		if (changed || memoryMove) await this.transactions.commit({ catalog, writes: [record], ...(memoryMove ? { memoryMove } : {}) });
 		else await this.sessions.publish(record);
 	}
 

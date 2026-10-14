@@ -1,6 +1,6 @@
 # Session：持久对话与会话管理
 
-2026-10-13 已实现资料计划阶段 1–2：Project/Session v2 归属、统一目录、确认迁入与独立历史，以及持久附件和共享读取。附件原件/关联/pin 独立于 Session JSON；存储读写共用 metadata gate，在观察快照前恢复附件跨所有者提交。项目关联不合并历史、不恢复授权。具体实现见 [PROJECTS.md](PROJECTS.md)和[ATTACHMENTS.md](ATTACHMENTS.md)；解析、Memory、检索和音频/语音仍未实现。以下旧条目保留演进背景。
+2026-10-13 已实现资料计划阶段 1–2：Project/Session v2 归属、统一目录、确认迁入与独立历史，以及持久附件和共享读取。附件原件/关联/pin 独立于 Session JSON；存储读写共用 metadata gate，在观察快照前恢复附件跨所有者提交。项目关联不合并历史、不恢复授权。具体实现见 [PROJECTS.md](PROJECTS.md)和[ATTACHMENTS.md](ATTACHMENTS.md)；阶段 3 的解析/视觉见 [DOCUMENTS.md](DOCUMENTS.md)，阶段 4 的对话 Memory 增量见 [MEMORY.md](MEMORY.md)；检索和音频/语音仍未实现。以下旧条目保留演进背景。
 
 阶段 2 上传在成功发布时保存发起草稿，纯资料浏览仍不保存空会话；异步上传切换目标后不改变所选会话。fork 私有会话复制有效资料关联和 pin，项目 fork 复用共享范围。删除 Session 释放其私有关联/pin，不销毁项目资料；历史或 attempt 的直接版本引用按授权保留原件。迁入预览增加资料数量、修订和指纹，提交时与归属重新核对。锁序升级为 metadata gate → Project → Session 桶；旧阶段 1 实例不理解该协议，升级前须关闭，不能混合版本写入同一根。
 

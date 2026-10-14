@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { HarnessError, formatError } from "../src/errors.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import { isContextCommand, runContextCommand } from "../src/context/commands.js";
+import { isMemoryCommand, runMemoryCommand } from "../src/memory/commands.js";
 import type { ExecutionReport, ReportEvent } from "../src/execution-report.js";
 import type { Message } from "../src/model.js";
 import type { SessionManager } from "../src/session/manager.js";
@@ -152,7 +153,8 @@ export class WebUiController {
     if (!prompt.trim() || Buffer.byteLength(prompt) > 32_768) {
       throw new HarnessError("INPUT", "Enter a message of at most 32768 UTF-8 bytes.");
     }
-    const contextCommand = !automatic && isContextCommand(prompt);
+    const memoryCommand = !automatic && isMemoryCommand(prompt);
+    const contextCommand = !automatic && (isContextCommand(prompt) || memoryCommand);
     if (!automatic && !contextCommand && this.turns.filter((turn) => !turn.contextOperation).length >= 100) {
       throw new HarnessError("INPUT", "Start a new chat after 100 turns.");
     }
@@ -171,7 +173,8 @@ export class WebUiController {
     const done = Promise.resolve().then(async () => {
       try {
         const options = { signal: abort.signal, onEvent: createTurnReporter((event) => this.observe(turn, event, false, visible && !contextCommand)) };
-        turn.answer = contextCommand ? (await runContextCommand(this.session, prompt, options))!.text : automatic
+        turn.answer = memoryCommand ? (await runMemoryCommand(this.session, prompt, options))!.text
+          : contextCommand ? (await runContextCommand(this.session, prompt, options))!.text : automatic
           ? await this.session.runAutomation(automatic.task.sessionId, automatic.task.id, automatic.activation.scheduledAt, automatic.activation.paths ?? [],
             { ...options, ...(automatic.task.locationRevision === undefined ? {} : { locationRevision: automatic.task.locationRevision }) })
           : await this.session.run(prompt, options);

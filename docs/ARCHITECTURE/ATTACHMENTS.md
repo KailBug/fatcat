@@ -1,6 +1,6 @@
 # 持久附件与共享读取：阶段 2
 
-状态：2026-10-13，沿用 `feat/rag-dev`，从 `03b56d8` 实现资料计划阶段 2。本文记录实际模块和边界；验收结果以 [PROGRESS.md](../PROGRESS.md) 为准。阶段 3 的解析和视觉实现见 [DOCUMENTS.md](DOCUMENTS.md)；Memory、Embedding、音频仍未实现，研究与依赖保留在 [RAG.md](RAG.md) 和 [ROADMAP.md](../ROADMAP.md)。
+状态：2026-10-13，沿用 `feat/rag-dev`，从 `03b56d8` 实现资料计划阶段 2。本文记录实际模块和边界；验收结果以 [PROGRESS.md](../PROGRESS.md) 为准。阶段 3 的解析和视觉实现见 [DOCUMENTS.md](DOCUMENTS.md)；对话 Memory 已作为独立模块接入，见 [MEMORY.md](MEMORY.md)；Embedding、音频仍未实现，研究与依赖保留在 [RAG.md](RAG.md) 和 [ROADMAP.md](../ROADMAP.md)。
 
 ## 可用范围
 
@@ -28,7 +28,7 @@ Web UI 的 Attachments 面板提供上传、进度、取消、重试、清单、
 | `webui/attachments.ts`、`attachment-http.ts` | 短期上传 ticket、认证和有界 HTTP 流；不自行推导项目所有权 |
 | `webui/client/attachment-upload.ts`、`attachments.ts`、`markdown.ts` | 上传行生命周期、资料界面、严格引用链接与按当前 Session 重新授权的预览 |
 
-Project 持有项目身份与统一工作目录，附件 catalog 持有原件及项目/私有关联，Session 持有原历史。阶段 3 的解析快照存于 attachments/derived，原件实际永久销毁时由同一恢复事务删除派生目录；缓存读取/发布均重新检查原件授权。索引及 Memory 仍未实现，未混入原件或历史。
+Project 持有项目身份与统一工作目录，附件 catalog 持有原件及项目/私有关联，Session 持有原历史。阶段 3 的解析快照存于 attachments/derived，原件实际永久销毁时由同一恢复事务删除派生目录；缓存读取/发布均重新检查原件授权。Memory 另存于 memory/，不混入原件或历史；索引仍未实现。
 
 ## 身份、读取和覆盖
 

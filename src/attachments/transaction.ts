@@ -8,6 +8,7 @@ import { decodeProjectRecord, projectIdPattern } from "../project/record.js";
 import type { ProjectRecord } from "../project/record.js";
 import { maxProjectMembers, movedProjectSession } from "../project/management.js";
 import type { ProjectSessionMove } from "../project/management.js";
+import { MemoryStore } from "../memory/store.js";
 import { attachmentIdPattern, decodeAttachmentCatalog, emptyAttachmentCatalog, parseAttachmentReference } from "./record.js";
 import type { AttachmentCatalog, AttachmentRef } from "./record.js";
 
@@ -26,13 +27,14 @@ export interface MetadataCommit {
 	projectWrite?: ProjectRecord;
 	projectDelete?: string;
 	sessionMoves?: ProjectSessionMove[];
+	memoryMove?: { sessionId: string; projectId: string };
 }
 
 const maxCatalogBytes = 16 * 1024 * 1024;
 const maxJournalBytes = 96 * 1024 * 1024;
 const metadataQueues = new Map<string, Promise<void>>();
 
-/** One short metadata gate covers Session identity, attachment associations and recovery. */
+/** One short metadata gate covers Session identity, attachment and memory associations, and recovery. */
 export class AttachmentTransactions {
 	readonly directory: string;
 	private readonly journal: string;
@@ -81,10 +83,11 @@ export class AttachmentTransactions {
 
 	/** The journal is the durable decision. Readers recover it before observing either owner. */
 	async commit(change: MetadataCommit): Promise<void> {
-		const journal = { version: 2, catalog: change.catalog, writes: (change.writes ?? []).map(encodeSessionRecord),
+		const journal = { version: change.memoryMove ? 3 : 2, catalog: change.catalog, writes: (change.writes ?? []).map(encodeSessionRecord),
 			deletes: change.deletes ?? [], purge: change.purge ?? [], sessionMoves: change.sessionMoves ?? [],
 			...(change.projectWrite ? { projectWrite: change.projectWrite } : {}),
-			...(change.projectDelete ? { projectDelete: change.projectDelete } : {}) };
+			...(change.projectDelete ? { projectDelete: change.projectDelete } : {}),
+			...(change.memoryMove ? { memoryMove: change.memoryMove } : {}) };
 		const validated = this.decodeCommit(journal);
 		if (Buffer.byteLength(JSON.stringify(validated.catalog)) > maxCatalogBytes) {
 			throw new HarnessError("ATTACHMENT_LIMIT", "Attachment metadata exceeds the local storage limit.");
@@ -113,11 +116,11 @@ export class AttachmentTransactions {
 		try {
 			await this.apply(this.decodeCommit(raw));
 			await unlink(this.journal);
-		} catch { throw new HarnessError("ATTACHMENT_RECOVERY_PENDING", "Attachment metadata recovery could not finish. Restore storage access before continuing."); }
+		} catch { throw new HarnessError("ATTACHMENT_RECOVERY_PENDING", "Local metadata recovery could not finish. Restore storage access before continuing."); }
 	}
 
 	private decodeCommit(raw: unknown): MetadataCommit {
-		if (!isRecord(raw) || (raw.version !== 1 && raw.version !== 2) || !Array.isArray(raw.writes) || raw.writes.length > 2
+		if (!isRecord(raw) || (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) || !Array.isArray(raw.writes) || raw.writes.length > 2
 			|| !Array.isArray(raw.deletes) || raw.deletes.length > maxProjectMembers
 			|| !Array.isArray(raw.purge) || raw.purge.length > 10000) throw new HarnessError("ATTACHMENT_CORRUPT", "Invalid metadata transaction.");
 		const writes = raw.writes.map((value) => {
@@ -146,11 +149,26 @@ export class AttachmentTransactions {
 		if (sessionMoves.some((move) => move.projectId !== projectWrite?.id || move.toWorkspace !== projectWrite.workspace)
 			|| new Set(sessionMoves.map((move) => move.id)).size !== sessionMoves.length
 			|| new Set(deletes.map((item) => item.id)).size !== deletes.length) throw new Error("Invalid project members.");
+		let memoryMove: MetadataCommit["memoryMove"];
+		if (raw.memoryMove !== undefined) {
+			const value = raw.memoryMove;
+			if (raw.version !== 3 || !isRecord(value) || typeof value.sessionId !== "string" || !attachmentIdPattern.test(value.sessionId)
+				|| typeof value.projectId !== "string" || !projectIdPattern.test(value.projectId)
+				|| !writes.some((record) => record.id === value.sessionId && projectIdOf(record) === value.projectId)
+				|| deletes.some((record) => record.id === value.sessionId) || raw.projectDelete === value.projectId) {
+				throw new HarnessError("ATTACHMENT_CORRUPT", "Invalid memory scope change.");
+			}
+			memoryMove = { sessionId: value.sessionId, projectId: value.projectId };
+		}
 		return { catalog: decodeAttachmentCatalog(raw.catalog), writes, deletes, purge, sessionMoves,
-			...(projectWrite ? { projectWrite } : {}), ...(typeof raw.projectDelete === "string" ? { projectDelete: raw.projectDelete } : {}) };
+			...(projectWrite ? { projectWrite } : {}), ...(typeof raw.projectDelete === "string" ? { projectDelete: raw.projectDelete } : {}),
+			...(memoryMove ? { memoryMove } : {}) };
 	}
 
 	private async apply(change: MetadataCommit): Promise<void> {
+		if (change.memoryMove) {
+			await new MemoryStore(this.root).moveSessionToProject(change.memoryMove.sessionId, change.memoryMove.projectId);
+		}
 		for (const record of change.writes ?? []) await this.publishSession(record);
 		if (change.projectWrite) await atomicJson(join(this.root, "projects", `${change.projectWrite.id}.json`), change.projectWrite, 64 * 1024);
 		for (const move of change.sessionMoves ?? []) await this.moveSession(move);

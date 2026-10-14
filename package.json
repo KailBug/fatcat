@@ -27,6 +27,8 @@
     "verify:folder-picker": "pnpm run build && node dist/scripts/verify-folder-picker.js",
     "verify:attachments": "pnpm run build && node dist/scripts/verify-attachments.js",
     "verify:documents": "pnpm run build && node dist/scripts/verify-documents.js",
+    "verify:memory": "pnpm run build && node dist/scripts/verify-memory.js",
+    "verify:memory:live": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-memory-live.js",
     "verify:live": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-live.js"
   },
   "devDependencies": {

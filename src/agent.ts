@@ -13,6 +13,9 @@ import type { SessionAgentOptions } from "./session/agent-session.js";
 import { withAttachments } from "./attachments/tools.js";
 import type { AttachmentAccess } from "./attachments/tools.js";
 import { createDocumentVision } from "./documents/vision.js";
+import { withMemories, withMemoryContext } from "./memory/tools.js";
+import type { MemoryAccess } from "./memory/tools.js";
+import { withMemoryWriter } from "./memory/write.js";
 
 const delegationPolicy = "For straightforward questions, arithmetic, or one direct file operation, work directly. "
   + "When the task asks for independent reviews or investigations of separate components, prefer delegate_task for focused independent parts, then synthesize their findings. "
@@ -22,8 +25,9 @@ const delegationPolicy = "For straightforward questions, arithmetic, or one dire
 
 /** Assemble the CLI agent and its bounded child using the same authorized tools. */
 export function createAgent(config: Config, baseTools: Tools = defaultTools, transport?: typeof fetch,
-  skills?: SkillCatalog, identity?: SessionExecutionIdentity, attachments?: AttachmentAccess) {
-  const fileTools = attachments ? withAttachments(baseTools, attachments, createDocumentVision(config, transport)) : baseTools;
+  skills?: SkillCatalog, identity?: SessionExecutionIdentity, attachments?: AttachmentAccess, memory?: MemoryAccess) {
+  const attachmentTools = attachments ? withAttachments(baseTools, attachments, createDocumentVision(config, transport)) : baseTools;
+  const fileTools = memory ? withMemories(attachmentTools, memory) : attachmentTools;
   const sharedTools = skills ? withSkills(fileTools, skills) : fileTools;
   const skillGuidance = skills ? skillCatalogPrompt(skills) : "";
   const sharedGuidance = () => {
@@ -54,17 +58,22 @@ export function createAgent(config: Config, baseTools: Tools = defaultTools, tra
       + "A search or partial page is not full coverage. Report unsupported analysis or unread ranges; do not invent their contents." : "";
     return [workspaceGuidance, skillGuidance, permissionGuidance, browserGuidance, attachmentGuidance].filter(Boolean).join("\n\n");
   };
-  const bind = (model: Model) => identity ? withSessionIdentity(model, identity) : model;
+  const bind = (model: Model) => {
+    const scoped = identity ? withSessionIdentity(model, identity) : model;
+    return memory ? withMemoryContext(scoped, memory) : scoped;
+  };
   const childModel = bind(withGuidance(createModel(config, transport, sharedTools), sharedGuidance));
-  const tools = withAutomationTool(createSubagentTools(sharedTools, childModel, config.maxIterations));
+  const parentTools = withAutomationTool(createSubagentTools(sharedTools, childModel, config.maxIterations));
+  const tools = memory ? withMemoryWriter(parentTools) : parentTools;
   const model = bind(withGuidance(createModel(config, transport, tools),
     () => [delegationPolicy, sharedGuidance(), `Current local time: ${new Date().toString()}. For user-requested scheduled or event-triggered work, use automation to bind it to this session. Future runs continue this conversation. State the actual schedule, limits and process-lifetime requirement after successful creation.`].filter(Boolean).join("\n\n")));
   return { tools, model, maxIterations: config.maxIterations,
-    forSession: (scope: SessionExecutionIdentity, current: SessionAgentOptions, access?: AttachmentAccess): SessionAgentOptions => {
-      const bound = createAgent(config, baseTools, transport, skills, scope, access);
+    forSession: (scope: SessionExecutionIdentity, current: SessionAgentOptions, access?: AttachmentAccess, memories?: MemoryAccess): SessionAgentOptions => {
+      const bound = createAgent(config, baseTools, transport, skills, scope, access, memories);
       return { ...current,
         ...(current.tools === tools ? { tools: bound.tools } : {}),
-        model: current.model === model ? bound.model : withSessionIdentity(current.model, scope) };
+        model: current.model === model ? bound.model : memories
+          ? withMemoryContext(withSessionIdentity(current.model, scope), memories) : withSessionIdentity(current.model, scope) };
     },
     autoCompaction: config.autoCompaction ?? true,
     compactionModel: createModel(config, transport), maxRequestBytes: config.maxRequestBytes };

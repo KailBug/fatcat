@@ -5,8 +5,9 @@ import type { SkillDescriptor } from "./skills.js";
 import { SessionManager } from "./session/manager.js";
 import { contextCommandHelp, runContextCommand } from "./context/commands.js";
 import type { CompactionOptions } from "./context/compaction.js";
+import { memoryCommandHelp, runMemoryCommand } from "./memory/commands.js";
 
-export const interactiveCommandHelp = `/cron [description]: create automation in this session; /cron list|pause <id>|resume <id>|delete <id>. /skills: list available skills; ${contextCommandHelp} ${sessionCommandHelp}`;
+export const interactiveCommandHelp = `/cron [description]: create automation in this session; /cron list|pause <id>|resume <id>|delete <id>. /skills: list available skills; ${contextCommandHelp} ${memoryCommandHelp} ${sessionCommandHelp}`;
 
 export function automationCommandPrompt(prompt: string): string | undefined {
   const match = /^\/cron\s+([\s\S]+)$/.exec(prompt);
@@ -23,6 +24,8 @@ function quoted(value: string): string {
 /** Dispatch host commands; only explicit compaction may request a model summary. */
 export async function runInteractiveCommand(session: Conversation, prompt: string,
   skills: readonly SkillDescriptor[] = [], options: CompactionOptions = {}): Promise<{ text: string; switched: boolean } | undefined> {
+  const memory = await runMemoryCommand(session, prompt, options);
+  if (memory) return memory;
   const context = await runContextCommand(session, prompt, options);
   if (context) return context;
   const automation = /^\/cron(?:\s+(list|pause|resume|delete)(?:\s+(\S+))?)?\s*$/.exec(prompt);

@@ -145,7 +145,8 @@ export class ProjectDialog {
 				const paths = node("dl");
 				paths.append(node("dt", "Current folder"), node("dd", preview.fromWorkspace), node("dt", "Project folder"), node("dd", preview.toWorkspace));
 				this.preview.replaceChildren(node("p", `Move to "${preview.projectName}". Future uploads will be shared with this project. ${preview.attachmentCount} existing attachment(s) will become project-shared.`),
-					paths, node("p", "Conversation histories stay separate. Existing files are not moved or copied, and historical paths are unchanged. Future operations use the project folder with your existing permissions."),
+					paths, node("p", `${preview.memoryCount} active private Memory entry/entries become project Memory, available to all project sessions with their original sources and revisions.`),
+					node("p", "Conversation histories stay separate. Existing files are not moved or copied, and historical paths are unchanged. Future operations use the project folder with your existing permissions."),
 					node("p", preview.automationCount ? `${preview.automationCount} automation task(s) will be paused. Review them before resuming.` : "This session has no automation tasks to pause."));
 			}
 		} catch (error) {

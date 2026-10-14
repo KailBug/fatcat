@@ -29,6 +29,14 @@ import type { AttachmentReadOptions, AttachmentReadResult } from "../attachments
 import { withAttachments } from "../attachments/tools.js";
 import type { AttachmentAccess } from "../attachments/tools.js";
 import { MemoryAttachments } from "../attachments/memory.js";
+import { MemoryStore } from "../memory/store.js";
+import { memoryFingerprint } from "../memory/record.js";
+import type { MemoryRecord, MemoryScope, MemorySource } from "../memory/record.js";
+import { withMemories, withMemoryContext } from "../memory/tools.js";
+import type { MemoryAccess } from "../memory/tools.js";
+
+export type MemoryChange = { action: "add"; scope: "session" | "project" | "global"; content: string }
+	| { action: "update" | "delete"; id: string; revision: number; content?: string };
 
 export interface AttachmentUploadTarget extends AttachmentTarget {
 	name: string;
@@ -78,6 +86,7 @@ export class SessionManager {
 	private readonly launchWorkspace: string;
 	private readonly store: SessionStore;
 	private readonly temporaryAttachments: MemoryAttachments;
+	private readonly memories: MemoryStore;
 	private draftAttachmentScope: DraftAttachmentScope | undefined;
 	private readonly draftAttachmentTargets = new WeakMap<AttachmentUploadTarget, DraftAttachmentScope>();
 	private attachmentUpdates: Promise<void> = Promise.resolve();
@@ -92,6 +101,7 @@ export class SessionManager {
 		this.workspace = workspace;
 		this.launchWorkspace = workspace;
 		this.store = store;
+		this.memories = new MemoryStore(persistent ? store.root : undefined);
 		this.temporaryAttachments = new MemoryAttachments({
 			getSession: async (id) => this.runtime?.current.id === id ? this.runtime.snapshot : this.memory.get(id),
 			saveDraft: (record) => this.persist(record),
@@ -180,6 +190,77 @@ export class SessionManager {
 	}
 	get isBusy(): boolean {
 		return this.busy;
+	}
+
+	async listMemories(signal?: AbortSignal): Promise<MemoryRecord[]> {
+		const record = this.runtime.snapshot;
+		return this.memoryOperation(executionIdentity(record), () => this.memories.list(this.memoryScopes(executionIdentity(record)), signal),
+			record.revision === 0 ? record : undefined);
+	}
+
+	/** Idle host commands share the same scoped mutation boundary as active user turns. */
+	async changeMemory(change: MemoryChange, request: string, signal?: AbortSignal): Promise<MemoryRecord> {
+		let result!: MemoryRecord;
+		await this.change(async () => {
+			checkCancellation(signal);
+			await this.prepareExecution();
+			let record = this.runtime.snapshot;
+			if (record.revision === 0) {
+				record = await this.persist(record);
+				this.activate(record);
+			}
+			const identity = executionIdentity(record);
+			const source = { sessionId: record.id, request, turn: sessionSummary(record).turnCount };
+			result = await this.applyMemoryChange(identity, change, source, signal);
+		});
+		return result;
+	}
+
+	private applyMemoryChange(identity: SessionExecutionIdentity, change: MemoryChange, source: MemorySource,
+		signal?: AbortSignal, owner?: { ownerPid: number; startedAt: string }): Promise<MemoryRecord> {
+		return this.memoryOperation(identity, async () => {
+			checkCancellation(signal);
+			if (source.sessionId !== identity.sessionId) throw new HarnessError("MEMORY_SOURCE", "Memory source must belong to the executing session.");
+			const records = await this.memories.list(this.memoryScopes(identity), signal);
+			if (change.action === "add") {
+				if (identity.projectId && change.scope === "session") {
+					throw new HarnessError("INVALID_ARGUMENTS", "Project session Memory belongs to the project. Choose project or global explicitly.");
+				}
+				const scope = this.memoryScopes(identity).find((scope) => scope.kind === change.scope);
+				if (!scope) throw new HarnessError("INVALID_ARGUMENTS", "Project Memory requires a project session.");
+				const existing = records.find((record) => record.scope.kind === scope.kind && record.status === "active" && record.content === change.content);
+				return existing ?? this.memories.create(scope, change.content, source, signal);
+			}
+			const existing = records.find((record) => record.id === change.id);
+			if (!existing) throw new HarnessError("MEMORY_NOT_FOUND", "No Memory entry is available in this session's scope.");
+			if (change.action === "update" && change.content === undefined) throw new HarnessError("INVALID_ARGUMENTS", "Updated Memory content is required.");
+			return this.memories.update(existing.scope, existing.id, change.revision,
+				change.action === "delete" ? null : change.content!, source, signal);
+		}, undefined, owner);
+	}
+
+	private async memoryJoinState(record: SessionRecord): Promise<Pick<ProjectJoinPreview, "memoryCount" | "memoryFingerprint">> {
+		const entries = await this.memoryOperation(executionIdentity(record),
+			() => this.memories.list([{ kind: "session", id: record.id }]), record.revision === 0 ? record : undefined);
+		return { memoryCount: entries.filter((entry) => entry.status === "active").length,
+			memoryFingerprint: memoryFingerprint(entries) };
+	}
+
+	private memoryScopes(identity: SessionExecutionIdentity): MemoryScope[] {
+		return [identity.projectId ? { kind: "project", id: identity.projectId } : { kind: "session", id: identity.sessionId },
+			{ kind: "global" }];
+	}
+
+	private memoryOperation<T>(identity: SessionExecutionIdentity, operation: () => Promise<T>, draft?: SessionRecord,
+		owner?: { ownerPid: number; startedAt: string }): Promise<T> {
+		if (this.persistent) return this.store.withMemorySession(identity, operation, draft, owner);
+		const record = this.runtime.snapshot;
+		if (identity.sessionId !== record.id || identity.locationRevision !== (record.locationRevision ?? 0)) {
+			throw new HarnessError("MEMORY_SCOPE_CHANGED", "The temporary session's Memory scope changed.");
+		}
+		if (owner && (record.attempt?.status !== "running" || record.attempt.ownerPid !== owner.ownerPid
+			|| record.attempt.startedAt !== owner.startedAt)) throw new HarnessError("MEMORY_SOURCE", "The temporary user turn no longer owns this Memory operation.");
+		return operation();
 	}
 
 	async listAutomations(): Promise<SessionAutomation[]> {
@@ -389,6 +470,7 @@ export class SessionManager {
 			const project = await this.selectProject(projectId);
 			await this.prepareWorkspace(project.workspace);
 			preview = projectJoinPreview(record, project);
+			Object.assign(preview, await this.memoryJoinState(record));
 			if (record.revision > 0) {
 				const sharing = await this.store.attachments.sharingState(executionIdentity(record));
 				preview.attachmentCount = sharing.count;
@@ -407,6 +489,7 @@ export class SessionManager {
 			const project = await this.store.projects.load(preview.projectId);
 			if (projectIdOf(selected) === project.id) return;
 			const current = projectJoinPreview(selected, project);
+			Object.assign(current, await this.memoryJoinState(selected));
 			if (selected.revision > 0) {
 				const sharing = await this.store.attachments.sharingState(executionIdentity(selected));
 				current.attachmentCount = sharing.count;
@@ -419,7 +502,7 @@ export class SessionManager {
 			const agent = await this.prepareWorkspace(project.workspace);
 			const updated = joinedProjectRecord(selected, project);
 			const saved = selected.revision === 0 ? updated : await this.persist(updated, undefined,
-				{ attachmentRevisionExpected: preview.attachmentRevision });
+				{ attachmentRevisionExpected: preview.attachmentRevision, memoryFingerprintExpected: preview.memoryFingerprint });
 			if (selected.id === this.current.id) {
 				this.agent = agent;
 				this.activate(saved);
@@ -759,6 +842,8 @@ export class SessionManager {
 
 	private activate(record: SessionRecord): void {
 		const identity = executionIdentity(record);
+		const memory: MemoryAccess = { list: (signal) => this.memoryOperation(identity,
+			() => this.memories.list(this.memoryScopes(identity), signal), record.revision === 0 ? record : undefined) };
 		const access: AttachmentAccess = {
 			list: async (signal) => {
 				checkCancellation(signal);
@@ -768,13 +853,17 @@ export class SessionManager {
 				return this.readDocument(identity, reference, options, true);
 			},
 		};
-		const agent = this.agent.forSession ? this.agent.forSession(identity, this.agent, access)
-			: { ...this.agent, ...(this.agent.tools ? { tools: withAttachments(this.agent.tools, access) } : {}),
-				model: withSessionIdentity(this.agent.model, identity) };
+		const agent = this.agent.forSession ? this.agent.forSession(identity, this.agent, access, memory)
+			: { ...this.agent, ...(this.agent.tools ? { tools: withMemories(withAttachments(this.agent.tools, access), memory) } : {}),
+				model: withMemoryContext(withSessionIdentity(this.agent.model, identity), memory) };
 		const runtime = new AgentSession(record, agent, {
 			persistent: this.persistent,
 			saveRecord: (next, options) => this.persist(next, undefined, options),
 			listAutomations: () => this.listAutomations(),
+			changeMemory: (request, source, owner, signal) => this.applyMemoryChange(identity,
+				request.action === "add" ? { action: "add", scope: request.scope ?? (identity.projectId ? "project" : "session"), content: request.content }
+					: { action: request.action, id: request.id, revision: request.revision,
+						...(request.action === "update" ? { content: request.content } : {}) }, source, signal, owner),
 		});
 		const draftScope = this.draftAttachmentScope;
 		if (draftScope?.identity.sessionId === identity.sessionId && !sameAttachmentTarget(draftScope.identity, identity)) {

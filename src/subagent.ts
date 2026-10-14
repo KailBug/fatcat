@@ -1,9 +1,44 @@
 import { HarnessError, checkCancellation } from "./errors.js";
-import { runAgent } from "./loop.js";
+import { runAgentTurn } from "./loop.js";
 import type { LoopEvent } from "./loop.js";
-import type { Model } from "./model.js";
-import type { Tools, ToolResult } from "./tools.js";
+import type { Model, Message } from "./model.js";
+import type { Tools, ToolResult, ToolTurnContext } from "./tools.js";
 import { failure } from "./tools/types.js";
+import type { JsonValue } from "./tools/types.js";
+
+/** Carry bounded source metadata out of child history without embedding document bodies. */
+function attachmentEvidence(messages: Message[]): { attachmentReads: JsonValue[]; omittedAttachmentReads: number } {
+  const reads = new Set<string>();
+  const attachmentReads: JsonValue[] = [];
+  let omittedAttachmentReads = 0;
+  let bytes = 0;
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      for (const call of message.tool_calls ?? []) if (call.type === "function" && call.function.name === "read") reads.add(call.id);
+    }
+    if (message.role !== "tool" || !reads.delete(message.tool_call_id) || typeof message.content !== "string") continue;
+    try {
+      const value = JSON.parse(message.content);
+      const result = value?.result;
+      if (value?.ok !== true || !result || !["document", "file", "search"].includes(result.kind)
+        || typeof result.path !== "string" || !result.path.startsWith("attachment:")) continue;
+      const { content: _content, units, matches, ...metadata } = result;
+      const locations = (items: unknown[]) => items.slice(0, 4).map((item) => {
+        if (!item || typeof item !== "object") return {};
+        const { text: _text, ...location } = item as Record<string, unknown>;
+        return location;
+      });
+      const evidence = { ...metadata,
+        ...(Array.isArray(units) ? { units: locations(units), sourceLocationCount: units.length } : {}),
+        ...(Array.isArray(matches) ? { matches: locations(matches), sourceLocationCount: matches.length } : {}) };
+      const size = Buffer.byteLength(JSON.stringify(evidence));
+      if (attachmentReads.length >= 8 || bytes + size > 8192) { omittedAttachmentReads++; continue; }
+      attachmentReads.push(evidence as JsonValue);
+      bytes += size;
+    } catch { /* Unknown child output remains in its answer, not promoted to source evidence. */ }
+  }
+  return { attachmentReads, omittedAttachmentReads };
+}
 
 /** Add one level of delegation while keeping child tools and history separate. */
 export function createSubagentTools(baseTools: Tools, childModel: Model, maxIterations: number): Tools {
@@ -23,12 +58,13 @@ export function createSubagentTools(baseTools: Tools, childModel: Model, maxIter
     },
   }];
 
-  function forTurn(onEvent?: (event: LoopEvent) => void): Tools {
+  function forTurn(onEvent?: (event: LoopEvent) => void, context?: ToolTurnContext): Tools {
     let started = 0;
+    const turnBase = baseTools.forTurn?.(onEvent, context) ?? baseTools;
 
     async function execute(name: string, argumentsJson: string, signal?: AbortSignal, callId?: string): Promise<ToolResult> {
       checkCancellation(signal);
-      if (name !== "delegate_task") return baseTools.execute(name, argumentsJson, signal, callId);
+      if (name !== "delegate_task") return turnBase.execute(name, argumentsJson, signal, callId);
       let args: unknown;
       try {
         args = JSON.parse(argumentsJson);
@@ -44,14 +80,15 @@ export function createSubagentTools(baseTools: Tools, childModel: Model, maxIter
       const id = callId ?? `subagent-${started + 1}`;
       started++;
       try {
-        const answer = await runAgent(args.task, {
+        const child = await runAgentTurn(args.task, [], {
           model: childModel, tools: baseTools, maxIterations: Math.min(3, maxIterations),
           ...(signal ? { signal } : {}),
           onEvent: (event) => onEvent?.({ type: "subagent_event", callId: id, event }),
         });
         checkCancellation(signal);
-        if (answer.length > 12000) return failure("SUBAGENT_OUTPUT_LIMIT", "The subagent answer exceeded 12000 characters.");
-        return { ok: true, result: { answer } };
+        if (child.answer.length > 12000) return failure("SUBAGENT_OUTPUT_LIMIT", "The subagent answer exceeded 12000 characters.");
+        const evidence = attachmentEvidence(child.messages);
+        return { ok: true, result: { answer: child.answer, ...(evidence.attachmentReads.length || evidence.omittedAttachmentReads ? evidence : {}) } };
       } catch (error) {
         checkCancellation(signal);
         if (error instanceof HarnessError && error.code === "CANCELLED") throw error;

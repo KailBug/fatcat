@@ -12,6 +12,7 @@ import type { SessionExecutionIdentity } from "./session/execution.js";
 import type { SessionAgentOptions } from "./session/agent-session.js";
 import { withAttachments } from "./attachments/tools.js";
 import type { AttachmentAccess } from "./attachments/tools.js";
+import { createDocumentVision } from "./documents/vision.js";
 
 const delegationPolicy = "For straightforward questions, arithmetic, or one direct file operation, work directly. "
   + "When the task asks for independent reviews or investigations of separate components, prefer delegate_task for focused independent parts, then synthesize their findings. "
@@ -22,7 +23,7 @@ const delegationPolicy = "For straightforward questions, arithmetic, or one dire
 /** Assemble the CLI agent and its bounded child using the same authorized tools. */
 export function createAgent(config: Config, baseTools: Tools = defaultTools, transport?: typeof fetch,
   skills?: SkillCatalog, identity?: SessionExecutionIdentity, attachments?: AttachmentAccess) {
-  const fileTools = attachments ? withAttachments(baseTools, attachments) : baseTools;
+  const fileTools = attachments ? withAttachments(baseTools, attachments, createDocumentVision(config, transport)) : baseTools;
   const sharedTools = skills ? withSkills(fileTools, skills) : fileTools;
   const skillGuidance = skills ? skillCatalogPrompt(skills) : "";
   const sharedGuidance = () => {

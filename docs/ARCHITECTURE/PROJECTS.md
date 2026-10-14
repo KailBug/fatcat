@@ -1,6 +1,6 @@
 # Project 与 Session 关联：阶段 1
 
-状态：2026-10-13，**阶段 1 最小闭环已实现并通过离线及真实 Edge 验证**，起点为 `feat/rag-dev` 的 `21ca226`。阶段 2 随后从 `03b56d8` 接入持久附件及项目共享，见 [ATTACHMENTS.md](ATTACHMENTS.md)；本文已同步涉及迁入/锁序/fork 的新边界。阶段编号指 [资料与 RAG 计划](RAG.md)，Memory、检索仍未实现。
+状态：2026-10-13，**阶段 1 最小闭环已实现并通过离线及真实 Edge 验证**，起点为 `feat/rag-dev` 的 `21ca226`。阶段 2 随后从 `03b56d8` 接入持久附件及项目共享，见 [ATTACHMENTS.md](ATTACHMENTS.md)；本文已同步涉及迁入/锁序/fork 的新边界。阶段编号指 [资料与 RAG 计划](RAG.md)，阶段 4 已加入对话 Memory 增量与迁入时自动项目共享，见 [MEMORY.md](MEMORY.md)；检索仍未实现。
 
 阶段 1 原先采用项目目录创建后固定、不开放项目删除的最小范围。2026-10-13 用户追加项目管理需求后，已实现 Web UI 项目菜单的重命名、项目级改目录和确认级联删除；阶段 2 的资料所有权与恢复协议随之扩展，详见第 8 节。解除关联和跨项目迁移仍未开放。CLI/chat/TUI/Web UI 复用 SessionManager。`src/project/{record,store,operations,management}.ts` 持有项目记录、原子存储、迁入转换和管理预览；Session 持有归属、历史和执行领取；`src/session/execution.ts` 配合 `createAgent.forSession` 绑定父子执行身份。使用入口见 [USAGE.md](../USAGE.md#projects-and-session-scope)。
 
@@ -121,7 +121,7 @@ Project 元数据短锁用于项目创建/修改及关联发布时的存在性�
 
 ## 5. 操作行为与真正待定的产品问题
 
-用户授权依文档实施后，本增量采用下表最小范围；未开放能力仍是未来产品问题，不以隐藏入口实现。表中对未来资料/Memory 处理的推荐尚未实施。
+用户授权依文档实施后，本增量采用下表最小范围；未开放能力仍是未来产品问题，不以隐藏入口实现。解除关联等未来建议尚未实施；已确认迁入时私有 Memory 自动归项目，并保留来源和修订。
 
 | 操作 | 阶段 1 实际范围 / 后续建议 | 后续问题及影响 |
 | --- | --- | --- |

@@ -106,6 +106,7 @@ async function runProjectCommand(session: SessionManager, argument?: string): Pr
     `Current workspace: ${quoted(preview.fromWorkspace)}`,
     `Project workspace: ${quoted(preview.toWorkspace)}`,
     `Future uploads will be shared with this project. ${preview.attachmentCount} existing private attachment association(s) become project-shared. Session histories stay separate.`,
+    `${preview.memoryCount} active private Memory entry/entries become project Memory, available to all project sessions. Original sources and revisions are preserved.`,
     "Workspace files will not be moved or copied. Past messages and source paths will not be rewritten. Tool permissions do not change.",
     `${preview.automationCount} existing automation(s) will be paused for review.`,
     `Confirm with /project confirm ${token}, or use /project cancel.`,

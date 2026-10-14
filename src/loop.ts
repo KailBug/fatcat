@@ -14,7 +14,7 @@ export type LoopEvent =
   | { type: "shell_record"; record: CommandEventRecord }
   | { type: "write_record"; record: WriteRecord }
   | { type: "browser_record"; record: BrowserRecord }
-  | { type: "model_request"; iteration: number; purpose?: "compaction" }
+  | { type: "model_request"; iteration: number; purpose?: "compaction" | "document" }
   | { type: "compaction_start"; reason: "request_limit" }
   | { type: "compaction_end"; requests: number; beforeBytes: number; afterBytes: number }
   | { type: "tool_result"; iteration: number; callId: string; tool: string; ok: boolean }
@@ -59,7 +59,16 @@ export async function runAgentTurn(
   const seenCallIds = new Set<string>();
   let compaction = options.compaction;
   let compactionAttempted = false;
-  const turnTools = tools.forTurn?.(onEvent) ?? tools;
+  let requests = 0;
+  const turnTools = tools.forTurn?.(onEvent, {
+    documentRequest: () => {
+      checkCancellation(signal);
+      if (requests >= maxIterations - 1) throw new HarnessError("DOCUMENT_BUDGET", "No document request remains in this turn. One request is reserved for the final response; report uncovered pages.");
+      const iteration = ++requests;
+      onEvent?.({ type: "model_request", iteration, purpose: "document" });
+      return (event) => onEvent?.({ ...event, iteration });
+    },
+  }) ?? tools;
   const loggedWrites = new Map((turnTools.getWrites?.() ?? []).map((record) => [record.id, JSON.stringify(record)]));
   const loggedCommands = new Set((turnTools.getCommands?.() ?? []).map((record) => record.id));
   const loggedBrowsers = new Set((turnTools.getBrowserChecks?.() ?? []).map((record) => record.id));
@@ -88,7 +97,8 @@ export async function runAgentTurn(
       throw new HarnessError("CONFIG", "maxIterations must be a positive safe integer.");
     }
     if (options.onCheckpoint) await options.onCheckpoint(structuredClone(messages));
-    for (let iteration = 1; iteration <= maxIterations; iteration++) {
+    while (requests < maxIterations) {
+      const iteration = ++requests;
       checkCancellation(signal);
       onEvent?.({ type: "model_request", iteration });
       const writes = turnTools.getWrites?.() ?? [];
@@ -127,7 +137,7 @@ export async function runAgentTurn(
         const recovered = await options.onContextLimit(available, iteration);
         if (!recovered) throw error;
         compaction = recovered.compaction;
-        iteration += recovered.requests;
+        requests += recovered.requests;
         continue;
       }
       checkCancellation(signal);

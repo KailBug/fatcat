@@ -14,6 +14,7 @@ import { joinedProjectRecord, projectJoinPreview } from "../project/operations.j
 import type { ProjectJoinPreview } from "../project/operations.js";
 import type { ProjectDeletePreview, ProjectWorkspacePreview } from "../project/management.js";
 import { executionIdentity, withSessionIdentity } from "./execution.js";
+import type { SessionExecutionIdentity } from "./execution.js";
 import type { CompactionOptions, CompactionResult } from "../context/compaction.js";
 import type { ContextStatus } from "../context/manager.js";
 import { taskIsEnabled } from "../automation/tasks.js";
@@ -22,7 +23,8 @@ import { FileChanges } from "../automation/files.js";
 import type { SkillCatalog } from "../skills.js";
 import { attachmentName, attachmentMediaType, attachmentIdPattern, maxAttachmentBytes, parseAttachmentReference, sameAttachmentTarget } from "../attachments/record.js";
 import type { AttachmentInfo, AttachmentTarget, StagedAttachment } from "../attachments/record.js";
-import { readAttachmentContent } from "../attachments/read.js";
+import { readDocumentContent } from "../documents/read.js";
+import type { DocumentCache } from "../documents/cache.js";
 import type { AttachmentReadOptions, AttachmentReadResult } from "../attachments/read.js";
 import { withAttachments } from "../attachments/tools.js";
 import type { AttachmentAccess } from "../attachments/tools.js";
@@ -499,9 +501,20 @@ export class SessionManager {
 
 	async readAttachment(reference: string, options: AttachmentReadOptions & { sessionId?: string; signal?: AbortSignal } = {}): Promise<AttachmentReadResult> {
 		const record = await this.joinTarget(options.sessionId);
-		const source = await this.attachments.read(executionIdentity(record), parseAttachmentReference(reference), {
-			...(options.signal ? { signal: options.signal } : {}), ...(record.revision === 0 ? { draft: record } : {}) });
-		return readAttachmentContent(source.attachment, source.bytes, options, options.signal);
+		return this.readDocument(executionIdentity(record), reference, options, false, record.revision === 0 ? record : undefined);
+	}
+
+	private async readDocument(identity: SessionExecutionIdentity, reference: string, options: Parameters<AttachmentAccess["read"]>[1],
+		pin: boolean, draft?: SessionRecord): Promise<AttachmentReadResult> {
+		const ref = parseAttachmentReference(reference);
+		const source = await this.attachments.read(identity, ref, { pin, ...(options.signal ? { signal: options.signal } : {}), ...(draft ? { draft } : {}) });
+		const access = <T>(operation: (cache: DocumentCache) => Promise<T>) => {
+			checkCancellation(options.signal);
+			return this.attachments.withDocumentCache(identity, ref, operation, draft);
+		};
+		const cache: DocumentCache = { load: (version) => access((value) => value.load(version)),
+			transcripts: () => access((value) => value.transcripts()), save: (snapshot, page) => access((value) => value.save(snapshot, page)) };
+		return readDocumentContent(source.attachment, source.bytes, options, cache, options.signal, options.vision, options.turn);
 	}
 
 	async downloadAttachment(sessionId: string, reference: string, signal?: AbortSignal): Promise<{ record: AttachmentInfo; bytes: Uint8Array }> {
@@ -752,8 +765,7 @@ export class SessionManager {
 				return this.attachments.list(identity);
 			},
 			read: async (reference, options) => {
-				const source = await this.attachments.read(identity, parseAttachmentReference(reference), { pin: true, ...(options.signal ? { signal: options.signal } : {}) });
-				return readAttachmentContent(source.attachment, source.bytes, options, options.signal);
+				return this.readDocument(identity, reference, options, true);
 			},
 		};
 		const agent = this.agent.forSession ? this.agent.forSession(identity, this.agent, access)

@@ -3,11 +3,19 @@ import { setImmediate } from "node:timers/promises";
 import { HarnessError, checkCancellation } from "../errors.js";
 import { attachmentReference, maxAttachmentBytes } from "./record.js";
 import type { AttachmentInfo } from "./record.js";
+import type { DocumentReadResult } from "../documents/read.js";
 
 export interface AttachmentReadOptions {
 	offset?: number;
 	limit?: number;
 	query?: string;
+	parserVersion?: string;
+	unit?: string;
+	pages?: number[];
+	sheet?: string;
+	section?: string;
+	mode?: "text" | "visual" | "transcribe";
+	question?: string;
 }
 
 export type AttachmentReadResult = {
@@ -38,12 +46,12 @@ export type AttachmentReadResult = {
 	skippedFiles: number;
 	complete: boolean;
 	coverage: { mode: "literal-search"; complete: boolean };
-};
+} | DocumentReadResult;
 
 export const attachmentPageBytes = 16 * 1024;
 const textExtensions = new Set([".md", ".markdown", ".txt"]);
 
-export function attachmentReadOptions(options: AttachmentReadOptions): Required<Pick<AttachmentReadOptions, "offset" | "limit">> & Pick<AttachmentReadOptions, "query"> {
+export function attachmentReadOptions(options: AttachmentReadOptions): AttachmentReadOptions & Required<Pick<AttachmentReadOptions, "offset" | "limit">> {
 	const offset = options.offset === undefined ? 0 : options.offset;
 	const limit = options.limit === undefined ? 100 : options.limit;
 	if (typeof offset !== "number" || !Number.isSafeInteger(offset) || offset < 0
@@ -55,7 +63,28 @@ export function attachmentReadOptions(options: AttachmentReadOptions): Required<
 		|| Buffer.from(options.query, "utf8").toString("utf8") !== options.query)) {
 		throw new HarnessError("INVALID_ARGUMENTS", "query must be a non-blank, well-formed single-line literal containing at most 512 characters.");
 	}
-	return { offset, limit, ...(options.query !== undefined ? { query: options.query } : {}) };
+	for (const value of [options.parserVersion, options.unit]) {
+		if (value !== undefined && (typeof value !== "string" || !/^[a-zA-Z0-9._-]{1,96}(?![\s\S])/.test(value))) {
+			throw new HarnessError("INVALID_ARGUMENTS", "Parse versions and unit IDs must be bounded document identifiers.");
+		}
+	}
+	for (const value of [options.sheet, options.section, options.question]) {
+		if (value !== undefined && (typeof value !== "string" || !value.trim() || value.length > 2000 || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value))) {
+			throw new HarnessError("INVALID_ARGUMENTS", "Document selectors and questions must be non-blank text up to 2000 characters.");
+		}
+	}
+	if (options.pages !== undefined && (!Array.isArray(options.pages) || !options.pages.length || options.pages.length > 200
+		|| options.pages.some((page) => !Number.isSafeInteger(page) || page < 1 || page > 200)
+		|| new Set(options.pages).size !== options.pages.length)) throw new HarnessError("INVALID_ARGUMENTS", "pages must contain unique one-based page or slide numbers from 1 to 200.");
+	if (options.mode !== undefined && !["text", "visual", "transcribe"].includes(options.mode)) throw new HarnessError("INVALID_ARGUMENTS", "Use text, visual, or transcribe mode.");
+	if ((options.mode === "visual" || options.mode === "transcribe") && (options.parserVersion !== undefined || options.unit !== undefined
+		|| options.sheet !== undefined || options.section !== undefined || options.query !== undefined
+		|| (options.offset !== undefined && options.offset !== 0) || (options.limit !== undefined && options.limit !== 100))) {
+		throw new HarnessError("INVALID_ARGUMENTS", "Visual reads accept only path, mode, selected pages, and an optional question. Source previews and searches never start recognition.");
+	}
+	if (options.question !== undefined && options.mode !== "visual") throw new HarnessError("INVALID_ARGUMENTS", "question is only available for visual analysis; transcription preserves the original task.");
+	return { offset, limit, ...Object.fromEntries(Object.entries(options).filter(([key, value]) => value !== undefined
+		&& ["query", "parserVersion", "unit", "pages", "sheet", "section", "mode", "question"].includes(key))) };
 }
 
 /** Keep complete items so following nextOffset never skips hidden text. */

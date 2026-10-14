@@ -4,7 +4,7 @@
 
 架构文档统一放在 `docs/ARCHITECTURE/` 下，本文件作为总览和索引，记录整体边界、跨系统关系及共享决策。
 
-- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md`、`WEBUI.md`、`BROWSER.md`、`AUTOMATION.md`、`PROJECTS.md`、`ATTACHMENTS.md`、`DOCUMENTS.md`，以及后续资料计划 `RAG.md`；其他系统文档在需要时建立。
+- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md`、`WEBUI.md`、`BROWSER.md`、`AUTOMATION.md`、`PROJECTS.md`、`ATTACHMENTS.md`、`DOCUMENTS.md`、`MEMORY.md`，以及后续资料计划 `RAG.md`；其他系统文档在需要时建立。
 - 系统文档记录该系统的职责、设计决策、接口与数据流，以及分步实现安排和验收方式；按当前需要展开，不要求提前填满所有内容。
 - 每份文档明确区分当前已实现内容和计划设计，具体实现安排也标注状态；验证与完成事实以 [PROGRESS.md](../PROGRESS.md) 为准，避免重复维护进度记录。
 - 新增系统文档时更新本文件的索引。项目阶段目标仍放在 [ROADMAP.md](../ROADMAP.md)，系统内部的实现安排放在对应架构文档中。
@@ -28,11 +28,13 @@
 
 ## 当前文档索引
 
-2026-10-14 实现阶段 3：[DOCUMENTS.md](DOCUMENTS.md) 记录本地现代 Office/PDF/Markdown 解析、同聊天模型图片与选定页面理解、按需转写缓存、通用读取/搜索、固定来源版本和覆盖。复用现有 Loop、Session 作用域和用量，派生数据由 `src/documents/` 持有，附件所有者负责授权及删除。真实模型识别质量未验收；Memory、Embedding、音频和语音入口仍为计划。
+2026-10-14 阶段 4 当前增量见 [MEMORY.md](MEMORY.md)：父模型通过通用 `write` 保存当前用户直接提供的持久事实、定义、偏好及决定，不要求 `/memory`；主机命令保留为可选管理。`src/memory/` 独立保存作用域、来源、证据及完整修订，通用 `read` 和每次父子请求的有界 notice 使用当前状态。子任务/自动任务不能变更，普通文件权限不变。用户已确认迁入项目时全部私有 Memory 自动归项目所有，v3 元数据日志协调归属与故障恢复。固定真实 DeepSeek 的旧拒绝后保存、项目独立历史共享/重启和隔离已通过；自动提炼、语义选取和物理孤立范围清理未实现，广泛真实任务质量待评估，阶段 4 尚未整体完成；最终检查以 PROGRESS 为准。
+
+2026-10-14 实现阶段 3：[DOCUMENTS.md](DOCUMENTS.md) 记录本地现代 Office/PDF/Markdown 解析、同聊天模型图片与选定页面理解、按需转写缓存、通用读取/搜索、固定来源版本和覆盖。复用现有 Loop、Session 作用域和用量，派生数据由 `src/documents/` 持有，附件所有者负责授权及删除。真实模型识别质量未验收；显式 Memory 随后独立接入，Embedding、音频和语音入口仍为计划。
 
 2026-10-14 的阶段 3 设计补充：图片/扫描页优先复用已验证的聊天多模态能力，独立视觉/OCR 服务按需接入；文字提取可由多模态模型完成，与部署专用 OCR 服务分开。来源、覆盖、派生版本及预算要求继续保留，文本检索与原生多模态检索分别验收。详见 [RAG.md](RAG.md)、[PROVIDERS.md](PROVIDERS.md) 和 [ROADMAP.md](../ROADMAP.md)；该条保留此前设计依据；视觉适配随后按 DOCUMENTS.md 实现，检索仍未实现。
 
-2026-10-13 的 [PROJECTS.md](PROJECTS.md) 记录阶段 1：显式项目、统一目录、Session v2 兼容、确认迁入与执行身份；[ATTACHMENTS.md](ATTACHMENTS.md) 记录当前阶段 2：不可变原件、项目/私有关联、上传/导入、有界文本读取、来源及删除保护。`src/attachments/` 独立持有资料，Session 持有历史与归属，两者由短元数据锁和恢复日志协调。Agent 在目录 Tools 缓存之外绑定实际父子执行范围。[RAG.md](RAG.md) 保留后续解析/索引/Memory 所有者及 nanobot/pi/Codex 研究。八阶段依赖和验收见 [ROADMAP.md](../ROADMAP.md)；Office/PDF 解析与视觉适配随后进入阶段 3；Memory、检索及音频尚未实现。
+2026-10-13 的 [PROJECTS.md](PROJECTS.md) 记录阶段 1：显式项目、统一目录、Session v2 兼容、确认迁入与执行身份；[ATTACHMENTS.md](ATTACHMENTS.md) 记录阶段 2：不可变原件、项目/私有关联、上传/导入、有界文本读取、来源及删除保护。`src/attachments/` 独立持有资料，Session 持有历史与归属，两者由短元数据锁和恢复日志协调。Agent 在目录 Tools 缓存之外绑定实际父子执行范围。[RAG.md](RAG.md) 保留资料/Memory/索引所有者及 nanobot/pi/Codex 研究。八阶段依赖和验收见 [ROADMAP.md](../ROADMAP.md)；Office/PDF 解析与视觉适配随后进入阶段 3，显式 Memory 进入阶段 4 首个增量；检索及音频尚未实现。
 
 同日追加项目管理已开放重命名、项目统一改目录和确认级联删除；Web UI 项目菜单复用 SessionManager，目录 patch/项目/附件元数据共用读前恢复。删除保留工作目录文件及仍被外部会话引用的原件。原生目录选择器补齐 PMv2 和隐藏 owner，修复缩放模糊及 PowerShell 任务栏按钮；真实 Win32 与 Edge 分别验证，见 PROJECTS 第 8 节和 PROGRESS。
 
@@ -57,9 +59,14 @@
 | [PROJECTS.md](PROJECTS.md) | 阶段 1 项目归属、唯一目录、持久兼容、迁入与执行身份 | 最小范围已实现，离线及真实 Edge 验证通过，待 review |
 | [ATTACHMENTS.md](ATTACHMENTS.md) | 阶段 2 持久原件、共享/隔离、通用文本读取、来源与生命周期 | 已实现；验证与限制见 PROGRESS |
 | [DOCUMENTS.md](DOCUMENTS.md) | 阶段 3 本地文档解析、同模型视觉/转写、固定来源、缓存与覆盖 | 已实现；本地/注入 SDK/Edge 验证见 PROGRESS，真实模型质量未验收 |
-| [RAG.md](RAG.md) | 资料所有权、解析/视觉/Memory/检索/音频边界与参考研究 | 阶段 1–3 已接入；Memory/检索/音频等仍是计划 |
+| [MEMORY.md](MEMORY.md) | 阶段 4 直接用户事实的自然语言保存、可选主机 CRUD、作用域/来源修订、请求状态与迁入恢复 | 当前增量和固定 DeepSeek live 场景已验；广泛质量待评估，阶段未整体完成 |
+| [RAG.md](RAG.md) | 资料所有权、解析/视觉/Memory/检索/音频边界与参考研究 | 阶段 1–3 及 Memory 当前增量已接入；自动提炼/检索/音频等仍是计划 |
 
 ## 当前实现
+
+2026-10-14 的 `src/memory/` 使用有界独立记录，父会话通用 write 绑定当前用户原话证据、实际 attempt 所有权和每回合 8 次尝试预算；子请求只读，`/memory` 可直接管理。`SessionStore.withMemorySession` 在 metadata gate 内核对身份与回合 owner；MemoryStore 另持作用域文件锁及原子 JSON。归属迁入通过同一恢复日志协调，保留来源/tombstone，并让项目所有 Session 使用；请求 notice 不进入成功历史，计入完整 SDK 字节预算。证据匹配证明出处而非语义意图，不新增专用工具或依赖，详见 [MEMORY.md](MEMORY.md)。
+
+当前 Memory 能力由每次请求的 SDK Schema 与能力说明决定，旧 assistant 的拒绝声明保留为历史，不能覆盖本次可用工具。保留的 Memory 地址操作元数据，工作区文件 read-only/Plan 和文件审批不禁用该路径。生产 `workspaceAgentFactory` 增加可选 fetch transport 参数，用同一工厂验证三种权限模式、旧拒绝历史和重启/项目隔离；固定真实 DeepSeek 验收也经该路径执行，见 MEMORY 第 6 节。
 
 2026-10-12 增加本地字节超限后的自动 compact：Model 提供拒绝证据，Loop 保留执行现场并最多请求一次恢复，Session 使用既有摘要模块，AgentSession 保存后发布候选。摘要请求与续跑共用回合额度，事件及消费经 CLI/TUI/Web UI 原报告链展示，摘要输入 token 不作为对话容量。默认开启、可配置关闭；不重试供应商错误或重放工具，见 [CONTEXT.md](CONTEXT.md)。
 
@@ -164,4 +171,4 @@ docs/ 之外的仓库文本只使用英文；中文仅用于 docs/ 内。模型�
 
 ## 后续方向（未实现）
 
-2D-14 将本地 Session 持久化与管理纳入当前实现，见 [SESSION.md](SESSION.md)。并行或递归 Subagent、Channel、完整任务与分层上下文管理、长期记忆、文件检查点和操作恢复及成本优化仍为计划，见 [ROADMAP.md](../ROADMAP.md)。本文件不将这些方向视为已有架构。
+2D-14 将本地 Session 持久化与管理纳入当前实现，见 [SESSION.md](SESSION.md)；资料阶段 4 已加入直接用户事实的自然语言 Memory 保存，见 [MEMORY.md](MEMORY.md)。并行或递归 Subagent、Channel、完整任务与分层上下文管理、自动记忆提炼与合并、文件检查点和操作恢复及成本优化仍为计划，见 [ROADMAP.md](../ROADMAP.md)。本文件不将这些方向视为已有架构。

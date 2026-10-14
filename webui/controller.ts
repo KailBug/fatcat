@@ -27,6 +27,8 @@ import type { ProjectJoinConfirmation } from "./projects.js";
 import { WebAttachments } from "./attachments.js";
 import { ProjectManagementConfirmations } from "./project-management.js";
 import type { ProjectManagementConfirmation } from "./project-management.js";
+import { attachmentEvidence } from "./attachment-evidence.js";
+import type { AttachmentEvidence } from "./attachment-evidence.js";
 
 export type WebUiInfo = {
   provider: string; model: string; workspace: string;
@@ -41,6 +43,7 @@ export type WebTurn = {
   activity: string[]; report?: ExecutionReport;
   automation?: boolean;
   contextOperation?: boolean;
+  sources?: AttachmentEvidence;
 };
 export type WebUiState = {
   revision: number; info: WebUiInfo; turns: WebTurn[]; busy: boolean;
@@ -163,6 +166,7 @@ export class WebUiController {
     this.runningSessionId = automatic?.task.sessionId ?? this.session.current.id;
     this.status = automatic ? `Automation · ${automatic.task.sessionTitle}` : "Working";
     const abort = new AbortController();
+    const historyStart = this.session.history.length;
     // Install active state before the session can emit events or request approval.
     const done = Promise.resolve().then(async () => {
       try {
@@ -173,6 +177,7 @@ export class WebUiController {
           : await this.session.run(prompt, options);
         if (contextCommand && /^\/compact(?:\s|$)/.test(prompt)) this.contextUsage.reset();
         turn.status = "answered";
+        if (visible && !contextCommand) turn.sources = attachmentEvidence(this.session.history.slice(historyStart));
         this.status = "Ready";
       } catch (error) {
         turn.error = formatError(error);
@@ -429,7 +434,7 @@ export class WebUiController {
     if (event.type === "execution_report") turn.report = event.report;
     let message: string | undefined;
     const source = child ? "Subagent · " : "";
-    if (event.type === "model_request") message = `${source}${event.purpose === "compaction" ? "Summary" : "Model"} request ${event.iteration}`;
+    if (event.type === "model_request") message = `${source}${event.purpose === "compaction" ? "Summary" : event.purpose === "document" ? "Document" : "Model"} request ${event.iteration}`;
     if (event.type === "compaction_start") message = "Request limit reached; compacting older turns";
     if (event.type === "compaction_end") message = `Context compacted: ${event.beforeBytes} to ${event.afterBytes} conversation bytes; continuing current request`;
     if (event.type === "tool_result") message = `${source}${event.tool} · ${event.ok ? "completed" : "failed"}`;
@@ -449,10 +454,12 @@ export class WebUiController {
 function restoredTurns(history: readonly Message[], sessionId: string): WebTurn[] {
   const turns: WebTurn[] = [];
   let prompt: string | undefined;
-  for (const message of history) {
-    if (message.role === "user" && typeof message.content === "string") prompt = message.content;
+  let start = 0;
+  for (const [index, message] of history.entries()) {
+    if (message.role === "user" && typeof message.content === "string") { prompt = message.content; start = index; }
     if (message.role === "assistant" && !message.tool_calls?.length && typeof message.content === "string" && prompt !== undefined) {
-      turns.push({ id: `${sessionId}:${turns.length}`, prompt, answer: message.content, status: "answered", activity: [] });
+      turns.push({ id: `${sessionId}:${turns.length}`, prompt, answer: message.content, status: "answered", activity: [],
+        sources: attachmentEvidence(history.slice(start, index + 1)) });
       prompt = undefined;
     }
   }

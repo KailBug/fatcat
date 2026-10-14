@@ -147,6 +147,33 @@ function renderTurn(turn: WebTurn): HTMLElement {
     }));
   }
   if (turn.error) article.append(node("p", `${turn.error}\nThis turn was not saved to model history. Completed operations remain in effect.`, "error"));
+  if (turn.sources?.reads.length) {
+    const sources = node("details", undefined, "attachment-sources");
+    sources.dataset.kind = "sources";
+    sources.append(node("summary", `Sources read · ${turn.sources.reads.length} operations`),
+      node("p", "These are recorded attachment reads from this chat and its delegated tasks. Reading a location does not prove that an answer analyzed it correctly."));
+    const list = node("ul");
+    const sessionId = state?.current.id;
+    for (const read of turn.sources.reads) {
+      const item = node("li");
+      item.append(node("strong", `${read.name} · ${read.mode}${read.origin === "subagent" ? " · subagent" : ""}`), node("p", read.summary));
+      const links = node("div", undefined, "attachment-actions");
+      for (const citation of read.citations) {
+        const link = node("button", citation.label, "attachment-citation");
+        link.type = "button";
+        link.title = citation.reference;
+        link.addEventListener("click", () => { if (sessionId) void attachments.openReference(citation.reference, sessionId, read.name); });
+        links.append(link);
+      }
+      item.append(links);
+      for (const warning of read.warnings) item.append(node("p", warning));
+      if (read.omittedLocations) item.append(node("p", `${read.omittedLocations} additional source locations are not listed in this bounded summary.`));
+      list.append(item);
+    }
+    sources.append(list);
+    if (turn.sources.omittedReads) sources.append(node("p", `${turn.sources.omittedReads} additional attachment reads are not listed in this bounded summary.`));
+    article.append(sources);
+  }
   if (turn.status === "running") article.append(node("p", "Working on it…", "waiting"));
   if (turn.activity.length) {
     const activity = node("details"); activity.dataset.kind = "activity";

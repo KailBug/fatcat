@@ -1,5 +1,6 @@
 import type { AttachmentInfo } from "../../src/attachments/record.js";
 import type { AttachmentReadResult } from "../../src/attachments/read.js";
+import type { DocumentLocation } from "../../src/documents/types.js";
 import type { SessionSummary } from "../../src/session/record.js";
 import type { WebUiState } from "../controller.js";
 import { AttachmentUploads } from "./attachment-upload.js";
@@ -20,12 +21,42 @@ function button(text: string, action: () => void): HTMLButtonElement {
 
 function reference(info: AttachmentInfo): string { return `attachment:${info.id}@${info.contentVersion}`; }
 
-export function parseSourceReference(value: string): { reference: string; offset: number; limit: number } | undefined {
-	const match = /^(attachment:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}@[0-9a-f]{64})(?:#L([1-9][0-9]*)-L([1-9][0-9]*))?$/.exec(value);
+function locationLabel(location: DocumentLocation): string {
+	if (location.kind === "page") return `Page ${location.page}`;
+	if (location.kind === "slide") return `Slide ${location.slide}${location.notes ? " · speaker notes" : ""}`;
+	if (location.kind === "cell") return `${location.sheet ?? "Worksheet"}!${location.cell ?? ""}`;
+	if (location.kind === "paragraph") return `${location.heading ? `${location.heading} · ` : ""}Paragraph ${location.paragraph}`;
+	if (location.kind === "line") return `${location.heading ? `${location.heading} · ` : ""}Lines ${location.line}–${location.endLine ?? location.line}`;
+	return "Image";
+}
+
+export interface SourceReference {
+	reference: string;
+	offset: number;
+	limit: number;
+	parserVersion?: string;
+	unit?: string;
+}
+
+export function parseSourceReference(value: string): SourceReference | undefined {
+	if (/[\x00-\x20\x7f]/.test(value)) return undefined;
+	const match = /^(attachment:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}@[0-9a-f]{64})(?:#(.*))?$/.exec(value);
 	if (!match) return undefined;
-	const start = Number(match[2] ?? 1), end = Number(match[3] ?? 100);
+	const reference = match[1]!;
+	if (match[2]?.startsWith("parse=")) {
+		const fragment = new URLSearchParams(match[2]);
+		if ([...fragment.keys()].some((key) => key !== "parse" && key !== "unit")
+			|| fragment.getAll("parse").length !== 1 || fragment.getAll("unit").length !== 1) return undefined;
+		const parserVersion = fragment.get("parse")!;
+		const unit = fragment.get("unit")!;
+		if (![parserVersion, unit].every((part) => /^[a-zA-Z0-9._-]{1,96}$/.test(part) && !/\s/.test(part))) return undefined;
+		return { reference, offset: 0, limit: 100, parserVersion, unit };
+	}
+	const lines = match[2] === undefined ? undefined : /^L([1-9][0-9]*)-L([1-9][0-9]*)$/.exec(match[2]);
+	if (match[2] !== undefined && !lines) return undefined;
+	const start = Number(lines?.[1] ?? 1), end = Number(lines?.[2] ?? 100);
 	if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return undefined;
-	return { reference: match[1]!, offset: start - 1, limit: Math.min(200, end - start + 1) };
+	return { reference, offset: start - 1, limit: Math.min(200, end - start + 1) };
 }
 
 export class AttachmentsPanel {
@@ -45,6 +76,7 @@ export class AttachmentsPanel {
 	private listKey = "";
 	private requestId = 0;
 	private sourceRequestId = 0;
+	private sourceAbort: AbortController | undefined;
 	private confirming = false;
 
 	constructor(private readonly token: () => string, private readonly changed: () => Promise<void>) {
@@ -70,7 +102,7 @@ export class AttachmentsPanel {
 		const uploadSlot = node("div");
 		this.dialog.append(this.title, this.scope, label, this.input,
 			node("p", "Up to 16 MiB per file and four uploads at once. You can close this panel and switch chats while uploading.", "attachment-note"),
-			node("p", "UTF-8 text and Markdown can be read. PDF, Office documents and images are saved as originals; their analysis is not available yet.", "attachment-note"),
+			node("p", "Read text, Markdown, CSV, TSV, PDF, DOCX, XLSX and PPTX with source locations. PNG and JPEG analysis uses a supported chat model. Legacy Office and other image formats can be saved, but are not analyzed.", "attachment-note"),
 			uploadSlot, this.error, this.list, footer);
 		this.dialog.addEventListener("close", () => uploadHome.insertBefore(uploads, uploadSibling));
 		this.source.id = "attachment-source";
@@ -87,7 +119,7 @@ export class AttachmentsPanel {
 			dialog.addEventListener("keydown", (event) => { if (event.key === "Escape") event.stopPropagation(); });
 			document.body.append(dialog);
 		}
-		this.source.addEventListener("close", () => { this.sourceRequestId++; });
+		this.source.addEventListener("close", () => { this.sourceRequestId++; this.sourceAbort?.abort(); });
 		this.confirm.addEventListener("cancel", (event) => { if (this.confirming) event.preventDefault(); });
 		this.uploads = new AttachmentUploads(uploads, token,
 			(path, body) => this.request(path, body), async () => { await changed(); if (this.dialog.open) await this.load(); });
@@ -117,10 +149,11 @@ export class AttachmentsPanel {
 		if (this.dialog.open && key !== this.listKey) void this.load();
 	}
 
-	private async request<T>(path: string, body: unknown): Promise<T> {
+	private async request<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+		const timeout = AbortSignal.timeout(path === "read" ? 35_000 : 15_000);
 		const response = await fetch(`/api/attachments/${path}`, { method: "POST", headers: {
 			Authorization: `Bearer ${this.token()}`, "Content-Type": "application/json",
-		}, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
+		}, body: JSON.stringify(body), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
 		if (!response.ok) throw new Error((await response.json() as { error: string }).error);
 		return await response.json() as T;
 	}
@@ -150,13 +183,18 @@ export class AttachmentsPanel {
 		row.role = "listitem";
 		row.dataset.attachmentId = file.id;
 		const readable = /\.(?:txt|md|markdown)$/i.test(file.name);
+		const document = /\.(?:csv|tsv|pdf|docx|xlsx|pptx)$/i.test(file.name);
+		const image = /\.(?:png|jpe?g)$/i.test(file.name);
 		const status = file.deleted ? "Permanently deleted" : file.removed ? "Removed from this scope"
-			: readable ? "Stored · UTF-8 text can be read" : "Stored · analysis unavailable";
+			: readable ? "Stored · UTF-8 text can be read" : document ? "Stored · document parsing available"
+			: image ? "Stored · visual analysis requires a supported chat model" : "Stored · analysis unavailable for this format";
 		row.append(node("h3", file.name), node("p", `${(file.size / 1024).toLocaleString("en-US", { maximumFractionDigits: 1 })} KiB · ${status}`, "attachment-note"),
 			node("p", `Version ${file.contentVersion.slice(0, 12)} · Uploaded ${new Date(file.createdAt).toLocaleString()}`, "attachment-note"));
 		const actions = node("div", undefined, "attachment-actions");
 		if (!file.removed && !file.deleted) {
-			if (readable) actions.append(button("View text", () => { void this.openReference(reference(file), session.id, file.name); }));
+			if (readable || document || image) actions.append(button(readable ? "View text" : "View source", () => {
+				void this.openReference(reference(file), session.id, file.name);
+			}));
 			actions.append(button("Download original", () => { void this.download(file, session.id); }),
 				button(session.projectId ? "Remove from project" : "Remove from chat", () => this.confirmChange("remove", file, session)));
 		}
@@ -171,18 +209,25 @@ export class AttachmentsPanel {
 	}
 
 	private async download(file: AttachmentInfo, sessionId: string): Promise<void> {
+		await this.downloadOriginal(reference(file), file.name, sessionId);
+	}
+
+	private async downloadOriginal(reference: string, name: string, sessionId: string): Promise<void> {
 		try {
 			const response = await fetch("/api/attachments/download", { method: "POST", headers: {
 				Authorization: `Bearer ${this.token()}`, "Content-Type": "application/json",
-			}, body: JSON.stringify({ sessionId, reference: reference(file) }), signal: AbortSignal.timeout(30_000) });
+			}, body: JSON.stringify({ sessionId, reference }), signal: AbortSignal.timeout(30_000) });
 			if (!response.ok) throw new Error((await response.json() as { error: string }).error);
 			const url = URL.createObjectURL(await response.blob());
 			const link = node("a");
 			link.href = url;
-			link.download = file.name;
+			link.download = name;
 			link.click();
 			setTimeout(() => URL.revokeObjectURL(url), 10_000);
-		} catch (error) { this.fail(error); }
+		} catch (error) {
+			if (this.source.open) this.sourceBody.append(node("p", error instanceof Error ? error.message : "The original could not be downloaded.", "session-dialog-error"));
+			else this.fail(error);
+		}
 	}
 
 	private confirmChange(action: "remove" | "delete", file: AttachmentInfo, session: SessionSummary): void {
@@ -225,15 +270,23 @@ export class AttachmentsPanel {
 		if (!source) return;
 		this.sourceTitle.textContent = name;
 		if (!this.source.open) this.source.showModal();
-		await this.loadSource(source.reference, sessionId, source.offset, source.limit);
+		await this.loadSource(source, sessionId);
 	}
 
-	private async loadSource(reference: string, sessionId: string, offset: number, limit: number): Promise<void> {
+	private async loadSource(source: SourceReference, sessionId: string): Promise<void> {
 		const id = ++this.sourceRequestId;
+		this.sourceAbort?.abort();
+		const abort = new AbortController();
+		this.sourceAbort = abort;
 		this.sourceBody.replaceChildren(node("p", "Loading source…", "attachment-note"));
 		try {
-			const result = await this.request<AttachmentReadResult>("read", { sessionId, reference, offset, limit });
-			if (id !== this.sourceRequestId || !this.source.open || result.kind !== "file") return;
+			const result = await this.request<AttachmentReadResult>("read", { sessionId, ...source }, abort.signal);
+			if (id !== this.sourceRequestId || !this.source.open) return;
+			if (result.kind === "document") {
+				this.showDocument(result, source, sessionId);
+				return;
+			}
+			if (result.kind !== "file") throw new Error("The source request did not return readable content.");
 			this.sourceTitle.textContent = result.name;
 			const locator = node("p", result.totalLines === 0 ? "Empty UTF-8 document."
 				: result.startLine === null ? `No lines at this location. The document has ${result.totalLines} lines.`
@@ -246,14 +299,60 @@ export class AttachmentsPanel {
 			content.textContent = lines.map((line, index) => `${(result.startLine ?? 1) + index} │ ${line}`).join("\n");
 			this.sourceBody.replaceChildren(node("p", result.citation, "attachment-reference"), locator, coverage, content);
 			const paging = node("div", undefined, "attachment-actions");
-			if (offset > 0) paging.append(button("Start of file", () => { void this.loadSource(reference, sessionId, 0, 100); }));
-			if (result.nextOffset !== null) paging.append(button("Next lines", () => { void this.loadSource(reference, sessionId, result.nextOffset!, 100); }));
+			if (source.offset > 0) paging.append(button("Start of file", () => { void this.loadSource({ ...source, offset: 0, limit: 100 }, sessionId); }));
+			if (result.nextOffset !== null) paging.append(button("Next lines", () => { void this.loadSource({ ...source, offset: result.nextOffset!, limit: 100 }, sessionId); }));
+			paging.append(button("Download original", () => { void this.downloadOriginal(source.reference, result.name, sessionId); }));
 			this.sourceBody.append(paging);
 		} catch (error) {
 			if (id !== this.sourceRequestId || !this.source.open) return;
 			const message = node("p", error instanceof Error ? error.message : "The source could not be read.", "session-dialog-error");
 			message.role = "alert";
 			this.sourceBody.replaceChildren(message);
+		} finally { if (id === this.sourceRequestId) this.sourceAbort = undefined; }
+	}
+
+	private showDocument(result: Extract<AttachmentReadResult, { kind: "document" }>, source: SourceReference, sessionId: string): void {
+		this.sourceTitle.textContent = result.name;
+		const coverage = result.coverage;
+		this.sourceBody.replaceChildren(
+			node("p", `Original ${result.path.split("@")[1]} · Parse ${result.parserVersion}`, "attachment-reference"),
+			node("p", `Showing ${coverage.returnedUnits} of ${coverage.selectedUnits} selected locations (${coverage.totalUnits} total).`, "attachment-coverage"),
+			node("p", coverage.complete ? "This preview covers the selected parsed content."
+				: `${coverage.unreadUnits} locations remain unread or unavailable in this preview.`, "attachment-note"),
+		);
+		if (source.unit) this.sourceBody.append(node("p", `Requested location: ${source.unit}. Other locations are outside this selection.`, "attachment-note"));
+		if (coverage.uncovered.length) this.sourceBody.append(node("p", `Not covered: ${coverage.uncovered.join("; ")}`, "attachment-warning"));
+		for (const warning of result.warnings) this.sourceBody.append(node("p", warning, "attachment-warning"));
+		for (const unit of result.units) {
+			const section = node("section", undefined, "attachment-document-unit");
+			section.dataset.unit = unit.id;
+			const provenance = unit.provenance === "native-text" ? "Native document text"
+				: unit.provenance === "model-transcription" ? "Model transcription · verify uncertain text against the original"
+				: "Model description · this is an interpretation, not a verbatim transcription";
+			section.append(node("h3", locationLabel(unit.location)), node("p", provenance, "attachment-note"));
+			if (unit.location.kind === "cell") {
+				const values = node("dl", undefined, "attachment-cell-values");
+				for (const [label, value] of [["Value type", unit.location.valueType], ["Raw value", unit.location.rawValue],
+					["Formula", unit.location.formula], ["Cached result (unverified)", unit.location.cachedValue]]) {
+					if (value !== undefined) values.append(node("dt", label), node("dd", value));
+				}
+				section.append(values);
+				if (unit.location.formulaStatus === "not-calculated") section.append(node("p", "This formula has not been recalculated. Its cached result may be stale and must not be treated as a verified calculation.", "attachment-warning"));
+			}
+			if (unit.model) section.append(node("p", `${unit.provider ?? "Model"} · ${unit.model}`, "attachment-note"));
+			section.append(node("p", unit.citation, "attachment-reference"),
+				node("pre", unit.text || "No extractable text at this location. Check the coverage and warnings above.", "attachment-source-text"));
+			this.sourceBody.append(section);
 		}
+		if (!result.units.length) this.sourceBody.append(node("p", "No parsed content matched this source selection. This does not prove the original is empty.", "attachment-note"));
+		const paging = node("div", undefined, "attachment-actions");
+		const fixed = { ...source, parserVersion: result.parserVersion };
+		if (source.offset > 0) paging.append(button("Start of selection", () => { void this.loadSource({ ...fixed, offset: 0 }, sessionId); }));
+		if (result.nextOffset !== null) paging.append(button("Next locations", () => { void this.loadSource({ ...fixed, offset: result.nextOffset! }, sessionId); }));
+		if (source.unit) paging.append(button("Browse document", () => {
+			void this.loadSource({ reference: source.reference, parserVersion: result.parserVersion, offset: 0, limit: 100 }, sessionId);
+		}));
+		paging.append(button("Download original", () => { void this.downloadOriginal(source.reference, result.name, sessionId); }));
+		this.sourceBody.append(paging);
 	}
 }

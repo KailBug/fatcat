@@ -76,17 +76,31 @@ export class AttachmentHttp {
 			if (body.includeRemoved !== undefined && typeof body.includeRemoved !== "boolean") throw new HarnessError("INPUT", "Expected a boolean removed-files filter.");
 			json(response, 200, await this.attachments.list(text(body.sessionId, "session ID"), body.includeRemoved === true));
 		} else if (path === "/api/attachments/read") {
-			fields(body, ["sessionId", "reference", "offset", "limit", "query"]);
+			fields(body, ["sessionId", "reference", "offset", "limit", "query", "parserVersion", "unit", "pages", "sheet", "section"]);
 			for (const field of ["offset", "limit"] as const) {
 				if (body[field] !== undefined && (!Number.isSafeInteger(body[field]) || Number(body[field]) < (field === "offset" ? 0 : 1))) {
 					throw new HarnessError("INPUT", `Expected a valid ${field}.`);
 				}
+			}
+			for (const field of ["parserVersion", "unit"] as const) {
+				if (body[field] !== undefined && (typeof body[field] !== "string" || !/^[a-zA-Z0-9._-]{1,96}$/.test(body[field]) || /\s/.test(body[field]))) {
+					throw new HarnessError("INPUT", `Expected a valid ${field}.`);
+				}
+			}
+			if (body.pages !== undefined && (!Array.isArray(body.pages) || !body.pages.length || body.pages.length > 100
+				|| body.pages.some((page) => !Number.isSafeInteger(page) || Number(page) < 1))) {
+				throw new HarnessError("INPUT", "Expected up to 100 positive page numbers.");
 			}
 			json(response, 200, await withRequestSignal(response, this.shutdown, (signal) => this.attachments.read(text(body.reference, "attachment reference"), {
 				sessionId: text(body.sessionId, "session ID"), signal,
 				...(body.offset === undefined ? {} : { offset: Number(body.offset) }),
 				...(body.limit === undefined ? {} : { limit: Number(body.limit) }),
 				...(body.query === undefined ? {} : { query: text(body.query, "search text", 512) }),
+				...(body.parserVersion === undefined ? {} : { parserVersion: String(body.parserVersion) }),
+				...(body.unit === undefined ? {} : { unit: String(body.unit) }),
+				...(body.pages === undefined ? {} : { pages: body.pages as number[] }),
+				...(body.sheet === undefined ? {} : { sheet: text(body.sheet, "worksheet", 128) }),
+				...(body.section === undefined ? {} : { section: text(body.section, "section", 256) }),
 			})));
 		} else if (path === "/api/attachments/download") {
 			fields(body, ["sessionId", "reference"]);

@@ -25,7 +25,7 @@ export type ModelObservation =
   | { type: "model_usage"; usage: TokenUsage | null };
 export type Model = (messages: Message[], signal?: AbortSignal,
   observe?: (event: ModelObservation) => void,
-  options?: { toolChoice: "auto" | "none"; purpose?: "compaction" }) => Promise<ModelTurn>;
+  options?: { toolChoice: "auto" | "none"; purpose?: "compaction" | "document" }) => Promise<ModelTurn>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -96,7 +96,8 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
       model: config.model,
       messages,
       // MiMo ignores non-auto tool_choice values; omit tools for a text-only request.
-      ...(options?.purpose === "compaction" || (options?.toolChoice === "none" && config.provider === "mimo") ? {} : {
+      ...(options?.purpose === "compaction" || options?.purpose === "document"
+        || (options?.toolChoice === "none" && config.provider === "mimo") ? {} : {
         tools: tools.definitions,
         tool_choice: options?.toolChoice ?? "auto",
       }),
@@ -111,6 +112,9 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
     const accepted = bytes <= config.maxRequestBytes;
     observe?.({ type: "model_input", bytes, limitBytes: config.maxRequestBytes, accepted });
     if (!accepted) {
+      if (options?.purpose === "document") {
+        throw new HarnessError("MODEL_CONTEXT_LIMIT", `Document request is ${bytes} bytes; the local limit is ${config.maxRequestBytes}. Read fewer pages or use a smaller image. Explicitly increasing HARNESS_MAX_REQUEST_BYTES also changes the shared request budget. This request was not sent.`);
+      }
       throw new HarnessError("MODEL_CONTEXT_LIMIT", `Model request is ${bytes} bytes; the local limit is ${config.maxRequestBytes}. Use /compact in chat, TUI, or Web UI for older turns, or start a smaller task with /reset. Execution records survive reset and may still exceed the limit; review them before starting a new process or explicitly increasing HARNESS_MAX_REQUEST_BYTES. Eligible older read outputs were considered for omission; protected messages remain intact. This request was not sent.`);
     }
     checkCancellation(signal);

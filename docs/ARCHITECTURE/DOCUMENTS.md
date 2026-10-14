@@ -1,6 +1,6 @@
 # 文档解析与视觉理解
 
-状态：2026-10-14，在 `feat/rag-dev` 实现资料计划阶段 3。本文描述已写入的模块、实际支持范围和工程取舍；执行结果及阶段完成情况以 [PROGRESS.md](../PROGRESS.md) 为准。原件生命周期沿用 [ATTACHMENTS.md](ATTACHMENTS.md)，资料长期设计保留在 [RAG.md](RAG.md)。Memory、Embedding、音频及多模态检索仍未实现。
+状态：2026-10-14，在 `feat/rag-dev` 实现资料计划阶段 3。本文描述已写入的模块、实际支持范围和工程取舍；执行结果及阶段完成情况以 [PROGRESS.md](../PROGRESS.md) 为准。原件生命周期沿用 [ATTACHMENTS.md](ATTACHMENTS.md)，资料长期设计保留在 [RAG.md](RAG.md)。Memory 已随后独立接入，见 [MEMORY.md](MEMORY.md)；Embedding、音频及多模态检索尚未实现。用户现将近期重心调整为 runtime 重构、Web UI 调整和 TUI 建设，资料后续阶段暂缓，本文已有能力作为兼容基线保留。
 
 ## 已实现的职责与数据流
 

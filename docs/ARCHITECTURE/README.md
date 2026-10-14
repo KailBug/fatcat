@@ -18,13 +18,17 @@
 
 ## 近期组织原则（设计方向）
 
+2026-10-14 用户将近期重心调整为 **runtime 重构、Web UI 调整和 TUI 建设**。资料与 Memory 后续增强及阶段 5–8 暂缓，相关设计留作参考。已有项目、附件、解析和 Memory 是兼容基线，未完成的质量验收不因重心变化而完成。当前方向与每轮验收见 [ROADMAP.md](../ROADMAP.md#当前开发重心2026-10-14)。
+
+runtime 重构以实际 Agent 装配、Session / AgentSession、Loop、Model、Tools、Context 和 Permissions 调用链为起点，先检查职责、生命周期和状态所有权，再按具体问题逐步调整。实施前对照 pi agent 的相关 TypeScript 源码；当前没有确定新的 runtime 模块布局、存储格式或抽象框架。已有会话持久化、回合提交、审批、取消、预算与已发生副作用继续由对应核心模块负责。
+
 继续保持 CLI / TUI / Web UI、Session、Loop、模型客户端和 Tools 的清晰职责。新增权限判断应覆盖实际执行入口，子任务也应复用同一权限边界；交互层不承担工具执行规则，Loop 不积累各工具的具体逻辑。
 
 本轮已将模式、审批和共用工具安全规则集中到 `src/permissions/`，与 `src/session/` 同级。Manual、Accept edits、Plan 和 Free to go 使用共享策略，网页空闲切换不重建 Tools/Session，不恢复历史授权。前三种保留原工作区/公共网络边界；Free 扩展本地文件及 HTTP(S) 地址范围，普通命令自动、危险/不透明命令一次审批。编码、文件冲突、DNS 固定、PowerShell 期限/取消/输出限制保留；命令检查是启发式而非 OS 沙箱。模式指导在父子模型每次请求副本中更新，read/search/write/shell/web 执行期间锁住权限快照，界面仅负责选择和展示。见 [PERMISSIONS.md](PERMISSIONS.md)。
 
 状态分别回答“发生了什么”（成功对话由 Session 保存，当前写入与命令记录由 Tools 保存）、“当前模型需要看到什么”（Context）、“要完成什么以及完成证据”（Task）。2D-8 的 Context 目前只是独立的请求准备模块，处理旧读取内容的请求投影；Task 以及完整分层上下文仍是组织方向，不提前创建空目录或接口。
 
-优先完成读取、修改、验证和交付闭环，再逐步完善恢复与长期记忆。2D-11 按用户要求加入可选 TUI，2D-13 加入本地 Web UI；App、Channel 继续后移。核心逻辑不依赖终端或 HTTP 输入输出，TUI 与 Web UI 复用现有 Session / Loop / Tools，不建立通用渠道框架。
+近期围绕既有读取、修改、验证和交付闭环完善 runtime 与交互。2D-11 已加入可选 TUI，2D-13 已加入本地 Web UI；接下来分别在现有基础上继续建设和调整，App、Channel 继续后移。核心逻辑不依赖终端或 HTTP 输入输出，TUI 与 Web UI 复用同一 Session / Loop / Tools / Permissions，不在界面内复制执行规则或持久状态。具体交互方案与验证范围在对应任务中确定。
 
 ## 当前文档索引
 
@@ -59,8 +63,8 @@
 | [PROJECTS.md](PROJECTS.md) | 阶段 1 项目归属、唯一目录、持久兼容、迁入与执行身份 | 最小范围已实现，离线及真实 Edge 验证通过，待 review |
 | [ATTACHMENTS.md](ATTACHMENTS.md) | 阶段 2 持久原件、共享/隔离、通用文本读取、来源与生命周期 | 已实现；验证与限制见 PROGRESS |
 | [DOCUMENTS.md](DOCUMENTS.md) | 阶段 3 本地文档解析、同模型视觉/转写、固定来源、缓存与覆盖 | 已实现；本地/注入 SDK/Edge 验证见 PROGRESS，真实模型质量未验收 |
-| [MEMORY.md](MEMORY.md) | 阶段 4 直接用户事实的自然语言保存、可选主机 CRUD、作用域/来源修订、请求状态与迁入恢复 | 当前增量和固定 DeepSeek live 场景已验；广泛质量待评估，阶段未整体完成 |
-| [RAG.md](RAG.md) | 资料所有权、解析/视觉/Memory/检索/音频边界与参考研究 | 阶段 1–3 及 Memory 当前增量已接入；自动提炼/检索/音频等仍是计划 |
+| [MEMORY.md](MEMORY.md) | 阶段 4 直接用户事实的自然语言保存、可选主机 CRUD、作用域/来源修订、请求状态与迁入恢复 | 当前增量和固定 DeepSeek live 场景已验；阶段未整体完成，后续增强暂缓 |
+| [RAG.md](RAG.md) | 资料所有权、解析/视觉/Memory/检索/音频边界与参考研究 | 阶段 1–3 及 Memory 当前增量保留；未实现的检索/音频等暂缓 |
 
 ## 当前实现
 

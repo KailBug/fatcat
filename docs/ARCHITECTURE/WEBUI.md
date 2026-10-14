@@ -6,6 +6,14 @@
 
 纯文本来源使用合法的 `attachment:<uuid>@<sha256>#Lx-Ly` 引用，由当前 Session 重新授权后打开纯文本来源，不直接导航本地存储路径或执行附件 HTML。预览展示行范围、截断和下一页；不等同于完整读取事件报表。移除和删除确认携带 locationRevision/scopeRevision，范围改变拒绝旧弹窗。阶段 3 另支持固定解析/视觉来源：PDF 与现代 Office 的受控解析、图片/选定扫描页的当前模型视觉路径，实际格式、定位及覆盖边界见 [DOCUMENTS.md](DOCUMENTS.md)；旧 Office 保留原件并要求转换。
 
+## 当前开发方向（2026-10-14，后续计划）
+
+近期优先推进运行时重构、Web UI 调整和基于现有可选实现的 TUI 建设，后续资料/RAG 阶段暂缓。Web UI 调整以当前本地浏览器入口及已实现功能为基础；先结合共享运行时的职责梳理确定需要改进的交互，再按具体任务收敛界面范围与验收，不在本次方向调整中预设详细设计或排期。
+
+现有 `webui/index.ts` 通过 `workspaceAgentFactory`、`SessionManager` 和共享权限策略装配运行核心，`WebUiController` 将浏览器操作交给该核心。后续继续由浏览器持有输入草稿、菜单和显示快照，由共享 Session/Loop/Tools/permissions 持有会话历史、回合推进、执行事实及授权规则；页面显示不成为另一份执行状态或权限来源。Web UI 与 TUI 复用同一运行边界，不分别实现工具执行、会话所有权或审批规则。
+
+本节仅记录计划，未实现新的运行时或界面行为，也不改变下文已有能力和验证事实。后续每个增量的实际实现、验证及限制仍以 [PROGRESS.md](../PROGRESS.md) 为准。
+
 ## 范围与现状
 
 2026-10-12：自动 compact 的开始、摘要请求、保存完成与续跑显示在原回合 activity 中，沿用 Stop 与原回合报告。`context-usage.ts` 根据 `model_request.purpose=compaction` 排除摘要输入 token，普通请求报告用量后恢复显示。完整原文仍进入恢复视图，不额外建立维护回合；后台自动任务仍只更新绑定会话，边界见 [CONTEXT.md](CONTEXT.md)。

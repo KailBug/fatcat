@@ -4,10 +4,32 @@ $ErrorActionPreference = 'Stop'
 # Use the Explorer-style folder dialog on Windows PowerShell 5.1 without an extra runtime.
 Add-Type -TypeDefinition @'
 using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 public static class FatcatFolderDialog
 {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Rectangle { public int Left, Top, Right, Bottom; }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr window, out Rectangle bounds);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateWindowEx(uint extendedStyle, string className, string title, uint style,
+        int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyWindow(IntPtr window);
+
     [ComImport, Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
     private class FileOpenDialog { }
 
@@ -55,12 +77,26 @@ public static class FatcatFolderDialog
 
     public static string Choose(string initialPath)
     {
-        IFileDialog dialog = (IFileDialog)new FileOpenDialog();
+        // PowerShell's process manifest does not make this native dialog DPI aware.
+        // Set the STA thread before creating either HWND, then restore it on exit.
+        IntPtr previousDpi = SetThreadDpiAwarenessContext(new IntPtr(-4)); // PER_MONITOR_AWARE_V2.
+        if (previousDpi == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        IntPtr owner = IntPtr.Zero;
+        IFileDialog dialog = null;
         IShellItem initial = null;
         IShellItem selected = null;
         IntPtr name = IntPtr.Zero;
         try
         {
+            Rectangle bounds;
+            GetWindowRect(GetForegroundWindow(), out bounds);
+            // An invisible TOOLWINDOW owner prevents a PowerShell taskbar button.
+            // Its bounds center the dialog near the requesting foreground window.
+            owner = CreateWindowEx(0x80u, "STATIC", "Fatcat workspace picker owner", 0x80000000u,
+                bounds.Left, bounds.Top, Math.Max(1, bounds.Right - bounds.Left), Math.Max(1, bounds.Bottom - bounds.Top),
+                IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            if (owner == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+            dialog = (IFileDialog)new FileOpenDialog();
             uint options;
             dialog.GetOptions(out options);
             // PICKFOLDERS | FORCEFILESYSTEM | PATHMUSTEXIST | NOCHANGEDIR | DONTADDTORECENT.
@@ -73,7 +109,7 @@ public static class FatcatFolderDialog
                 SHCreateItemFromParsingName(initialPath, IntPtr.Zero, ref iid, out initial);
                 dialog.SetFolder(initial);
             }
-            int result = dialog.Show(IntPtr.Zero);
+            int result = dialog.Show(owner);
             if (result == unchecked((int)0x800704C7)) return null;
             Marshal.ThrowExceptionForHR(result);
             dialog.GetResult(out selected);
@@ -85,7 +121,9 @@ public static class FatcatFolderDialog
             if (name != IntPtr.Zero) Marshal.FreeCoTaskMem(name);
             if (selected != null) Marshal.ReleaseComObject(selected);
             if (initial != null) Marshal.ReleaseComObject(initial);
-            Marshal.ReleaseComObject(dialog);
+            if (dialog != null) Marshal.ReleaseComObject(dialog);
+            if (owner != IntPtr.Zero) DestroyWindow(owner);
+            SetThreadDpiAwarenessContext(previousDpi);
         }
     }
 }

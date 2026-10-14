@@ -24,6 +24,9 @@ import type { WorkspacePicker } from "./folder-picker.js";
 import type { ProjectRecord } from "../src/project/record.js";
 import { ProjectJoinConfirmations } from "./projects.js";
 import type { ProjectJoinConfirmation } from "./projects.js";
+import { WebAttachments } from "./attachments.js";
+import { ProjectManagementConfirmations } from "./project-management.js";
+import type { ProjectManagementConfirmation } from "./project-management.js";
 
 export type WebUiInfo = {
   provider: string; model: string; workspace: string;
@@ -48,6 +51,7 @@ export type WebUiState = {
   automations: SessionAutomation[]; automationNotice: string;
   runningSessionId: string | null;
   projects: ProjectRecord[];
+  attachmentRevision: number;
 };
 
 /** Browser tabs share one selected session, active turn and pending approval. */
@@ -63,15 +67,24 @@ export class WebUiController {
   private sessions: SessionSummary[] = [];
   private projects: ProjectRecord[] = [];
   private readonly projectConfirmations = new ProjectJoinConfirmations();
+  private readonly projectManagement = new ProjectManagementConfirmations();
   private readonly contextUsage: WebContextUsage;
   private automationTasks: SessionAutomation[] = [];
   private automationNotice = "";
   private runningSessionId: string | null = null;
   private automationService: ConversationAutomations | undefined;
+  private attachmentRevision = 0;
+  readonly attachments: WebAttachments;
 
   private constructor(readonly info: WebUiInfo, private readonly session: SessionManager,
     private readonly permissionPolicy?: PermissionPolicy) {
     this.contextUsage = new WebContextUsage(info.provider, info.model);
+    this.attachments = new WebAttachments(session, async () => {
+      this.attachmentRevision++;
+      this.revision++;
+      try { this.sessions = await session.list(); }
+      catch { this.status = "The file change was saved, but the session list could not be refreshed."; }
+    });
     this.approvals = new ApprovalCoordinator(() => {
       this.status = this.approvals.snapshot() ? "Awaiting approval" : "Working";
       this.revision++;
@@ -109,7 +122,8 @@ export class WebUiController {
       busy: Boolean(this.active || this.changing), approval: this.approvals.snapshot(), status: this.status,
       current: this.session.current, sessions: this.sessions, persistent: this.session.persistent,
       contextUsage: this.contextUsage.snapshot(), permissionMode, automations: this.automationTasks,
-      automationNotice: this.automationNotice, runningSessionId: this.runningSessionId, projects: this.projects });
+      automationNotice: this.automationNotice, runningSessionId: this.runningSessionId, projects: this.projects,
+      attachmentRevision: this.attachmentRevision });
   }
 
   get fileWorkspace(): string | undefined {
@@ -215,6 +229,65 @@ export class WebUiController {
     }, false);
   }
 
+  renameProject(id: string, name: string, revision: number): Promise<void> {
+    return this.changeSession(() => this.session.renameProject(id, name, revision), false);
+  }
+
+  async chooseProjectWorkspaceChange(id: string, revision: number, picker: WorkspacePicker,
+    signal: AbortSignal): Promise<ProjectManagementConfirmation | null> {
+    let confirmation: ProjectManagementConfirmation | null = null;
+    await this.changeSession(async () => {
+      const project = (await this.session.listProjects()).find((item) => item.id === id);
+      if (!project) throw new HarnessError("PROJECT_NOT_FOUND", "The project is no longer available.");
+      if (project.revision !== revision) throw new HarnessError("PROJECT_CONFLICT", "The project changed. Reopen its menu and review it again.");
+      if (this.closed || signal.aborted) return;
+      const cancelled = new AbortController();
+      this.workspaceSelection = cancelled;
+      try {
+        const selectionSignal = AbortSignal.any([signal, cancelled.signal]);
+        const path = await picker(project.workspace, selectionSignal);
+        if (path === null || selectionSignal.aborted) return;
+        confirmation = this.projectManagement.create({ kind: "workspace",
+          preview: await this.session.previewProjectWorkspace(id, path, revision) });
+      } finally { this.workspaceSelection = undefined; }
+    }, false);
+    return confirmation;
+  }
+
+  async previewProjectDelete(id: string, revision: number): Promise<ProjectManagementConfirmation> {
+    let confirmation: ProjectManagementConfirmation | undefined;
+    await this.changeSession(async () => {
+      confirmation = this.projectManagement.create({ kind: "delete", preview: await this.session.previewProjectDelete(id, revision) });
+    }, false);
+    return confirmation!;
+  }
+
+  changeProjectWorkspace(token: string): Promise<void> {
+    return this.changeSession(async () => {
+      const confirmation = this.projectManagement.take(token);
+      if (confirmation.kind !== "workspace") throw new HarnessError("PROJECT_CONFLICT", "Review the workspace change before confirming it.");
+      await this.session.changeProjectWorkspace(confirmation.preview);
+      this.approvals.deny();
+      if (this.session.current.projectId === confirmation.preview.projectId) this.contextUsage.reset();
+      this.attachmentRevision++;
+    }, false);
+  }
+
+  deleteProject(token: string): Promise<void> {
+    return this.changeSession(async () => {
+      const confirmation = this.projectManagement.take(token);
+      if (confirmation.kind !== "delete") throw new HarnessError("PROJECT_CONFLICT", "Review the project deletion before confirming it.");
+      const activeProject = this.session.current.projectId === confirmation.preview.projectId;
+      await this.session.deleteProject(confirmation.preview);
+      this.approvals.deny();
+      if (activeProject) {
+        this.turns = restoredTurns(this.session.history, this.session.current.id);
+        this.contextUsage.reset();
+      }
+      this.attachmentRevision++;
+    }, false);
+  }
+
   resume(selector: string): Promise<void> {
     return this.changeSession(() => this.session.resume(selector));
   }
@@ -301,6 +374,7 @@ export class WebUiController {
       } catch (error) {
         // Expose fresh metadata for a newly confirmed retry without replacing the active transcript.
         try { this.sessions = await this.session.list(); } catch { /* Keep the original operation error. */ }
+        try { this.projects = await this.session.listProjects(); } catch { /* Keep the original operation error. */ }
         this.status = "Session change failed";
         throw error;
       } finally {
@@ -323,6 +397,7 @@ export class WebUiController {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.attachments.close();
     this.stop();
     await Promise.allSettled([this.active?.done, this.changing]);
     await this.automationService?.close();

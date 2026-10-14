@@ -23,6 +23,9 @@
     "verify:webui": "pnpm run build && node dist/scripts/verify-webui-design.js",
     "verify:sessions": "pnpm run build && node dist/scripts/verify-session-workspaces.js",
     "verify:projects": "pnpm run build && node dist/scripts/verify-projects.js",
+    "verify:project-management": "pnpm run build && node dist/scripts/verify-project-management.js",
+    "verify:folder-picker": "pnpm run build && node dist/scripts/verify-folder-picker.js",
+    "verify:attachments": "pnpm run build && node dist/scripts/verify-attachments.js",
     "verify:live": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify-live.js"
   },
   "devDependencies": {

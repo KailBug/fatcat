@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, realpath, rename, stat, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { HarnessError } from "../errors.js";
+import { AttachmentTransactions } from "../attachments/transaction.js";
 import { decodeProjectRecord, invalidProject, projectIdPattern, projectName } from "./record.js";
 import type { ProjectRecord } from "./record.js";
 
@@ -10,12 +11,18 @@ const maxProjectBytes = 64 * 1024;
 /** Project metadata is independent of session histories and workspace directories. */
 export class ProjectStore {
 	readonly root: string;
+	private readonly transactions: AttachmentTransactions;
 
 	constructor(options: { root: string }) {
 		this.root = join(resolve(options.root), "projects");
+		this.transactions = new AttachmentTransactions(resolve(options.root));
 	}
 
 	async create(name: string, workspace: string): Promise<ProjectRecord> {
+		return this.transactions.withLock(() => this.createUnlocked(name, workspace));
+	}
+
+	private async createUnlocked(name: string, workspace: string): Promise<ProjectRecord> {
 		const normalizedName = projectName(name);
 		let canonical: string;
 		try {
@@ -34,6 +41,10 @@ export class ProjectStore {
 	}
 
 	async list(): Promise<ProjectRecord[]> {
+		return this.transactions.withLock(() => this.listUnlocked(), false);
+	}
+
+	private async listUnlocked(): Promise<ProjectRecord[]> {
 		let files: string[];
 		try { files = await readdir(this.root); }
 		catch (error) {
@@ -44,7 +55,7 @@ export class ProjectStore {
 		const projects: ProjectRecord[] = [];
 		for (const file of files) {
 			if (!file.endsWith(".json") || !projectIdPattern.test(file.slice(0, -5))) continue;
-			try { projects.push(await this.load(file.slice(0, -5))); }
+			try { projects.push(await this.loadUnlocked(file.slice(0, -5))); }
 			catch (error) {
 				if (!(error instanceof HarnessError && ["PROJECT_CORRUPT", "PROJECT_NOT_FOUND"].includes(error.code))) throw error;
 			}
@@ -53,6 +64,11 @@ export class ProjectStore {
 	}
 
 	async load(id: string): Promise<ProjectRecord> {
+		return this.transactions.withLock(() => this.loadUnlocked(id), false);
+	}
+
+	/** Used only by an operation already holding the shared metadata gate. */
+	async loadUnlocked(id: string): Promise<ProjectRecord> {
 		if (!projectIdPattern.test(id)) throw new HarnessError("PROJECT_NOT_FOUND", "No matching project exists. Use /projects.");
 		let handle;
 		try {
@@ -83,10 +99,15 @@ export class ProjectStore {
 
 	/** Callers acquire this metadata lock before a session bucket lock. */
 	async withProject<T>(id: string, expectedRevision: number | undefined, operation: (project: ProjectRecord) => Promise<T>): Promise<T> {
+		return this.transactions.withLock(() => this.withProjectUnlocked(id, expectedRevision, operation));
+	}
+
+	/** Metadata gate must be held before this project lock and any session bucket lock. */
+	async withProjectUnlocked<T>(id: string, expectedRevision: number | undefined, operation: (project: ProjectRecord) => Promise<T>): Promise<T> {
 		await mkdir(this.root, { recursive: true, mode: 0o700 });
 		const release = await this.lock();
 		try {
-			const project = await this.load(id);
+			const project = await this.loadUnlocked(id);
 			if (expectedRevision !== undefined && project.revision !== expectedRevision) {
 				throw new HarnessError("PROJECT_CONFLICT", "The project changed. Refresh it before continuing.");
 			}

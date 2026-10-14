@@ -10,6 +10,8 @@ import { readBrowserEvidence } from "../src/browser/evidence.js";
 import { listWorkspaceDirectory } from "./workspaces.js";
 import { pickWorkspaceDirectory } from "./folder-picker.js";
 import type { WorkspacePicker } from "./folder-picker.js";
+import { AttachmentHttp } from "./attachment-http.js";
+import { ProjectManagementHttp } from "./project-http.js";
 
 const assets = new Map([
   ["/", ["./public/index.html", "text/html; charset=utf-8"]],
@@ -19,6 +21,10 @@ const assets = new Map([
   ["/session-menu.js", ["./client/session-menu.js", "text/javascript; charset=utf-8"]],
   ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
   ["/projects.js", ["./client/projects.js", "text/javascript; charset=utf-8"]],
+  ["/project-menu.js", ["./client/project-menu.js", "text/javascript; charset=utf-8"]],
+  ["/project-actions.js", ["./client/project-actions.js", "text/javascript; charset=utf-8"]],
+  ["/attachments.js", ["./client/attachments.js", "text/javascript; charset=utf-8"]],
+  ["/attachment-upload.js", ["./client/attachment-upload.js", "text/javascript; charset=utf-8"]],
   ["/cron.js", ["./client/cron.js", "text/javascript; charset=utf-8"]],
   ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
   ["/preview.js", ["./client/preview.js", "text/javascript; charset=utf-8"]],
@@ -38,11 +44,15 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   if (Number(request.headers["content-length"]) > 65_536) throw new HttpError(413, "Request body is too large.");
   const chunks: Buffer[] = [];
   let bytes = 0;
-  for await (const chunk of request.iterator({ destroyOnReturn: false })) {
-    bytes += chunk.length;
-    if (bytes > 65_536) { request.resume(); throw new HttpError(413, "Request body is too large."); }
-    chunks.push(chunk);
-  }
+  const deadline = setTimeout(() => request.destroy(), 10_000);
+  deadline.unref();
+  try {
+    for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+      bytes += chunk.length;
+      if (bytes > 65_536) { request.resume(); throw new HttpError(413, "Request body is too large."); }
+      chunks.push(chunk);
+    }
+  } finally { clearTimeout(deadline); }
   try {
     const body: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error();
@@ -60,8 +70,10 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
   const token = randomBytes(32).toString("hex");
   const previews = await createPreviewStore(() => controller.fileWorkspace);
   const shutdown = new AbortController();
+  const attachmentHttp = new AttachmentHttp(controller.attachments, shutdown.signal);
+  const projectHttp = new ProjectManagementHttp(controller, picker, shutdown.signal);
   let origin = "";
-  const server = createServer({ requestTimeout: 10_000, headersTimeout: 10_000, maxHeaderSize: 8192 }, (request, response) => {
+  const server = createServer({ requestTimeout: 120_000, headersTimeout: 10_000, maxHeaderSize: 8192 }, (request, response) => {
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Referrer-Policy", "no-referrer");
@@ -69,7 +81,8 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
     void route(request, response).catch((error: unknown) => {
       if (response.destroyed) return;
       const status = error instanceof HttpError ? error.status
-        : error instanceof HarnessError ? (["SESSION_BUSY", "SESSION_CONFLICT", "PROJECT_BUSY", "PROJECT_CONFLICT", "STALE_APPROVAL", "CLOSED"].includes(error.code) ? 409 : 400) : 500;
+        : error instanceof HarnessError ? (["SESSION_BUSY", "SESSION_CONFLICT", "PROJECT_BUSY", "PROJECT_CONFLICT", "ATTACHMENT_BUSY", "ATTACHMENT_CONFLICT", "STALE_APPROVAL", "CLOSED"].includes(error.code) ? 409
+          : error.code === "ATTACHMENT_LIMIT" ? 413 : 400) : 500;
       json(response, status, { error: error instanceof HttpError || error instanceof HarnessError ? error.message : "The local server could not complete the request." });
     });
   });
@@ -123,7 +136,10 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
       return;
     }
     if (request.method !== "POST") throw new HttpError(405, "Method not allowed.");
+    if (await attachmentHttp.upload(path, request, response)) return;
     const body = await readBody(request);
+    if (await attachmentHttp.handle(path, body, response)) return;
+    if (await projectHttp.handle(path, body, response)) return;
     if (path === "/api/workspaces") {
       if (typeof body.path !== "string" || body.path.length > 4096 || Object.keys(body).length !== 1) {
         throw new HttpError(400, "Expected a directory path.");

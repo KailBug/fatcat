@@ -21,7 +21,7 @@ const launchPicker: PickerLauncher = (file, args, options) => new Promise((resol
   execFile(file, args, options, (error, stdout) => { if (error) reject(error); else resolve(stdout); });
 });
 
-/** The fixed helper opens the Windows Common Item Dialog; paths never become shell source. */
+/** The fixed helper owns the DPI-aware Common Item Dialog; paths never become shell source. */
 export async function pickWorkspaceDirectory(initialPath: string, signal: AbortSignal, options: PickerOptions = {}): Promise<string | null> {
   if ((options.platform ?? process.platform) !== "win32") {
     throw new HarnessError("INPUT", "The native workspace picker requires Windows.");

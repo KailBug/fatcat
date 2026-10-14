@@ -40,7 +40,7 @@ export async function runInteractiveCommand(session: Conversation, prompt: strin
     return { text: `Automation ${action} completed.`, switched: false };
   }
   const match = /^\/skills(?:\s+([\s\S]*))?$/.exec(prompt);
-  if (!match) return runSessionCommand(session, prompt);
+  if (!match) return runSessionCommand(session, prompt, options);
   if (match[1]?.trim()) throw new HarnessError("USAGE", "/skills does not take an argument.");
   if (session instanceof SessionManager && session.skills) skills = session.skills.skills;
   return {

@@ -15,10 +15,11 @@ import { sessionSummary } from "./record.js";
 import type { SessionAttempt, SessionRecord, SessionSummary } from "./record.js";
 import type { SessionSaveOptions } from "./store.js";
 import type { SessionExecutionIdentity } from "./execution.js";
+import type { AttachmentAccess } from "../attachments/tools.js";
 
 export interface SessionAgentOptions extends SessionOptions {
 	skills?: SkillCatalog;
-	forSession?: (identity: SessionExecutionIdentity, current: SessionAgentOptions) => SessionAgentOptions;
+	forSession?: (identity: SessionExecutionIdentity, current: SessionAgentOptions, attachments?: AttachmentAccess) => SessionAgentOptions;
 }
 
 export interface AutomationTrigger {

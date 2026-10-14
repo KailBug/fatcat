@@ -172,10 +172,11 @@ test("project and session lock conflicts leave the previous snapshot intact", as
 	const project = await store.projects.create("Locked", workspace);
 	const saved = await store.save(draft(workspace), 0);
 	const bytes = await readFile(sessionPath(store, saved), "utf8");
-	await store.projects.withProject(project.id, project.revision, async () => {
-		await assert.rejects(store.save({ ...saved, location: { kind: "project", projectId: project.id },
-			projectRevision: project.revision }, saved.revision), expectCode("PROJECT_BUSY"));
-	});
+	const projectLock = join(store.projects.root, "store.lock");
+	await writeFile(projectLock, JSON.stringify({ pid: process.pid }));
+	await assert.rejects(store.save({ ...saved, location: { kind: "project", projectId: project.id },
+		projectRevision: project.revision }, saved.revision), expectCode("PROJECT_BUSY"));
+	await unlink(projectLock);
 	const lock = join(store.root, workspaceKey(workspace), "store.lock");
 	await writeFile(lock, JSON.stringify({ pid: process.pid }));
 	await assert.rejects(store.save({ ...saved, title: "Failed update" }, saved.revision), expectCode("SESSION_BUSY"));

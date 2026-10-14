@@ -41,8 +41,9 @@ try {
 	page.on("pageerror", (error) => errors.push(error.message));
 	await page.goto(server.url);
 	await page.getByRole("button", { name: "New project", exact: true }).click();
-	await page.getByLabel("Project name", { exact: true }).fill("Research");
-	await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+	const createProjectDialog = page.getByRole("dialog", { name: "Create project", exact: true });
+	await createProjectDialog.getByLabel("Project name", { exact: true }).fill("Research");
+	await createProjectDialog.getByRole("button", { name: "Choose folder", exact: true }).click();
 	await page.locator("#project-dialog").waitFor({ state: "hidden" });
 	assert.equal(manager.current.id, original);
 	const project = controller.snapshot().projects[0]!;

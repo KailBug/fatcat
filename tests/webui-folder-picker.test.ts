@@ -20,6 +20,7 @@ test("native picker passes paths as data, bounds its helper and sanitizes failur
   const selected = await pickWorkspaceDirectory(initial, signal, { platform: "win32", launch: async (file, args, options) => {
     assert.equal(file, "powershell.exe");
     assert.ok(args.includes("-STA"));
+    assert.equal(args[args.indexOf("-WindowStyle") + 1], "Hidden");
     assert.ok(args.includes("-File"));
     assert.ok(!args.includes(initial));
     assert.match(args.at(-1)!, /native-folder-dialog\.ps1$/);
@@ -41,6 +42,14 @@ test("native picker passes paths as data, bounds its helper and sanitizes failur
   let launched = false;
   assert.equal(await pickWorkspaceDirectory(initial, AbortSignal.abort(), { platform: "win32", launch: async () => { launched = true; return ""; } }), null);
   assert.equal(launched, false);
+  const cancelled = new AbortController();
+  assert.equal(await pickWorkspaceDirectory(initial, cancelled.signal, { platform: "win32", launch: async () => {
+    cancelled.abort();
+    return JSON.stringify({ path: workspace });
+  } }), null, "A result delivered after cancellation must not change the workspace");
+  await assert.rejects(pickWorkspaceDirectory(initial, signal, { platform: "win32", launch: async () => {
+    throw Object.assign(new Error("private timeout details"), { killed: true, signal: "SIGTERM" });
+  } }), /Could not open the Windows folder picker/);
   await assert.rejects(pickWorkspaceDirectory(initial, signal, { platform: "linux" }), /requires Windows/);
 });
 

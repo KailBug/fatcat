@@ -1,4 +1,5 @@
 import type { LoopEvent } from "./loop.js";
+import type { ModelObservation } from "./model.js";
 import { HarnessError, checkCancellation } from "./errors.js";
 import { sumTool } from "./tools/sum.js";
 import { createWorkspace } from "./permissions/workspace.js";
@@ -19,6 +20,10 @@ import type { BrowserRecord } from "./browser/protocol.js";
 import { readAttachmentSource } from "./attachments/import.js";
 
 export type { ToolResult } from "./tools/types.js";
+export interface ToolTurnContext {
+  /** Reserve one auxiliary request, leaving the final response available. */
+  documentRequest: () => (event: ModelObservation) => void;
+}
 export type Tools = {
   definitions: Tool["definition"][];
   readonly workspaceRoot?: string;
@@ -28,7 +33,7 @@ export type Tools = {
   getBrowserChecks?: () => BrowserRecord[];
   readImportFile?: (path: string, signal?: AbortSignal) => Promise<{ name: string; bytes: Uint8Array }>;
   execute: (name: string, argumentsJson: string, signal?: AbortSignal, callId?: string) => Promise<ToolResult>;
-  forTurn?: (onEvent?: (event: LoopEvent) => void) => Tools;
+  forTurn?: (onEvent?: (event: LoopEvent) => void, context?: ToolTurnContext) => Tools;
 };
 
 function collectTools(tools: Tool[]) {

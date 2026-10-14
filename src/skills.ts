@@ -306,7 +306,7 @@ export function withSkills(base: Tools, catalog: SkillCatalog): Tools {
     return base.execute(name, argumentsJson, signal, callId);
   }
   return { ...base, definitions, execute,
-    ...(base.forTurn ? { forTurn: (onEvent) => withSkills(base.forTurn!(onEvent), catalog) } : {}) };
+    ...(base.forTurn ? { forTurn: (onEvent, context) => withSkills(base.forTurn!(onEvent, context), catalog) } : {}) };
 }
 
 export function skillCatalogPrompt(catalog: SkillCatalog): string {

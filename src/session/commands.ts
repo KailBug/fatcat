@@ -135,7 +135,7 @@ async function runAttachmentCommand(session: SessionManager, command: string, ar
     if (paths.length !== 1 || !paths[0]) throw new HarnessError("USAGE", 'Use /attach "path".');
     const record = await session.importAttachment(paths[0], signal);
     return { text: `Attachment saved: ${attachmentLabel(record)}. ${scopeLabel}. `
-      + "Content reading supports UTF-8 Markdown and text; other originals are saved without document or image analysis.", switched: false };
+      + "Ask the agent to read supported text or document formats. Image and PDF-page analysis requires a supported current model; saving does not analyze the file.", switched: false };
   }
   const args = quotedArguments(argument ?? "", "Use /attachment remove <reference> or /attachment delete <reference> --confirm.");
   const [action, reference, confirmation] = args;

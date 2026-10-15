@@ -20,87 +20,80 @@ import { loadAutomationConfig } from "./automation/config.js";
 import { FileChanges } from "./automation/files.js";
 import { runAutomations } from "./automation/runner.js";
 
-const help = `Fatcat - minimal Agent Harness
+const help = `Fatcat - local coding assistant
 
-Usage:
-  pnpm start --help
-  pnpm start --version
-  pnpm start --checkConfig
-  pnpm start --chat
-  pnpm start --continue
-  pnpm start --resume <id-or-name>
-  pnpm start --project <id-or-name>
-  pnpm start --tui
-  pnpm start --webui
-  pnpm start --chat --workspace examples/workspace
-  pnpm start "Use the sum tool to add 17 and 25."
-  pnpm start --prompt "Explain what an agent loop does."
+Usage: pnpm start [options] ["prompt"]
 
-Use --version (-v) to print the local Fatcat version without model credentials.
-Use --chat for a continuous conversation with /help, /cron, /skills, /context, /compact, /new, /sessions, /projects, /project, /resume, /rename, /fork, and /exit.
-Use --tui for the interactive dashboard with conversation, configuration, usage, and cache telemetry.
-Use --webui for the local browser interface at 127.0.0.1:3210; --port <1-65535> selects another port.
+Quick start:
+  pnpm start --chat                         Start a conversation
+  pnpm start --webui                        Open the browser interface
+  pnpm start --chat --workspace D:/my-app    Work in another directory
+  pnpm start "Explain this project"         Run one task and exit
 
-The default browser opens automatically. Web UI write and command approvals appear in the browser.
-Describe scheduled or file-change tasks in a conversation, use /cron in chat/TUI, or open Cron tasks in Web UI.
-The automation tool binds tasks to that session; later runs continue its history with current permissions.
-Keep chat/TUI/Web UI open for tasks to run. Saved task counts persist; offline occurrences are not replayed.
+Run:
+  --chat                          Terminal conversation
+  --tui                           Interactive terminal dashboard
+  --webui                         Browser UI at 127.0.0.1:3210; opens automatically
+  --port <1-65535>                Web UI port (default: 3210)
+  --prompt <text>                 Task text; alternative to a positional prompt
+  --checkConfig                   Check local configuration, without API calls
+  --help, -h                      Show this help
+  --version, -v                   Show version
 
-Advanced standalone JSON runner (separate from session-bound tasks):
-  pnpm start --automation automation.example.json --check-automation
-  pnpm start --automation automation.example.json
-The first command only validates configuration and watched paths, without model credentials.
-The second starts a runner that creates a fresh saved session per activation under current permissions.
-Its queues and run counts are process-local, defaulting to 20 total attempts and 24 hours. Ctrl+C stops it.
+Workspace and sessions:
+  --workspace <directory>         Working directory (default: launch directory)
+  --continue, -c                  Resume the latest saved session
+  --resume, -r [id-or-name]       Resume a session; omit ID to pick/list locally
+  --name, -n <name>               Name the session
+  --fork-session                  Copy history when using --continue or --resume
+  --no-session-persistence        Keep a new standalone session in memory
+  --project <id-or-name>          New session in an existing project
 
-A prompt runs one task. Successful history is saved locally for the selected workspace.
-Use --continue (-c) to continue the latest session, or --resume (-r) <id-or-name> to select one.
-Bare --resume shows a session picker in a terminal or a local list for pipes, without model credentials.
-Use --name (-n) <name> to name a session; --fork-session with --continue or --resume copies history into a new session.
-Use /sessions in chat or TUI to list all saved sessions; --no-session-persistence keeps a new session in memory.
-Use --project <id-or-name> to start a new session in an existing project; /projects lists projects.
-Use /project create "name" "directory" to create a project, then /project use <id-or-name> to start its session.
-Project sessions share one fixed workspace and keep separate histories. /new inherits the project; /new --standalone creates a separate independent session.
-Use /project join <id-or-name> to review a standalone session's migration, then /project confirm <token> or /project cancel.
-Projects require persistence; --project cannot combine with --continue or --resume.
-Use the Web UI project menu to rename a project, change its workspace, or delete it. Detachment and cross-project migration are not available.
-Session storage defaults to ~/.fatcat/sessions; FATCAT_SESSION_DIR selects another local store.
-Restored sessions use their saved workspace with the current launch's provider and permission settings.
-Use /workspace <path> in chat or TUI, or click the Web UI workspace path, to change the session workspace.
-The agent can delegate focused independent tasks when useful; simple tasks stay direct.
-At most two child tasks may start per user turn (up to six additional model requests).
-Each child uses at most three additional model requests and cannot delegate.
-Tasks use the current directory as the workspace and expose read, write, and shell.
-Use --workspace <directory> to select another directory. Writes and commands ask for approval in the active interface.
+  Sessions save automatically. Resuming restores the workspace, with current permissions.
+  --continue, --resume and --project are mutually exclusive and require persistence.
 
-Built-in skills are available by default; workspace and user .fatcat/skills or .agents/skills override matching names.
-Use /skills in chat or TUI to inspect the local catalog. Mention $name or describe a task to use a skill.
-Skill instructions and bundled resources are loaded on demand through read; scripts still need shell authorization.
+Permissions:
+  --permission-mode <mode>
+    default                       Ask before file writes and commands (default)
+    acceptEdits                   Allow workspace file writes; ask before commands
+    plan                          Read-only planning; deny writes and commands
+    freeToGo                      Allow files/networks beyond the workspace/public boundary;
+                                  run ordinary commands; ask for dangerous/opaque commands
+  --web-permission <allow|deny>   Web search and page reading (default: allow)
 
-Use --permission read-only to forbid writes and commands, or workspace-write to preauthorize file writes.
-Use --permission-mode default (Manual), acceptEdits (automatic file edits), plan (read-only planning), or freeToGo (Free to go).
-Free to go allows local files and HTTP(S) networks beyond the workspace/public boundary; ordinary commands run automatically.
-Clearly dangerous commands and opaque shell forms still require approval. This command check is not an OS sandbox.
-Permission modes replace --permission and --shell-permission; the Web UI can switch modes while idle.
-Shell authorization is separate: --shell-permission ask (default), deny, or allow for unattended commands.
-Shell uses Windows PowerShell with current-user access, not an operating-system sandbox.
-Public web search and page reading are available by default, including in read-only workspaces.
-Use --web-permission deny to disable the web tool (allow is the default). This is not a network sandbox for shell.
-Search queries go to Bing (default) or DuckDuckGo; fetched URLs go to their hosts. Do not include secrets in either.
-Each task emits an execution_report with request sizes, reported token usage, writes and command outcomes, even on failure.
+  Advanced alternatives to --permission-mode:
+  --permission <policy>           ask (default), read-only, workspace-write
+  --shell-permission <policy>     ask (default), deny, allow
+  read-only forbids writes and commands; workspace-write allows file writes.
+  Do not mix --permission-mode with --permission or --shell-permission.
+  freeToGo requires web access. Shell runs as your user, without an OS sandbox;
+  --web-permission deny disables only the web tool, not shell networking.
 
-HARNESS_MAX_REQUEST_BYTES limits each complete model request body (default 262144 bytes); older read outputs may be replaced by explicit markers to fit.
-Automatic read omission preserves current/recent turns, user instructions, and execution facts; full successful history is saved locally.
-Use /context in chat, TUI, or Web UI to inspect conversation bytes, or /compact [instructions] to summarize older turns manually.
-Manual compaction uses bounded model requests, retains original history and the latest complete turn, and can be cancelled.
-Local request-limit rejection can trigger one automatic compaction; summaries and continuation share the turn request budget. Set HARNESS_AUTO_COMPACT=false to disable it.
-An answer or a zero exit code alone does not certify the task; inspect the recorded evidence.
+Automation:
+  --automation <file.json>        Run standalone jobs; fresh session per activation
+  --check-automation              Validate --automation configuration without API calls
+  For session schedules, describe the task in chat or use /cron.
+  Keep the process open; missed runs are not replayed.
 
-HARNESS_PROVIDER selects deepseek (default), kimi, mimo, or qwen for the entire session.
-Selected file and skill contents are sent to the configured provider when the model reads them.
-Configuration checks are local and do not validate credentials or connectivity.
+Inside chat/TUI:
+  /help                           All conversation commands and syntax
+  /sessions, /projects, /skills   List saved sessions, projects or available skills
+  /project create "name" "path"   Create a project; /project use <id-or-name> starts it
+  /workspace <path>               Change the session workspace
+  /context, /compact              Inspect context size or summarize older turns
+  /exit                           End the conversation
 
-In CLI task mode, logs go to stderr and the final answer goes to stdout. Press Ctrl+C to cancel.`;
+Configuration and details:
+  Before chatting, configure a provider key: docs/QUICK_START.md.
+  HARNESS_PROVIDER: deepseek (default), kimi, mimo, qwen.
+  FATCAT_SESSION_DIR: session store (default: ~/.fatcat/sessions).
+  Read file/skill content is sent to the provider; saved history is local plaintext.
+  Delegation: up to two child tasks per turn, three model requests each; no nesting.
+  Task output: answer on stdout; logs and execution_report on stderr. Ctrl+C cancels.
+
+  docs/REFERENCE/COMMANDS.md      Full syntax, combinations and conversation commands
+  docs/REFERENCE/CONFIGURATION.md Provider settings, limits and environment variables
+  docs/GUIDES/                    Session, project, skill and automation workflows`;
 
 async function main(args: string[]): Promise<number> {
   let terminal: TerminalInput | undefined;

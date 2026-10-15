@@ -1,105 +1,66 @@
-# Providers：模型协议与开发规范
+# Providers：模型协议与能力边界
 
-## 范围与实现边界
+[架构总览](README.md) · [供应商配置](../REFERENCE/CONFIGURATION.md#providers)
 
-阶段 2D-10 在现有 DeepSeek 接入上增加 Kimi、MiMo 和 Qwen，复用 `openai@7.18.0` 的 Chat Completions 兼容客户端。配置在进程启动时选择一个供应商，父子 Agent 使用同一 Config；Session 内不切换、路由或故障转移。没有动态插件注册表，也不引入新的 SDK。
-
-默认继续使用 DeepSeek。新增三家按官方协议实现，以虚构凭据和注入 SDK 传输完成离线合约检查；依用户要求，本轮不执行三家的 API 在线验证。账号权限、实际连通性和真实任务表现均未因此获得验证。具体已执行检查以 [PROGRESS.md](../PROGRESS.md) 为准。
+配置在启动时选择一个供应商，父子 Agent 使用同一 Config。当前实现是固定 profile 与共享 OpenAI-compatible Chat Completions 客户端，没有动态注册、运行时切换、路由或故障转移。
 
 ## 模块职责
 
-2026-10-10 的手动 compact 使用当前 Config 创建独立 `compactionModel`，复用同一 SDK、端点、生成参数、精确请求预算、用量和取消逻辑。2026-10-12 的自动 compact 复用此模型，只响应本地字节检查拒绝，不把供应商 HTTP/截断/超时作为恢复触发。内部 `Model` 选项 `purpose: "compaction"` 不发送给供应商；它使四家摘要请求都省略 tools / tool_choice，摘要路径拒绝任何返回的工具调用。注入传输检查覆盖四家配置，不代表真实摘要服务或质量已验证。
+| 源码 | 职责 |
+| --- | --- |
+| `src/providers.ts` | 配置描述、固定 endpoint、专有字段及精确模型能力 |
+| `src/config.ts` | 所选凭据/模型/区域与共享预算校验 |
+| `src/model.ts` | createModel、完整请求准备、SDK、响应校验、期限和安全错误 |
+| `src/model-usage.ts` | token 与缓存计数合法性 |
+| `src/documents/vision.ts` | 已获准图片的临时辅助请求 |
+| `webui/context-usage.ts` | 界面已知模型容量与最近父请求观察，不改变 API |
 
-Web UI 的后续上下文指示器在独立 webui/context-usage.ts 中维护六个已核对精确模型的窗口数字，未知名称不猜测；只观察既有父 model_usage，不新增供应商请求字段、远程发现或配置。容量依据及时间见 [WEBUI.md](WEBUI.md)，本地 maxRequestBytes 仍是独立完整 JSON 字节预算。
+原 createDeepSeekModel 保留程序化兼容入口。注入 transport 用于测试，生产不开放任意 base URL；模型协议差异不散入 Loop、Session 或各工具。
 
-`src/providers.ts` 定义小型供应商 profile：配置字段、固定地址、默认模型和厂商专用请求字段。`src/config.ts` 只读取所选供应商的凭据/模型/区域与共享预算。`src/model.ts` 的 `createModel(config, transport?, tools?)` 创建共享客户端，负责请求容量、deadline、取消、SDK 调用、响应校验、用量观察和安全错误。原 `createDeepSeekModel` 保留兼容入口；CLI/createAgent 使用通用入口。
+## 请求约定与设计理由
 
-`Model`、Loop、Session、Tools、执行报告和上下文投影继续使用共同协议。供应商差异保持在配置和完整请求体构造处，不把特定厂商字段散入业务循环或各工具。注入 transport 只用于测试，不开放任意生产 base URL。
+环境变量、默认模型及区域选择集中在配置参考。运行时仅使用所选 Key，不回退 OPENAI_API_KEY 或其他供应商，不继承 OpenAI organization/project。
 
-2D-11 的 TUI 复用这些非流式协议，模型完成响应后才有完整答案和服务端 usage；界面的运行状态更新不代表 token 流式输出。缓存用量也是响应元数据，不新增缓存控制请求参数。界面只展示选定 profile 的非秘密配置，不显示凭据。
-
-## 配置与当前请求约定
-
-`HARNESS_PROVIDER` 可为 deepseek、kimi、mimo、qwen，省略时使用 deepseek。只读取被选中的配置：
-
-| 供应商 | Key / Model 环境变量 | 默认模型 | 区域与固定 base URL |
-| --- | --- | --- | --- |
-| DeepSeek | DEEPSEEK_API_KEY / DEEPSEEK_MODEL | deepseek-flash | https://api.deepseek.com |
-| Kimi | MOONSHOT_API_KEY / KIMI_MODEL | kimi-k2.6 | KIMI_REGION=cn（默认）：https://api.moonshot.cn/v1；global：https://api.moonshot.ai/v1 |
-| MiMo | MIMO_API_KEY / MIMO_MODEL | mimo-v2.6-flash | https://api.xiaomimimo.com/v1 |
-| Qwen | DASHSCOPE_API_KEY / QWEN_MODEL | qwen-plus | QWEN_REGION=cn（默认）：https://dashscope.aliyuncs.com/compatible-mode/v1；intl：https://dashscope-intl.aliyuncs.com/compatible-mode/v1 |
-
-区域和 Key 必须对应用户实际账号；这些是厂商 API 平台地址，不是订阅或 Coding Plan 地址，本地校验不验证可用性。模型覆盖值必须支持工具调用及本项目的非思考模式。当前不管理 reasoning_content 等历史，因此只提供非流式、非思考路径；不能据模型名可配置推断所有该厂商模型均受支持。
-
-| 请求字段 | DeepSeek / Kimi / MiMo | Qwen |
+| Profile | 固定服务地址 | 生成参数差异 |
 | --- | --- | --- |
-| stream | false | false |
-| tool_choice | 通常 auto；收尾时 DeepSeek/Kimi 为 none，MiMo 省略 tools 和 tool_choice | 通常 auto；收尾时 none |
-| 非思考控制 | thinking: { type: "disabled" } | enable_thinking: false |
-| 输出上限 | max_completion_tokens: 2048 | max_tokens: 2048 |
+| DeepSeek | https://api.deepseek.com | thinking disabled，max_completion_tokens |
+| Kimi | https://api.moonshot.cn/v1 或 https://api.moonshot.ai/v1 | thinking disabled，max_completion_tokens |
+| MiMo | https://api.xiaomimimo.com/v1 | thinking disabled，max_completion_tokens；使用 Bearer |
+| Qwen | https://dashscope.aliyuncs.com/compatible-mode/v1 或 https://dashscope-intl.aliyuncs.com/compatible-mode/v1 | enable_thinking=false，max_tokens |
 
-Qwen 使用 max_tokens，是因为所选 qwen-plus 的兼容范围不统一支持较新的 max_completion_tokens；不将 DeepSeek/Kimi/MiMo 的 thinking 参数发送给 Qwen。Kimi 默认选用文档明确支持关闭思考的 kimi-k2.6，不能切换到只能思考的模型后期待当前协议继续成立。MiMo 文档支持 Bearer 和 api-key，本项目统一使用 SDK Bearer。
+共同使用 stream=false，输出上限 2048；普通工具选择 auto。文字收尾时 DeepSeek/Kimi/Qwen 使用 none，MiMo 省略 tools/tool_choice，因为其协议不可靠支持非 auto 选择。即便服务返回违规工具，Loop 仍拒绝超出额度执行。
 
-2026-10-02 核对最后一次请求的工具选择：[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)、[Kimi Chat API](https://platform.kimi.com/docs/api/chat) 与 [Qwen OpenAI-compatible Chat](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions) 支持 none。[MiMo Chat API](https://mimo.mi.com/docs/en-US/api/chat/openai-api) 说明非 auto 值会被忽略，因此 MiMo 的文字收尾请求省略工具定义及选择字段，不发送不支持的 none。此前工具调用和结果仍保留在消息中；若仍返回工具调用，Loop 硬上限拒绝执行。父子包装透传单次 Model options，不改变其他请求或持久配置。四家离线 SDK 合约覆盖请求字段；真实服务效果须另行验证。
+使用非思考路径是因为当前历史不管理 reasoning_content；可配置模型名不代表任意模型都兼容。Qwen 参数单独构造，不能把其他家的 thinking/max_completion_tokens 原样复制。SDK 禁自动重试、关闭原始日志，期限与外部 AbortSignal 共同控制；响应截断、未知/矛盾 finish_reason、非法工具结构不得当成完成。
 
-## Provider 开发规范
+purpose=compaction/document 是内部选项，不发送给供应商；这些辅助请求均省略 tools/tool_choice并拒绝返回工具。摘要复用当前模型，图像请求只含所选材料与问题，不承接完整会话历史。完整厂商 JSON（包括 base64）先通过共同字节预算。
 
-### 用量与缓存字段
+## 图片能力
 
-标准 `prompt_tokens`、`completion_tokens`、`total_tokens` 必须为非负安全整数且加和一致，才成为有效 token 用量。缓存字段单独校验：兼容格式的 `prompt_tokens_details.cached_tokens` 与 DeepSeek 的 `prompt_cache_hit_tokens` 可表示输入缓存命中；必须不超过同一响应的 prompt tokens。DeepSeek 同时给出 `prompt_cache_miss_tokens` 时还需与 hit 加和一致；多个已给出的缓存计数若冲突或非法，缓存信息保持未知，不因此抹去有效的基础用量。
+当前 getModelInputCapabilities 使用精确名称白名单：
 
-没有缓存字段表示未报告，不是零命中；明确的合法零计数才是已知零。每回合和进程累计率只对具有合法缓存数据的请求计算 `sum(cached tokens) / sum(prompt tokens)`，并显示覆盖范围。分母为零时不显示伪造百分比，不平均每个响应的百分比，不把模型输出 tokens 纳入缓存命中分母，也不推算服务内部 KV 占用、缓存容量、价格或费用。实际解析字段与离线验收见 `src/model-usage.ts` 和 PROGRESS.md；UI 口径见 [TUI.md](TUI.md)。
+| 供应商 | 图片模型 |
+| --- | --- |
+| Kimi | kimi-k2.6 |
+| MiMo | mimo-v2.6-flash、mimo-v2.6-pro、mimo-v2.6-pro-ultraspeed、mimo-v2.5 |
+| Qwen | qwen3-vl-plus、qwen3-vl-flash |
+| DeepSeek | 无 |
 
-### 开发要求
+未知别名/日期后缀不猜测支持，发送前返回 DOCUMENT_VISION_UNAVAILABLE，保留原生文本读取。所有 profile 的 nativeFileInput 均为 false；图片适配不代表 PDF/Office 原生输入、音频或多模态检索。
 
-新增或修改供应商必须同时满足以下要求：
+图片仅构造临时 image_url data URL，Session 保存文字和固定来源，不保存 base64 或凭据。不自动切换供应商，也不增加隐藏视觉 Key。请求预算、逐页部分成功与缓存归 [Documents](DOCUMENTS.md)。
 
-1. **先核对官方协议。** 记录模型是否支持 tool calling、关闭思考、非流式输出，以及地址、认证、输出上限、工具字段、停止原因和用量格式。相同的 OpenAI 兼容标签不代表厂商扩展字段相同。注明资料链接和本项目取舍。
-2. **隔离配置与认证。** 只使用所选厂商 Key，禁止回退到其他厂商或 OPENAI_API_KEY；固定允许的 endpoint/region，不继承 OpenAI organization/project。错误信息不能包含 Key、原始服务错误、提示或工具正文。配置检查不发请求。
-3. **只发送已支持的参数。** 所有扩展字段由 profile 生成，保留工具定义和 assistant/tool 的 call ID 关联；不凭推测添加 strict、thinking、temperature、并行工具或缓存控制。模型覆盖值由使用者选择兼容能力。
-4. **复用确定的响应边界。** 校验响应、finish_reason、文本和函数工具调用的结构，拒绝截断/矛盾/未知结构，不能把部分响应当成完成。工具参数继续由本地 Tools 校验；供应商支持不能替代参数与权限检查。
-5. **预算、取消和用量一致。** 完整厂商请求体（含扩展字段）先做字节测量和上下文投影，超限不发送。禁用 SDK 自动重试，沿用 deadline、外部 AbortSignal 和安全错误分类。仅接受非负安全整数、加和一致的标准 token 用量，缺失或非法保持未知；不推算金额或补造用量。
-6. **必须离线验证 SDK 边界。** 使用虚构凭据和注入传输捕获实际 URL、认证头和 JSON，验证配置隔离、厂商参数、工具历史、直接回答及工具调用、HTTP/网络错误脱敏、超时/取消、请求超限不传输和用量观察。测试不加载真实 `.env`，不因 SDK 默认行为偷发网络请求。
-7. **分开记录实现与在线证据。** 本轮三家新增厂商无需 API 在线验收。若以后用户显式选择在线验证，再建立有界场景并单独报告调用次数与结果；离线通过不能写成在线通过，也不能把 SDK 兼容性当成账号和模型可用性的保证。
+## 用量校验
 
-这些规范约束当前小型 profile 和共享模型边界，不要求预建抽象基类、插件接口或复杂能力矩阵。
+prompt_tokens、completion_tokens、total_tokens 必须为非负安全整数且相加一致。缓存独立校验标准 cached_tokens 和 DeepSeek hit/miss 字段，不能超过相应输入；多字段冲突时缓存未知但基础用量可仍有效。
 
-## 阶段 3 的图片请求与可选识别服务（已实现，离线合约已验证）
+缺失不是零，累计只包含合法报告并保留覆盖数量，溢出保持未知。缓存率按有效缓存请求的总命中/同批输入计算，不平均百分比；零分母不显示比例。不能推算 KV 容量、显存、价格或账单。统计消费边界见 [执行报告](EXECUTION_REPORT.md)和 [TUI](TUI.md)。
 
-2026-10-14 按此前确认的设计，`src/documents/vision.ts` 复用当前 Config 与 `createModel`，处理已获准的 PNG/JPEG 或本地渲染的 PDF 页面。`mode: visual` 回答图片问题，`mode: transcribe` 生成可复用文字。独立视觉/OCR 服务没有新增配置，也不是使用此功能的前提。详细资料、缓存和来源边界见 [DOCUMENTS.md](DOCUMENTS.md)。
+## 维护与验证要求
 
-**源码事实：** `getModelInputCapabilities` 使用以下精确模型白名单，不按模型名称前缀推测能力。白名单之外在发送前返回 `DOCUMENT_VISION_UNAVAILABLE`，保留原生文本读取能力且说明未覆盖的图片/扫描内容；不会切换供应商或选用另一组凭据。
+修改 profile 时核对官方地址、认证、工具/非思考能力、请求字段、停止原因和用量，保留实际 SDK JSON 的离线合约测试。使用假凭据及注入传输检查 URL/头/正文、工具关联、超限不传输、取消、超时与错误脱敏；不凭兼容标签添加 strict、并行、温度或缓存字段。
 
-| 当前供应商 | 已适配的图片模型精确名称 | 其余情况 |
-| --- | --- | --- |
-| Kimi | `kimi-k2.6` | 其他名称没有因此获得图片适配；需独立核对非思考与工具协议 |
-| MiMo | `mimo-v2.6-flash`、`mimo-v2.6-pro`、`mimo-v2.6-pro-ultraspeed`、`mimo-v2.5` | 包括 `mimo-v2.5-pro` 在内的其他名称不猜测图片支持 |
-| Qwen | `qwen3-vl-plus`、`qwen3-vl-flash` | 默认 `qwen-plus` 保持文本路径；日期快照和其他别名不自动匹配 |
-| DeepSeek | 无 | 默认聊天配置不发送图片 |
+当前协议依据保留为：[DeepSeek](https://api-docs.deepseek.com/api/create-chat-completion/)、[Kimi](https://platform.kimi.com/docs/api/chat)、[MiMo](https://mimo.mi.com/docs/en-US/api/chat/openai-api)、[Qwen](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)。这是实现选择的来源，后续修改仍需重新核对，不能据链接存在宣称已在线验证。
 
-四家 `nativeFileInput` 均为 false：当前没有原生 PDF/Office 文件 API 适配。图片能力不代表原生文件、音频或多模态检索能力。已有环境变量继续选择聊天模型；没有附加视觉 Key、独立 OCR endpoint 或隐式模型发现。
+Kimi/MiMo/Qwen 的现有证据为离线合约；视觉也未调用真实 API，账号可用性、图表理解和转写质量未验收。已有 live 脚本保持 DeepSeek 专用范围，仅在明确请求时运行。新增供应商不必默认产生真实调用。
 
-**请求与持久化事实：** 图片只在本次辅助请求中转换成 OpenAI-compatible `image_url` data URL。`purpose: document` 是内部选项，四家请求均省略 tools/tool_choice，不传递 purpose 字段。Session 保存的是带版本、定位和生成方式的文字结果/引用，不保存图片 base64 或 API Key；辅助请求不承接整个会话历史。文字提取标为 `model-transcription`，图像解释标为 `model-description`；两者都不能冒充精确原文或自动获得“全文已读”状态。
-
-Loop 的 `ToolTurnContext.documentRequest()` 在传输前占用同一回合的请求次数，包括本地字节拒绝，并保留最后一次回答请求。子任务沿其既有最多三次请求的额度执行，观察事件继续归入 children，不挪用父回合的额度；父子仍使用同一个 Session 资料作用域。Skills、automation、delegation 和附件包装均透传 turn context。辅助请求发送 `model_request`（purpose 为 document）、`model_input` 和 `model_usage`，消费计入现有报告；TUI/Web 的会话上下文指标不把这些孤立图片请求当作聊天历史容量。
-
-视觉设施单次最多四张图片、合计 8 MiB 二进制内容，单图像素与本地解码/渲染上限见 DOCUMENTS。资料读取按页调用，每页消耗一次辅助请求，以便单独缓存和报告部分成功。完整 JSON（包括 base64）仍受 `HARNESS_MAX_REQUEST_BYTES` 限制，默认 262144 字节；超限在发送前拒绝，不自动放宽。继续使用共享 deadline、取消、禁重试、安全错误和 2048 输出 token 上限，并拒绝超过 32 KiB 的最终文字或返回工具调用的异常响应。解析/图片上限不代表一定能装入较小的请求字节预算。
-
-**公开文档依据（2026-10-14 核对）：** [Kimi Chat API](https://platform.kimi.com/docs/api/chat) 与[视觉输入](https://platform.kimi.com/docs/guide/use-kimi-vision-model)说明多部分消息、base64 图片及模型约束；[MiMo 图片理解](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)列出上述四个模型和 base64 输入，[Chat API](https://mimo.mi.com/docs/en-US/api/chat/openai-api)约束非思考请求；[Qwen 视觉理解](https://help.aliyun.com/zh/model-studio/vision)及[OpenAI 兼容协议](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions/)支持上述 VL 模型的 image_url 与 enable_thinking。该白名单是 Fatcat 对公开协议的保守实现选择，不是所有厂商模型能力的完整清单。
-
-**验证边界：** `tests/document-vision.test.ts`、`tests/document-budget.test.ts` 与原 provider 测试使用假凭据、注入传输，验证实际 SDK JSON、认证/端点、能力拒绝、原生文件不支持、预算、取消、超时、用量及错误脱敏；没有执行真实视觉 API 请求。因此账号可用性、复杂图表理解与转写准确率没有据此得到在线验证，完整执行记录以 PROGRESS 为准。
-
-**未来计划：** 只有当前聊天视觉不可用，或代表性样例证明质量、定位、成本、延迟存在缺口时，才评估独立视觉/OCR 服务，按实际实现新增配置。在线 Embedding 仍与聊天独立配置，尚未实现；不会把聊天视觉直接当作检索模型。此处保留此前可选 OCR 的设计依据，不预建未使用的 provider 框架。
-
-## 官方依据
-
-以下资料用于本轮协议核对（2026-09-27）；模型默认值是实现时的选择，不是自动追踪最新版的别名。
-
-- DeepSeek：[工具调用](https://api-docs.deepseek.com/guides/tool_calls/)、[思考控制](https://api-docs.deepseek.com/guides/thinking_mode/)、[Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)。沿用已有已验证 profile。
-- Kimi：[模型能力](https://platform.kimi.ai/docs/api/models-overview)、[模型列表](https://platform.kimi.ai/docs/models)、[Chat API](https://platform.kimi.com/docs/api/chat)。依据非思考和工具能力选择默认模型，配置国内与全球 endpoint。
-- MiMo：[OpenAI 兼容 Chat API](https://mimo.mi.com/docs/en-US/api/chat/openai-api)。核对固定 endpoint、认证、默认模型、thinking 开关、max_completion_tokens 和工具字段。
-- Qwen：[OpenAI 兼容 Chat Completions](https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions)、[Function calling](https://www.alibabacloud.com/help/en/model-studio/qwen-function-calling)。核对区域、Bearer、enable_thinking、max_tokens 和 tool_calls。
-
-SDK 行为同时以项目已安装的 `openai@7.18.0` 类型和实现检查，保持原依赖及禁用重试的策略。
-
-已有五个 `verify:*` 在线脚本通过 `scripts/fixtures/live-config.ts` 保持 DeepSeek 专用范围；选择其他 HARNESS_PROVIDER 时在创建模型前拒绝，防止误把现有样例当作新厂商验收。普通 CLI 仍可由用户自行配置所选厂商使用；本轮开发验证没有借此发送 API 请求。
+独立 OCR、Embedding、音频、流式/思考历史或故障转移尚未接入；按具体需求新增窄适配，不预建插件框架。

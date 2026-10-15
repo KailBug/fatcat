@@ -1,215 +1,70 @@
-# Tools：read、write、shell 与授权边界
+# Tools：通用协议与文件执行事实
 
-## 当前状态
+[架构总览](README.md) · [编码操作](../GUIDES/CODING.md)
 
-联网查询由独立的 web 工具提供，详见 [WEB.md](WEB.md)。`createTools` 的第五个可选参数为 WebOptions，未提供则保留本文件的程序化基础集合，提供但省略 permission 时默认 deny。CLI / chat / TUI 显式传 allow（可用 --web-permission deny 关闭）；父子 Agent 共享该配置。
+Tools 提供模型可见定义、参数校验和异步执行。工具不自行读取终端输入；授权和共享执行防护归 [Permissions](PERMISSIONS.md)，各入口只提供审批回调。
 
-受控工作区页面检查由 `browser` 工具提供，详见 [BROWSER.md](BROWSER.md)。第七个可选 BrowserOptions 装配浏览器执行与一次审批回调；普通 CLI/chat/TUI/Web UI 默认提供，程序化省略时保持原工具集合。它复用 shell 权限上限及策略操作锁，但文件/网络始终限工作区，不继承 Free 的越界能力。getBrowserChecks journal 经父子包装和 Loop 发出 browser_record，报告保存证据路径；不新增长期浏览器 Session。
+## 装配与专用责任
 
-第六个参数 PermissionPolicy 提供 Manual、Accept edits、Plan 和 Free to go。以下工作区路径/扩展名约束描述前三种与旧参数的默认范围；只有显式 Free 扩展 read/write/shell cwd 到本地绝对/越界、隐藏、依赖、链接和任意扩展名的文本文件。结果/journals 在默认范围返回相对路径，在 Free 返回规范绝对路径。read/search/write/shell/web 使用策略操作锁；有界 UTF-8、唯一编辑、冲突、取消、输出及执行期限保持。Free 普通命令自动执行，危险/不透明命令一次审批；策略及启发式限制见 [PERMISSIONS.md](PERMISSIONS.md)。
-
-阶段 2B 的只读工具基线、阶段 2C 的最小委派已通过用户 review。阶段 2D-1 将 list_directory 和 read_file 合并为 read，增加目录分页和按行读取；该增量已通过 review。阶段 2D-2 新增受控 write、最小权限及独立写入记录，原功能已验证并合入 main，交互修正已通过用户 review；2D-3 新增 Windows shell 和命令事实，已通过 review 并合入 main；2D-4 默认委派迁移和 2D-5 回合报告已通过 review 并合入；2D-6 在 read 中增加字面文本搜索，已通过 review 并合入；本轮实现与验证事实见 [PROGRESS.md](../PROGRESS.md)。没有新增依赖，沿用 Node、pnpm、SDK、Loop 和 Session。
-
-以上为工作目录工具的基线。2D-10 通过 `src/skills.ts` 的包装器扩展同一个 read 入口，加入已发现 Skill 的只读 URI 范围，不改变现有工作目录读写与命令授权。Skill frontmatter 新增 YAML 解析依赖；具体接口、边界及状态见 [SKILLS.md](SKILLS.md)。
-
-2026-10-13 的资料阶段 2 已加入 `src/attachments/`：原件持久化、项目/会话关联、通用 read 的附件清单和文本读取、稳定版本/行引用，以及 CLI/TUI 导入和 Web UI 上传入口。该编号对应资料路线图，不同于早期 Agent Loop 的阶段 2B/2D。阶段 2 当时只读取 `.txt/.md/.markdown` 的严格 UTF-8 原文，PDF、Office、图片等只保存原件；2026-10-14 阶段 3 已补充本地解析和受控视觉路径，见 [DOCUMENTS.md](DOCUMENTS.md)，阶段 4 已通过通用 read/write 接入自然语言 Memory，见 [MEMORY.md](MEMORY.md)。向量检索、音频和语音尚未实现且当前暂缓。阶段 2 当时附件工具、命令与 Project 命令的定向测试 18/18 通过；各轮全量及真实浏览器最终结果以 [PROGRESS.md](../PROGRESS.md) 为准。
-
-## 模块与接口
-
-| 模块 | 已实现职责 |
+| 源码 | 职责 |
 | --- | --- |
-| `src/tools.ts` | createTools(workspace?, permission = "read-only", approveWrite?, shellOptions?, webOptions?, permissionPolicy?, browserOptions?) 创建工具集合；统一 JSON 解析、名称查找、执行、取消和安全错误转换 |
-| `src/tools/types.ts` | 工具定义、执行类型与 JSON 可序列化 ToolResult |
-| `src/tools/sum.ts` | 纯计算示例工具的 Schema、校验与有限数求和 |
-| `src/permissions/workspace.ts` | createWorkspace(workspace, permissionPolicy?) 固定规范根；resolvePath/resolveNewFile 按当前文件范围检查并定位，返回规范路径、范围和文件状态；新建验证已有父目录且拒绝覆盖 |
-| `src/tools/read.ts` | createReadTool(workspace) 提供 read 定义、参数校验、目录与文本读取、分页及 query 分发 |
-| `src/tools/search.ts` | 有界子树遍历、文本匹配、搜索分页与扫描覆盖标记 |
-| `src/attachments/tools.ts`、`read.ts` | `withAttachments` 扩展唯一 read 定义；清单分页、固定版本文本读取、单文件字面搜索、行引用与覆盖范围 |
-| `src/attachments/import.ts` | 宿主本地导入的有界二进制读取，复用当前 Workspace/PermissionPolicy、打开后身份及读取前后变化核对 |
-| `src/attachments/record.ts`、`store.ts`、`transaction.ts`、`memory.ts` | 原件身份/版本、作用域关联与保留引用、可恢复元数据提交，以及不落盘的临时附件；生命周期由附件存储和 SessionManager 管理 |
-| `src/permissions/text-file.ts` | read、search 与 write 共享有界 UTF-8 读取、文件身份核对、扩展名与编码限制 |
-| `src/tools/write.ts` | createWriteTool 实现创建、精确替换、暂存与发布及进程内记录；调用共享权限策略 |
-| `src/tools/shell.ts` | 命令参数、cwd 检查、命令记录及结果协议；调用共享权限策略 |
-| `src/permissions/process.ts` | Windows PowerShell 启动、有限输出、超时、取消和 taskkill 进程树清理 |
-| `src/permissions/policy.ts`、`types.ts` | 共享权限类型、四种模式、文件/网络范围、启动上限及操作期间模式锁 |
-| `src/permissions/command-risk.ts` | 有界命令词法检查；Free 危险/不透明命令的审批理由 |
-| `src/permissions/approval.ts`、`terminal.ts` | 一次性审批协调、取消和终端安全预览适配 |
-| `src/cli.ts` | 任务、chat、TUI 与技能列表默认选择启动目录，--workspace 可覆盖；默认 ask，解析权限并注入终端确认回调；不承担具体文件规则 |
-| `src/terminal.ts` | 持有单一 readline 输入，隔离任务与确认答案，路由 yes/no；安全预览和审批收尾委托 permissions |
+| `src/tools.ts`、`src/tools/types.ts` | 集合装配、统一结果、取消及 forTurn 包装 |
+| `src/tools/read.ts`、`search.ts` | 文件/目录分页与字面查询 |
+| `src/tools/write.ts` | 精确文本创建/替换、提交协议与写入 journal |
+| `src/tools/shell.ts` | 命令协议、授权与命令 journal；进程生命周期委托 permissions/process |
+| `src/tools/sum.ts` | 无副作用算术工具 |
+| `src/tools/web.ts`、`browser.ts` | [HTTP 研究](WEB.md)与[本地浏览器](BROWSER.md)入口 |
 
-Tools 包含 definitions 和 execute(name, argumentsJson, signal?, callId?)。工作目录工具另带 workspaceRoot，值来自 createWorkspace 的规范 realpath，供请求指导与 TUI 使用；不增加模型工具或绝对路径读写权限。可选 forTurn(onEvent?) 由委派包装器使用，隔离每回合次数与事件；基础 collectTools 保留内部命名 execute 函数。可选 getWrites() 返回深复制的 WriteRecord[]，由工作目录工具持有，Loop 只消费事实并记录事件。模型客户端和 Loop/Session 使用同一工具集合，结果按 tool_call_id 关联。
+程序化 createTools 省略目录时基础集合只有 sum；传入目录增加 read/write/shell，默认文件只读、shell deny。日常入口显式选择目录与权限，并装配 web/browser。Skills、附件、Memory 在通用 read/write 外包装，协议归各自专题，不在此复制。
 
-`createTools` 选择目录时另提供宿主方法 `readImportFile(path, signal?)`，供 SessionManager 的 `/attach` 使用；它不是模型工具定义，不授予模型上传、移除或删除资料的能力。该方法持有权限操作锁，复用当前路径规则，限制原件 16 MiB，核对已打开文件的 dev/ino、硬链接数、前后大小和时间，源文件变化拒绝导入。普通权限下绝对/越界、隐藏和链接路径仍拒绝；Free 沿用其既有范围。保存到 harness 附件存储不要求给模型增加工作区写权限。
+结果使用 `{ok:true,result}` 或 `{ok:false,error:{code,message}}`。可恢复工具错误交给模型，取消抛 CANCELLED 停止回合；失败回合的消息由 Session 另存 attempt。文件/命令副作用不会因后续请求超限而回滚。
 
-当前共享授权模块位于与 session 同级的 `src/permissions/`，细节见 [PERMISSIONS.md](PERMISSIONS.md)。createTools 第六个参数可注入一个进程内 PermissionPolicy，write/shell 在每次操作取得有效权限快照，审批和副作用完成前禁止模式变更；可选 getPermissionState 在父子包装中透传，供每次模型请求解释当前模式。不重建工具或清空 journals，程序化只读/deny 默认不变。具体工具协议与实际文件操作继续留在 tools。
+## read 与 query
 
-CLI 的普通任务、--chat 和 --tui 默认把 process.cwd() 传给 createTools，--workspace 显式覆盖该目录；因此 read、write 和 shell 默认作为同级工具提供，经 createAgent 包装后父集合另有 delegate_task。pnpm start 先由 scripts/start.ts 恢复调用命令时的目录，因此默认目录和相对 --workspace 均基于调用位置；直接执行 CLI 则使用自身 cwd，不读取 INIT_CWD。默认 write / shell 策略仍为 ask，write 在参数、路径与内容校验后请求终端确认，shell 使用独立命令确认。--permission 与 --shell-permission 可直接用于默认工作目录任务，不要求额外的 --workspace；帮助、配置检查及技能列表不接受执行权限选项。显式 read-only 无条件拒绝写入和命令；workspace-write 仅预授权文件写入，不授权 shell。
+read 接受 path、offset、limit 及可选 query。offset 从零开始，默认 limit=100、上限 200；展示行号从 1 开始。文件返回有界完整行，目录返回过滤排序后的条目；nextOffset 表示继续位置。分页重新读当前内容，没有工作区快照或版本令牌。
 
-程序化 createTools(undefined) 仍只提供 sum，不自行选择 cwd；显式传入目录时仍默认只读和 shell deny，ask 需要由调用方提供确认回调。没有 workspace 时不能授予写权限。子任务自动复用相同工具、权限和执行记录；委派由 agent.ts 默认装配，无需 --subagent 开关。默认导出的 toolDefinitions / executeTool 继续只操作 sum。
+query 是区分大小写的单行字面子串，不支持正则、glob 或跨行。结果按路径 UTF-16 码元再按行号排序，一行匹配多次只返回一次。offset 计匹配项，不是源文件行号。
 
-CLI 另外使用同一工作目录调用 discoverSkills，并把目录传入 createAgent，由后者调用 withSkills。程序化调用者发现技能后，即使没有 workspace，也可添加只接受 `skill://` 的 read；有 workspace 时沿用单个 read 定义并按 URI 或普通路径分发。只有已发现的技能可读，不能据此读取任意用户主目录文件。包装器透传 workspaceRoot、写入和命令事实，不改变父子权限、回合额度和取消。普通工作目录路径仍按下述规则校验。
-
-agent.ts 在父子模型每次请求的消息副本中加入 JSON 引号包围的规范工作目录及当前文件范围指导，支持直接回答当前目录或名称；该上下文不写入 Session 历史，不依靠目录列表推断，也不新增查询工具或授予权限。
-
-旧模型工具名称 list_directory 和 read_file 已移除，调用返回 UNKNOWN_TOOL，不增加旧名称兼容层。内部 createWorkspaceTools 已替换为职责分离的 createWorkspace 与 createReadTool；当前持久历史和恢复校验见 [SESSION.md](SESSION.md)。
-
-## read 协议
-
-输入：`{ path: string, offset?: number, limit?: number, query?: string }`，拒绝额外字段及错误类型。
-
-- path：非空路径，最多 1024 字符；普通文件路径默认仅工作区内相对路径，Free 可用本地绝对/工作区外路径。`.` 为固定工作区根，支持 `/` 和 Windows 反斜杠。装配附件后还支持下节的 `attachment:list` 和固定版本 URI；Skill URI 仍由自己的包装器处理。
-- offset：从 0 开始，默认 0，必须为非负安全整数；无 query 时文件表示跳过的行数、目录表示跳过的已过滤排序条目数；有 query 时表示跳过的匹配行数。
-- limit：默认 100，范围 1–200 的整数；最多返回的行数、条目数或匹配行数，字节预算可能使实际数量更少。
-- query：可选、非空白的有效单行 Unicode 字符串，最多 512 个 UTF-16 码元；拒绝控制码（非空查询内可含 tab）及未配对代理项。指定后转为文本搜索，见下节。
-- 未指定 query 时，文件和目录由实际路径类型决定，无需 mode/action 参数。目录名称即使带 .txt 也返回目录页。
-
-不带 query 的成功 result：
-
-| 类型 | 字段 |
+| 边界 | 当前限制 |
 | --- | --- |
-| 文件 | kind: file、path、offset、totalLines、startLine、endLine、content、truncated、nextOffset |
-| 目录 | kind: directory、path、offset、totalEntries、entries: [{ name, type }]、truncated、nextOffset |
+| 工作区文本 | 单文件 1 MiB，严格 UTF-8；拒绝不支持的控制字符 |
+| 文件页 | 正文 16 KiB，保留整行；单行超限明确失败 |
+| 目录扫描 | 最多 1000 原始条目；条目页按 JSON 字节有界 |
+| 搜索输入 | query 最多 512 UTF-16 码元 |
+| 递归搜索 | 1000 原始条目、128 候选文件、12 层子目录 |
+| 搜索输出 | matches JSON 最多 16 KiB，完整行不截断 |
 
-startLine / endLine 从 1 开始；空页二者为 null。totalLines 不把末尾换行计为额外空行；空文件为 0 行。content 保留 CRLF、LF、CR 原始换行；UTF-8 BOM 被移除。
+遍历超限失败并要求缩小范围；递归搜索可跳过超大/编码不支持的候选，返回 skippedFiles 与 complete=false。complete=true 只表示本次发现的候选没有这类跳过，不保证整个磁盘覆盖或扫描期间不变。每页重新遍历，不解析 .gitignore，也没有索引缓存。
 
-truncated=true 表示还有未返回内容，nextOffset 指向下一行或条目；继续使用相同 path 和 nextOffset。完成时 truncated=false、nextOffset=null。offset 等于或超过末尾时返回空页，不报错或重复末页。
+普通模式的名称、扩展名与链接规则由 Workspace/text-file 落实；Free to go 使用扩大的本地访问范围，仍保留编码、大小及身份检查。准确扩展名集合以 `src/permissions/text-file.ts` 为准。读取内容进入模型及明文历史，不等于脱敏。
 
-示例：`read({"path":"src/main.ts","offset":20,"limit":40})` 从第 21 行开始，最多读取 40 行。返回 nextOffset 时以它为准，不自行假设已返回 limit 行。
+## write 的提交协议
 
-## 附件 read、来源和作用域（资料阶段 2）
+普通文件写入严格二选一：
 
-`withAttachments(base, access)` 只扩展现有 read；已有工作区/Skill 读取、write、shell、`workspaceRoot`、授权快照、journals 和 `forTurn` 保留原有所有者。`AttachmentAccess` 只有绑定作用域的 `list(signal?)` 与 `read(reference, options)`，由 SessionManager 按本次实际 Session ID、Project ID、归属代次创建。`createAgent` 在父子模型及 delegate 工具装配前绑定它；后台任务沿其目标 Session 装配，目录缓存不保存该权限。存储每次操作复核目标归属及关联，已知 UUID、共享目录、历史文本或当前 UI 选择都不能替代授权。
+- `{path,content}`：创建新文件，父目录须存在，已有目标不能覆盖。
+- `{path,oldText,newText}`：替换唯一精确片段；oldText 非空，零次、多次及重叠匹配都拒绝。
 
-| read 的 path | 行为 |
-| --- | --- |
-| `attachment:list` | 列出当前作用域的有效原件，返回 `kind: directory`、entries、totalEntries、offset/nextOffset；条目含名称、版本 path、大小、媒体类型和读取状态 |
-| `attachment:list` 加 query | 大小写敏感的名称字面过滤，返回 `queryScope: name`；不搜索文件正文 |
-| `attachment:<uuid>@<sha256>` | 读取不可变内容版本，返回 `kind: file`、name、原文和一基行号 |
-| 同一固定版本 URI 加 query | 单文件大小写敏感字面搜索，返回 `kind: search`；不含跨附件内容搜索或索引 |
+保留片段外字节语义、换行与 BOM；最终 UTF-8 文件仍受 1 MiB 限制。批准后重读文件身份和原始内容，冲突时拒绝而不自动重试。
 
-工具输入继续使用 path/offset/limit/query，不增加格式专用模型工具。offset 从 0 开始，清单计条目、正文计原文行、搜索计匹配行；limit 默认 100、最大 200。列表扫描最多 1000 项，再按名称/引用确定排序。正文、列表和搜索页各自保留 16 KiB 内的完整行或条目；单项本身超限返回 OUTPUT_LIMIT，不能跳过后声称完整。正文文件上限沿原件为 16 MiB，不使用工作区文本的 1 MiB 限制。严格 UTF-8 解码、原有换行和空文档语义保留；非法编码、二进制控制字符及未支持格式明确返回 ATTACHMENT_UNSUPPORTED。解析器、OCR、视觉描述和原生供应商文件输入尚未接入。
+进入暂存后创建 started 记录，在同目录独占写临时文件并 sync；发布前再次检查目录、目标和取消。创建通过硬链接安装完整临时文件，编辑通过 rename 替换。发布前标 uncertain，确认发布后立即标 committed。清理失败可以返回错误但保留 committed，不能解释成回滚；发布异常需核查当前文件后决定是否重试。
 
-文件 result 另含 `coverage: { mode: "lines", complete }`；只有从开头返回了全部行才 complete=true。单文件搜索 `complete=true` 表示成功扫描全文，并带 `coverage.mode: literal-search`，不表示模型阅读全文或完成分析。只保留当前输出页，扫描每 4096 行让出事件循环并检查取消。分页会重新读取同一不可变版本；不把旧引用指向后续同名上传。全面总结仍需按任务读完要求范围，预算不足时明确未覆盖部分。
+该协议避免原地写半个文件，不是多文件事务或 OS 比较交换。复查到发布之间仍有竞态；NTFS ACL、备用数据流等元数据不保证完整保留。没有文件删除、递归建目录或自动恢复；崩溃可能留下临时文件。创建依赖文件系统硬链接支持。
 
-文件 result 的 `citation` 为 `attachment:<uuid>@<sha256>#L<start>-L<end>`，空页使用基础 URI；每条搜索 match 也含其原始行号及 citation。`path` 始终保持无 fragment 的固定版本 URI，因此 Context 省略旧 read 结果后仍可按原版本重读。模型以 `[文件名](citation)` 给出来源；Web UI 按精确身份和行范围打开源文。工具输入不接收 `#L…`，使用基础 URI 加 offset/limit。引用中的版本及定位不会随本地源文件修改或重复文件名变化。
+## shell 的执行边界
 
-存储区分原件、作用域关联、历史保留引用。项目上传默认归 Project 所有，uploaderSessionId 仅记录来源；独立会话拥有私有关联。迁入预览展示分享范围、原/新工作目录和附件数量；确认将 Session 归属及所有私有绑定一起晋升项目作用域，原件不复制。独立 fork 复制有效清单和保留引用，项目 fork 继续使用项目清单；删除上传者不误删项目原件。移除只撤销当前关联，原件与历史内容/身份保留，但当前作用域不能再列出、读取、预览或下载它；保留引用防止销毁，不是越过移除的读取授权。removed 条目仍可用于显式删除管理。
+输入为 command、可选 cwd 与 timeoutMs。命令最多 4000 UTF-16 码元；默认 30 秒，允许 100–120000 毫秒。审批显示完整命令、规范目录和期限，批准后复核 cwd。文件写入授权不等于命令授权。
 
-永久删除可同时移除当前作用域关联和原件；须明确确认，并拒绝其他有效关联或任意 Session/fork 历史保留引用仍需要的原件。模型 read 会持久保留引用；保存历史中可识别的原件 URI 也参与保留，普通 UI 预览不产生模型历史 pin。CLI/TUI 使用 `/attachments`、`/attach "path"`、`/attachment remove <reference>`、`/attachment delete <reference> --confirm`，其中不带 --confirm 的 delete 仅预览；Web UI 使用上传面板与独立确认。导入/上传目标在发起时捕获，发布时复核；切换 UI 不改归属，目标删除/迁移不能静默改投其他会话。
+每次启动新的无 profile、无交互 stdin、隐藏 Windows PowerShell，使用参数数组与 EncodedCommand，工作目录不跨调用保存。只继承列出的运行环境变量，不继承模型 Key 或 NODE_OPTIONS；PATH/PSModulePath 仍属受信任宿主环境，不能隔离账户可读取的磁盘凭据。
 
-持久原件最大 16 MiB，独立于 Session 快照，位于会话存储根的 `attachments/blobs/<id>/<contentVersion>`；`catalog.json` 保存关联与保留引用，`pending.json` 是跨 Session/附件元数据提交的恢复日志。读取受控状态前先恢复待提交记录；这不回滚普通工作区副作用。升级前停止旧版本实例，不能让不认识该 catalog/恢复协议的旧代码与新版本混写同一根。
+stdout/stderr 合计最多 16 KiB 原始字节；超限、超时和取消触发有界进程树清理。父进程退出后不再对旧 PID 执行清理；脱离后代未必结束。清理未确认时记录 unconfirmed，并阻止同一 Tools 再启动命令。没有 Job Object 级保证、后台服务或交互命令支持。
 
-`--no-session-persistence` 的临时会话使用 `MemoryAttachments`，不写附件临时文件；上限为 1000 个原件、4 个接收/暂存上传以及包含上传中数据的 64 MiB 原件字节。退出进程后丢弃；项目共享仍需持久 Session。不会因此提前引入 Memory 系统：这里的 memory 只是附件字节的临时存储实现，长期提炼记忆仍未实现。更多生命周期与后续解析边界见 [RAG.md](RAG.md)。
+PowerShell 错误与外部程序退出码反映到结果；串联多个 native 命令应逐个检查 LASTEXITCODE。工具 ok 不等于命令成功，截断输出不能作为完整验证。cwd 只是启动位置，shell 不是 OS 沙箱。
 
-## query 搜索协议与覆盖（2D-6 已实现）
+## journal 与验证
 
-例如 `read({"path":"src","query":"createAgent","limit":20})` 在 src 下递归搜索，或指定文件只搜索该文件。区分大小写、纯字面子串匹配；同一行中出现多次只返回一次，不支持正则、glob 或跨行匹配。无需 shell、外部搜索程序或新权限，子 Agent 自动复用同一实现。
+每个 Tools 实例保留最多 100 条进入暂存的写入记录和 20 次命令启动；父子共用，同目录缓存保留，返回防御性副本。参数/权限早期拒绝不伪装成已执行。写入记录含状态、路径、哈希及大小；命令记录含退出/清理事实和有界摘要。临时请求指导与事件可使用这些事实，不把 journal 复制为成功历史。
 
-结果为 `{ kind: "search", path, query, offset, totalMatches, matches: [{ path, line, text }], truncated, nextOffset, scannedFiles, skippedFiles, complete }`。默认匹配路径相对于固定工作目录，Free 为规范绝对路径；line 从 1 开始，text 保留原始行内容但不含行尾换行或文件 BOM。先按返回路径的 UTF-16 码元排序，再按行号排序。使用相同 path/query 和 nextOffset 继续；offset 不代表源文件行号。空页或超出匹配总数时 nextOffset=null。
+[执行报告](EXECUTION_REPORT.md)按 ID 去重并汇总；失败、新建会话不清空事实，重启不恢复 journal。当前没有把测试结果与所有相关文件版本强绑定。
 
-- 遍历先收集候选路径，整个子树最多扫描 1000 个原始条目（含随后过滤的条目）、128 个候选文本文件、选定目录下 12 层子目录。任一超限返回 SEARCH_LIMIT，不返回部分成功，需缩小 path。目录句柄随结束、失败或取消关闭。
-- 隐藏名称、node_modules、链接、特殊文件和不支持扩展名由既有边界排除，不计入候选或 skippedFiles。此覆盖范围不等于整个磁盘目录；未解析 .gitignore，普通生成目录仍可能被扫描。
-- 候选文件读取前再次解析路径，并复用 text-file 的身份、大小与严格 UTF-8 检查。递归搜索中，过大或编码/二进制控制字符不支持的候选被跳过，增加 skippedFiles 并置 complete=false；直接搜索单文件仍返回 FILE_TOO_LARGE / UNSUPPORTED_FILE。其他 I/O、消失或身份变化错误使整次搜索失败；取消终止回合。
-- totalMatches / scannedFiles 仅统计成功读到的合规文本；complete=true 仅表示本次遍历发现的候选没有因大小或编码跳过，不保证目录在扫描期间未变化。complete=false 即使 totalMatches=0、nextOffset=null，也不能声称范围内无匹配。
-- matches 整体 JSON 编码的 UTF-8 大小最多 16 KiB，包括转义、数组和分隔符，不含其余结果元数据；不截断行。下一条放不下时以 nextOffset 继续，单条本身超限则 OUTPUT_LIMIT。该预算不是 token 上限。
-- 内存只保留有界路径集合、当前文件及当前匹配页；仍扫描所有候选和全部行来计算总数，每个候选沿用 1 MiB 上限。每次翻页重新遍历，无索引、缓存或一致性快照；文件变化可能改变总数和分页位置。
-
-read.ts 负责统一参数入口和搜索分发；search.ts 只组合现有 Workspace / text-file 与搜索规则，不修改 Loop、Session、权限或日志协议。日志仍不记录查询、路径参数和匹配正文；工具结果会进入模型上下文。
-
-## 工作区输入、扫描与输出限制
-
-- 文本文件最多 1 MiB（1048576 字节）；先检查已打开文件大小，再使用上限加 1 字节的缓冲检测读取期间增长。超限为 FILE_TOO_LARGE。
-- 每页文件 content 的 UTF-8 字节预算为 16 KiB，始终保留整行。遇到下一行无法放入当前页时返回继续位置；如果单行本身超限，读取该行返回 OUTPUT_LIMIT，不提供残缺的成功结果。预算不包括结果元数据和 JSON 转义开销，不是 token 上限。
-- 目录非递归扫描，最多接受 1000 个原始条目，包括随后被过滤的条目。超限返回 DIRECTORY_TOO_LARGE，不把不可继续的子集伪装成完整分页；已知子路径仍可以直接读取。
-- 目录先完成过滤，再按名称的 UTF-16 码元顺序排序，与系统语言无关。每页还按条目的 JSON UTF-8 大小加分隔符计入 16 KiB 预算；外围数组和元数据不计入该预算。
-- 保留原有文本扩展名集合：.txt、.md、.json、.ts、.tsx、.js、.jsx、.mjs、.cjs、.yaml、.yml、.toml、.csv、.html、.css、.xml、.sql、.py，不区分大小写。
-- 严格 UTF-8 解码，拒绝非法编码和二进制控制字符。文件句柄在 finally 中关闭；目录迭代在结束、错误和取消时关闭。
-
-工作区每一页都是重新读取，不是快照；期间文件或目录变化可能使 offset 对应内容发生变化。工作区 read 没有版本令牌或一致性快照；附件 URI 则绑定上节的不可变原件。每页都对整个有界文件做解码，尚未实现流式大文件读取；工作区 query 的递归搜索使用上节规则。
-
-## 默认工作目录与访问边界
-
-- 工作目录由 CLI 默认选择启动目录或 --workspace 覆盖；程序化调用者显式传入目录。初始化时通过 realpath 解析为固定根目录，写入和命令授权分别检查。
-- 拒绝父目录跳转、绝对路径、Windows 盘符/UNC/设备路径、NTFS 数据流及不支持的名称。
-- 拒绝点开头路径段（包括 .env、.git）与 node_modules；“隐藏”是名称规则，不代表 Windows 隐藏属性。
-- 逐级 lstat 拒绝符号链接、junction、特殊文件和文件硬链接；realpath 后再次检查目录包含关系和名称。目录条目复用相同路径检查。
-- 打开文件后核对类型、硬链接计数、dev/ino。文件工具结果的路径字段仍使用相对路径，不回传原始文件系统错误；绝对根目录另由 agent.ts 加入父子模型请求指导，TUI 使用同一规范路径。
-
-这些检查不是操作系统沙箱，不能保证抵御恶意本机进程并发替换路径或内容。用户选择的文本会经工具结果发送给当前模型供应商；名称和扩展名过滤不等于内容脱敏。read 不写入；write 仅在授权后修改支持的文本，不执行文件。
-
-## 错误、取消与历史
-
-结果保持 `{ ok: true, result }` 或 `{ ok: false, error: { code, message } }`。使用 DIRECTORY_TOO_LARGE、OUTPUT_LIMIT、SEARCH_LIMIT；继续使用 INVALID_ARGUMENTS、PATH_NOT_ALLOWED、NOT_FOUND、UNSUPPORTED_FILE、FILE_TOO_LARGE、TOOL_IO、UNKNOWN_TOOL。sum 行为不变。
-
-工具错误供模型纠正或说明，取消抛出 CANCELLED 终止回合。路径检查、目录迭代、文件读取循环及返回结果前检查 signal；不承诺立即中断底层文件系统调用。成功回合保留已读取页，失败回合仍采用现有 Session 临时历史丢弃规则。2D-7 在模型发送边界对包含工具结果与执行事实的请求做字节预算检查；下一次请求超限不回滚此前已发生的 write/shell。2D-8 仅可在请求副本中省略较早成功 read 的内容，显式标记为 context_omitted；这不改变实际工具返回协议或保存历史。当前/最近回合、工具错误、write/shell 结果与执行事实保持完整，最终请求仍必须通过预算检查。读取日志不输出内容或路径参数；write_record 记录规范路径（默认相对，Free 绝对）、摘要及结果状态，不记录正文。
-
-## write 协议与权限（已实现）
-
-输入严格二选一，不接受额外字段：
-
-- `{ path, content }`：仅新建文件，路径已存在时 WRITE_CONFLICT；父目录必须存在。
-- `{ path, oldText, newText }`：已有文件中替换唯一精确片段。oldText 非空，newText 必须不同；可用空 newText 删除该片段。不存在、多次匹配或重叠匹配均拒绝，不自动重试或覆盖整份文件。
-
-模型工具描述要求先读后改。保留片段外的文本、原换行与 UTF-8 BOM；最终编码仍需满足 1 MiB 上限，拒绝未配对 Unicode 代理项和二进制控制字符。路径与扩展名由当前范围确定。共享策略在 Tools 实例存续，空闲可切换，write 用操作快照完成：ask 每次确认、read-only 拒绝、workspace-write 预授权。模型不能通过参数提升权限。ApproveWrite 接收 path、operation、bytes、newText 及编辑时的 oldText，通过 Promise<boolean> 返回单次批准；工具层不直接读终端。
-
-成功结果为 `{ recordId, path, operation, beforeHash, afterHash, bytes }`。path 在默认范围为规范相对路径，Free 为规范绝对路径；beforeHash / afterHash 是原始文件字节的 SHA-256，新建的 beforeHash 为 null。结果不包含正文，不承诺文件随后未被其他进程修改。Free 原子编辑链接目标时会替换所选规范文件，其他硬链接名称不保证同步内容。
-
-## 写入提交与失败边界（已实现）
-
-1. 校验权限、参数、路径与文本。编辑时读取有界原始字节，确认 oldText 仅出现一次并生成新内容。ask 在此时请求确认，拒绝或 EOF 返回 PERMISSION_DENIED，取消抛 CANCELLED；都不会暂存文件或创建写入记录。批准后先复查父目录、文件身份及完整原始内容，冲突则拒绝。
-2. 创建 WriteRecord，状态 started；在同一目录独占创建 `.fatcat-write-<id>.tmp`，写入全部字节、sync 并关闭句柄。写入期间同一 Tools 的其他 write 返回 WRITE_BUSY。
-3. 再解析父目录并核对身份。编辑复核目标身份及完整原始字节；创建再次确认目标不存在。检查取消后才发布。
-4. 发布前标为 uncertain；新建使用 link 将完整临时文件安装到目标，目标已存在则失败且不覆盖；编辑使用 rename 替换，避免原地写到一半。发布返回后立即标为 committed，不在返回与记录之间检查取消。
-5. finally 清理临时文件。正常编辑已移动临时文件，ENOENT 可接受；其他清理失败返回 WRITE_CLEANUP，并保留 temporaryPath（默认相对，Free 绝对）。文件已提交时状态仍为 committed，不能把工具错误解释为回滚。
-
-暂存阶段失败标为 failed；发布阶段异常保守标为 uncertain，需读取当前文件再决定重试。创建发布遇到 EEXIST 可确定为 failed / WRITE_CONFLICT。初步参数、权限或片段校验失败不创建写入记录。底层错误通过既有工具边界转换，不暴露原始文件系统信息。
-
-实现依据为 Node 文件操作接口：[link](https://nodejs.org/docs/latest-v24.x/api/fs.html#fspromiseslinkexistingpath-newpath) 与 [rename](https://nodejs.org/docs/latest-v24.x/api/fs.html#fspromisesrenameoldpath-newpath)。不声称这些操作构成多文件事务或崩溃恢复机制。新建需要文件系统支持硬链接；本机 Windows 验证已通过。
-
-复查与发布之间仍有竞态窗口，没有跨进程锁或操作系统级比较并交换；不能抵御恶意本机进程。替换不保证完整保留 NTFS ACL、备用数据流及其他元数据；不提供文件删除、递归建目录或自动回滚。进程崩溃可能遗留临时文件；创建后清理失败时目标可能仍与临时文件构成硬链接，需要人工核查并清理后再使用 read/write。
-
-## 写入事实所有权（已实现）
-
-createWriteTool 持有最多 100 条已进入暂存阶段的记录；达到上限拒绝新写入，不丢弃旧事实。getWrites() 返回副本；不同 Tools 实例互不共享，父子任务使用同一实例。记录只有路径、操作、状态、摘要、大小及安全错误码，没有文件正文。
-
-Loop 在每次模型请求时把记录作为临时数据消息提供给模型，不写入 Session 成功历史；工具返回、回合失败和 finally 均检查记录变化并发出 write_record。失败回合和 /reset 不影响记录或已提交文件，重启进程后记录丢失。父子两层事件可包含同一 id，消费者按 id 关联，不将其解释为两次写入。记录为历史事实，不是当前文件快照或持久执行日志。
-
-离线测试通过真实临时文件及窄范围文件操作注入，验证冲突、取消、发布失败、清理失败、回合失败后继续与父子权限继承；真实模型完成临时样例创建与精确修改后的读回。详情以 PROGRESS.md 为准。
-
-## shell 协议与授权（2D-3 已实现）
-
-createTools 第四参数为 `{ permission?: "ask" | "deny" | "allow", approve?: ApproveShell }`，程序化默认 deny。CLI 默认 ask，--shell-permission 可设 deny 或显式 allow；--permission read-only 强制禁止命令，workspace-write 只预授权文件写入。没有工作目录时不能授予命令权限。默认工具可被模型选择，授权在实际执行入口检查。
-
-输入 `{ command, cwd?, timeoutMs? }`，仅接受已定义字段。command 为非空、最多 4000 UTF-16 码元的有效 Unicode，拒绝控制码（允许换行和 tab）。cwd 默认 `.`，需通过现有路径检查且是目录，确认后复核身份；timeoutMs 默认为 30000，整数范围 100–120000。ApproveShell 接收规范化 cwd、完整 command 与 timeoutMs。终端展示全部转义命令，不截断批准依据；管道、拒绝、EOF 与批准前取消都不启动进程，已有排队任务不能变成批准。
-
-工作目录仅约束启动位置，**不是操作系统沙箱**。命令可以在当前用户权限内读写目录外文件和访问网络，也不受 read/write 的扩展名及隐藏路径过滤约束。确认界面明确说明此边界；不能把 shell 判定成安全的只读命令。子任务使用同一策略、回调和记录，不能提升权限。
-
-Free 使用当前用户的本地 cwd 范围；普通识别命令无需回调，危险/不透明命令即使 shellPermission=allow 也必须 approve，附工具产生的 approvalReason。模型 schema 不接受这个字段。无回调/无交互/拒绝/取消均不会启动进程或建立命令记录，批准后仍核对 cwd 身份。旧显式 --shell-permission allow 保留原兼容行为，不自动获得 Free 的文件/网络工具范围。
-
-## 命令执行、输出与清理（2D-3 已实现）
-
-process.ts 使用系统目录下的 Windows PowerShell，通过 spawn 的参数数组传入 UTF-16LE EncodedCommand；无 profile、无 stdin、非交互、隐藏窗口，每次均为新进程，不保留变量或 cd 状态。设置 UTF-8 控制台编码、文本输出及关闭进度输出；PowerShell 错误转为非零退出，外部程序最终 LASTEXITCODE 作为退出码。多个外部命令串联时需逐个检查退出码，后来的命令可能覆盖先前失败。
-
-环境仅继承列出的 OS/运行时变量，例如 PATH、SystemRoot、TEMP、用户目录、PNPM_HOME 及 PSModulePath；后者保留宿主的 PowerShell 模块搜索配置，避免托管 Windows runner 缺少该变量时在模块初始化处超时。不继承模型供应商 Key、任意业务密钥或 NODE_OPTIONS。PATH 和 PSModulePath 均属于受信任的宿主运行环境，环境筛选不验证其目录中的可执行文件或模块，也不隔离当前账户可读取的磁盘凭据。命令输出与命令记录进入模型，JSON 事件不记录正文；终端授权会本地显示命令。
-
-stdout/stderr 合计最多收集 16 KiB 原始字节，UTF-8 解码；不兼容编码可能替换字符。超过上限标记 truncated 并请求终止；结果不把截断输出冒充完整验证。预算不含 JSON、元数据及转码开销。默认 30 秒超时，工具参数最多 120 秒。
-
-超时、取消或输出超限调用系统 taskkill /PID /T /F，仅针对本次启动的进程树；清理额外最多等待 5 秒。已观察到父进程退出后不再按旧 PID 执行清理，避免明显的 PID 复用风险；退出与系统调用间仍无 Job Object 级保证。未确认终止时记录 termination_failed / unconfirmed，并禁止同一 Tools 再启动命令。正常父进程退出只记 foreground-exited，不声称所有脱离的后代已结束。后台服务、脱离进程及交互式命令不受支持，不将其写成可靠恢复或隔离。
-
-依据：[Microsoft taskkill 文档](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill) 的 /PID、/T 和 /F 行为。原生进程测试分别验证超时与取消后的子 PID 消失；取消前等待该次子进程发布 PID，清理后最多等待 3 秒观察退出，持续残留仍失败。测试等待不扩大运行时清理期限，也不提供 Job Object 级保证。
-
-## 命令结果与事实（2D-3 已实现）
-
-结果含 recordId、success、status、exitCode、stdout、stderr、truncated、durationMs、cleanup。状态为 completed / timed_out / output_limit / cancelled / spawn_failed / termination_failed；仅 completed 且 exitCode=0 且未截断时 success=true。ToolResult.ok 表示执行接口返回了结果，不等于测试通过；权限、参数等前置错误仍走 ok=false。取消在保存结果后继续抛 CANCELLED，Loop 仍报告记录。
-
-createShellTool 保存命令记录，getCommands() 返回深复制。每个工具实例最多 20 次启动尝试，满后拒绝新增，不静默淘汰；记录保留命令、cwd、退出事实，以及每个输出流最多 1000 Unicode 码点的摘要，outputSummaryTruncated 明确说明省略。Loop 在后续每次请求补入临时数据消息，与成功历史分离；失败、/reset 和子任务失败不清除命令事实。shell_record 事件仅发 cwd、ID、状态、退出码、耗时及截断/清理标志，不含 command/stdout/stderr。父子事件可重复报告同一记录 ID。
-
-2D-5 的执行报告从现有事件汇总本回合命令结果，并标记命令之后观察到的 write 尝试；不会增加授权或重新执行工具。后续 shell 或外部进程修改文件不会触发该标记。
-
-输出摘要、退出码与文件版本尚无强绑定，也不能保证模型最终叙述逐条符合工具证据；当前成功证明依赖明确工具结果与外部验收脚本，不是完整 Task 关卡。记录仅在进程内，命令副作用不自动回滚，没有崩溃恢复或全量持久日志。
-
-## 后续安排（2026-10-14，待实施）
-
-read、write 与前台 shell 均已实现，委派默认可用已在 2D-4 完成；附件、文档解析和 Memory 已扩展通用工具入口。近期聚焦 runtime 重构、Web UI 调整与 TUI 建设，资料后续阶段暂缓。工具层按具体重构和交互问题整理装配、授权及执行事实的边界，继续复用现有 Loop、Session、权限和自动任务，不在 UI 内复制执行规则。
-
-维持少量通用工具入口及清晰内部职责。正则/索引搜索、流式大文件、独立 OCR 服务和多模态检索尚未实现；已接入的解析、视觉转写与 Memory 范围以各自架构文档为准。不为暂缓系统预建空接口。
+关键检查为分页覆盖、大小/编码拒绝、查询完整性、批准后冲突、发布/清理失败、取消、子任务共享、真实 PowerShell 非零退出和后代清理。固定模型读改读或编码样例不代表普遍正确性。后续 Task 验收、文件快照和可靠进程隔离须分别设计，不通过新增大量专用模型工具代替。

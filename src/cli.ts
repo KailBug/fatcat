@@ -62,7 +62,8 @@ Use --project <id-or-name> to start a new session in an existing project; /proje
 Use /project create "name" "directory" to create a project, then /project use <id-or-name> to start its session.
 Project sessions share one fixed workspace and keep separate histories. /new inherits the project; /new --standalone creates a separate independent session.
 Use /project join <id-or-name> to review a standalone session's migration, then /project confirm <token> or /project cancel.
-Projects require persistence; --project cannot combine with --continue or --resume. Project deletion, detachment and workspace changes are not available yet.
+Projects require persistence; --project cannot combine with --continue or --resume.
+Use the Web UI project menu to rename a project, change its workspace, or delete it. Detachment and cross-project migration are not available.
 Session storage defaults to ~/.fatcat/sessions; FATCAT_SESSION_DIR selects another local store.
 Restored sessions use their saved workspace with the current launch's provider and permission settings.
 Use /workspace <path> in chat or TUI, or click the Web UI workspace path, to change the session workspace.

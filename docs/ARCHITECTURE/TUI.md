@@ -1,87 +1,54 @@
-# TUI：终端交互与准确遥测
+# TUI：终端交互与遥测
 
-## 当前开发方向（2026-10-14，后续计划）
+[架构总览](README.md) · [操作与快捷键](../GUIDES/INTERFACES.md#interactive-tui)
 
-近期开发优先级调整为运行时重构、Web UI 调整和 TUI 建设；后续资料/RAG 阶段暂缓，已实现能力及其验证记录保留。TUI 建设以现有可选 `--tui`、pi-tui 编辑/渲染、会话管理、审批与遥测为基础，具体增量在对应实施前结合实际任务收敛，不在本次文档调整中冻结详细界面设计或排期。
+TUI 是可选交互入口，共用 SessionManager、Agent、Tools 和 Permissions。它持有编辑草稿、显示状态与终端生命周期，不拥有第二份持久历史或执行规则。
 
-现有 `tui/index.ts` 已通过 `workspaceAgentFactory` 与 `SessionManager` 装配共享 Agent、Tools 和权限。后续运行时重构与终端交互改进继续沿此边界：TUI 持有终端生命周期、输入草稿与显示状态，Session/Loop/Tools/permissions 保留各自的历史、回合推进、执行事实和授权职责，不另建一套可独立推进的执行状态或会话历史。Web UI 与 TUI 的界面差异不产生第二套运行核心。
+## 模块与数据流
 
-本节记录后续方向，未新增 TUI 实现或验收结论。下文继续描述已经实现的行为；后续改动的范围、验证与限制另记入 [PROGRESS.md](../PROGRESS.md)。
-
-## 范围与取舍
-
-2026-10-12：显示同一回合内自动 compact 的开始、摘要请求和完成活动，Escape/Ctrl+C 沿原取消信号停止摘要。摘要请求及用量仍累计，但 `model_request.purpose=compaction` 期间不设置对话输入 token，续跑普通请求后恢复观测。只有原回合完成才增加一次对话计数；没有新增会话或模型工具，边界见 [CONTEXT.md](CONTEXT.md)。
-
-2026-10-03：`/sessions` 和无参数 `/resume` 展示全部工作区会话及其路径。恢复目标会话同步更新实际 Tools、Skills、界面路径及 `/status`；`/workspace` 显示当前路径，`/workspace <path>` 修改当前会话工作区（含空白新会话），相对路径基于当前工作区，含空格路径可加双引号。运行/审批中拒绝修改；历史保留，不移动项目文件，也不提升启动权限。
-
-2D-15 接入共享 ConversationAutomations：`/cron <描述>`通过模型绑定当前 Session，无参数列表，pause/resume/delete 本地管理。页脚、会话列表和自动回合显示 `[clock]`。空闲才运行自动任务，保留编辑器草稿，复用原审批、停止及遥测；结果保存到目标会话，后台执行不切换选中会话。详见 [AUTOMATION.md](AUTOMATION.md)。
-
-阶段 2D-11 按用户明确要求提供可选 `--tui`，分支为 `feat/tui-dev`。首版面向已有单 Session 编码工作流；2D-14 通过共享 SessionManager 增加本地持久化与会话管理，与单次任务及 `--chat` 共用模型、工具、权限、请求预算和历史规则。实现及验证事实以 [PROGRESS.md](../PROGRESS.md) 为准；本文描述接口边界，不将界面已写入等同于终端或真实模型已验收。
-
-采用 [`@earendil-works/pi-tui@0.87.1`](https://github.com/earendil-works/pi/tree/main/packages/tui) 的终端渲染、编辑器、Markdown 和显示宽度能力。界面的分区与青色/紫色视觉参考 [pi](https://github.com/earendil-works/pi) 和 [Charm Lip Gloss](https://github.com/charmbracelet/lipgloss)；本项目不依赖 Charm 的 Go 运行时，也不导入 pi 的 Agent 循环。Node.js 24、pnpm 11.21.0、TypeScript 与 `openai@7.18.0` 保持原选择。
-
-本增量包含响应式终端界面、Unicode 和多行输入、Markdown 答案、本地命令、独立审批输入、执行状态及可核对的配置与用量。首版未新增模型流式协议、思考内容协议、provider 热切换、工具或通用渠道框架。2D-14 加入持久 Session 和本地新建/列表/切换/命名/分支，Web UI 另见 2D-13。
-
-## 职责与数据流
-
-2D-12 中 TUI 沿用 CLI 的默认公开 web 工具，并接受 `--web-permission allow|deny`。`runTui` 将同一值传入 createTools 和界面配置，页脚及 `/status` 显示 web 权限；取消仍经每回合 AbortController 传给网络请求。网络规则位于 Tools，详见 [WEB.md](WEB.md)，TUI 不直接执行请求或实现网络授权。
-
-终端界面代码位于与 `src/` 同级的 `tui/`，编译到 `dist/tui/`。`src/` 保留 CLI 入口及共享 Agent、Session、Loop、Tools；CLI 在选择 `--tui` 时加载 `tui/index.ts` 对应产物，TUI 通过导入 `src/` 的已有模块复用核心逻辑。目录分离不改变命令入口、权限或运行行为。
-
-| 层 | 所有权与职责 |
+| 源码 | 职责 |
 | --- | --- |
-| `src/cli.ts`、`tui/index.ts` | 解析互斥入口，加载一次配置、工作目录与 Skill 目录；沿用 createAgent 创建父子模型及工具，把确认回调交给所选交互入口。 |
-| `tui/app.ts` | TUI 控制器，拥有终端生命周期、输入编辑、空闲/运行/审批状态和每回合 AbortController；调用 SessionManager.run，处理共享会话命令及屏幕更新；不执行文件或命令权限规则。 |
-| `tui/view.ts`、`tui/theme.ts` | 依据配置及统计快照绘制标题、会话、运行信息、状态面板与输入区域；负责尺寸、文字宽度、Markdown、配色和显示内容的控制字符处理，不调用模型。 |
-| `tui/telemetry.ts`、`tui/metrics.ts` | 观察 Loop / execution_report 事件，保存父子请求、最近输入、有效 usage、缓存覆盖和上下文整理事实；区分本轮与进程累计，生成指标与完整 `/status` 文本，不制造缺失数据。 |
-| Session / Loop / Tools | 继续拥有成功历史、回合循环和实际工具执行；审批答案不加入模型历史，工具仍复查权限、路径、文件变化、取消和预算。 |
+| `tui/index.ts` | 配置与共享核心装配，注入审批回调 |
+| `tui/app.ts` | 输入、运行/审批状态、AbortController、命令和终端收尾 |
+| `tui/view.ts`、`theme.ts` | Markdown、宽度、布局、颜色与控制字符处理 |
+| `tui/telemetry.ts`、`metrics.ts` | 本轮/进程、父子、最新请求与缓存覆盖的事件观察 |
+| `src/commands.ts` | 本地命令分发；具体语义归核心模块 |
 
-数据流为：编辑提交 → TUI 控制器 → SessionManager.run → Session / Loop / 模型 / 工具 → 事件与报告 → 遥测快照 → 视图。模型最终答案在 Manager 确认保存后显示。审批是 Tools 等待控制器提供一次答复，控制器以独立编辑输入显示预览；视图不能自行授予权限。
+编辑提交 → Manager 执行 → 事件/报告 → 遥测快照 → 视图。只有持久边界确认后才增加已保存回合。工具等待独立审批输入，界面答复不进入模型历史；授权后工具仍自行复核。
 
-原 `--chat` 继续使用 readline / terminal.ts；TUI 独立拥有交互输入，避免两个输入消费者竞争。当前所有 provider 仍采用 `stream: false`；等待期间可更新状态和耗时，完整答案及 usage 只能在响应抵达后显示。
+使用 pi-tui 的编辑、Markdown 和宽度/渲染能力，避免另引终端运行时或复制 Agent 循环。chat 继续由 terminal.ts/readline 持有输入，不与 TUI 同时消费。
 
-控制器通过局部 Terminal 适配层优先路由本应用的 PageUp / PageDown 与取消按键，避免 pi-tui 自身的全屏快捷键先消费这些输入；不修改全局键位。Kitty 协议的按键释放包不重复触发取消或退出。退出时有界排空待处理输入并恢复终端；排空失败也执行 stop。父子共享写入和命令事实在当前回合的屏幕提示按记录去重。
+## 输入、显示与取消
 
-宽度至少 110 列时显示会话与侧栏，较窄时采用上下布局和指标带；高度不足时保留核心分组并提示 `/status` 查看完整值。标题中的长路径或模型名可以按显示宽度截断，完整配置始终可在 `/status` 查看。NO_COLOR 禁用主题着色。用户、模型和配置显示文本先移除 ANSI / OSC / C0 / C1 控制字符；Markdown 再由主题渲染，内容不能直接注入终端控制序列。
+运行中可以编辑下一条草稿，但不会自动排队/提交，粘贴不隐式发送。审批先保存并清空草稿，使用当前操作的新输入，结束后恢复；此前待处理输入不能被消费为批准。文件预览有界并标截断，命令显示完整内容和执行范围。
 
-## 统计口径
+取消传播到父子模型与工具，收尾后返回输入；退出另有生命周期，停止绘制并恢复模式/光标。局部 Terminal 适配优先处理取消和滚动，Kitty 释放包不能重复触发。TUI 的取消后继续交互不代表 chat 的 Ctrl+C 语义相同。
 
-| 显示项 | 来源与解释 |
+宽度至少 110 列采用侧栏，窄/短终端降级布局，完整值可通过 /status 查看。显示文本移除 ANSI/OSC/C0/C1 控制字符，再渲染 Markdown；NO_COLOR 禁主题色。终端能力仍决定字符宽度、输入法与颜色表现。
+
+会话切换重建用户/assistant 显示，不伪造旧遥测。自动任务空闲运行并保留草稿，使用目标会话，前台选择不变。新建/reset 不清除进程累计、工具 journal、权限或副作用。
+
+## 指标口径
+
+| 指标 | 数据来源与含义 |
 | --- | --- |
-| provider / model / region | 本次启动实际生效的配置；不是模型自述，启动后固定。 |
-| workspace / permissions | Tools.workspaceRoot 的规范 realpath 与 write / shell 策略；CLI 默认选择启动目录，--workspace 覆盖，显示值与实际工具根及模型请求指导一致。 |
-| Skills / budgets | 已发现技能数量、父迭代上限、请求 timeout 与完整 JSON 字节上限；不是已加载技能数或模型服务的 token 窗口。 |
-| 回合 | TUI 当前回合编号、状态及成功保存回合数；只有 Session.run 成功返回后才增加 saved turns，失败或取消时已展示的内容不等于已保存模型历史。 |
-| 请求次数 | 父 / 子模型调用尝试，包含本地预算拒绝；不是已发 HTTP 请求数或计费次数。 |
-| token 用量 | 服务端校验通过的 prompt / completion / total 计数；按本轮和本进程累计，父子分开，保留有效报告覆盖范围。 |
-| 最近 prompt tokens | 最近父请求有效返回的输入 token 数，包含其历史、工具定义等实际输入；不能使用父子累计输入冒充当前对话上下文大小。 |
-| request bytes | 最近父请求完整 JSON 的 UTF-8 大小及配置上限，含工具定义、提示、历史、事实记录和厂商字段；请求投影后的值，拒绝状态须可辨。 |
-| 上下文整理 | 真实 context_reduction 事件中的省略 read 数和 JSON 字节差；重复请求中的省略按事件累计，不称为 token 节省。 |
-| KV / prompt cache | provider 报告的有效输入缓存命中及其覆盖；不是服务内部 KV 容量、显存利用率或完整缓存诊断。 |
-| 工具与执行报告 | 实际工具成功/错误、写入、命令和父子状态；模型回答、工具 ok 或命令退出 0 均不自动表示任务验收通过。 |
+| 配置/目录/权限 | 当前 Config、规范工具根和策略，不是模型自述 |
+| 回合 | 当前运行与成功保存计数，失败展示不等于已保存历史 |
+| 请求 | 父子尝试数，含本地预算拒绝，不是 HTTP/计费次数 |
+| token | 已校验服务数据，展示已知覆盖、父子及本轮/进程累计 |
+| 最近输入 | 最新普通父请求 prompt tokens，不含未发送草稿或最终回复 |
+| request bytes | 最新完整 JSON 与本地预算，独立于 token 窗口 |
+| 缓存 | 有效命中/同批输入的加权率和覆盖，不是 KV 容量或费用 |
+| 执行 | 真实工具/日志/报告，不推断任务成功 |
 
-标准 token 三项必须为非负安全整数且 `prompt + completion = total`。`TokenUsage.cachedPromptTokens` 是可选有效缓存计数；原 execution_report.tokenUsage 的 totals 仍只汇总三个基础字段，TUI 独立观察原始事件计算缓存累计，避免改变原报告含义。没有有效报告时显示未知；累计只有部分请求的报告时明确覆盖不足，不能把已知部分当成全部费用。失败或取消前已经收到的有效用量继续保留；累计溢出保持未知，不重新从零开始。
+未知/非法/溢出计数保持未知，合法零不同于缺失；失败前有效用量保留。telemetry 从原始事件计算，不能再次累加报告总量。字段合法性归 [Providers](PROVIDERS.md)，操作事实归 [Execution reports](EXECUTION_REPORT.md)。
 
-缓存使用标准 `prompt_tokens_details.cached_tokens` 或 DeepSeek `prompt_cache_hit_tokens`；计数必须合法且不超过相应 prompt tokens。多个给定来源冲突，或 DeepSeek 已给出的 hit / miss 不一致时，缓存数据未知，但基础 token 用量可仍有效。累计命中率为 `有效缓存请求的 cachedTokens 总和 / 同一批请求的 promptTokens 总和`。这是按 token 加权的率；没有缓存字段的请求不进分母，并显示覆盖。合法的零命中与没有报告不同，零分母不计算百分比。具体字段规则见 [PROVIDERS.md](PROVIDERS.md)。
+TUI 不猜测模型 token 窗口；本地 bytes 进度不能代替容量。每次新父请求清空旧观察，摘要/文档辅助请求计入用量但不冒充聊天上下文。自动 compact 仍是一轮，不额外增加对话计数。
 
-界面不会猜测模型 token 窗口。当前 Config 允许自定义 model 名但没有可信窗口元数据，因此模型容量保持未知；本地 request bytes 进度只表达本地预算。最后返回的父请求 prompt tokens 是一次实际测量，既不是下一次请求的预测，也不含尚未发送的输入；每次开始新的父请求或重置历史时清空该值，等待有效返回，不沿用过期数值冒充当前上下文。
+## 验证与后续要求
 
-## 输入、审批与取消
+离线检查覆盖尺寸、指标缺失/冲突、父子去重、审批输入隔离、取消/reset、终端恢复。既有 Windows ConPTY 检查使用离线模型夹具，未验证真实供应商缓存质量、完整 IME 候选窗口或模型任务效果。
 
-`--tui` 是互斥的交互模式，不能和普通 prompt、`--chat`、帮助或本地配置/技能查询混用。要求真实交互终端；重定向及不支持的终端应明确拒绝并提示使用已有 CLI。CLI 默认选择启动目录并提供 read / write / shell 与工作目录 Skill 发现，--workspace 可覆盖；write / shell 默认分别询问，权限选项不要求显式 --workspace。目录由 Tools 规范化后用于 TUI 配置，不另行推断或产生第二个根路径。
+后续交互改进继续沿当前所有权边界，针对输入、审批、取消和反馈做离线回归与原生 Windows 终端验收，并保留普通 CLI。尚无冻结的新布局或排期。
 
-输入编辑支持 Unicode 与多行；提交一个非空任务后同一 Session 顺序执行，不隐式排队并发回合。`/help` 显示本地命令和快捷键，`/status` 展示配置与当前统计，`/skills` 通过 src/commands.ts 展示启动发现的技能元数据（不读取正文、请求模型或修改历史），`/new` / `/clear` / `/reset` 创建新会话并保留原对话，`/sessions` / `/resume` 列表和切换，`/rename` 命名，`/fork` 创建独立会话分支，`/exit` 结束终端界面。未知斜杠命令给出本地提示，不发送给模型。
-
-Enter 提交，Alt+Enter 换行，Up / Down 回看输入历史，PageUp / PageDown 滚动显示。运行时可编辑下一条草稿，但不会自动提交或排队；粘贴不会自动提交。Escape 或 Ctrl+C 取消正在运行的回合，空闲 Ctrl+C 退出，Ctrl+D 取消并退出。退出码沿用交互进程的错误状态：正常退出为 0，出现失败或取消回合后最终退出为 1；本地未启动回合的退出不制造执行报告。
-
-审批使用专用状态及新的输入，只接受对当前操作的明确 yes/no。普通聊天草稿先保存并清空，审批结束后恢复；此前输入或粘贴的待处理任务不得被消费为批准。答复只交回 Tools，不进入模型历史。write 的旧/新片段经 JSON 转义后各最多显示 4000 字符并标明截断，shell 显示命令、目录、超时及其当前用户权限范围；选择 workspace 依然不是 OS 沙箱。父子请求使用同一审批边界。
-
-取消运行中的回合会传播至父子模型与工具，完成收尾后返回输入状态；保存的成功历史与已发生的执行事实沿用原 Session / Tools 规则。退出另有独立生命周期，停止终端绘制、恢复输入模式和光标。原 `--chat` 的 Ctrl+C 退出语义保持原样，不能把 TUI 的继续交互行为推广到该模式。
-
-`/reset` 创建新的 Session 并保留原会话的已完成历史；会话切换重建显示用用户/assistant 消息，但不伪造原回合遥测。不清除进程累计用量、工具 journals 或配置，也不撤销文件和命令。后续请求仍可能包含此前执行事实；重置不是费用回滚、权限刷新或保证请求一定能落在预算内。
-
-## 验证与限制
-
-离线验证覆盖指标来源、父子累计、缺失/冲突/溢出、失败/取消、审批隔离、重置、终端恢复和渲染尺寸。含构建的 264 项测试及原生 Windows ConPTY 80×24 检查通过，详细操作、54 种渲染尺寸、中途问题及修正见 PROGRESS.md。界面测试与 ConPTY 均使用虚构凭据和离线模型夹具，没有真实 provider 请求；不声明新增服务的 cache 字段可用性、真实命中率、完整 IME 候选窗口或模型任务效果已验收。
-
-2D-14 的历史通过共享 SessionManager 本地持久保存，TUI 遥测与屏幕活动仍仅在进程内存在；恢复不重建旧请求统计。TUI 没有费用估算或完整任务验收引擎。字符宽度、输入法和颜色最终依赖终端能力；支持和未验证的环境须按实际检查说明，不能以渲染单元测试代替真实终端可用性结论。
+未新增流式答案、思考历史、provider 热切换、费用估算或任务验收引擎；恢复不重建旧过程遥测。不能以渲染单测代替实际终端可用性。

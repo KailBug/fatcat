@@ -1,178 +1,74 @@
-# 架构总览与文档索引
+# 架构总览
 
-## 文档组织约定
+[文档首页](../README.md) · [项目边界](../PROJECT.md) · [开发与验证](../DEVELOPMENT.md)
 
-架构文档统一放在 `docs/ARCHITECTURE/` 下，本文件作为总览和索引，记录整体边界、跨系统关系及共享决策。
+Fatcat 是面向本地编码任务的 TypeScript Agent Harness。CLI、chat、TUI 和本地 Web UI 共用运行核心；界面负责输入、审批展示和结果呈现，核心负责执行、持久化、权限、预算与取消。本文描述当前源码职责，具体操作见使用指南。
 
-- 各系统在开始设计或实现时建立独立文档。当前已有 `AGENT_LOOP.md`、`SESSION.md`、`TOOLS.md`、`PERMISSIONS.md`、`SUBAGENT.md`、`EXECUTION_REPORT.md`、`CONTEXT.md`、`SKILLS.md`、`PROVIDERS.md`、`TUI.md`、`WEB.md`、`WEBUI.md`、`BROWSER.md`、`AUTOMATION.md`、`PROJECTS.md`、`ATTACHMENTS.md`、`DOCUMENTS.md`、`MEMORY.md`，以及后续资料计划 `RAG.md`；其他系统文档在需要时建立。
-- 系统文档记录该系统的职责、设计决策、接口与数据流，以及分步实现安排和验收方式；按当前需要展开，不要求提前填满所有内容。
-- 每份文档明确区分当前已实现内容和计划设计，具体实现安排也标注状态；验证与完成事实以 [PROGRESS.md](../PROGRESS.md) 为准，避免重复维护进度记录。
-- 新增系统文档时更新本文件的索引。项目阶段目标仍放在 [ROADMAP.md](../ROADMAP.md)，系统内部的实现安排放在对应架构文档中。
-- 系统文档按实际工作需要新增，不提前建立空文档或复杂目录层级。
+## 调用链与状态归属
 
-## 架构维护方式
+一次任务由入口交给 SessionManager，AgentSession 先保存执行领取，再让 Session 在历史副本上调用 Loop。Loop 请求 Model、执行关联工具调用并继续请求，直到最终回答或明确终止。AgentSession 持久提交或记录中断后，入口展示结果与执行报告。
 
-架构现状与设计安排以本目录的 Markdown 文档为准。模块职责、调用关系或开发方向变化时，同步更新本总览及相关系统文档，区分已实现行为与计划能力；实际验证以 PROGRESS.md 为准。
-
-按用户要求，停止维护 Excalidraw 文件。fatcat-architecture.excalidraw 已随此前提交删除并停止 Git 跟踪，当前工作目录没有该文件；不恢复或维护，不作为当前架构依据。以后如自行保留本地参考副本，也不得提交。
-
-## 近期组织原则（设计方向）
-
-2026-10-14 用户将近期重心调整为 **runtime 重构、Web UI 调整和 TUI 建设**。资料与 Memory 后续增强及阶段 5–8 暂缓，相关设计留作参考。已有项目、附件、解析和 Memory 是兼容基线，未完成的质量验收不因重心变化而完成。当前方向与每轮验收见 [ROADMAP.md](../ROADMAP.md#当前开发重心2026-10-14)。
-
-runtime 重构以实际 Agent 装配、Session / AgentSession、Loop、Model、Tools、Context 和 Permissions 调用链为起点，先检查职责、生命周期和状态所有权，再按具体问题逐步调整。实施前对照 pi agent 的相关 TypeScript 源码；当前没有确定新的 runtime 模块布局、存储格式或抽象框架。已有会话持久化、回合提交、审批、取消、预算与已发生副作用继续由对应核心模块负责。
-
-继续保持 CLI / TUI / Web UI、Session、Loop、模型客户端和 Tools 的清晰职责。新增权限判断应覆盖实际执行入口，子任务也应复用同一权限边界；交互层不承担工具执行规则，Loop 不积累各工具的具体逻辑。
-
-本轮已将模式、审批和共用工具安全规则集中到 `src/permissions/`，与 `src/session/` 同级。Manual、Accept edits、Plan 和 Free to go 使用共享策略，网页空闲切换不重建 Tools/Session，不恢复历史授权。前三种保留原工作区/公共网络边界；Free 扩展本地文件及 HTTP(S) 地址范围，普通命令自动、危险/不透明命令一次审批。编码、文件冲突、DNS 固定、PowerShell 期限/取消/输出限制保留；命令检查是启发式而非 OS 沙箱。模式指导在父子模型每次请求副本中更新，read/search/write/shell/web 执行期间锁住权限快照，界面仅负责选择和展示。见 [PERMISSIONS.md](PERMISSIONS.md)。
-
-状态分别回答“发生了什么”（成功对话由 Session 保存，当前写入与命令记录由 Tools 保存）、“当前模型需要看到什么”（Context）、“要完成什么以及完成证据”（Task）。2D-8 的 Context 目前只是独立的请求准备模块，处理旧读取内容的请求投影；Task 以及完整分层上下文仍是组织方向，不提前创建空目录或接口。
-
-近期围绕既有读取、修改、验证和交付闭环完善 runtime 与交互。2D-11 已加入可选 TUI，2D-13 已加入本地 Web UI；接下来分别在现有基础上继续建设和调整，App、Channel 继续后移。核心逻辑不依赖终端或 HTTP 输入输出，TUI 与 Web UI 复用同一 Session / Loop / Tools / Permissions，不在界面内复制执行规则或持久状态。具体交互方案与验证范围在对应任务中确定。
-
-## 当前文档索引
-
-2026-10-14 阶段 4 当前增量见 [MEMORY.md](MEMORY.md)：父模型通过通用 `write` 保存当前用户直接提供的持久事实、定义、偏好及决定，不要求 `/memory`；主机命令保留为可选管理。`src/memory/` 独立保存作用域、来源、证据及完整修订，通用 `read` 和每次父子请求的有界 notice 使用当前状态。子任务/自动任务不能变更，普通文件权限不变。用户已确认迁入项目时全部私有 Memory 自动归项目所有，v3 元数据日志协调归属与故障恢复。固定真实 DeepSeek 的旧拒绝后保存、项目独立历史共享/重启和隔离已通过；自动提炼、语义选取和物理孤立范围清理未实现，广泛真实任务质量待评估，阶段 4 尚未整体完成；最终检查以 PROGRESS 为准。
-
-2026-10-14 实现阶段 3：[DOCUMENTS.md](DOCUMENTS.md) 记录本地现代 Office/PDF/Markdown 解析、同聊天模型图片与选定页面理解、按需转写缓存、通用读取/搜索、固定来源版本和覆盖。复用现有 Loop、Session 作用域和用量，派生数据由 `src/documents/` 持有，附件所有者负责授权及删除。真实模型识别质量未验收；显式 Memory 随后独立接入，Embedding、音频和语音入口仍为计划。
-
-2026-10-14 的阶段 3 设计补充：图片/扫描页优先复用已验证的聊天多模态能力，独立视觉/OCR 服务按需接入；文字提取可由多模态模型完成，与部署专用 OCR 服务分开。来源、覆盖、派生版本及预算要求继续保留，文本检索与原生多模态检索分别验收。详见 [RAG.md](RAG.md)、[PROVIDERS.md](PROVIDERS.md) 和 [ROADMAP.md](../ROADMAP.md)；该条保留此前设计依据；视觉适配随后按 DOCUMENTS.md 实现，检索仍未实现。
-
-2026-10-13 的 [PROJECTS.md](PROJECTS.md) 记录阶段 1：显式项目、统一目录、Session v2 兼容、确认迁入与执行身份；[ATTACHMENTS.md](ATTACHMENTS.md) 记录阶段 2：不可变原件、项目/私有关联、上传/导入、有界文本读取、来源及删除保护。`src/attachments/` 独立持有资料，Session 持有历史与归属，两者由短元数据锁和恢复日志协调。Agent 在目录 Tools 缓存之外绑定实际父子执行范围。[RAG.md](RAG.md) 保留资料/Memory/索引所有者及 nanobot/pi/Codex 研究。八阶段依赖和验收见 [ROADMAP.md](../ROADMAP.md)；Office/PDF 解析与视觉适配随后进入阶段 3，显式 Memory 进入阶段 4 首个增量；检索及音频尚未实现。
-
-同日追加项目管理已开放重命名、项目统一改目录和确认级联删除；Web UI 项目菜单复用 SessionManager，目录 patch/项目/附件元数据共用读前恢复。删除保留工作目录文件及仍被外部会话引用的原件。原生目录选择器补齐 PMv2 和隐藏 owner，修复缩放模糊及 PowerShell 任务栏按钮；真实 Win32 与 Edge 分别验证，见 PROJECTS 第 8 节和 PROGRESS。
-
-新增 [BROWSER.md](BROWSER.md)：共享 Playwright browser 工具、工作区资源路由、执行审批、DOM/几何采集与 JSON/PNG 证据。它属于 Tools 执行层，CLI/TUI/Web UI 复用；第一步 Preview 仍只是用户预览。Windows 使用已安装 Edge，新增固定生产依赖 playwright 1.63.0，原因与边界见该文档。该 browser 工具的截图模型输入和多时刻动画验证仍未实现；附件图片输入属于 DOCUMENTS.md 的独立资料路径。
-
-| 文档 | 内容 | 状态 |
+| 层次 | 当前源码 | 唯一职责 |
 | --- | --- | --- |
-| [README.md](README.md) | 架构总览、共享决策与文档组织约定 | 已建立 |
-| [AGENT_LOOP.md](AGENT_LOOP.md) | CLI、配置与最小 Loop 的设计和实现安排 | 最小 Loop 已实现、验证并通过 review |
-| [SESSION.md](SESSION.md) | 成功历史、持久化、会话管理与中断回合边界 | 2A 已通过 review；2D-14 离线和浏览器已验证，待 review |
-| [TOOLS.md](TOOLS.md) | 通用 read / write / shell、授权及执行记录 | read / write / shell 基线已合入；2D-6 文本搜索已通过 review 并合入 |
-| [PERMISSIONS.md](PERMISSIONS.md) | 权限模式、一次性审批、启动上限和工具执行安全 | 已实现；验证事实见 PROGRESS |
-| [SUBAGENT.md](SUBAGENT.md) | 默认可用的有界委派、历史隔离及取消 | 2C 已通过 review；2D-4 默认迁移已通过 review 并合入 |
-| [EXECUTION_REPORT.md](EXECUTION_REPORT.md) | 按用户回合汇总真实事件、共享记录去重与命令后写入提示 | 2D-5 / 2D-7 / 2D-8 已合入；2D-9 扩充双回合验收 |
-| [CONTEXT.md](CONTEXT.md) | 请求预算下的旧读取省略、历史所有权及按需重读 | 2D-8 已验证并合入 |
-| [SKILLS.md](SKILLS.md) | 本地及按 subsystem 组织的内置技能、构建资源、通用 read、Session 和权限边界 | 2D-10 含内置补充；验证事实见 PROGRESS |
-| [PROVIDERS.md](PROVIDERS.md) | DeepSeek / Kimi / MiMo / Qwen 配置及 provider 开发规范 | 2D-10 新厂商按离线 SDK 合约验收，无新增厂商 API 在线验证 |
-| [TUI.md](TUI.md) | 可选终端界面、审批控制与准确的回合 / 用量 / 缓存遥测 | 2D-11 离线及 Windows ConPTY 已验证，待 review；细节见 PROGRESS |
-| [WEB.md](WEB.md) | 公开搜索、网页读取、DNS / HTTP 边界、网络权限及联网 Skills | 2D-12 已实现；离线和公网验证事实见 PROGRESS |
-| [WEBUI.md](WEBUI.md) | 本地浏览器、HTTP 边界、单 Session 控制、逐次审批与回合报告 | 2D-13 首版已实现；离线和浏览器验证事实见 PROGRESS |
-| [BROWSER.md](BROWSER.md) | 工作区页面执行、基本交互、运行诊断、DOM/几何与截图证据 | 第二步已实现；离线/真实 Edge 验证见 PROGRESS，模型视觉输入未实现 |
-| [PROJECTS.md](PROJECTS.md) | 阶段 1 项目归属、唯一目录、持久兼容、迁入与执行身份 | 最小范围已实现，离线及真实 Edge 验证通过，待 review |
-| [ATTACHMENTS.md](ATTACHMENTS.md) | 阶段 2 持久原件、共享/隔离、通用文本读取、来源与生命周期 | 已实现；验证与限制见 PROGRESS |
-| [DOCUMENTS.md](DOCUMENTS.md) | 阶段 3 本地文档解析、同模型视觉/转写、固定来源、缓存与覆盖 | 已实现；本地/注入 SDK/Edge 验证见 PROGRESS，真实模型质量未验收 |
-| [MEMORY.md](MEMORY.md) | 阶段 4 直接用户事实的自然语言保存、可选主机 CRUD、作用域/来源修订、请求状态与迁入恢复 | 当前增量和固定 DeepSeek live 场景已验；阶段未整体完成，后续增强暂缓 |
-| [RAG.md](RAG.md) | 资料所有权、解析/视觉/Memory/检索/音频边界与参考研究 | 阶段 1–3 及 Memory 当前增量保留；未实现的检索/音频等暂缓 |
+| 入口与交互 | `src/cli.ts`、`src/chat.ts`、`src/terminal.ts`、`tui/`、`webui/` | 输入、宿主命令、审批交互、取消与呈现 |
+| 装配 | `src/workspace-agent.ts`、`src/agent.ts` | 按工作目录准备 Tools/Skills，按实际 Session 绑定父子执行身份与资料访问 |
+| 会话 | `src/session/` | 成功历史、当前记录、运行领取、会话选择和持久存储 |
+| 回合 | `src/loop.ts`、`src/subagent.ts` | 模型与工具循环、有界委派、请求余额与事件 |
+| 模型与上下文 | `src/model.ts`、`src/providers.ts`、`src/context/` | 协议转换、请求投影、完整请求预算和上下文压缩 |
+| 工具与安全 | `src/tools.ts`、`src/tools/`、`src/permissions/` | 工具参数/执行事实与权限/资源边界 |
+| 项目与资料 | `src/project/`、`src/attachments/`、`src/documents/`、`src/memory/` | 项目目录、资料关联、不可变原件、派生内容与当前记忆 |
+| 调度与证据 | `src/automation/`、`src/execution-report.ts` | 有界激活与本回合观察结果，不拥有另一份对话历史 |
 
-## 当前实现
+以下状态不能混为一体：
 
-2026-10-14 的 `src/memory/` 使用有界独立记录，父会话通用 write 绑定当前用户原话证据、实际 attempt 所有权和每回合 8 次尝试预算；子请求只读，`/memory` 可直接管理。`SessionStore.withMemorySession` 在 metadata gate 内核对身份与回合 owner；MemoryStore 另持作用域文件锁及原子 JSON。归属迁入通过同一恢复日志协调，保留来源/tombstone，并让项目所有 Session 使用；请求 notice 不进入成功历史，计入完整 SDK 字节预算。证据匹配证明出处而非语义意图，不新增专用工具或依赖，详见 [MEMORY.md](MEMORY.md)。
+- **成功历史与中断记录**由 Session / AgentSession 保存；恢复不重放工具或恢复旧授权。
+- **目录级工具日志**记录进程内已发生的写入、命令和浏览器检查；新建会话不撤销副作用，也不清空这些日志。
+- **请求上下文**是历史与当前指导的有界投影，不能代替完整历史或当前文件。
+- **Project、附件与 Memory 作用域**依实际执行身份校验，不能从同目录、UI 选择或模型提供的 ID 推断。
+- **执行报告**说明观察到的事实，不认证模型答案正确，也不是完整 Task 验收系统。
 
-当前 Memory 能力由每次请求的 SDK Schema 与能力说明决定，旧 assistant 的拒绝声明保留为历史，不能覆盖本次可用工具。保留的 Memory 地址操作元数据，工作区文件 read-only/Plan 和文件审批不禁用该路径。生产 `workspaceAgentFactory` 增加可选 fetch transport 参数，用同一工厂验证三种权限模式、旧拒绝历史和重启/项目隔离；固定真实 DeepSeek 验收也经该路径执行，见 MEMORY 第 6 节。
+## 专题索引
 
-2026-10-12 增加本地字节超限后的自动 compact：Model 提供拒绝证据，Loop 保留执行现场并最多请求一次恢复，Session 使用既有摘要模块，AgentSession 保存后发布候选。摘要请求与续跑共用回合额度，事件及消费经 CLI/TUI/Web UI 原报告链展示，摘要输入 token 不作为对话容量。默认开启、可配置关闭；不重试供应商错误或重放工具，见 [CONTEXT.md](CONTEXT.md)。
-
-2026-10-10 将 `src/context.ts` 迁入 `src/context/request.ts`，补充 `manager.ts` 的纯投影/状态校验、`compaction.ts` 的有界摘要和 `commands.ts` 的共享入口。Session 保存完整历史与可选摘要边界，Loop 只对模型输入应用投影；Model 保留最终请求预算。手动 `/compact` 不执行工具，成功保存后才发布上下文变化，细节见 [CONTEXT.md](CONTEXT.md)。
-
-版本元数据由根 `package.json` 持有，`src/version.ts` 从编译模块相对路径读取，供 CLI `--version` / `-v` 使用；查询发生在供应商配置与 Session 初始化前。README 的动态版本及 CI 徽章展示 main 状态，区别于本地 checkout。版本策略见 [USAGE.md](../USAGE.md#version-and-project-badges)。
-
-2026-10-09 Session 职责重构：参考本地 pi 的会话数据、AgentSession 与运行环境划分，新增 `src/session/record.ts`、`agent-session.ts`、`automations.ts`，分别持有快照解码、活动回合提交及任务绑定策略。Manager 保留跨会话选择、工作区准备和操作互斥；Store 保留有界磁盘 I/O 与原子修订锁。入口 API 与 v1 快照兼容，运行时、依赖和权限边界不变。阶段计划及执行记录在 [REFACTOR_PLAN.md](../../src/session/REFACTOR_PLAN.md)，当前模块事实见 [SESSION.md](SESSION.md)，验证见 PROGRESS。
-
-会话跨工作区增量（2026-10-03）：Store 全局发现旧哈希目录中的快照，Manager 先准备目标 workspace 的运行配置，再切换活动状态。新增 `src/workspace-agent.ts` 缓存每工作区 Tools/journals 并重建 Skills/Agent；新建默认继承当前目录。chat/TUI `/workspace` 与 Web UI 用户目录选择共用此边界。2026-10-08 Web UI 改由 `folder-picker.ts` 和 `native-folder-dialog.ps1` 打开 Windows 原生文件夹窗口；认证路由与会话管理锁持有选择及取消流程，不作为模型工具。可选 storageWorkspace 固定原存储桶，workspace 作为可编辑执行位置，不搬移文件。详见 SESSION、WEBUI、TUI；自动任务仍只发现当前工作区。
-
-2D-15 在 `src/automation/` 增加 cron 匹配、文件快照、有界调度、进程锁、持久任务字段、父模型 automation 工具和 ConversationAutomations 服务。自然语言、chat/TUI `/cron` 与 Web UI Cron 表单共用 SessionManager 绑定，之后触发继续目标会话，界面保留审批和展示所有权。配置和计数持久化，队列/基线仅在进程内。原独立 JSON CLI 保留高级用法。模块、权限、预算和未实现范围见 [AUTOMATION.md](AUTOMATION.md)，验证事实见 PROGRESS。
-
-当前工程已实现 CLI、配置校验、DeepSeek 模型客户端、内存消息循环、纯计算工具及统一错误处理；阶段 2A 已有独立内存 Session 和终端连续对话；阶段 2B 已有统一异步工具集合与显式开启的工作目录读取；阶段 2C 增加显式开启的最小子任务委派；阶段 2D-1 合并为通用 read，并分离 workspace 路径边界与 read 的读取和分页实现；2D-2 增加受控 write，共享有界文本读取模块，并将写入记录与成功对话历史分开。review 修正新增 terminal.ts 统一聊天与确认输入，CLI 注入批准回调，工具负责校验与落实权限。2D-3 新增 shell.ts 与 process.ts，分别持有命令规则/事实与 Windows 进程生命周期，terminal.ts 复用单次确认。2D-4 新增 agent.ts 集中装配父子模型与工具，普通 CLI 默认可委派；仅父请求带任务选择指导，不改变保存的历史。共享基础提示词现集中在 system-prompt.ts，父子 Loop 都使用简洁、行动导向及基于验证结果的编码协作规则。2D-5 新增 execution-report.ts，在交互边界观察事件，汇总当前回合报告；不改变 Loop / Session 返回值，不写入模型历史。2D-6 新增 tools/search.ts，负责 read query 的有界遍历与匹配；read.ts 持有统一 Schema、参数校验与分发，Workspace 和 text-file 继续负责访问与解码边界。2D-7 在 model.ts 发送前检查完整请求字节，model-usage.ts 校验服务用量；Model 的可选观察回调经 Loop 转为元数据事件，execution-report.ts 汇总父子请求和用量。2D-8 新增 context.ts，在完整请求超预算时整理较早成功 read 的请求副本，保留当前/最近回合和完整 Session 历史；具体边界见 [CONTEXT.md](CONTEXT.md)。真实运行可从 CLI 输入任务，经历模型调用与工具结果回传，再输出最终结果。Loop 接口、错误行为与数据流见 [AGENT_LOOP.md](AGENT_LOOP.md)，跨用户回合的历史所有权与连续输入见 [SESSION.md](SESSION.md)，内置工具与文件边界见 [TOOLS.md](TOOLS.md)，委派与请求上限见 [SUBAGENT.md](SUBAGENT.md)。
-
-`tsconfig.json` 使用严格模式与 NodeNext 模块规则，将 `src/`、`tui/`、`webui/`、`tests/`、`scripts/` 编译到 `dist/` 下对应目录。根目录 `tui/` 与 `src/` 同级，终端交互、视图和遥测编译到 `dist/tui/`；共享 Agent、Session、Loop、Tools 与 CLI 入口仍在 `src/`。`pnpm run build` 在编译后运行 `scripts/copy-skills.ts` 的构建产物，验证 `src/skill` 并刷新复制到 `dist/src/skill`；运行时从模块相对路径加载这些内置资源，不依赖 cwd。CLI / TUI / Web UI 共用 `dist/src/cli.js`，该入口在选择 `--tui` 时加载 `dist/tui/index.js`；`pnpm start` 经 `dist/scripts/start.js` 恢复调用目录后导入 CLI，构建和 `.env` 加载仍在包根完成。直接运行 CLI 不读取 INIT_CWD。测试使用 Node 内置运行器。基础生产依赖包括 `openai@7.18.0`（共享 Chat Completions 兼容客户端）、`yaml@2.9.1`（Skill frontmatter 解析）及 `@earendil-works/pi-tui@0.87.1`（可选 TUI 的编辑、Markdown 和终端渲染）。web 另使用 htmlparser2 12.0.0 与 ipaddr.js 2.5.0；browser 使用 playwright 1.63.0。`pnpm run verify:live` 提供显式 DeepSeek 验证；`pnpm test` 保持离线注入，`pnpm run verify:browser` 单独运行真实本地浏览器但不请求模型。
-
-2D-9 在脚本与测试层扩充多文件双回合验收，不改变上述生产职责或接口。`scripts/verify-workflow.ts` 通过 `pnpm run verify:workflow` 复用同一 Session、createAgent 与 createTurnReporter；`scripts/fixtures/coding-workflow.ts` 管理临时计价样例、逐回合事实断言及独立复验，供离线测试共用。它检查修复、后续需求、受保护文件、实际命令及每回合新增记录；实际运行结果以 PROGRESS 为准，不将验证脚本视作生产 Task 系统。
-
-2D-10 继续完善单个 Session。`skills.ts` 发现并校验本地元数据，包装通用 read 以加载 Skill 与引用资源；目录仅加入模型请求，加载结果仍由成功历史持有，`kind: skill` 不参与旧读取省略。`providers.ts` 将所选供应商的地址、模型、凭据名称和请求参数限制在小型 profile 中；`model.ts` 通过 createModel 复用同一预算、取消、解析与错误边界。新增三家只有离线合约验收，本轮不发起其 API 在线验证；没有多会话管理、模型自动路由、流式或思考历史。
-
-同阶段的内置 Skill 补充采用 `src/skill/<subsystem>/<skill-name>/SKILL.md`，当前涵盖 tools/workspace-editing、subagent/focused-delegation、context/context-recovery、execution-report/verification-handoff。它们指导 Fatcat 完成用户编码任务，不是 Fatcat 源码开发规范。`src/skills.ts` 继续持有运行时逻辑，内置目录以最低优先级加入已有发现流程；名称保持统一 URI，subsystem 只作组织与元数据。父子读取、成功历史、请求预算和执行权限不变，正文仍按需加载；只在实际 subsystem 任务需要时增加内容，不建空目录或确定性工作流引擎。内置补充的离线与真实验证状态以 PROGRESS 为准。
-
-2D-11 的可选 `--tui` 将视图、输入/审批控制和事件统计分开。启动配置由 CLI 解析并沿用 createAgent；界面读取 Loop / execution_report 的事实，并在 Session.run 成功返回后累计保存回合数，不把屏幕内容或遥测写入模型历史。标准 token 用量与 provider 缓存字段在 model-usage 边界校验，父子请求及进程累计由交互侧汇总。本地请求字节预算、最近父请求的 prompt tokens 和未知的模型 token 窗口分别标注；取消本轮与退出界面有独立生命周期。详见 [TUI.md](TUI.md)。
-
-同阶段修正 CLI 的默认工作目录：普通任务、--chat、--tui 默认使用 process.cwd()，--workspace 可覆盖。pnpm start 的专用启动器先根据 INIT_CWD 恢复调用位置，因此默认目录及相对 --workspace 都基于用户调用命令的目录。任务默认提供同级 read / write / shell，write 与 shell 仍分别逐次确认；程序化 createTools 省略目录仍不开放文件访问。Tools.workspaceRoot 来自 createWorkspace 的规范 realpath，agent.ts 将该路径作为父子请求指导，TUI 显示同一值；不会改写 Session 历史或放宽相对路径及权限规则。实现与验证事实见 PROGRESS.md。
-
-Web UI 的单文件作品预览由 `webui/preview.ts` 持有工作区受控读取和短期快照，`webui/client/preview.ts` 管理面板、刷新和沙箱 iframe。入口复用 HTTP capability，预览文档只得到一次性随机快照地址，运行在不允许同源的 sandbox 与独立 CSP 下。共享 text-file reader 增加调用方扩展名集合参数；原 read/write/Skills 默认白名单不变。预览不进入 Session/Loop/模型消息或工具报告，也不是 Agent 浏览器工具；详细边界见 [WEBUI.md](WEBUI.md)。
-
-## 已确定的约束与决策
-
-chat / TUI 通过 `src/commands.ts` 统一分发本地命令，`/skills` 展示已发现的目录元数据，`/sessions` 委托 `src/session/commands.ts` 读取会话列表。列表操作不请求模型、不读取 Skill 正文或修改成功历史；交互进程启动仍要求正常 provider 配置。技能与会话列表不再提供独立启动参数，bare `--resume` 的无凭据选择/管道列表路径保留；Web UI 继续使用原会话侧栏，没有接入 `/skills`。
-
-2D-14 的会话代码集中在 `src/session/`，与 `src/tools/`、`src/skill/` 同级；`session.ts`、`manager.ts`、`store.ts`、`history.ts` 和 `commands.ts` 分别持有成功历史、活动会话管理、持久存储、恢复校验及共享本地命令，编译到 `dist/src/session/`。各入口直接导入具体模块，不增加 barrel 或旧路径兼容包装。CLI / TUI / Web UI 复用一个活动会话管理边界，Store 按规范工作目录保存带版本和修订号的原子 JSON，history 验证模块拒绝不完整成功对话和非法工具关联；共享本地命令不会进入模型历史。Loop 提供异步回合检查点，成功历史与最近未完成消息分开保存。恢复使用本次启动的配置、权限和 systemPrompt，不重放操作或恢复旧授权；程序化 Session 仍支持内存入口。没有新增依赖，实际失败/并发/入口验收见 PROGRESS 与 [SESSION.md](SESSION.md)。
-
-2D-13 的 `webui/` 与 `src/`、`tui/` 同级。CLI 选择 --webui 后加载 webui/index.ts，复用 Tools / Skills / createAgent / Session；controller 持有显示状态和待批操作，server 负责本机 HTTP 与 capability，client 持有 DOM 与交互。TypeScript 增加 DOM 类型和 webui 文件；build 复制 HTML/CSS/SVG，JS 直接由 tsc 生成，没有新增依赖或改动锁文件。接口、请求上限及状态边界见 [WEBUI.md](WEBUI.md)。
-
-同阶段会话菜单由 `webui/client/session-menu.ts` 管理定位、键盘导航和焦点，app 将所点 ID 的详情、命名、分支和删除接入原 controller / SessionManager；Store 以工作目录和修订锁保护删除与分支。Web UI 入口启用 Manager 的 `deferEmptySessions`：未命名新会话和活动删除后的欢迎页仅持有 revision 0 草稿，首条消息执行前才保存，前端不将草稿补进侧栏；显式命名/分支立即保存，CLI/TUI 默认行为不变。工作区位置及字体层次仅改变视图，不引入独立会话状态或模型工具。
-
-后续 Web UI 交互由 `session-dialog.ts` 持有页面弹窗，`open-browser.ts` 持有本机启动链接打开，`context-usage.ts` 观察最近父请求输入用量并匹配已核对的模型窗口。composer 分为消息和底部工具栏，左侧模式/带框工作区，右侧无框上下文/模型/发送，窄屏按组换行；`permission-menu.ts` 按 Plan、Manual、Accept edits、Free to go 展示服务端策略并提交选择。会话轮次和日期仅放在悬浮提示与无障碍描述中。这些视图不改变持久历史或原字节预算，界面当前英文，多语言切换仍为计划，见 [WEBUI.md](WEBUI.md)。
-
-Web UI 的 `webui/client/icons.ts` 通过 DOM SVG/use 引用本地 Lucide sprite；HTML/CSS/图标和许可证随已有 build 复制并由静态白名单提供。2026-10-08 在 `feat/webui-dev` 采用黑白灰、系统无衬线、分级圆角与减少动画适配，保留居中输入布局；按后续截图反馈移除建议卡片、统一指定猫咪 logo，并将 Cron 改为紧凑双栏/手机分视图与分页列表；侧栏增加关闭按钮、焦点循环和主区域 inert，会话行省略号与右键入口复用同一 SessionMenu。`scripts/verify-webui-design.ts` 提供真实 Edge、注入模型的独立验收命令。核心运行时和权限边界不变，细节见 [WEBUI.md](WEBUI.md)。
-
-2D-12 新增一个通用 web 工具，CLI / chat / TUI 默认开放公开搜索和页面文本读取，`--web-permission deny` 可独立关闭。程序化 createTools 第五个参数显式选择 web，未传时维持旧工具集合；父子模型共享相同工具边界。web.ts 负责协议、权限与调用期限，web-request.ts 负责公开地址检查、DNS 固定、HTTP(S) 与有界解码，web-content.ts 负责搜索/HTML 解析；Loop、Session 与执行报告的职责不变。新增 web/web-research 与 web/weather-lookup，当时内置 Skill 共六项；后续加入 browser/local-browser-check 后为七项。细节和未实现边界见 [WEB.md](WEB.md)、[BROWSER.md](BROWSER.md)。
-
-新增锁定依赖 htmlparser2@12.0.0 和 ipaddr.js@2.5.0，分别用于 HTML/XML 结构解析和特殊 IP 范围分类；保留 Node / pnpm / TypeScript / 模型 SDK。`pnpm run verify:web` 是独立公网检查，不加载凭据或调用模型；自动测试仍保持离线。
-
-| 决策 | 理由 |
+| 责任域 | 文档 |
 | --- | --- |
-| 使用 TypeScript | 项目已确定的主语言 |
-| 首版支持 Windows 原生运行 | 满足本机运行要求，不引入 WSL、Docker 或远端服务器前提 |
-| 先实现简单 Loop | 先验证最小闭环，避免同时建设 Graph 引擎 |
-| 第一阶段使用内存历史、单一模型和一个无副作用工具 | 控制范围，验证模型与工具的完整交互 |
-| 在实际需要出现时形成抽象 | 避免为未来子系统预建大量空接口 |
+| 回合控制、装配与终止 | [Agent Loop](AGENT_LOOP.md) |
+| 会话记录、运行领取与恢复 | [Session](SESSION.md) |
+| 历史投影、旧读取省略与 compact | [Context](CONTEXT.md) |
+| 通用工具协议、文件操作与执行日志 | [Tools](TOOLS.md) |
+| 权限模式、审批和共享执行防护 | [Permissions](PERMISSIONS.md) |
+| 独立历史的有界子任务 | [Subagent](SUBAGENT.md) |
+| 请求、用量及操作事实的汇总 | [Execution reports](EXECUTION_REPORT.md) |
+| 模型协议与能力适配 | [Providers](PROVIDERS.md) |
+| 本地指导发现与按需读取 | [Skills](SKILLS.md) |
+| 项目目录、迁入和管理 | [Projects](PROJECTS.md) |
+| 原件、关联、pin 与元数据恢复 | [Attachments](ATTACHMENTS.md) |
+| 本地解析、视觉请求与来源 | [Documents](DOCUMENTS.md) |
+| 用户事实、作用域与修订 | [Memory](MEMORY.md) |
+| 会话绑定及独立配置调度 | [Automation](AUTOMATION.md) |
+| HTTP(S) 搜索与页面读取 | [Web](WEB.md) |
+| 工作区页面执行与证据 | [Browser](BROWSER.md) |
+| 终端交互与遥测 | [TUI](TUI.md) |
+| 本地 HTTP、界面与预览 | [Web UI](WEBUI.md) |
+| 尚未实现的检索、音频和多模态方案 | [RAG 与后续资料能力](RAG.md) |
 
-## 工具链与模型选择
+## 跨模块约束与设计决策
 
-| 选择 | 状态与理由 |
-| --- | --- |
-| Node.js 24.x | 已使用。本机已有 24.19.0，沿用现有运行环境；24 系列为 LTS，提供所需的环境文件加载和测试能力 |
-| pnpm 11.21.0 | 已使用。沿用本机已有版本并在 packageManager 中固定，利用依赖隔离与共享存储；由 pnpm-lock.yaml 和 `pnpm install --frozen-lockfile` 重现依赖 |
-| TypeScript 7.0.2、`@types/node` 24.13.5 | 已安装并锁定精确版本。采用当前稳定编译器及与 Node 主版本匹配的类型；以实际 Windows 编译和测试确认兼容性 |
-| ESM + NodeNext，先编译再运行 | 已实现。直接用 `tsc` 和 Node，不增加打包器或开发运行器 |
-| Node 内置测试运行器 | 已使用。当前测试需求简单，不增加测试框架依赖 |
-| Node 的环境文件加载 | 已使用。由启动命令加载 `.env`，不增加 dotenv 依赖；不在配置模块隐式读取文件 |
-| DeepSeek | 已接入并完成真实验证。默认配置为 `deepseek-flash`，使用非思考、非流式 Chat Completions |
-| Kimi / MiMo / Qwen | 按用户要求加入固定 provider profile；各自模型、认证、区域和请求字段见 PROVIDERS.md；本轮不执行 API 在线验证 |
-| `openai@7.18.0` 兼容 SDK | 沿用并复用于四家供应商。禁用自动重试，设置超时及取消信号，关闭 SDK 原始日志 |
-| `yaml@2.9.1` | 解析 Skill frontmatter 的引号、多行和结构，避免手写不完整 YAML；边界和拒绝规则见 SKILLS.md |
-| `@earendil-works/pi-tui@0.87.1` | 复用 TypeScript 的终端编辑、Markdown、宽度计算与增量绘制；符合现有 Node / Windows 工具链，避免为界面另引 Go 或另一套 Agent 运行时 |
+1. 保持简单 Loop 和少量通用工具。能力通过实际任务演进，不为未来系统预建 Graph、插件框架或空接口。
+2. 目录级 Tools 可以缓存，Session/Project 身份必须在执行时绑定。后台任务与子任务继承实际目标，不能借用 UI 当前范围。
+3. 操作先校验权限、预算和取消；提示词、Skills、资料、Memory 与保存历史均不能提升授权。shell 和命令风险分类不是 OS 沙箱。
+4. 副作用与会话提交不是同一事务。失败、取消或存储错误后，必须保留已发生事实；不得声称文件或外部请求自动回滚。
+5. 互斥和持久领取保护执行，短锁保护元数据提交。跨文件资料变更使用恢复日志，不能在等待用户、模型或上传网络时持有磁盘锁。
+6. 原件、派生内容、Memory 和请求投影分别管理。固定来源不会因重新解析或重建而偷偷指向新版。
+7. 核心不依赖终端或 HTTP 展示。新增入口复用现有 Session、Loop、Tools 和 Permissions。
 
-核对依据（2026-09-18）：[Node.js 发布说明](https://nodejs.org/en/about/previous-releases)、[TypeScript 7.0 发布说明](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)、[TSConfig 参考](https://www.typescriptlang.org/tsconfig/)、[DeepSeek 接入文档](https://api-docs.deepseek.com/)。实际环境与验证结果见 [PROGRESS.md](../PROGRESS.md)。
+工具链采用 Node.js 24.x、pnpm 11.21.0、ESM/NodeNext 和先编译再运行；精确依赖版本以 [package.json](../../package.json) 与锁文件为准。沿用 Node 的环境文件加载和测试运行器，避免增加无实际需求的打包器或运行时。专用依赖的选择理由放在其所属专题，版本策略与命令见[开发说明](../DEVELOPMENT.md)。
 
-## 包管理与运行时取舍
+TypeScript 维护参考 pi agent 的相关实际源码和状态所有权，工程规则见 [AGENTS](../../AGENTS.md)。参考项目不构成 Fatcat 依赖或可用能力证明；不维护架构 Excalidraw 文件。
 
-已将 npm 锁文件导入 pnpm，并统一使用 pnpm 命令。当前依赖很少，选择 pnpm 的主要理由是依赖管理方式和用户偏好，尚未测量或宣称安装性能提升。沿用本机已有的 11.21.0，暂不为迁移升级到新的主版本。参考 [pnpm 的依赖组织说明](https://pnpm.io/symlinked-node-modules-structure)和[锁文件导入说明](https://pnpm.io/cli/import)。
+## 验证与演进边界
 
-启动和测试脚本显式串联 `pnpm run build` 与 Node 命令，不依赖自动 pre/post 脚本行为；pnpm 脚本参数直接跟在脚本名后，例如 `pnpm start --help`。
+各专题列出应保持的检查边界与已知缺口，具体命令集中在[开发与验证](../DEVELOPMENT.md)。离线合约、真实 Windows/Edge、公共网络和真实模型分别验证；已有固定样例结果不能代替当前改动的检查。
 
-运行时继续使用 Node.js 24。Bun 已支持 Windows，并集成运行、包管理、测试和打包能力；但其官方兼容表仍记录部分 Node API 差异，包括本项目使用的 `node:test`。现阶段先建立已验证的 Node 基线。预计模型请求和工具执行会比本地循环本身更影响耗时，但这只是架构判断，尚无项目性能数据。
+后续 runtime 重构先核对实际装配、状态所有权和生命周期，保留持久化、权限、预算、取消与副作用契约；尚未确定新的模块布局或存储格式。Web UI/TUI 的后续要求由各自专题维护。已有资料与 Memory 继续作为兼容基线，质量缺口不因开发重心变化而视为完成。
 
-若后续单文件分发或本地性能成为明确需求，再单独验证 Bun 的 SDK、子进程、流式输出、取消和测试行为后决定。当前未运行 Bun 兼容测试，也未采用 Bun 专用 API。参考 [Bun Windows 安装支持](https://bun.com/docs/installation)、[Node.js 兼容性](https://bun.com/docs/runtime/nodejs-compat)和[单文件分发](https://bun.sh/docs/bundler/executables)。
-
-## 第一阶段完整闭环（已实现）
-
-以下职责已落地，具体文件和接口见 Agent Loop 文档。
-
-- CLI：接收任务输入、展示模型最终结果和必要错误提示。
-- 模型调用：提交消息与工具定义，返回模型响应或工具调用。
-- 循环控制：维护内存历史，决定继续或结束，并落实迭代上限。
-- 工具执行：统一校验 JSON 并顺序等待异步执行；程序化基础集合默认 sum，传入工作目录时提供 read / write / shell，CLI 默认选择启动目录；已发现 Skills 时通用 read 也可读取其专属 URI；CLI 父工具集合另默认提供 delegate_task；写入与命令分别授权，支持终端逐次确认或显式策略，按调用 ID 回传结果或错误。
-
-当前数据流：CLI 输入进入内存历史；循环控制请求模型；模型直接回答时结束，提出工具调用时执行工具并记录关联结果，再请求模型，直到得到最终结果或明确终止。
-
-共享 Loop 在请求副本中说明剩余次数，并在原配置上限内保留最后一次请求生成文字交付；Model 的单次工具选择选项经 agent 父子包装透传，供应商差异仅在请求构造处处理。正常回复可保存成功对话，但不代表任务全部完成；未验证/未完成须明示，异常、取消及最后一轮违规工具调用仍明确终止。详见 [AGENT_LOOP.md](AGENT_LOOP.md) 和 [PROVIDERS.md](PROVIDERS.md)。
-
-历史采用兼容 SDK 的消息结构；工具结果保留调用 ID。轮次按模型请求计数，工具错误可回传并纠正，服务错误和迭代上限明确终止。详细规则见 [AGENT_LOOP.md](AGENT_LOOP.md)。
-
-## 工程约定
-
-docs/ 之外的仓库文本只使用英文；中文仅用于 docs/ 内。模型输出和用户输入属于运行时数据，可以使用任意语言。pnpm-workspace.yaml 目前仅记录 pnpm 安装时为 openai@7.18.0 自动生成的 minimumReleaseAgeExclude 精确版本项，不定义多包工作区。
-
-## 后续方向（未实现）
-
-2D-14 将本地 Session 持久化与管理纳入当前实现，见 [SESSION.md](SESSION.md)；资料阶段 4 已加入直接用户事实的自然语言 Memory 保存，见 [MEMORY.md](MEMORY.md)。并行或递归 Subagent、Channel、完整任务与分层上下文管理、自动记忆提炼与合并、文件检查点和操作恢复及成本优化仍为计划，见 [ROADMAP.md](../ROADMAP.md)。本文件不将这些方向视为已有架构。
+Graph、Channel/App、远程服务、并行或递归委派、文件恢复检查点和完整 Task 验收系统尚未实现。检索与音频方案暂缓；成本优化须先建立代表性任务、成功率门槛与成本基线。具体顺序由当前任务决定。

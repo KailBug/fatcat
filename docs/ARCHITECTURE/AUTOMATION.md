@@ -1,75 +1,52 @@
-# 会话绑定的定时任务与文件事件（2D-15）
+# Automation：会话绑定与有界调度
 
-## 当前交互与范围
+[架构总览](README.md) · [调度操作](../GUIDES/AUTOMATION.md)
 
-2026-10-13 阶段 1 增加 Project/Session v2：任务仍归绑定 Session，执行时解析该 Session 的项目、目录和归属代次；UI 当前选择不改变后台或其子任务身份。独立会话迁入项目时，归属变更与已有自动任务暂停在同一记录中原子发布，旧队列激活失效。阶段 2–8 的附件、Memory、检索和音频/语音未实现，此处只建立实际执行身份，不表示已经实现资料隔离。
+自动任务复用 Session/Loop/Tools，不拥有另一套历史或权限。会话绑定模式继续目标历史；高级 JSON runner 每次激活创建新 Session，两者的持久计数语义不同。
 
-用户在普通 chat、TUI 或 Web UI 会话中描述自动任务，父模型通过 `automation` 工具提交结构化触发器，Harness 校验后绑定当前持久 Session。之后每次触发继续该 Session 的历史并保存结果。模型工具成功返回才表示任务已保存；自然语言理解依赖所选模型。
+## 模块职责
 
-- chat/TUI 支持 `/cron <任务描述>`；无参数列出当前任务，`pause/resume/delete <id>` 本地管理。描述进入模型回合。
-- Web UI 侧栏 **Cron tasks** 提供 cron、interval、at、file_changed 表单，选择既有 Session 或新建并绑定；卡片可以跳转会话、暂停、恢复和删除。
-- TUI 页脚、会话列表和自动回合有 `[clock]` 标记。Web UI 会话标题最右端显示时钟，自动回合显示来源。标记表示存在绑定，包括暂停或耗尽的任务。
-- 后台目标不是当前选中 Session 时，保存到目标会话且不切换用户正在查看的会话。前台和后台串行使用原模型、工具、审批、取消与报告。
-
-Node 24、pnpm 11.21.0、TypeScript、模型 SDK 不变，没有新依赖、Graph 或第二套 Loop。原 `--automation` / `--check-automation` 保留为高级独立 JSON runner；它仍每次创建新的保存会话，其进程预算与会话绑定模式不同。
-
-参考资料核对于 2026-10-02：[Claude Code scheduled tasks](https://code.claude.com/docs/en/scheduled-tasks)、[hooks](https://code.claude.com/docs/en/hooks)、[Pi extensions](https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/docs/extensions.md)。采用进程内调度、忙时合并、触发与执行分离、生命周期清理和会话内状态可见的思路；未导入其他 Agent 运行时或照搬其完整机制。
-
-## 模块与数据流
-
-| 模块 | 当前职责 |
+| 源码 | 职责 |
 | --- | --- |
-| `src/automation/config.ts`、`cron.ts` | 触发器与预算校验、五段数字 cron 和 local/UTC 匹配 |
-| `tasks.ts`、`tool.ts` | 持久任务字段、父模型工具定义及调用包装；未绑定的调用明确拒绝 |
-| `scheduler.ts`、`files.ts` | 注入时间的有界队列、去抖与文本文件内容快照 |
-| `conversations.ts` | 工作区任务发现、触发、串行轮转、基线、运行锁和生命周期；监控签名含绑定 Session 与归属代次，界面保留渲染及审批所有权 |
-| `lock.ts` | 同一存储根和规范工作区的进程独占锁，交互服务与独立 runner 共用 |
-| `runner.ts` | 高级独立 JSON runner、独立 Session、日志及进程预算 |
-| `src/session/manager.ts` | 当前工作区任务发现、后台目标选择与操作互斥；后台回合不切换选中会话 |
-| `src/session/automations.ts`、`agent-session.ts` | 前者校验绑定变更，后者保存绑定、领取与次数，继续目标历史并处理检查点/失败；模型回合内更新和后续检查点使用同一个活动记录 |
-| `src/session/record.ts`、`store.ts` | v1/v2 字段解码、v2 原子发布与修订/运行 owner 检查；automations 仍属于 Session，Project 不复制任务列表 |
-| `src/agent.ts`、`src/commands.ts` | 父模型工具与时间提示；chat/TUI 命令分发 |
-| `src/chat.ts`、`tui/app.ts` | 空闲执行、输入与审批协调、自动回合和会话标记 |
-| `webui/controller.ts`、`server.ts` | 状态缓存、目标会话执行、认证的 create/manage API |
-| `webui/client/cron.ts`、`app.ts` | Cron 表单和管理、会话右端时钟、自动回合显示 |
+| `src/automation/config.ts`、`cron.ts` | 触发器/预算和五字段时间匹配 |
+| `tasks.ts`、`tool.ts` | 绑定任务结构与父模型工具 |
+| `scheduler.ts`、`files.ts` | 有界队列、轮转、去抖与文本快照 |
+| `conversations.ts` | 工作区任务发现、基线、租约与宿主生命周期 |
+| `lock.ts`、`runner.ts` | 存储根/工作区独占与独立 JSON 模式 |
+| `src/session/automations.ts`、`agent-session.ts` | 变更校验、持久领取/计数及回合提交 |
+| `src/session/manager.ts` | 后台目标解析与宿主互斥，保持前台选择 |
+| `src/commands.ts`、`webui/client/cron.ts` | 本地管理、模型调度请求及表单入口 |
 
-用户描述或表单 → 校验并保存绑定 → 空闲轮询 → 持久领取并增加尝试数 → 原 SessionManager / Loop / Tools → 答案及状态保存到目标 Session → 刷新界面和文件基线。
+用户描述/表单 → 校验并保存绑定 → 空闲发现/激活 → 先持久增加尝试数并领取 → 原执行链 → 保存目标历史和状态 → 更新基线。触发元数据只进入请求指导，文件正文仍由 read 取得。
 
-触发时间、任务 ID 和变更路径只加入当次模型 system 请求副本，正文仍是任务提示词，不把内部 metadata JSON 作为用户消息展示。文件正文通过普通 read 获取。
+## 身份、持久化与切换
 
-## 持久化与恢复边界
+任务归 Session，保存 prompt、trigger、enabled、创建/过期时间、maxRuns/runs、lastStatus 和 lastScheduledAt。运行前与 attempt 一起原子领取，同触发时间不能重复领取；失败、取消消耗次数。崩溃后不自动重放模型或工具。
 
-Session 可选 `automations` 数组兼容旧记录。任务保存 ID、prompt、trigger、enabled、创建/过期时间、maxRuns/runs、lastStatus 和 lastScheduledAt。summary 的 automationCount 供列表渲染；普通会话不增加该字段。
+定义和计数持久，pending 队列、cron 水位和文件基线只在进程内。不补跑离线时段，过期 at 跳过，interval 依创建相位恢复。fork 不复制任务，删除 Session 移除绑定，无持久化模式不创建绑定。
 
-在模型或工具执行前，任务领取、running 状态、尝试数及触发时间与 Session 一起原子保存。失败和取消消耗一次尝试，同一触发时间不能重复领取。成功答案沿原历史保存；失败保留原中断记录。崩溃遗留 running 不会自动重放，可核查副作用后显式恢复尚未耗尽的周期任务。不是跨任意存储根的恰好一次执行保证。
+发现限当前工作区，不等于全局 Session 列表或 UI 当前 Project。激活绑定实际 sessionId、locationRevision 和 workspace，执行前重验；项目迁入/改目录原子暂停任务并使旧激活失效。重新启用不重置次数或期限。切换目录更换租约，返回不补跑离开事件。
 
-fork 不复制任务，删除会话同时删除其中绑定；无持久化模式拒绝创建。配置和计数跨进程保存，但 pending 队列、文件基线和 cron 水位不保存。不补跑离线任务，过去的 at 跳过，interval 按创建时刻的周期相位继续。重启 chat/TUI/Web UI 会发现该工作区所有仍有效的保存任务；单次 CLI 任务退出后不会继续调度。
+自动回合不切换前台历史，子任务继承后台实际身份。当前模型工具不能由子任务或自动回合新增/修改调度，也不能写 Memory。
 
-迁入预览显示将暂停的任务；提交将 enabled 置为 false，保留 prompt、runs、lastScheduledAt 和期限。用户审阅新的目录、相对路径和范围后显式恢复；不能因旧路径在新目录仍存在就自动续跑。Session v2 升级与缺失项目处理遵循 [SESSION.md](SESSION.md)：旧记录首次持久写入才升级，缺失项目可看历史但不执行，恢复不补跑迁入期间事件。
+## 调度与文件语义
 
-## 调度、预算与权限
+每 Session 最多 32 个任务，每工作区 128 个有效任务、64 个不同监控文件。默认 20 次/24 小时，允许 1–1000 次和 1 秒至七天。串行执行，每任务至多一个 pending，忙时合并、轮转避免独占，前台优先；任务过期取消当前回合。
 
-- 每 Session 最多 32 条绑定，工作区最多 128 条有效任务、64 个不同监控文件。默认每任务 20 次和 24 小时有效期；可指定 1–1000 次、1 秒至 7 天。恢复不能重置次数或延长过期时间。
-- interval 60 秒至 7 天；at 必须是未来、早于过期时间、带秒及 offset 的 ISO 时间。Web 表单把浏览器本地日期时间转换成明确时间。
-- cron 支持五段数字、通配符、列表、范围、步长，星期 0/7 为周日；日和星期都受限时 OR。只支持 local（Node 本机）和 UTC，无秒或命名 IANA 时区。local 夏令时跳过时刻不运行，回拨对应的两个实际匹配分钟可能各运行一次。
-- 串行执行，每任务最多一个 pending，忙时重复事件合并；轮转任务避免高频任务独占。前台操作优先，界面空闲才启动。任务过期取消当前回合，保留原父子请求预算。
-- Manual 写入和命令仍逐项审批；Plan/read-only/shell-deny 保持原上限。任务字段不能授权或指定新 provider。自动回合以及独立 runner 不能通过模型工具新增或修改任务，子 Agent 不暴露该工具。
-- 正常关闭取消活动操作并释放锁；强杀可能留下锁，核查记录 PID 已退出后人工移除报错路径。锁只协调相同存储根的调度者，不阻止编辑器或其他交互会话修改文件。
+触发器字段和数值范围见[配置参考](../REFERENCE/CONFIGURATION.md#automation-json)。会话绑定的 at 必须在创建时仍属未来且早于任务过期；独立 JSON runner 可加载已过期 at，但不会执行它。cron 只支持 Node 本地时间/UTC；夏令时跳过不运行，回拨可匹配两次，不重放启动分钟。
 
-## 文件触发
+文件触发只接受明确工作区文本路径，每任务 1–32 个、单文件 1 MiB，去抖 1–60 秒。拒绝递归/glob、隐藏/依赖/链接/工作区外，即使 Free to go。约一秒比较内容快照，可检测创建、修改、删除和原子替换；期间变回相同字节可能漏检。
 
-只监控显式工作区相对文本路径，每任务 1–32 个、每文件最多 1 MiB，父目录必须存在。约一秒轮询 SHA-256，检测创建、内容修改、删除和原子替换；去抖默认一秒，可设 1–60 秒。无目录递归或 glob；隐藏路径、node_modules、链接和工作区外路径均拒绝，包括 Free to go。
+自动回合期间暂停轮询，结束后全部任务重建基线，失败也如此；自身写入不触发其他任务，同时发生的外部修改也会忽略。无效/不可读路径暂停对应绑定任务，独立 runner 则明确失败。
 
-自动回合期间不轮询，结束后为全部任务重新建立基线，失败回合也如此；自动写入不会触发自己或其他任务，该时段同时发生的外部修改也会被忽略。轮询间隙恢复成相同内容的变化可能漏检。无效或不可读文件会暂停对应任务并显示错误，用户修复后再恢复。
+## 权限与独立 runner
 
-## 尚未实现与验证边界
+任务字段不能授予工具权限或改 provider。Manual 仍需审批，Plan/read-only/shell-deny 保持限制；无交互不能批准待批操作。独占锁只协调同存储根/目录的调度者，不阻止编辑器或其他会话修改文件。
 
-本地 chat/TUI/Web UI 进程必须保持打开。没有 OS 常驻服务、Windows Task Scheduler 安装、离线补跑、自动清理陈旧锁、webhook、完成/失败事件链、任意可执行 hook 或 DAG。
+JSON runner 配置一次加载，使用全进程预算和新 Session，重启重置计数/基线。schema 归[配置参考](../REFERENCE/CONFIGURATION.md#automation-json)，启动与结果核对归[操作指南](../GUIDES/AUTOMATION.md#standalone-json-runner)；单次回合或会话存储失败不等于 runner 预算耗尽时一定返回非零。
 
-离线测试覆盖注入模型、真实临时文件、持久 Session、绑定与历史、TUI 命令、HTTP API、审批与取消。真实 Edge 验证桌面/窄屏表单、时钟、文件事件、同会话输出、新会话绑定及任务管理；使用注入模型，不等于真实供应商自然语言解析已验证。准确结果见 [PROGRESS.md](../PROGRESS.md)。
+## 验证与未实现范围
 
-## 工作区切换
+检查注入时钟、持久领取、失败计数、重复激活、身份失效、租约切换、文件自触发抑制及父子取消。真实临时文件与 Edge 表单回归使用注入模型，不证明自然语言调度质量。
 
-全局会话列表不扩大自动执行范围：ConversationAutomations 仍按当前工作区发现任务，保留原独立会话行为；不是按 UI 当前 Project 授权。同目录的独立会话和不同项目可各有任务，运行时逐一解析绑定 Session。监控签名包含 sessionId、locationRevision、workspace 和触发配置；迁入即使未改目录也重建基线并丢弃旧激活。chat/TUI/Web UI 将发现时的代次传给 runAutomation，执行前重新校验，过期任务在模型请求前拒绝。项目缺失的任务不被发现或执行。
-
-切换目录释放旧工作区租约，在新目录建立监控；返回不补跑离开期间事件。后台准备保持 Manager 忙碌，自动回合和子任务使用目标会话的项目/目录/权限，前台选择不变。普通回合的 attempt 与手动 compact 的 activeOperation 都受同一持久领取保护；迁入不能越过正在运行或等待审批的操作。相关双进程验证及浏览器回归见 [SESSION.md](SESSION.md) 与 [PROGRESS.md](../PROGRESS.md)，不新增第二套调度或 Loop。
+进程必须保持运行；没有 OS 常驻服务、Windows Task Scheduler 集成、离线补跑、webhook、任意 hooks、事件链或 DAG。不是跨任意存储根的恰好一次保证，强杀后锁需核查 owner 后处理。

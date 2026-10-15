@@ -1,113 +1,71 @@
-# 文档解析与视觉理解
+# Documents：解析、视觉与稳定来源
 
-状态：2026-10-14，在 `feat/rag-dev` 实现资料计划阶段 3。本文描述已写入的模块、实际支持范围和工程取舍；执行结果及阶段完成情况以 [PROGRESS.md](../PROGRESS.md) 为准。原件生命周期沿用 [ATTACHMENTS.md](ATTACHMENTS.md)，资料长期设计保留在 [RAG.md](RAG.md)。Memory 已随后独立接入，见 [MEMORY.md](MEMORY.md)；Embedding、音频及多模态检索尚未实现。用户现将近期重心调整为 runtime 重构、Web UI 调整和 TUI 建设，资料后续阶段暂缓，本文已有能力作为兼容基线保留。
+[架构总览](README.md) · [格式支持与操作](../GUIDES/MATERIALS.md#supported-content)
 
-## 已实现的职责与数据流
+Documents 从获准附件生成可定位内容，不创建另一套 Agent Loop，也不按格式增加模型工具。原件与授权归 [Attachments](ATTACHMENTS.md)。
 
-| 所有者 | 职责 |
+## 模块与数据流
+
+| 源码 | 职责 |
 | --- | --- |
-| `src/attachments/`、`SessionManager` | 原件、固定 SHA-256 内容身份、项目/会话关联、实际执行身份、授权、历史 pin 和移除/永久删除 |
-| `src/documents/parse.ts` | 在有界 worker 中分派本地解析与 PDF/图片渲染，执行取消、超时和并发边界 |
-| `types.ts`、`limits.ts` | 本轮实际使用的解析单元、定位、图片和明确上限 |
-| `archive.ts`、`xml.ts`、`ooxml.ts` | 受限 ZIP/XML 读取，以及 Word/Excel/PowerPoint 原生结构提取 |
-| `text.ts`、`pdf.ts`、`images.ts` | UTF-8/Markdown 标题、PDF 页级文本与渲染、PNG/JPEG 解码 |
-| `cache.ts` | 原生解析快照、不可变派生快照、转写页索引和容量上限 |
-| `read.ts` | 同一解析结果上的定位读取、字面搜索、视觉调用、覆盖说明和稳定来源引用 |
-| `vision.ts`、`providers.ts`、`model.ts` | 当前聊天模型的已适配图片能力、临时图像消息、共享 SDK 请求边界和安全错误 |
-| Loop 与入口 | 请求次数、取消、用量、会话历史及 CLI/TUI/Web 展示；没有另建文档 Agent Loop |
+| `src/documents/parse.ts` | worker 分派、并发、期限和取消 |
+| `types.ts`、`limits.ts` | 解析单元、定位与资源边界 |
+| `archive.ts`、`xml.ts`、`ooxml.ts` | 有界 ZIP/XML 与现代 Office 内容提取 |
+| `text.ts`、`pdf.ts`、`images.ts` | 文本/标题、PDF 页文字与渲染、PNG/JPEG 解码 |
+| `cache.ts` | 不可变快照、版本索引和转写页指针 |
+| `read.ts` | 范围读取、字面搜索、视觉选择、覆盖和引用 |
+| `vision.ts` | 当前聊天模型的图片请求适配与用量，能力归 [Providers](PROVIDERS.md) |
 
-实际路径是：入口上传/导入原件 → 当前执行 Session 获准读取固定原件版本 → 查找或生成本地解析 → 模型按任务选择原生文字、范围读取/搜索或指定页视觉任务 → 返回文字单元、覆盖和引用 → 原 Session 保存本次工具结果。查询缓存不会自行触发视觉 API；源文档预览也不创建模型请求。
+执行身份获准读取原件 → 加载/生成原生解析快照 → 通用 read 按任务选择范围、搜索或指定页视觉 → 返回单元/覆盖/来源 → Session 保存工具结果。缓存读取和源预览不会隐式发起视觉请求。
 
-原件内容只由附件存储读取，通用 `read` 复用资料层。没有 PDF、Word、Excel、PPT 各自独立的模型工具，也没有改变现有工作目录文件权限。项目共享的是同一原件与获准派生内容；各 Session 历史仍独立。未归项目的 Session 保持私有；后台和子任务使用实际执行身份，不读取 UI 当前选择状态。
+## 解析与读取契约
 
-## 格式支持矩阵
+用户格式矩阵归操作指南。架构必须保留以下差异：
 
-以下均受后文容量和格式边界约束。接受上传保存原件，与可解析该格式是两个不同能力。
+- PDF 提取页级文字，不保证版面顺序；扫描页保留缺字说明，不能当作成功空页。视觉按明确页号渲染。
+- DOCX 提取正文标题、段落和表格内段落，不推断 Word 页码或完整表格布局；不包含页眉脚注等未支持内容。
+- XLSX 保留 sheet/cell/rawValue/valueType，公式保留表达式和未验证缓存，formulaStatus=not-calculated。不应用显示格式、不重算或连接外部工作簿。
+- PPTX 提取幻灯片文字与独立备注定位，不渲染母版、图表或动画；Office 视觉需先转换为支持的页面格式。
+- PNG/JPEG 实际解码、白底透明图与有界缩放；默认读取不会自动 OCR。旧 Office、宏/加密文档及不支持格式明确拒绝解析。
+- OOXML 只读受限包，不解压到磁盘，不访问外部关系；拒绝 ZIP64、分卷、不支持压缩、CRC/大小异常、非法 XML、DTD 和外部实体。
 
-| 格式 | 已实现内容与定位 | 未覆盖范围或失败行为 |
-| --- | --- | --- |
-| UTF-8 `.txt`、`.md`、`.markdown` | 原有逐行读取/引用保留；结构读取记录行、Markdown 标题和级别，支持精确标题筛选 | 不执行 Markdown/HTML；非法 UTF-8、二进制控制字符报错。标题筛选是精确标题范围，不自动承诺整棵子章节 |
-| `.csv`、`.tsv` | UTF-8 原始行读取与字面搜索 | 不伪装为 Excel 表格计算，不推断字段类型或计算公式 |
-| `.pdf` | 页级原生文本、页码；按指定页真实渲染 PNG，再交给当前聊天模型 | 原生文本顺序不保证版面阅读顺序；表格/图表/可见对象不因此算已分析。扫描页保留页单元和缺失说明，不作为空文档 |
-| `.docx` | 正文段落、标题、标题级别及表格单元格中的段落 | 不推断 Word 页码或还原表格布局。页眉页脚、脚注尾注、批注、绘图/图片及修改比较不在正文提取范围；已删除/移出内容不包含，插入内容可包含 |
-| `.xlsx` | 工作表、存储单元格地址、原始值/类型、公式表达式与缓存结果；隐藏工作表会明确标注 | 不应用日期/数字显示格式，不重算公式，不求值外部工作簿，不分析图表/绘图。合并格保留存储锚点；公式缓存明确未验证 |
-| `.pptx` | 幻灯片顺序、文本、演讲者备注及独立备注定位 | 不解释母版、布局、动画、图表、图片或嵌入媒体。Office 页面视觉分析需导出 PDF/PNG/JPEG |
-| `.png`、`.jpg`、`.jpeg` | 校验、实际解码、有界缩放，直接视觉分析或按需文字转写 | 默认文字读取只说明无原生文本，不先自动 OCR。透明图像渲染到白底；缩放后的细节限制仍需说明 |
-| `.doc`、`.xls`、`.ppt` | 保留阶段 2 原件存储/下载 | 明确不解析，要求转换为已支持格式 |
-| 宏、加密 Office/PDF、其他图片格式 | 不新增隐式执行或在线转换 | 显式拒绝/报告不支持，不把错误包装成成功空结果 |
+read 可选择 pages、sheet、section、unit、parserVersion、mode 和视觉 question。页/幻灯片从 1 开始，offset 从零计解析单元（搜索时计匹配单元）；sheet/section 精确匹配，query 是大小写敏感字面查询。
 
-Office 支持常见 OOXML 包的有界内容子集；XML 当前要求有效 UTF-8。ZIP64、分卷、不支持的压缩方法、缺失必需部件、损坏 XML 或不一致的大小/CRC 均报错。外部关系不会联网抓取。无原生文字的 PDF 页和图像始终提示视觉检查需要；成功提取部分文本不能据此宣布图表、页眉或其他视觉对象已覆盖。
+结果报告返回/所选/总单元、nextOffset、warnings 与 coverage.uncovered。搜索不等于全文覆盖；解析警告、缺页或模型生成内容不得伪装为完整原生提取。大文字确定性拆成带原位置的 part 单元；超大 Excel 原始字段转为同单元格的具名续页，不静默截断或冒充已计算。
 
-Excel 的 `location` 保留 `sheet`、`cell`、`rawValue`、`valueType`；公式额外保留 `formula`、`cachedValue`、`formulaStatus: not-calculated`。超过 1024 字节的原始值/公式/缓存移入同单元格的具名续页单元，紧凑 location 省略该字段并给出警告，内容不截断。回答金额或汇总时需要读取相关完整单元格范围并执行可核对的计算，不能把召回片段或未验证缓存当作计算结果。当前不引入 Office 自动化或公式计算引擎。
+## 固定引用与派生缓存
 
-## 读取、覆盖与引用
+引用为 `attachment:<uuid>@<original-sha256>#parse=<snapshot-version>&unit=<unit-id>`。原生解析版本当前是 documents-v1；派生版本由内容、位置、生成方法、模型及警告共同标识。解析行为变化必须更新 parserVersion，旧引用缺少快照报 DOCUMENT_VERSION_UNAVAILABLE，不自动指向新版；文本行引用继续兼容。
 
-`read` 新增资料参数 `pages`、`sheet`、`section`、`unit`、`parserVersion`、`mode` 和视觉 `question`。页/幻灯片从 1 开始；`offset` 仍从 0 开始，文档时计数解析单元，搜索时计数匹配单元。页选择逐一验证存在性；Word/Excel 没有伪造的页号。`section` 为精确标题，`sheet` 为精确工作表名。`query` 是区分大小写的字面查询，中文和精确编号可直接使用，不是语义检索。
+native-text、model-transcription、model-description 分别表示原生文本、模型转写和描述。后两者保留 provider/model，不编造坐标或置信度。描述不会自动成为可搜索的完整转写，直接看图不要求预先全文 OCR。
 
-本地解析与默认查询共享快照，读取结果返回实际定位、已返回/所选/总单元数、未读数量、`nextOffset`、`warnings` 和 `coverage.uncovered`。单次全文总结、全面审查需要沿分页覆盖目标范围；有解析警告、未提取页或模型生成内容时不将 `coverage.complete` 标真。成功搜索只代表扫描/返回了匹配单元，不代表阅读全文。容量到顶或视觉部分失败会报告具体未覆盖页，不能静默改成少量片段后声称完成。
+快照存于 `attachments/derived/<id>/<original-version>/`，index.json 记录保留版本和最新转写页。相同版本只复用相同内容；索引发布中断可在同版本保存时修复，损坏明确失败。SessionManager 对 cache load/transcripts/save 包装授权，外发和发布前重新核对范围；解析/网络在 metadata gate 外执行。
 
-原生读取来源为 `native-text`；模型转写是 `model-transcription`；图像描述是 `model-description`。后两者保留实际 provider/model，没有虚构字符坐标或置信度。视觉问题与全文转写分别处理；描述不会自动进入可复用转写索引。图片、扫描页和 PDF 图表的视觉入口复用当前聊天模型，具体白名单和公开协议见 [PROVIDERS.md](PROVIDERS.md)。
+删除原件同时清理相应派生目录；移除关联撤销缓存访问，pin 仍按原件规则保护。非持久模式使用 MemoryDocumentCache。新视觉任务不能借旧描述声称已执行。
 
-文档引用格式为 `attachment:<uuid>@<original-sha256>#parse=<snapshot-version>&unit=<unit-id>`。原生初版是 `documents-v1`；超过单元大小的原生内容确定性拆成保留原位置的 `-part-N` 单元。派生版本由 baseParserVersion、内容/定位、生成方式、provider/model 和警告的 SHA-256 标识。原件身份、解析版本、单元三个层次共同固定来源，文件名不是身份。
+## 资源与模型预算
 
-点击旧引用按指定原件和快照读取；缺失快照返回 `DOCUMENT_VERSION_UNAVAILABLE`，不会重新解析后把旧答案指向新文本。重新转写可更新“最新转写页”索引，但旧不可变快照继续可读。后续改变本地解析行为必须更新原生 parserVersion，不能原位改写相同版本。现有文本的 `#Lx-Ly` 引用保持兼容。
-
-Web UI 使用真实返回单元生成来源面板，显示页/段落/工作表单元格/幻灯片、生成方式、原文片段和覆盖说明，可下载原件核对。对原生 PDF 页或 Office 单元的定位是解析定位，不宣称已经渲染高保真 Office 页面。旧读取在上下文预算中被省略时，替代标记保留附件路径和 parserVersion；持久历史及真实来源不改写。
-
-## 缓存与生命周期
-
-磁盘派生数据保存在 Session 存储根的 `attachments/derived/<attachment-id>/<original-sha256>/`，与原件 blob、Session JSON 和未来索引分别管理。每个快照一个 JSON，`index.json` 保存已保留版本和按页的最新转写指针。写入使用现有原子 JSON 机制；相同版本只能重用相同内容。暂存文件写完而索引尚未发布的中断，可在同版本重新保存时修复索引；索引/快照损坏明确报错。
-
-`SessionManager` 为每次 cache load/transcripts/save 提供附件所有者的授权封装。持久存储沿现有元数据门校验 Session 身份/修订、项目归属与有效原件关联；解析、渲染和模型网络请求在门外执行，避免长期占用锁。外发前及生成结果发布前重新检查访问，防止异步处理中资料移除后继续发布派生数据。读取缓存不绕过原件版本校验或当前作用域。
-
-删除上传者会话不删除项目共享快照。移除关联后该作用域不能继续读取；其他有效关联仍可使用。永久删除遵循原有其他会话关联和历史 pin 保护，原件实际销毁时同时清理对应派生目录。项目级删除与中断恢复沿原附件事务处理，工作目录中的文件不受影响。非持久 Session 使用 `MemoryDocumentCache`，fork 复用相应原件及派生身份，不写磁盘；删除按内存关联/引用规则回收。
-
-缓存只存原生提取或模型派生资料，不是聊天历史，也不是 Memory。尚无向量、分块检索索引或全局资料仓库。转写缓存可在后续获准会话的普通读取/字面搜索中重用；新的视觉任务不会因旧描述存在就假装已经完成。
-
-## 有界执行
-
-| 边界 | 当前上限 |
+| 边界 | 上限 |
 | --- | --- |
-| 上传原件/解析输入 | 16 MiB |
-| ZIP 部件/声明和实际解压总量 | 2000 部件 / 32 MiB，不解包到文件系统 |
-| 单 XML/节点/深度 | 8 MiB / 200000 / 128，拒绝 DTD/外部实体 |
-| 提取文字与定位/单元数 | 4 MiB / 20000 |
-| 单元定位元数据 | 序列化后 4096 字节；超大标题/位置明确拒绝，可转为纯文本读取 |
-| PDF | 200 页；视觉每次选择 1–4 个唯一页号 |
-| 图片解码/渲染 | 解码 16000000 像素；渲染最长边 2048、最多 4000000 像素 |
-| 视觉设施输入 | 最多 4 张、合计 8 MiB 二进制；当前资料调用逐页发送 |
-| worker | 30 秒 deadline、最多 2 个活动 worker、256 MiB V8 old-generation 上限 |
-| 单快照/每原件缓存 | 8 MiB / 64 个版本与 32 MiB |
-| 非持久派生缓存 | 所有原件合计 64 MiB；与原件缓冲上限分别计数 |
-| 工具返回 | 保留完整单元的约 16 KiB 分页；默认 100、最多 200 个单元；大文字单元按最多 8000 JSON 编码文字字节拆分，预留定位和引用开销 |
-| 外部模型 | 当前 Config 的请求次数、完整 JSON 字节、deadline、取消；2048 输出 token、32 KiB 结果文字上限 |
+| 原件；ZIP 部件/展开量 | 16 MiB；2000 件 / 32 MiB |
+| XML 大小/节点/深度 | 8 MiB / 200000 / 128 |
+| 提取文字与定位；单元数 | 4 MiB；20000 |
+| 单元定位元数据 | 4096 JSON 字节 |
+| PDF；每次视觉选页 | 200 页；1–4 个唯一页号 |
+| 图片解码；渲染 | 1600 万像素；最长边 2048、400 万像素 |
+| 视觉输入 | 最多四张、合计 8 MiB；当前资料逐页请求 |
+| worker | 30 秒、最多两个活动 worker、256 MiB V8 old-generation |
+| 快照；每原件缓存 | 8 MiB；64 版本 / 32 MiB |
+| 非持久派生缓存 | 全部原件合计 64 MiB，与原件缓冲分别计数 |
+| read 返回 | 约 16 KiB 完整单元分页，默认 100、最多 200 单元 |
+| 模型输出 | 2048 token 请求上限、32 KiB 结果文字 |
 
-worker 的 V8 堆限制不是 OS 沙箱或原生解码内存的硬承诺；像素、包展开、输出和并发上限补充限制工作量。阻塞解析在 worker 中运行，取消会终止 worker，不让主线程等待整份文档解压完才响应。超限拒绝保留可核对的错误，不自动扩大请求预算或静默降低覆盖要求。
+V8 上限不约束全部原生解码内存，也不是 OS 沙箱。取消终止 worker。视觉辅助请求消耗当前父/子回合额度、完整 JSON 字节和期限，保留最终回答机会；图像 base64 只存在临时请求，不写会话。部分页成功可保留快照，失败/未覆盖页明确报告，已消耗用量不回滚。
 
-视觉设施仅构造临时 image_url 数据，不持久化图片 base64 或凭据。辅助请求占用正在执行的回合额度，失败/超限也记录尝试，并保留最后一次模型回答。收到的合法 usage 即使在后续响应校验失败时仍记录；无 usage 保持未知，不补造费用。跨页任务可以部分成功，已发布单页快照保留，失败页明确呈现。
+## 依赖决策与验证限制
 
-## 依据、依赖与验证边界
+pdfjs-dist 用于 PDF 文字和渲染，@napi-rs/canvas 用于原生 Canvas/图片，saxes 用于严格 XML；Office 使用 Node zlib 和窄包解析，不依赖 Office、Python 或大型 RAG 框架。xml.ts 保留窄类型边界，不关闭全仓 strict。版本以 package.json 为准。
 
-**源码参照：** 本地 `D:/pi/packages/coding-agent/src/core/tools/read.ts` 的通用 read、具名输入/内容类型；`D:/pi/packages/ai/src/types.ts` 的 ImageContent；`api/openai-completions.ts` 的分类型图片消息转换和模型输入能力检查。Fatcat 采用窄接口、具名类型/函数与现有模型边界，未复制 pi 的完整适配框架。
+已有检查使用已知结构的合成文档做本地解析/渲染，并用注入 SDK 和 Edge 验证预算、来源、授权与 UI。未运行真实视觉 API，不能承诺 OCR、复杂图表、代表性业务材料或账号可用性。检查入口见[开发说明](../DEVELOPMENT.md)。
 
-**工程选择：** 保留 TypeScript、Node.js 24、pnpm 11.21.0 和 OpenAI SDK。新增精确依赖 `pdfjs-dist@6.4.299` 用于 PDF 文本与页面绘制、`@napi-rs/canvas@1.0.11` 用于 Windows 原生 Canvas/图片解码、`saxes@6.0.0` 用于严格 XML。PDF 参考官方 [Node 渲染例子](https://github.com/mozilla/pdf.js/blob/master/examples/node/pdf2png/pdf2png.mjs)，Canvas 与 XML 依据分别为[项目源代码](https://github.com/Brooooooklyn/canvas)和[saxes 文档](https://github.com/lddubeau/saxes)。Office 使用 Node zlib 和受限包/关系读取，避免引入未使用的大型文档或 RAG 框架。saxes 的已发布类型与 exactOptionalPropertyTypes 不兼容，只在 xml.ts 保留窄运行时类型边界，没有关闭全仓 strict 检查。
-
-**已执行验证：** 本轮使用程序生成、已知结构的文档样例进行真实本地解析/渲染；图片 SDK、能力、预算、用量和错误通过假凭据、注入传输验证。`tests/document-vision.test.ts`、`tests/document-budget.test.ts`、原 provider 与 TUI telemetry 组合检查通过 50 项，覆盖文档上下文省略保持版本和辅助用量不冒充聊天上下文；其中不含真实视觉 API。资料共享/恢复/引用和 Web 浏览器的最终检查结果以 PROGRESS 为准，不用旧阶段的通过记录替代本轮验收。
-
-**未验证/未来计划：** 未调用真实厂商视觉服务，不承诺代表性业务文档上的 OCR 准确率、图表推理质量或账号连通性。独立 OCR、原生 PDF/Office API、Office 版面渲染、公式重算、音频和检索按实际需求后续评估；这些缺口与当前原件上传、原生读取及已接通的视觉请求路径分别报告。
-
-## 阶段 3 验收映射
-
-| 条件 | 本轮证据与边界 |
-| --- | --- |
-| S3-01 定位 | document-parsers/read、webui-documents、真实 Edge verify:documents：已知页/标题/段落/单元格/幻灯片/备注及固定版本来源 |
-| S3-02 视觉路径 | 实际本地 PDF 渲染/PNG/JPEG 解码；document-vision 与真实 Agent/SDK 注入传输、Edge 图片/转写流程；文本模型拒绝、没有独立 OCR。不是实际模型质量验证 |
-| S3-03 格式失败 | 损坏 PDF/Office、加密 PDF、宏/外部实体/ZIP 扩张、旧格式、图片错误均明确失败 |
-| S3-04 覆盖 | 长段落及大引号单元格的确定性续页、章节/工作表/指定页、混合非法页拒绝、字面搜索非全文标记、真实父/子读取记录；视觉失败页保留警告 |
-| S3-05 Excel | 已知 12、8 输入与刻意错误的 SUM 缓存 999 分开返回；缓存未验证、公式未重算，不把缓存当计算成功 |
-| S3-06 能力/请求 | 支持图片与未适配模型、取消、完整 JSON 超限和安全错误；nativeFile 始终 false，原生 PDF/Office API 的正向路径尚未接入 |
-| S3-07 固定版本 | 重新转写后旧快照仍可读，未知旧版本明确不可用；同版本内容冲突/损坏拒绝，索引恢复不改写已有来源 |
-| S3-08 复用/授权 | document-session 与真实 Edge：项目另一 Session 复用转写零额外 API、独立/其他项目拒绝、恢复/fork、删除上传者、移除/销毁及无持久化不落盘 |
-| S3-09 预算/部分成功 | document-budget/vision/read：父子预算传递、最终回答预留、字节拒绝不发送、取消、用量、部分页成功、无隐式重试或厂商切换；快照不含凭据/base64 |
-
-最终完整套件与浏览器执行结果集中记录在 PROGRESS，不以本表替代日志，也不把后续真实业务材料效果记为已完成。
+独立 OCR、原生 PDF/Office 模型输入、Office 页面渲染、公式重算、音频和检索尚未实现。后续选择取决于真实样例与定位/成本需求，见 [RAG](RAG.md)。

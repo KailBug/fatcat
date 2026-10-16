@@ -19,6 +19,51 @@ Ordinary tests use fake credentials and injected model transports, without loadi
 
 For startup and local configuration checks, use `pnpm start --help` and `pnpm start --checkConfig`. Configuration validation does not contact a model. See the [quick start](QUICK_START.md) for setup and [configuration reference](REFERENCE/CONFIGURATION.md) for environment values.
 
+## Test and verification layout
+
+Keep offline tests outside production code, grouped by the contract they verify. Use `*.test.ts` for test entry points and descriptive filenames for helpers. The current responsibility groups are:
+
+| Directory under `tests/` | Responsibility |
+| --- | --- |
+| `agent/` | Agent assembly, Loop, delegation and execution reports |
+| `model/` | Model transports, providers and configuration |
+| `context/` | Request projection, compaction and request budgets |
+| `session/` | Session history, persistence, lifecycle, drafts and workspace selection |
+| `projects/`, `attachments/`, `documents/`, `memory/`, `automation/` | Each capability's contracts and lifecycle integration |
+| `tools/` | General tool contracts; `files/`, `shell/`, `web/` and `browser/` hold capability-specific checks |
+| `permissions/` | Permission policies, command risk, approval enforcement and file/network scope |
+| `skills/` | Skill discovery, loading, built-in resources and integration |
+| `cli/`, `tui/`, `webui/` | Entry-specific input, presentation, transport and interaction contracts |
+| `workflows/` | Complete task scenarios spanning capabilities, such as the coding workflow |
+| `harness/` | Tests of verification infrastructure, such as test discovery, temporary workspace cleanup and live configuration guards |
+
+Cross-module imports do not make a test a workflow test. Assign it to the primary contract: write facts surviving failed turns belong in `tools/files/`; Memory scope across sessions belongs in `memory/`; document auxiliary request budgets belong in `documents/`. HTTP authentication and project confirmation handling belong in `webui/`, while project migration semantics belong in `projects/`. Keep domain integration tests beside the corresponding capability tests instead of introducing a catch-all integration directory. A mixed existing file can stay with its primary owner; split it only when the behaviors justify separate maintenance.
+
+Keep helpers used by one domain in that domain's `support/` directory. Put shared setup, injected transports, cleanup and assertions in `tests/support/`, and sample data or sample generators in `tests/fixtures/`. For example, `tests/support/workspace.ts` owns temporary workspaces, `tests/support/coding-workflow.ts` shares workflow setup and assertions with live verification, and `tests/fixtures/document-fixtures.ts` supplies document samples to offline and browser checks. Child-process entry points and transport preloads are executable support files: load them explicitly, never through a shared import barrel. Keep their names distinct from `*.test.ts` so discovery does not execute them as tests. Production code must not depend on tests or verification helpers.
+
+Specialized runners stay outside ordinary test discovery:
+
+| Directory | Execution requirements |
+| --- | --- |
+| `scripts/verify/browser/` | Installed Edge, temporary local pages and injected model decisions |
+| `scripts/verify/native/` | Interactive Windows desktop; native probe in `native/support/` |
+| `scripts/verify/network/` | Public network access, without model requests |
+| `scripts/verify/live/` | Explicit authorization for real DeepSeek requests and API usage |
+| `scripts/verify/support/` | Shared specialized-runner support, including the live configuration guard |
+
+Verification runners may reuse `tests/support/` and `tests/fixtures/`; ordinary shared helpers must not start verification or load credentials on import. Transport preloads are explicit executable entry points, as described above. `scripts/start.ts`, `scripts/copy-skills.ts` and `scripts/copy-webui.ts` remain startup/build scripts; `scripts/test.ts` launches the offline suite. Command names are maintained in [package.json](../package.json); use the `verify:*` commands below instead of depending on compiled runner locations.
+
+`pnpm test` builds first, then `scripts/test.ts` discovers `tests/**/*.test.ts` and passes only their corresponding compiled files to Node's test runner. Obsolete outputs from moves or branch switches cannot add tests to this list. An empty source list or any missing compiled test fails before execution; test failures remain nonzero exits. The existing TypeScript configuration already includes nested tests and scripts.
+
+To run a focused group after building and removing obsolete outputs in that group, use the following quoted globs for native Windows shells. These direct Node commands scan compiled files and bypass the source-based selection used by `pnpm test`:
+
+```powershell
+pnpm exec node --test "dist/tests/session/*.test.js"
+pnpm exec node --test "dist/tests/tools/**/*.test.js"
+```
+
+When moving or deleting tests, update static imports, `import.meta.url` paths, child-process/preload paths, source assets referenced from compiled files, package commands and documentation. TypeScript does not remove obsolete outputs: remove only the corresponding generated `.js` and `.js.map` files under the repository's `dist/`, then verify that every source test has exactly one compiled counterpart and no orphan compiled tests remain. Preserve test names, assertions, fixture data, timeouts and environment gates during a layout-only change. Offline tests may use local HTTP servers and native PowerShell; they still must not load `.env`, launch Edge or contact real model providers.
+
 ## Public network and local browser checks
 
 These scripts do not call model APIs or require model credentials. Browser scripts require installed Microsoft Edge; they use temporary fixtures and injected model decisions. Ordinary `pnpm test` does not run them.
@@ -53,7 +98,7 @@ Run these only when real model verification is explicitly requested. They load t
 
 The coding checks authorize only designated source edits and a fixed test command. Workflow checks require failed and final successful verification within each turn, but do not separately assert that failure preceded the first edit. Delegation checks do not mechanically prove every review claim. Context checks are small behavioral fixtures, not token-cost or general success-rate benchmarks. Ordinary execution reports still use `taskVerification: not_assessed`.
 
-Temporary fixtures are separate from the user's project; existing basic live reads also use synthetic `examples/workspace` samples. Cleanup does not undo provider usage. The exact runner and assertions are in the matching `scripts/verify-*.ts` source.
+Temporary fixtures are separate from the user's project; existing basic live reads also use synthetic `examples/workspace` samples. Cleanup does not undo provider usage. The exact live runners are in `scripts/verify/live/`; shared workflow fixtures and assertions are in `tests/support/coding-workflow.ts`.
 
 ## Verification evidence
 

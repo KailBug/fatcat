@@ -8,15 +8,25 @@ Loop 执行一个用户回合，保持模型消息与工具结果的关联，落
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/agent.ts` | createAgent 装配父子 Model、Tools、Skills、动态指导及实际 Session 身份 |
-| `src/workspace-agent.ts` | 按规范目录缓存 Tools/journals，重新发现 Skills 并准备 Agent |
+| `src/agent.ts` | workspaceAgentFactory 准备工作目录资源；createAgent 装配父子 Model、Tools、Skills、动态指导及实际 Session 身份 |
 | `src/loop.ts` | runAgentTurn 在历史副本上请求模型、顺序执行工具并生成事件；runAgent 提供单次调用 |
-| `src/system-prompt.ts` | 共用的编码协作、语言、工具边界和证据要求 |
+| `src/system-prompt.ts` | 共用 systemPrompt、委派/自动任务/资料指导文本，以及目录和权限说明的纯格式化函数 |
 | `src/model.ts`、`src/model-usage.ts` | SDK 请求、响应校验、安全错误及用量观察，见 [Providers](PROVIDERS.md) |
 | `src/errors.ts` | 稳定 HarnessError 错误码与取消检查 |
 | `src/cli.ts`、`scripts/start.ts` | 启动参数/入口选择与调用目录恢复，操作见[命令参考](../REFERENCE/COMMANDS.md) |
 
 Session 的提交与恢复归 [Session](SESSION.md)；请求省略和压缩归 [Context](CONTEXT.md)；工具执行归 [Tools](TOOLS.md)。
+
+## Agent 装配边界
+
+Agent 装配统一维护在 `src/agent.ts`，CLI、TUI、Web UI 通过同一入口准备工作目录资源。`createAgent` 和 `workspaceAgentFactory` 保持原有参数及返回契约，统一从 `agent.ts` 导入；旧 workspace-agent 模块已删除，不再提供路径兼容。
+
+- **工作目录资源。** workspaceAgentFactory 的每个实例按规范目录缓存基础 Tools，Windows 键忽略大小写，保留其权限回调和执行 journals。只有工具构造成功后才缓存；每次选择都重新发现 Skills 并装配 Agent。缓存不保存绑定会话后的工具、模型、附件或 Memory 访问器，也不持有当前选中 Session。
+- **父子装配。** createAgent 依次在基础工具上包装附件、Memory 读取及 Skills，形成父子共享能力；子 Model 使用这个集合，父集合再增加有界委派、automation 和可用的 Memory 写入包装。装配本身不发送模型请求。摘要模型仍单独创建，不继承父工具或动态指导。
+- **会话绑定。** forSession 从基础资源重新生成绑定实际身份和资料访问的组件，只替换仍是原装配结果的 tools/model；调用者覆盖的工具、模型和其他 Session 选项保留。自定义模型仍接收执行身份及可用的 Memory 请求上下文。Session 记录、切换与持久化继续由会话层拥有。
+- **请求指导。** sharedAgentGuidance 每次请求读取当前权限，只负责选择并组合说明；文本和目录/权限的格式化归 system-prompt.ts，其函数不读取可变策略或持有 Tools。父请求额外添加委派与当前时间指导。bindSessionModel 保持身份与 Memory 包装顺序，withGuidance 只修改请求副本，转发取消、观察器及请求选项，不改写历史。委派指导保持直接处理简单任务、聚焦独立子任务、有界上下文、顺序执行与证据核对的要求；简化措辞不改变实际权限或预算，离线检查不证明真实模型委派选择质量。
+
+后续装配调整沿这三个生命周期区分资源：工作目录可复用、会话按身份绑定、请求读取当前策略。不要把 Session 状态或资料授权放入目录缓存，也不要为拆分文件另建配置或状态所有者。对应装配回归放在 `tests/agent/`；跨会话 Memory、附件及目录切换的契约继续由各责任域测试维护。
 
 ## 回合流程
 

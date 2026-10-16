@@ -18,7 +18,7 @@ Session 系统区分成功对话、当前持久记录、宿主选择和存储。
 | `src/session/automations.ts` | 任务变更校验与待保存记录，不持有第二份活动状态 |
 | `src/session/commands.ts` | chat/TUI 的本地管理命令 |
 
-程序化普通 Session 保留内存入口；日常界面使用 SessionManager.open 和 run。Manager 通过 AgentSession 的防御性快照读取 record，不维护第二份可变副本。跨目录切换先准备目标 Agent，失败则保留当前状态；目录级 Tools/journals 由 workspaceAgentFactory 缓存。
+程序化普通 Session 保留内存入口；日常界面使用 SessionManager.open 和 run。Manager 通过 AgentSession 的防御性快照读取 record，不维护第二份可变副本。跨目录切换先准备目标 Agent，失败则保留当前状态；目录级 Tools/journals 由 `src/agent.ts` 的 workspaceAgentFactory 缓存，会话身份及资料访问按运行目标重新绑定，具体边界见 [Agent Loop](AGENT_LOOP.md)。
 
 ## 持久格式与兼容
 

@@ -21,7 +21,11 @@ For startup and local configuration checks, use `pnpm start --help` and `pnpm st
 
 ## Test and verification layout
 
-Keep offline tests outside production code, grouped by the contract they verify. Use `*.test.ts` for test entry points and descriptive filenames for helpers. The current responsibility groups are:
+Keep offline tests outside production code, grouped by the contract they verify. Use `*.test.ts` for test entry points and descriptive filenames for helpers.
+
+Use `describe` and `it` from `node:test` to group related cases in new or substantially revised test files. A small standalone check may continue using `test`; `it` is the same test API, and suites add organization rather than stronger assertions. Keep setup and cleanup local to each case unless sharing is intentional, preserve serial/concurrent execution settings, and avoid deeply nested suites. Do not rename existing tests across the repository solely for style or add another test framework for this syntax.
+
+The current responsibility groups are:
 
 | Directory under `tests/` | Responsibility |
 | --- | --- |

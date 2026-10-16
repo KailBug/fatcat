@@ -9,7 +9,7 @@ import type { Model, ModelTurn } from "../../src/model.js";
 import { SessionManager } from "../../src/session/manager.js";
 import { SessionStore } from "../../src/session/store.js";
 import { createTools } from "../../src/tools.js";
-import { workspaceAgentFactory } from "../../src/workspace-agent.js";
+import { workspaceAgentFactory } from "../../src/agent.js";
 import { WebUiController } from "../../webui/controller.js";
 import { startWebUiServer } from "../../webui/server.js";
 import { temporaryWorkspace } from "../support/workspace.js";

@@ -12,7 +12,7 @@ import { formatSessionList } from "./session/commands.js";
 import { loadConfig } from "./config.js";
 import { HarnessError, formatError } from "./errors.js";
 import { createTurnReporter } from "./execution-report.js";
-import { workspaceAgentFactory } from "./workspace-agent.js";
+import { workspaceAgentFactory } from "./agent.js";
 import { createTools } from "./tools.js";
 import type { SkillCatalog } from "./skills.js";
 import { PermissionPolicy, isPermissionMode } from "./permissions/policy.js";

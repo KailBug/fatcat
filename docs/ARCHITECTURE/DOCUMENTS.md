@@ -15,6 +15,7 @@ Documents 从获准附件生成可定位内容，不创建另一套 Agent Loop�
 | `cache.ts` | 不可变快照、版本索引和转写页指针 |
 | `read.ts` | 范围读取、字面搜索、视觉选择、覆盖和引用 |
 | `vision.ts` | 当前聊天模型的图片请求适配与用量，能力归 [Providers](PROVIDERS.md) |
+| `src/session/attachments.ts` | 将明确的执行身份适配为原件/派生缓存访问；宿主预览与模型读取共用授权包装 |
 
 执行身份获准读取原件 → 加载/生成原生解析快照 → 通用 read 按任务选择范围、搜索或指定页视觉 → 返回单元/覆盖/来源 → Session 保存工具结果。缓存读取和源预览不会隐式发起视觉请求。
 
@@ -39,7 +40,7 @@ read 可选择 pages、sheet、section、unit、parserVersion、mode 和视觉 q
 
 native-text、model-transcription、model-description 分别表示原生文本、模型转写和描述。后两者保留 provider/model，不编造坐标或置信度。描述不会自动成为可搜索的完整转写，直接看图不要求预先全文 OCR。
 
-快照存于 `attachments/derived/<id>/<original-version>/`，index.json 记录保留版本和最新转写页。相同版本只复用相同内容；索引发布中断可在同版本保存时修复，损坏明确失败。SessionManager 对 cache load/transcripts/save 包装授权，外发和发布前重新核对范围；解析/网络在 metadata gate 外执行。
+快照存于 `attachments/derived/<id>/<original-version>/`，index.json 记录保留版本和最新转写页。相同版本只复用相同内容；索引发布中断可在同版本保存时修复，损坏明确失败。SessionManager 解析目标，`session/attachments.ts` 对 cache load/transcripts/save 逐次包装授权与取消检查，外发和发布前重新核对范围；解析/网络在 metadata gate 外执行。包装只绑定本次身份，不能因已读到原件字节而复用永久授权，也不能随 UI 切换改用另一会话。宿主预览不增加模型读取 pin，执行中的模型读取仍在读取原件时保存 pin。
 
 删除原件同时清理相应派生目录；移除关联撤销缓存访问，pin 仍按原件规则保护。非持久模式使用 MemoryDocumentCache。新视觉任务不能借旧描述声称已执行。
 

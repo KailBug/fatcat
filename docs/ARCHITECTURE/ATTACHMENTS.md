@@ -13,7 +13,8 @@
 | `src/attachments/transaction.ts` | metadata gate、跨文件提交决定与恢复 |
 | `src/attachments/import.ts` | 通过当前文件权限导入 |
 | `src/attachments/read.ts`、`tools.ts` | 通用 read 包装、文本分页与授权访问 |
-| `src/session/store.ts`、`manager.ts` | 实际 Session 身份、草稿发布及操作协调 |
+| `src/session/store.ts`、`manager.ts` | 实际 Session 身份、草稿生命周期、发布互斥及跨文件提交协调 |
+| `src/session/attachments.ts` | 接收明确身份的访问适配、传输/清理、文档缓存授权包装；不拥有活动 Session 状态 |
 | `webui/attachment-http.ts`、`attachments.ts` | 有界上传和宿主资料接口 |
 
 引用使用 `attachment:<uuid>@<sha256>`，文件名不是身份。调用绑定 sessionId、projectId（如有）、locationRevision，并重载实际 Session/Project 核对有效目录和修订。同目录、已知 ID/哈希、UI 当前选择或模型自报 projectId 均不授权；后台与子任务沿真实运行 Session 访问。
@@ -41,6 +42,8 @@
 每件原件最多 16 MiB。Web 上传独立于普通 JSON 消息，ticket 最多四个、120 秒有效；发起时固定目标与归属代次，切换 UI 不改目标。目标迁入、改目录或删除则旧传输失效，不自动重投当前会话。字节收完后可取消地等待忙碌会话发布。
 
 uploadId 用于幂等，stageToken/PID lease 标明传输所有者；同 ID 并发拒绝，旧请求只能清理自己的 part。死进程 lease 可在同 ID 重试时回收，无后台扫描全部残留数据的保证。
+
+宿主入口由 SessionManager 解析目标并保持原有 API；内部访问适配归 `session/attachments.ts`。传输不占用宿主操作互斥区，完成后由 Manager 排队、检查取消及草稿令牌，再调用仓库发布。发布成功或失败都按本次 stageToken 清理；大小不匹配不发布草稿，可使用原 uploadId 重试。状态归属与后续扩展规则见 [Session](SESSION.md#管理与跨模块关系)。
 
 read 的 attachment:list 查询只过滤文件名；UTF-8 文本/Markdown 按完整行分页，默认 100、最多 200 行，页上限 16 KiB，单行超限明确失败。清单最多扫描 1000 项。固定版本仍有覆盖/未读信息；搜索命中不代表全文已审阅。非文本格式和解析引用见 Documents。
 

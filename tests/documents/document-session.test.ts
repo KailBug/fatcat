@@ -15,6 +15,32 @@ import { temporaryWorkspace } from "../support/workspace.js";
 
 const agent = { model: async () => ({ message: { role: "assistant" as const, content: "Done" }, toolCalls: [] }), maxIterations: 4 };
 
+for (const cached of [false, true]) {
+	test(`revoking an attachment during a ${cached ? "cached" : "new"} document read rejects subsequent cache access`, async (t) => {
+		const { base, workspace } = await temporaryWorkspace(t);
+		const store = new SessionStore({ root: join(base, "sessions") });
+		const session = await SessionManager.open(agent, { workspace, store });
+		const original = await upload(session, "revoked.docx", officeFixture("docx"));
+		const reference = attachmentReference(original);
+		if (cached) await session.readAttachment(reference);
+		const accessCache = store.attachments.withDocumentCache.bind(store.attachments);
+		let accesses = 0;
+		t.mock.method(store.attachments, "withDocumentCache", async (...args: Parameters<typeof accessCache>) => {
+			const result = await accessCache(...args);
+			if (++accesses === 1) await session.removeAttachment(session.current.id, reference);
+			return result;
+		});
+		await assert.rejects(session.readAttachment(reference), { code: "ATTACHMENT_ACCESS" });
+		assert.equal(accesses, 1, "Only the first cache operation was authorized");
+		assert.deepEqual(await session.listAttachments(), []);
+		await assert.rejects(session.downloadAttachment(session.current.id, reference), { code: "ATTACHMENT_ACCESS" });
+		if (!cached) {
+			const directory = join(store.root, "attachments", "derived", original.id, original.contentVersion);
+			await assert.rejects(access(directory), { code: "ENOENT" });
+		}
+	});
+}
+
 async function upload(session: SessionManager, name: string, bytes: Buffer) {
 	const target = await session.beginAttachmentUpload(session.current.id, name, bytes.length);
 	return session.uploadAttachment(target, (async function* () { yield bytes; })());

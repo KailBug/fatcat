@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { attachmentReference } from "../../src/attachments/record.js";
 import { HarnessError } from "../../src/errors.js";
 import type { ModelTurn } from "../../src/model.js";
 import { SessionManager } from "../../src/session/manager.js";
@@ -12,6 +13,27 @@ const agent = { maxIterations: 4, model: async (): Promise<ModelTurn> => ({
 	message: { role: "assistant", content: "Done" }, toolCalls: [],
 }) };
 const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
+
+for (const persistent of [true, false]) {
+	test(`a ${persistent ? "persistent" : "temporary"} draft survives a size mismatch and can retry the same upload`, async (t) => {
+		const { base, workspace } = await temporaryWorkspace(t);
+		const store = new SessionStore({ root: join(base, "sessions") });
+		const manager = await SessionManager.open(agent, { workspace, store, persistence: persistent, deferEmptySessions: true });
+		const target = await manager.beginAttachmentUpload(manager.current.id, "retry.txt", 4);
+		await assert.rejects(manager.uploadAttachment(target, (async function* () { yield Buffer.from("bad"); })()), code("ATTACHMENT_SIZE"));
+		assert.equal(manager.current.revision, 0);
+		assert.deepEqual(await manager.list(), []);
+		assert.deepEqual(await manager.listAttachments(), []);
+		if (persistent) assert.deepEqual(await readdir(join(store.root, "attachments", "staging")), []);
+		const original = await manager.uploadAttachment(target, (async function* () { yield Buffer.from("good"); })());
+		assert.equal(manager.current.id, target.sessionId);
+		assert.equal((await manager.list()).length, 1);
+		assert.equal((await manager.listAttachments()).length, 1);
+		const downloaded = await manager.downloadAttachment(target.sessionId, attachmentReference(original));
+		assert.equal(Buffer.from(downloaded.bytes).toString(), "good");
+		if (!persistent) await assert.rejects(stat(store.root), { code: "ENOENT" });
+	});
+}
 
 function pausedBody() {
 	let start!: () => void;

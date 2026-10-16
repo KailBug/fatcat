@@ -11,7 +11,7 @@ Fatcat 是面向本地编码任务的 TypeScript Agent Harness。CLI、chat、TU
 | 层次 | 当前源码 | 唯一职责 |
 | --- | --- | --- |
 | 入口与交互 | `src/cli.ts`、`src/chat.ts`、`src/terminal.ts`、`tui/`、`webui/` | 输入、宿主命令、审批交互、取消与呈现 |
-| 装配 | `src/workspace-agent.ts`、`src/agent.ts` | 按工作目录准备 Tools/Skills，按实际 Session 绑定父子执行身份与资料访问 |
+| 装配 | `src/agent.ts` | 按工作目录准备 Tools/Skills，按实际 Session 绑定父子执行身份与资料访问；装配与缓存边界见 [Agent Loop](AGENT_LOOP.md) |
 | 会话 | `src/session/` | 成功历史、当前记录、运行领取、会话选择和持久存储 |
 | 回合 | `src/loop.ts`、`src/subagent.ts` | 模型与工具循环、有界委派、请求余额与事件 |
 | 模型与上下文 | `src/model.ts`、`src/providers.ts`、`src/context/` | 协议转换、请求投影、完整请求预算和上下文压缩 |

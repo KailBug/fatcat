@@ -9,7 +9,7 @@ import { WebUiController } from "./controller.js";
 import { openWebUiBrowser } from "./open-browser.js";
 import { startWebUiServer } from "./server.js";
 import { PermissionPolicy } from "../src/permissions/policy.js";
-import { workspaceAgentFactory } from "../src/workspace-agent.js";
+import { workspaceAgentFactory } from "../src/agent.js";
 
 export async function runWebUi(config: Config, workspace: string, permission: WorkspacePermission,
   shellPermission: ShellPermission, webPermission: WebPermission, port: number,

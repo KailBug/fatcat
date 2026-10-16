@@ -6,7 +6,7 @@ import type { WorkspacePermission } from "../src/tools/write.js";
 import type { WebPermission } from "../src/tools/web.js";
 import { TuiApp } from "./app.js";
 import type { PermissionPolicy } from "../src/permissions/policy.js";
-import { workspaceAgentFactory } from "../src/workspace-agent.js";
+import { workspaceAgentFactory } from "../src/agent.js";
 
 /** Assemble the same agent and permissions as CLI chat; only the interaction changes. */
 export async function runTui(config: Config, workspace: string | undefined,

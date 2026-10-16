@@ -8,7 +8,7 @@ Skills 是本地任务指导，不是权限系统、插件运行时或确定性�
 
 `src/skills.ts` 负责 discoverSkills、元数据校验、目录指导及受控 read 包装。内置源在 `src/skill/<subsystem>/<name>/SKILL.md`；`scripts/copy-skills.ts` 校验并复制构建资源，运行时按模块相对路径定位，不依赖 cwd。
 
-workspaceAgentFactory 在目录选择时重新发现，普通运行没有文件热监听。metadata 修改后重启确保刷新，内置改动还须重新构建。没有独立“激活”缓存；重复 read 使用当前文件并消耗上下文预算。
+`src/agent.ts` 的 workspaceAgentFactory 在目录选择时重新发现；即使复用基础 Tools，也会刷新 Skill catalog 并重新装配 Agent，见 [装配边界](AGENT_LOOP.md)。普通运行没有文件热监听。metadata 修改后重启确保刷新，内置改动还须重新构建。没有独立“激活”缓存；重复 read 使用当前文件并消耗上下文预算。
 
 ## 发现与命名
 

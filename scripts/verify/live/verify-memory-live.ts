@@ -10,7 +10,7 @@ import { SessionStore } from "../../../src/session/store.js";
 import { systemPrompt } from "../../../src/system-prompt.js";
 import { createTools } from "../../../src/tools.js";
 import type { Tools } from "../../../src/tools.js";
-import { workspaceAgentFactory } from "../../../src/workspace-agent.js";
+import { workspaceAgentFactory } from "../../../src/agent.js";
 import { loadLiveConfig } from "../support/live-config.js";
 
 // Real DeepSeek decisions over fixed synthetic data, including a saved obsolete refusal.

@@ -21,14 +21,13 @@ import { taskIsEnabled } from "../automation/tasks.js";
 import type { SessionAutomation } from "../automation/tasks.js";
 import { FileChanges } from "../automation/files.js";
 import type { SkillCatalog } from "../skills.js";
-import { attachmentName, attachmentMediaType, attachmentIdPattern, maxAttachmentBytes, parseAttachmentReference, sameAttachmentTarget } from "../attachments/record.js";
-import type { AttachmentInfo, AttachmentTarget, StagedAttachment } from "../attachments/record.js";
-import { readDocumentContent } from "../documents/read.js";
-import type { DocumentCache } from "../documents/cache.js";
+import { attachmentName, attachmentMediaType, attachmentIdPattern, maxAttachmentBytes, sameAttachmentTarget } from "../attachments/record.js";
+import type { AttachmentInfo, AttachmentTarget } from "../attachments/record.js";
 import type { AttachmentReadOptions, AttachmentReadResult } from "../attachments/read.js";
 import { withAttachments } from "../attachments/tools.js";
-import type { AttachmentAccess } from "../attachments/tools.js";
 import { MemoryAttachments } from "../attachments/memory.js";
+import { uploadAttachment, listAttachments, readAttachment, downloadAttachment, changeAttachment, sessionAttachmentAccess } from "./attachments.js";
+import type { AttachmentUploadTarget } from "./attachments.js";
 import { MemoryStore } from "../memory/store.js";
 import { memoryFingerprint } from "../memory/record.js";
 import type { MemoryRecord, MemoryScope, MemorySource } from "../memory/record.js";
@@ -38,12 +37,7 @@ import type { MemoryAccess } from "../memory/tools.js";
 export type MemoryChange = { action: "add"; scope: "session" | "project" | "global"; content: string }
 	| { action: "update" | "delete"; id: string; revision: number; content?: string };
 
-export interface AttachmentUploadTarget extends AttachmentTarget {
-	name: string;
-	size: number;
-	uploadId: string;
-	draft?: SessionRecord;
-}
+export type { AttachmentUploadTarget } from "./attachments.js";
 
 interface DraftAttachmentScope {
 	identity: AttachmentTarget;
@@ -538,12 +532,8 @@ export class SessionManager {
 
 	async uploadAttachment(target: AttachmentUploadTarget, body: AsyncIterable<Uint8Array>, signal?: AbortSignal): Promise<AttachmentInfo> {
 		const repository = this.attachments;
-		let attachment!: AttachmentInfo;
-		let staged: StagedAttachment | undefined;
-		try {
-			staged = await repository.stageUpload(target, { uploadId: target.uploadId, name: target.name }, body, signal);
-			checkCancellation(signal);
-			if (staged.size !== target.size) throw new HarnessError("ATTACHMENT_SIZE", "The upload size did not match the selected file.");
+		return uploadAttachment(repository, target, body, async (staged) => {
+			let attachment!: AttachmentInfo;
 			await this.attachmentChange(async () => {
 				checkCancellation(signal);
 				if (target.draft) {
@@ -552,14 +542,12 @@ export class SessionManager {
 						throw new HarnessError("ATTACHMENT_TARGET_CHANGED", "The upload draft was moved or deleted. Start a new upload in the intended session.");
 					}
 				}
-				const result = await repository.completeUpload(target.uploadId, target.draft, staged!.stageToken);
+				const result = await repository.completeUpload(target.uploadId, target.draft, staged.stageToken);
 				attachment = result.attachment;
 				if (result.session.id === this.current.id) this.activate(result.session);
 			}, true, signal);
 			return attachment;
-		} finally {
-			if (staged) await repository.discardUpload(target.uploadId, staged.stageToken);
-		}
+		}, signal);
 	}
 
 	async importAttachment(path: string, signal?: AbortSignal): Promise<AttachmentInfo> {
@@ -577,53 +565,30 @@ export class SessionManager {
 
 	async listAttachments(sessionId?: string, includeRemoved = false): Promise<AttachmentInfo[]> {
 		const record = await this.joinTarget(sessionId);
-		if (record.projectError) throw new HarnessError("PROJECT_UNAVAILABLE", record.projectError);
-		if (record.revision === 0 && !projectIdOf(record)) return [];
-		return this.attachments.list(executionIdentity(record), { includeRemoved, ...(record.revision === 0 ? { draft: record } : {}) });
+		return listAttachments(this.attachments, record, includeRemoved);
 	}
 
 	async readAttachment(reference: string, options: AttachmentReadOptions & { sessionId?: string; signal?: AbortSignal } = {}): Promise<AttachmentReadResult> {
 		const record = await this.joinTarget(options.sessionId);
-		return this.readDocument(executionIdentity(record), reference, options, false, record.revision === 0 ? record : undefined);
-	}
-
-	private async readDocument(identity: SessionExecutionIdentity, reference: string, options: Parameters<AttachmentAccess["read"]>[1],
-		pin: boolean, draft?: SessionRecord): Promise<AttachmentReadResult> {
-		const ref = parseAttachmentReference(reference);
-		const source = await this.attachments.read(identity, ref, { pin, ...(options.signal ? { signal: options.signal } : {}), ...(draft ? { draft } : {}) });
-		const access = <T>(operation: (cache: DocumentCache) => Promise<T>) => {
-			checkCancellation(options.signal);
-			return this.attachments.withDocumentCache(identity, ref, operation, draft);
-		};
-		const cache: DocumentCache = { load: (version) => access((value) => value.load(version)),
-			transcripts: () => access((value) => value.transcripts()), save: (snapshot, page) => access((value) => value.save(snapshot, page)) };
-		return readDocumentContent(source.attachment, source.bytes, options, cache, options.signal, options.vision, options.turn);
+		return readAttachment(this.attachments, executionIdentity(record), reference, options, false, record.revision === 0 ? record : undefined);
 	}
 
 	async downloadAttachment(sessionId: string, reference: string, signal?: AbortSignal): Promise<{ record: AttachmentInfo; bytes: Uint8Array }> {
 		const record = await this.joinTarget(sessionId);
-		const source = await this.attachments.read(executionIdentity(record), parseAttachmentReference(reference), {
-			...(signal ? { signal } : {}), ...(record.revision === 0 ? { draft: record } : {}) });
-		return { record: source.attachment, bytes: source.bytes };
+		return downloadAttachment(this.attachments, record, reference, signal);
 	}
 
 	async removeAttachment(sessionId: string, reference: string, expected?: { locationRevision: number; scopeRevision: number }): Promise<void> {
 		await this.change(async () => {
 			const record = await this.joinTarget(sessionId);
-			if (expected && expected.locationRevision !== (record.locationRevision ?? 0)) {
-				throw new HarnessError("ATTACHMENT_CONFLICT", "The sharing scope changed. Review this file operation again.");
-			}
-			await this.attachments.remove(executionIdentity(record), parseAttachmentReference(reference), expected?.scopeRevision);
+			await changeAttachment(this.attachments, record, reference, "remove", expected);
 		});
 	}
 
 	async deleteAttachment(sessionId: string, reference: string, expected?: { locationRevision: number; scopeRevision: number }): Promise<void> {
 		await this.change(async () => {
 			const record = await this.joinTarget(sessionId);
-			if (expected && expected.locationRevision !== (record.locationRevision ?? 0)) {
-				throw new HarnessError("ATTACHMENT_CONFLICT", "The sharing scope changed. Review this file operation again.");
-			}
-			await this.attachments.delete(executionIdentity(record), parseAttachmentReference(reference), expected?.scopeRevision);
+			await changeAttachment(this.attachments, record, reference, "delete", expected);
 		});
 	}
 
@@ -844,15 +809,7 @@ export class SessionManager {
 		const identity = executionIdentity(record);
 		const memory: MemoryAccess = { list: (signal) => this.memoryOperation(identity,
 			() => this.memories.list(this.memoryScopes(identity), signal), record.revision === 0 ? record : undefined) };
-		const access: AttachmentAccess = {
-			list: async (signal) => {
-				checkCancellation(signal);
-				return this.attachments.list(identity);
-			},
-			read: async (reference, options) => {
-				return this.readDocument(identity, reference, options, true);
-			},
-		};
+		const access = sessionAttachmentAccess(this.attachments, identity);
 		const agent = this.agent.forSession ? this.agent.forSession(identity, this.agent, access, memory)
 			: { ...this.agent, ...(this.agent.tools ? { tools: withMemories(withAttachments(this.agent.tools, access), memory) } : {}),
 				model: withMemoryContext(withSessionIdentity(this.agent.model, identity), memory) };

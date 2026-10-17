@@ -30,6 +30,7 @@ Read [project goals and boundaries](docs/PROJECT.md), then the documents relevan
 - Keep session capability helpers free of active-session ownership, following the [development guide](docs/DEVELOPMENT.md), section "Session capability boundaries". Pass explicit dependencies and identities; preserve per-operation validation, lock boundaries and draft/turn lifecycles. Reuse preview-building rules while reading fresh sources at confirmation; keep each operation's preparation, commit and activation order explicit.
 
 - For Web UI changes, follow the [development guide](docs/DEVELOPMENT.md), sections "Web UI controller boundaries" and "Web UI browser view boundaries". Controller retains host lifecycles and display state; the browser entry retains its page snapshot, requests and draft, while views own only DOM and rendering caches. Preserve approval, cancellation, refresh and focus ordering; register new browser modules in the static whitelist and verify affected interactions in injected-model Edge checks.
+- For TUI changes, follow the [development guide](docs/DEVELOPMENT.md), section "TUI turn and presentation boundaries". TuiApp retains operation, approval, draft and terminal lifecycles, display state and evidence deduplication; presentation helpers only format explicit data. Keep command, conversation and background-task settlement distinct, and verify input/lifecycle changes in an injected-model Windows terminal.
 
 ## Common development commands
 

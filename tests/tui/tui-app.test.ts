@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import test from "node:test";
+import test, { describe, it } from "node:test";
 import type { Terminal } from "@earendil-works/pi-tui";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { HarnessError } from "../../src/errors.js";
@@ -16,6 +16,7 @@ import { TuiApp } from "../../tui/app.js";
 import { metricSections, statusText } from "../../tui/metrics.js";
 import { createTuiTelemetry } from "../../tui/telemetry.js";
 import { temporaryWorkspace } from "../support/workspace.js";
+import type { WriteRecord } from "../../src/tools/write.js";
 
 class FakeTerminal implements Terminal {
   columns = 120;
@@ -50,6 +51,62 @@ const settings = {
   workspace: "D:\\fixture", permission: "ask" as const, shellPermission: "ask" as const, skills: 4,
 };
 const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content }, toolCalls: [] });
+
+describe("TUI turn feedback boundaries", () => {
+  it("deduplicates parent and child records, displays updates and resets eligibility for the next turn", async (t) => {
+    const terminal = new FakeTerminal();
+    terminal.rows = 100;
+    const app = new TuiApp({ ...settings, terminal, color: false });
+    const session = new Session({ maxIterations: 1, model: async () => answer() });
+    const record: WriteRecord = { id: "same-write", path: "fixture.txt", operation: "create", status: "started",
+      beforeHash: null, afterHash: "fixture-hash", bytes: 4 };
+    session.run = async (_prompt, options) => {
+      const emit = options!.onEvent!;
+      emit({ type: "write_record", record });
+      emit({ type: "subagent_event", callId: "child", event: { type: "write_record", record } });
+      const committed = { ...record, status: "committed" as const };
+      emit({ type: "subagent_event", callId: "child", event: { type: "write_record", record: committed } });
+      emit({ type: "write_record", record: committed });
+      emit({ type: "completed", iterations: 1 });
+      return "Done";
+    };
+    const done = app.run(session);
+    t.after(async () => { terminal.input("\x04"); await done; });
+    for (let turn = 1; turn <= 2; turn++) {
+      terminal.submit(`Turn ${turn}`);
+      await until(() => app.telemetry.snapshot().session.answered === turn);
+    }
+    terminal.output = "";
+    terminal.submit("/exit");
+    assert.equal(await done, 0);
+    assert.equal(terminal.plain.split("create fixture.txt: started").length - 1, 2);
+    assert.equal(terminal.plain.split("create fixture.txt: committed").length - 1, 2);
+    assert.equal(terminal.plain.split("1 writes, 0 commands").length - 1, 2);
+    assert.equal(app.telemetry.snapshot().session.writes, 1);
+  });
+
+  it("installs active state before synchronous approval and keeps local command failures out of the exit status", async (t) => {
+    const terminal = new FakeTerminal();
+    const app = new TuiApp({ ...settings, terminal, color: false });
+    let approved: boolean | undefined;
+    const session = new Session({ maxIterations: 1, model: async (_messages, signal) => {
+      approved = await app.approveWrite({ path: "fixture.txt", operation: "create", newText: "test", bytes: 4 }, signal);
+      return answer();
+    } });
+    const done = app.run(session);
+    t.after(async () => { terminal.input("\x04"); await done; });
+    terminal.submit("/skills unexpected");
+    await until(() => terminal.plain.includes("does not take an argument"));
+    terminal.submit("Request approval");
+    await until(() => terminal.plain.includes("WRITE APPROVAL"));
+    terminal.submit("yes");
+    await until(() => app.telemetry.snapshot().session.answered === 1);
+    assert.equal(approved, true);
+    assert.deepEqual(session.messages.filter((message) => message.role === "user").map((message) => message.content), ["Request approval"]);
+    terminal.submit("/exit");
+    assert.equal(await done, 0);
+  });
+});
 
 test("TUI project commands display scope and new sessions inherit it until explicitly standalone", async (t) => {
 	const { base, workspace, outside } = await temporaryWorkspace(t);

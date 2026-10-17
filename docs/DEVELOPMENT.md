@@ -61,6 +61,14 @@ Preserve DOM reuse, expanded details, captured source Session IDs, preview path 
 
 Register new browser runtime modules in the explicit `webui/server.ts` asset whitelist and extend HTTP asset checks in `tests/webui/`; compilation alone does not make an ES module URL available. Use the existing injected-model Edge runners for DOM, focus and interaction checks, with local helper probes under `scripts/verify/browser/support/`. The `verify:webui` runner checks view caching, expanded sections, source identity and live drag gating; use Project and document/attachment runners for affected cross-component flows. These runs do not validate real provider behavior or the native folder dialog. See [Web UI](ARCHITECTURE/WEBUI.md) for the maintained ownership and behavior.
 
+## TUI turn and presentation boundaries
+
+`tui/app.ts` owns the active operation, cancellation controller, approval coordinator, editor draft, display state, evidence deduplication and terminal lifecycle. Install operation state before calling anything that can synchronously emit events or request approval. Share common initialization in private methods; start conversation telemetry and clear display deduplication only for normal/automatic turns. Explicit compaction begins its own telemetry without adding a conversation turn. Keep command errors, failed-turn exit status, background-target counter restoration and each path's final refresh/cleanup order distinct.
+
+`tui/presentation.ts` receives explicit events or approval requests and returns display data/text. Do not give it an App, Session, editor, execution journal or mutable cache. Observe every event in telemetry before deciding whether to display it; App deduplicates writes by ID plus record fingerprint and commands by ID across parent/child events. Updated writes and evidence warnings must remain visible. Keep message ordering, scrolling and render requests in App, terminal sanitization/layout in view, and usage accounting in telemetry/metrics. Do not create another transcript or permission owner.
+
+Preserve fresh approval input, draft restoration, cancellation followed by another turn, and exit waiting for work before draining input and restoring the terminal. Keep TUI regressions in `tests/tui/`. For input/lifecycle changes, also run the injected-model Windows terminal fixture described below; fake-terminal tests alone do not establish native terminal behavior. See [TUI](ARCHITECTURE/TUI.md) for the maintained runtime contracts.
+
 ## Test and verification layout
 
 Keep offline tests outside production code, grouped by the contract they verify. Use `*.test.ts` for test entry points and descriptive filenames for helpers.
@@ -109,6 +117,21 @@ pnpm exec node --test "dist/tests/tools/**/*.test.js"
 ```
 
 When moving or deleting tests, update static imports, `import.meta.url` paths, child-process/preload paths, source assets referenced from compiled files, package commands and documentation. TypeScript does not remove obsolete outputs: remove only the corresponding generated `.js` and `.js.map` files under the repository's `dist/`, then verify that every source test has exactly one compiled counterpart and no orphan compiled tests remain. Preserve test names, assertions, fixture data, timeouts and environment gates during a layout-only change. Offline tests may use local HTTP servers and native PowerShell; they still must not load `.env`, launch Edge or contact real model providers.
+
+## Windows terminal checks
+
+Run `pnpm run verify:tui` in a native Windows interactive terminal (ConPTY is supported), with stdin/stdout attached to that terminal. This builds and launches `scripts/verify/native/verify-tui.ts` with an injected model and real ProcessTerminal. It uses a temporary workspace, does not load `.env` or contact providers, and removes its fixture directory on exit. Ordinary `pnpm test` does not launch this interactive check.
+
+Use the following sequence, waiting for each result before proceeding:
+
+1. Submit `/skills unexpected`; check that the usage error leaves the input usable.
+2. Submit `approval` and immediately type `draft after approval` without Enter. The fixture waits 1.5 seconds before requesting write approval. Check that the pending draft disappears from the approval editor.
+3. Press Enter with empty approval input; it must still require yes/no. Submit `yes`, wait for `APPROVED FILE SAVED`, and check that the draft reappears. Press Enter to submit that restored draft and wait for `DRAFT RESTORED`.
+4. Submit `/compact` and wait for the context summary result.
+5. Submit `cancel`, wait for active work, press Esc, and wait for the cancellation result. Submit `continue` and wait for `CONTINUED AFTER CANCELLATION`.
+6. Press PgUp/PgDn and check scrolling, then Ctrl+D. Check normal terminal/cursor restoration and the final JSON with `passed: true`.
+
+The fixture asserts the real approved file, exact model prompt sequence, cancelled-turn history isolation, summary/conversation counts, raw mode and SIGINT listener restoration. Interactive display/scroll checks complement these assertions; this does not validate full IME behavior or real model quality. Stopping early fails the fixture's acceptance assertions.
 
 ## Public network and local browser checks
 

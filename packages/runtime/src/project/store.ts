@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readdir, realpath, stat, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { HarnessError } from "../errors.js";
-import { AttachmentTransactions } from "../attachments/transaction.js";
+import { MetadataTransactions } from "../metadata/transaction.js";
 import { projectIdPattern, projectName } from "./record.js";
 import type { ProjectRecord } from "./record.js";
 import { publishProjectRecord, readProjectLockOwner, readProjectRecord } from "./files.js";
@@ -10,11 +10,11 @@ import { publishProjectRecord, readProjectLockOwner, readProjectRecord } from ".
 /** Project metadata is independent of session histories and workspace directories. */
 export class ProjectStore {
 	readonly root: string;
-	private readonly transactions: AttachmentTransactions;
+	private readonly transactions: MetadataTransactions;
 
 	constructor(options: { root: string }) {
 		this.root = join(resolve(options.root), "projects");
-		this.transactions = new AttachmentTransactions(resolve(options.root));
+		this.transactions = new MetadataTransactions(resolve(options.root));
 	}
 
 	async create(name: string, workspace: string): Promise<ProjectRecord> {

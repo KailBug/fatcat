@@ -33,7 +33,7 @@ Project v1 存于 Session 根的 `projects/<id>.json`，名称最多 120 字符�
 
 锁序仍为 metadata gate → Project 锁 → Session 桶锁。`loadUnlocked()` 和 `withProjectUnlocked()` 是已有 gate 内的真实内部入口，SessionStore 等调用者继续使用，不重复取得 gate；它们不是保留旧路径的兼容导出。文件函数只读取 owner PID，存活检查、回收 gate、重试和释放决定仍由 Store 负责。
 
-项目创建由 Store 调用文件发布并使用 PROJECT_STORAGE 错误；重命名、改目录等管理变更继续通过 AttachmentTransactions 的日志发布，保留原来的执行顺序和恢复错误。两条路径的协调上下文不同，不为复用写入函数改变失败语义。后续维护规则见[开发说明](../DEVELOPMENT.md#project-file-and-storage-boundaries)，跨文件协议见[元数据恢复](ATTACHMENTS.md#元数据提交与恢复)。
+项目创建由 Store 调用文件发布并使用 PROJECT_STORAGE 错误；重命名、改目录等管理变更继续通过 MetadataTransactions 的日志发布，保留原来的执行顺序和恢复错误。两条路径的协调上下文不同，不为复用写入函数改变失败语义。后续维护规则见[开发说明](../DEVELOPMENT.md#project-file-and-storage-boundaries)，跨文件协议见[元数据恢复](METADATA.md)。
 
 ## 独立会话迁入
 
@@ -69,7 +69,7 @@ Web UI 提供重命名、修改目录和确认删除；共享核心负责行为�
 
 改目录只要求新目录有效，可修复旧目录已丢失的项目。同目录选择无变更，当前草稿更新代次但不落盘为空会话；未选中项目的管理不切换当前聊天。删除当前所属项目后返回启动目录的独立草稿。Memory 范围不可访问，但孤立 Memory 磁盘文件目前不物理清理。
 
-提交在 metadata gate 和 Project 锁下重新发现最多 1000 个已保存成员并核对指纹；任一成员仍被存活进程领取、资料集合变化或损坏快照均保守拒绝。批量目录变更使用小型 patch，不把全部历史复制进日志。锁序、日志版本与向前恢复见 [Attachments](ATTACHMENTS.md#元数据提交与恢复)。
+提交在 metadata gate 和 Project 锁下重新发现最多 1000 个已保存成员并核对指纹；任一成员仍被存活进程领取、资料集合变化或损坏快照均保守拒绝。批量目录变更使用小型 patch，不把全部历史复制进日志。锁序、日志版本与向前恢复见 [Metadata](METADATA.md)。
 
 ## 设计与验证边界
 

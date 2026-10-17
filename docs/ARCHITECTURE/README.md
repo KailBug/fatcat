@@ -56,7 +56,8 @@ Fatcat 是面向本地编码任务的 TypeScript Agent Harness。CLI、chat、TU
 | 模型协议与能力适配 | [Providers](PROVIDERS.md) |
 | 本地指导发现与按需读取 | [Skills](SKILLS.md) |
 | 项目目录、迁入和管理 | [Projects](PROJECTS.md) |
-| 原件、关联、pin 与元数据恢复 | [Attachments](ATTACHMENTS.md) |
+| 跨领域元数据提交、锁与恢复 | [Metadata](METADATA.md) |
+| 原件、关联、pin 与发布 | [Attachments](ATTACHMENTS.md) |
 | 本地解析、视觉请求与来源 | [Documents](DOCUMENTS.md) |
 | 用户事实、作用域与修订 | [Memory](MEMORY.md) |
 | 会话绑定及独立配置调度 | [Automation](AUTOMATION.md) |

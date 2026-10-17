@@ -79,7 +79,7 @@ Web UI 未命名新会话可以是 revision 0 草稿。普通回合开始前、�
 
 附件宿主操作由 SessionManager 提供，AttachmentUploadTarget 直接从 `session/attachments.ts` 导入。Manager 负责解析目标快照、捕获上传身份、持有草稿 scope token、排队发布、重试待收尾操作，并在发布结果属于当前会话时激活该记录；非持久附件仓库也仍由 Manager 创建和持有。`session/attachments.ts` 只接收明确的仓库、快照或执行身份，不保存当前选择、不持有操作锁、不负责激活或持久化 Session。流式接收、大小核对和 stage 清理由该模块处理，发布回调仍进入 Manager 的原有互斥区。后续扩展沿此边界，不能把整个 Manager 传给访问适配函数，也不能为便利另存一份活动 record。
 
-跨文件元数据锁序、提交决定和向前恢复由 [Attachments](ATTACHMENTS.md#元数据提交与恢复) 维护；项目成员与迁入规则归 [Projects](PROJECTS.md)。Context 保存投影参数而不删除完整历史。Tools 的写入、命令和浏览器日志不由 resume 恢复，旧工具结果不证明当前状态。
+跨文件元数据锁序、提交决定和向前恢复由 [Metadata](METADATA.md) 维护；项目成员与迁入规则归 [Projects](PROJECTS.md)。Context 保存投影参数而不删除完整历史。Tools 的写入、命令和浏览器日志不由 resume 恢复，旧工具结果不证明当前状态。
 
 Memory 的业务规则集中在 `session/memory.ts`，Manager 保留 MemoryStore 的创建/持有、宿主操作互斥、草稿保存和激活，以及 memoryOperation 的身份与 owner 校验；MemoryChange 直接从 `session/memory.ts` 导入。activate 仍按原会话身份绑定动态访问，每次调用重新校验，不把活动 record 或授权结果交给辅助模块长期持有。AgentSession 继续管理当前用户证据、写入额度和 callId 复用；SessionStore 的元数据锁和持久身份重验不迁移。详细规则见 [Memory](MEMORY.md)。
 

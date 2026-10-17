@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rm, stat, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { HarnessError } from "../errors.js";
 import { decodeSessionRecord, encodeSessionRecord, projectIdOf, workspaceKey } from "../session/record.js";
@@ -6,31 +6,29 @@ import type { SessionRecord } from "../session/record.js";
 import { movedProjectSession } from "../project/management.js";
 import type { ProjectSessionMove } from "../project/management.js";
 import { MemoryStore } from "../memory/store.js";
-import { decodeAttachmentCatalog, emptyAttachmentCatalog, parseAttachmentReference } from "./record.js";
-import type { AttachmentCatalog, AttachmentRef } from "./record.js";
+import { maxCatalogBytes, publishAttachmentCatalog } from "../attachments/catalog.js";
+import { purgeAttachmentFiles } from "../attachments/files.js";
 import { decodeMetadataCommit, encodeMetadataCommit } from "./journal.js";
 import type { MetadataCommit } from "./journal.js";
-import { atomicJson, boundedJson } from "./metadata-files.js";
+import { atomicJson, boundedJson } from "./files.js";
 
-export interface AttachmentSessionAccess {
-	load(id: string): Promise<SessionRecord>;
-	prepareDraft(record: SessionRecord): Promise<SessionRecord>;
+export interface MetadataSessionAccess {
 	publish(record: SessionRecord): Promise<void>;
 	remove(id: string, storageWorkspace: string): Promise<void>;
 }
 
-const maxCatalogBytes = 16 * 1024 * 1024;
 const maxJournalBytes = 96 * 1024 * 1024;
 const metadataQueues = new Map<string, Promise<void>>();
 
-/** One short metadata gate covers Session identity, attachment and memory associations, and recovery. */
-export class AttachmentTransactions {
-	readonly directory: string;
+/** One short metadata gate covers Session identity, Project metadata, attachment and memory associations, and recovery. */
+export class MetadataTransactions {
+	private readonly attachmentDirectory: string;
 	private readonly journal: string;
 
-	constructor(private readonly root: string, private readonly sessions?: AttachmentSessionAccess) {
-		this.directory = join(root, "attachments");
-		this.journal = join(this.directory, "pending.json");
+	constructor(private readonly root: string, private readonly sessions?: MetadataSessionAccess) {
+		this.attachmentDirectory = join(root, "attachments");
+		// Keep the existing journal location and disk protocol when moving its code.
+		this.journal = join(this.attachmentDirectory, "pending.json");
 	}
 
 	async withLock<T>(operation: () => Promise<T>, create = true): Promise<T> {
@@ -61,15 +59,6 @@ export class AttachmentTransactions {
 		} finally { await release(); }
 	}
 
-	async catalog(): Promise<AttachmentCatalog> {
-		const value = await boundedJson(join(this.directory, "catalog.json"), maxCatalogBytes, true);
-		return value === undefined ? emptyAttachmentCatalog() : decodeAttachmentCatalog(value);
-	}
-
-	async publishCatalog(catalog: AttachmentCatalog): Promise<void> {
-		await atomicJson(join(this.directory, "catalog.json"), decodeAttachmentCatalog(catalog), maxCatalogBytes);
-	}
-
 	/** The journal is the durable decision. Readers recover it before observing either owner. */
 	async commit(change: MetadataCommit): Promise<void> {
 		const journal = encodeMetadataCommit(change);
@@ -90,11 +79,6 @@ export class AttachmentTransactions {
 		catch { throw new HarnessError("ATTACHMENT_RECOVERY_PENDING", "The confirmed metadata change needs recovery. Retry or reopen the session; do not repeat the upload or migration."); }
 	}
 
-	blobPath(ref: AttachmentRef): string {
-		parseAttachmentReference(`attachment:${ref.attachmentId}@${ref.contentVersion}`);
-		return join(this.directory, "blobs", ref.attachmentId, ref.contentVersion);
-	}
-
 	private async recover(): Promise<void> {
 		const raw = await boundedJson(this.journal, maxJournalBytes, true);
 		if (raw === undefined) return;
@@ -111,16 +95,14 @@ export class AttachmentTransactions {
 		for (const record of change.writes ?? []) await this.publishSession(record);
 		if (change.projectWrite) await atomicJson(join(this.root, "projects", `${change.projectWrite.id}.json`), change.projectWrite, 64 * 1024);
 		for (const move of change.sessionMoves ?? []) await this.moveSession(move);
-		await this.publishCatalog(change.catalog);
+		await publishAttachmentCatalog(this.attachmentDirectory, change.catalog);
 		for (const record of change.deletes ?? []) {
 			if (this.sessions) await this.sessions.remove(record.id, record.storageWorkspace);
 			else await removeFile(join(this.root, workspaceKey(record.storageWorkspace), `${record.id}.json`));
 		}
 		if (change.projectDelete) await removeFile(join(this.root, "projects", `${change.projectDelete}.json`));
 		for (const ref of change.purge ?? []) {
-			await unlink(this.blobPath(ref)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
-			// blobPath validates both identifiers before this fixed-root derived path is removed.
-			await rm(join(this.directory, "derived", ref.attachmentId, ref.contentVersion), { recursive: true, force: true });
+			await purgeAttachmentFiles(this.attachmentDirectory, ref);
 		}
 	}
 

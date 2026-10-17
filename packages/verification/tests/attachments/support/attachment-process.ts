@@ -1,6 +1,7 @@
 import { join } from "node:path";
-import { AttachmentTransactions } from "@fatcat/runtime/internal/attachments/transaction";
-import { atomicJson } from "@fatcat/runtime/internal/attachments/metadata-files";
+import { readAttachmentCatalog } from "@fatcat/runtime/internal/attachments/catalog";
+import { MetadataTransactions } from "@fatcat/runtime/internal/metadata/transaction";
+import { atomicJson } from "@fatcat/runtime/internal/metadata/files";
 import { encodeSessionRecord, workspaceKey } from "@fatcat/runtime/session/record";
 import { SessionStore } from "@fatcat/runtime/session/store";
 
@@ -25,9 +26,7 @@ try {
 	const store = new SessionStore({ root });
 	const session = await store.loadAny(sessionId);
 	const project = await store.projects.load(projectId);
-	const transactions = new AttachmentTransactions(root, {
-		load: async () => { throw new Error("Not used"); },
-		prepareDraft: async () => { throw new Error("Not used"); },
+	const transactions = new MetadataTransactions(root, {
 		remove: async () => {},
 		publish: async (record) => {
 			await atomicJson(join(root, workspaceKey(record.storageWorkspace!), `${record.id}.json`), encodeSessionRecord(record), 64 * 1024 * 1024);
@@ -38,7 +37,7 @@ try {
 	await transactions.withLock(async () => {
 		await send("locked");
 		await requested;
-		const catalog = await transactions.catalog();
+		const catalog = await readAttachmentCatalog(join(root, "attachments"));
 		for (const binding of catalog.bindings) {
 			if (binding.scope.kind === "session" && binding.scope.sessionId === session.id) {
 				binding.scope = { kind: "project", projectId: project.id };

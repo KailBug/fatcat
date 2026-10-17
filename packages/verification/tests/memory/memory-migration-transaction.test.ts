@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { emptyAttachmentCatalog } from "@fatcat/runtime/attachments/record";
 import { AttachmentStore } from "@fatcat/runtime/internal/attachments/store";
-import { AttachmentTransactions } from "@fatcat/runtime/internal/attachments/transaction";
-import type { AttachmentSessionAccess } from "@fatcat/runtime/internal/attachments/transaction";
+import { MetadataTransactions } from "@fatcat/runtime/internal/metadata/transaction";
+import type { AttachmentSessionAccess } from "@fatcat/runtime/internal/attachments/store";
 import { MemoryStore } from "@fatcat/runtime/internal/memory/store";
 import { joinedProjectRecord } from "@fatcat/runtime/project/operations";
 import type { ProjectRecord } from "@fatcat/runtime/project/record";
@@ -56,7 +56,7 @@ test("a durable memory migration replays before the joined session after an inte
 		if (attempts++ === 0) throw new Error("Injected session publication failure");
 		published.push(record);
 	});
-	const transaction = new AttachmentTransactions(root, access);
+	const transaction = new MetadataTransactions(root, access);
 	const memoryMove = { sessionId: source.id, projectId: project.id };
 	await assert.rejects(transaction.withLock(() => transaction.commit({ catalog: emptyAttachmentCatalog(), writes: [joined], memoryMove })),
 		{ code: "ATTACHMENT_RECOVERY_PENDING" });
@@ -64,7 +64,7 @@ test("a durable memory migration replays before the joined session after an inte
 	assert.equal(pending.version, 3, "Old metadata readers must reject a migration they cannot replay");
 	assert.deepEqual(pending.memoryMove, memoryMove);
 	assert.equal(published.length, 0);
-	await new AttachmentTransactions(root, access).withLock(async () => {});
+	await new MetadataTransactions(root, access).withLock(async () => {});
 	assert.deepEqual(moves, [memoryMove, memoryMove]);
 	assert.equal(published.length, 1);
 	assert.equal(published[0]!.location?.kind, "project");
@@ -81,7 +81,7 @@ test("legacy metadata journals recover without a memory migration", async (t) =>
 		await writeFile(join(root, "attachments", "pending.json"), JSON.stringify({ version,
 			catalog: emptyAttachmentCatalog(), writes: [encodeSessionRecord(joined)], deletes: [], purge: [] }));
 		let published = false;
-		await new AttachmentTransactions(root, sessionAccess(source, async () => { published = true; })).withLock(async () => {});
+		await new MetadataTransactions(root, sessionAccess(source, async () => { published = true; })).withLock(async () => {});
 		assert.equal(published, true);
 	}
 	assert.equal(moved.mock.callCount(), 0);
@@ -90,7 +90,7 @@ test("legacy metadata journals recover without a memory migration", async (t) =>
 test("memory migration journals reject invalid IDs and changes unrelated to the joined snapshot", async (t) => {
 	const { base, workspace, outside } = await temporaryWorkspace(t);
 	const { source, project, joined } = records(workspace, outside);
-	const transaction = new AttachmentTransactions(join(base, "sessions"));
+	const transaction = new MetadataTransactions(join(base, "sessions"));
 	for (const memoryMove of [
 		{ sessionId: "invalid", projectId: project.id },
 		{ sessionId: source.id, projectId: "invalid" },

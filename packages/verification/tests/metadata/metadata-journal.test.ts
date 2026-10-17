@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { decodeMetadataCommit, encodeMetadataCommit } from "@fatcat/runtime/internal/attachments/journal";
+import { readAttachmentCatalog } from "@fatcat/runtime/internal/attachments/catalog";
+import { decodeMetadataCommit, encodeMetadataCommit } from "@fatcat/runtime/internal/metadata/journal";
 import { emptyAttachmentCatalog } from "@fatcat/runtime/attachments/record";
-import { AttachmentTransactions } from "@fatcat/runtime/internal/attachments/transaction";
+import { MetadataTransactions } from "@fatcat/runtime/internal/metadata/transaction";
 import type { ProjectRecord } from "@fatcat/runtime/project/record";
 import type { SessionRecord } from "@fatcat/runtime/session/record";
 import { temporaryWorkspace } from "../support/workspace.js";
@@ -42,7 +43,7 @@ describe("metadata journal boundaries", () => {
 	it("rejects conflicting project changes before publishing a decision or changing the catalog", async (t) => {
 		const { base, workspace } = await temporaryWorkspace(t);
 		const root = join(base, "sessions");
-		const transactions = new AttachmentTransactions(root);
+		const transactions = new MetadataTransactions(root);
 		const catalog = emptyAttachmentCatalog();
 		await transactions.withLock(() => transactions.commit({ catalog }));
 		const catalogPath = join(root, "attachments", "catalog.json");
@@ -56,7 +57,7 @@ describe("metadata journal boundaries", () => {
 		await assert.rejects(stat(join(root, "attachments", "pending.json")), { code: "ENOENT" });
 		await assert.rejects(stat(join(root, "projects", `${project.id}.json`)), { code: "ENOENT" });
 		await transactions.withLock(() => transactions.commit({ catalog: { ...catalog, revision: 1 } }));
-		assert.equal((await transactions.catalog()).revision, 1);
+		assert.equal((await readAttachmentCatalog(join(root, "attachments"))).revision, 1);
 	});
 
 	it("blocks readers on corrupt pending decisions and preserves read versus replay errors", async (t) => {
@@ -65,7 +66,7 @@ describe("metadata journal boundaries", () => {
 		const directory = join(root, "attachments");
 		const pending = join(directory, "pending.json");
 		await mkdir(directory, { recursive: true });
-		const transactions = new AttachmentTransactions(root);
+		const transactions = new MetadataTransactions(root);
 		for (const { contents, code } of [
 			{ contents: "{", code: "ATTACHMENT_CORRUPT" },
 			{ contents: JSON.stringify({ version: 4 }), code: "ATTACHMENT_RECOVERY_PENDING" },
@@ -80,7 +81,7 @@ describe("metadata journal boundaries", () => {
 		await writeFile(pending, JSON.stringify({ version: 1, catalog: emptyAttachmentCatalog(), writes: [], deletes: [], purge: [] }));
 		await transactions.withLock(async () => {
 			await assert.rejects(stat(pending), { code: "ENOENT" });
-			assert.equal((await transactions.catalog()).revision, 0);
+			assert.equal((await readAttachmentCatalog(join(root, "attachments"))).revision, 0);
 		});
 	});
 });

@@ -1,10 +1,22 @@
 import { createHash } from "node:crypto";
-import { open } from "node:fs/promises";
+import { open, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
-import { attachmentIdPattern, maxAttachmentBytes } from "./record.js";
-import type { AttachmentRecord } from "./record.js";
-import { boundedJson } from "./metadata-files.js";
+import { attachmentIdPattern, maxAttachmentBytes, parseAttachmentReference } from "./record.js";
+import type { AttachmentRecord, AttachmentRef } from "./record.js";
+import { boundedJson } from "../metadata/files.js";
+
+export function attachmentBlobPath(directory: string, ref: AttachmentRef): string {
+	parseAttachmentReference(`attachment:${ref.attachmentId}@${ref.contentVersion}`);
+	return join(directory, "blobs", ref.attachmentId, ref.contentVersion);
+}
+
+/** Apply a confirmed purge only after the coordinator publishes the catalog. */
+export async function purgeAttachmentFiles(directory: string, ref: AttachmentRef): Promise<void> {
+	await unlink(attachmentBlobPath(directory, ref)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+	// attachmentBlobPath validates both identifiers before removing this fixed-root derived path.
+	await rm(join(directory, "derived", ref.attachmentId, ref.contentVersion), { recursive: true, force: true });
+}
 
 export function stagedAttachmentPath(directory: string, id: string, extension: ".json" | ".lock"): string {
 	if (!attachmentIdPattern.test(id)) throw new HarnessError("ATTACHMENT_UPLOAD", "Invalid upload identity.");

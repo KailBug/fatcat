@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { attachmentReference, emptyAttachmentCatalog, parseAttachmentReference } from "@fatcat/runtime/attachments/record";
 import type { AttachmentInfo, AttachmentTarget } from "@fatcat/runtime/attachments/record";
-import { AttachmentTransactions } from "@fatcat/runtime/internal/attachments/transaction";
-import { atomicJson } from "@fatcat/runtime/internal/attachments/metadata-files";
+import { MetadataTransactions } from "@fatcat/runtime/internal/metadata/transaction";
+import { atomicJson } from "@fatcat/runtime/internal/metadata/files";
 import { newBoundTask } from "@fatcat/runtime/automation/tasks";
 import { HarnessError } from "@fatcat/runtime/errors";
 import type { ProjectSessionMove } from "@fatcat/runtime/project/management";
@@ -194,8 +194,8 @@ test("a ProjectStore reader recovers bounded directory patches without duplicati
 	const moves: ProjectSessionMove[] = [first, second].map((record) => ({ id: record.id, storageWorkspace: workspace,
 		projectId: project.id, expectedRevision: record.revision, locationRevision: 0,
 		fromWorkspace: workspace, toWorkspace: outside, changedAt: now, changeId: randomUUID() }));
-	const transactions = new AttachmentTransactions(store.root, {
-		load: async () => { throw new Error("Not used"); }, prepareDraft: async () => { throw new Error("Not used"); }, remove: async () => {},
+	const transactions = new MetadataTransactions(store.root, {
+		remove: async () => {},
 		publish: async (record) => {
 			await atomicJson(snapshotPath(store, record), encodeSessionRecord(record), 64 * 1024 * 1024);
 			throw new Error("Injected interruption after publishing the first project member");
@@ -224,8 +224,8 @@ test("project deletion recovery completes remaining members and project metadata
 	const second = await store.save(draft(workspace, project), 0);
 	const catalog = emptyAttachmentCatalog();
 	catalog.deletedSessions = [first.id, second.id];
-	const transactions = new AttachmentTransactions(store.root, {
-		load: async () => { throw new Error("Not used"); }, prepareDraft: async () => { throw new Error("Not used"); }, publish: async () => {},
+	const transactions = new MetadataTransactions(store.root, {
+		publish: async () => {},
 		remove: async (id, storageWorkspace) => {
 			await unlink(join(store.root, workspaceKey(storageWorkspace), `${id}.json`));
 			throw new Error("Injected interruption after deleting the first session");
@@ -248,7 +248,7 @@ test("project management rejects a hidden corrupt member and oversized transacti
 	await assert.rejects(store.previewProjectDelete(project.id), code("SESSION_CORRUPT"));
 	assert.equal((await store.projects.load(project.id)).revision, 1);
 	await writeFile(snapshotPath(store, member), original);
-	const transactions = new AttachmentTransactions(store.root);
+	const transactions = new MetadataTransactions(store.root);
 	const tooMany = Array.from({ length: 1001 }, () => ({ id: randomUUID(), storageWorkspace: workspace }));
 	await assert.rejects(transactions.withLock(() => transactions.commit({ catalog: emptyAttachmentCatalog(), deletes: tooMany,
 		projectDelete: project.id })), code("ATTACHMENT_CORRUPT"));

@@ -6,8 +6,8 @@ import { decodeProjectRecord, projectIdPattern } from "../project/record.js";
 import type { ProjectRecord } from "../project/record.js";
 import { maxProjectMembers } from "../project/management.js";
 import type { ProjectSessionMove } from "../project/management.js";
-import { attachmentIdPattern, decodeAttachmentCatalog, parseAttachmentReference } from "./record.js";
-import type { AttachmentCatalog, AttachmentRef } from "./record.js";
+import { attachmentIdPattern, decodeAttachmentCatalog, parseAttachmentReference } from "../attachments/record.js";
+import type { AttachmentCatalog, AttachmentRef } from "../attachments/record.js";
 
 export interface MetadataCommit {
 	catalog: AttachmentCatalog;

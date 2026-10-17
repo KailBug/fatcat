@@ -18,7 +18,7 @@ Memory 保存当前用户直接提供的持久事实、定义、偏好和决定�
 | `packages/runtime/src/session/manager.ts` | MemoryStore 实例、宿主互斥、草稿保存与激活、按执行身份绑定访问及每次操作的校验入口 |
 | `packages/runtime/src/session/agent-session.ts` | 当前父用户回合、变更额度、callId 结果复用 |
 | `packages/runtime/src/session/store.ts` | 实际执行身份及持久 attempt owner 重验 |
-| `packages/runtime/src/attachments/transaction.ts` | 项目迁入中的幂等 Memory 转移 |
+| `packages/runtime/src/metadata/transaction.ts` | 项目迁入中的幂等 Memory 转移 |
 
 目录 Tools 缓存外绑定 MemoryAccess；每次操作按 Session/Project、locationRevision、projectRevision、有效 workspace 重验。子任务继承可见范围但不能修改，自动任务也不能修改。
 
@@ -61,7 +61,7 @@ read 支持 memory:list 及当前 UUID@revision；清单可做 active 正文字�
 
 memory/ 下分 `session-<uuid>.json`、`project-<uuid>.json` 和 `global.json`，使用有界解码、修订锁及原子发布。损坏或写入失败不以空数据覆盖。
 
-私有 Session 迁入 Project 时全部记录（含 tombstone、来源和修订）转移，预览展示 active 数量并绑定全记录指纹；提交前检查目标容量/冲突。v3 恢复日志先幂等发布项目 Memory、清空私有范围，再协调 Session/附件归属，不允许半提交观察。协议详见 [元数据恢复](ATTACHMENTS.md#元数据提交与恢复)。
+私有 Session 迁入 Project 时全部记录（含 tombstone、来源和修订）转移，预览展示 active 数量并绑定全记录指纹；提交前检查目标容量/冲突。v3 恢复日志先幂等发布项目 Memory、清空私有范围，再协调 Session/附件归属，不允许半提交观察。协议详见 [元数据恢复](METADATA.md)。
 
 独立 fork 不复制私有 Memory；项目 fork 继续共享。删除来源 Session 不删除项目/global 记忆。删除所属 Session/Project 后对应范围不可访问，但孤立磁盘文件保留，没有物理清理。
 
@@ -75,7 +75,7 @@ memory/ 下分 `session-<uuid>.json`、`project-<uuid>.json` 和 `global.json`�
 
 Windows 上独占创建锁时，旧锁等待删除可能返回 `EPERM`；仅该获取阶段沿用最多 40 次、间隔 25 ms 的可取消重试，不据此回收或删除别人的锁。持续拒绝访问仍报 `MEMORY_IO`；`EEXIST` 保留原 owner 检查与忙锁 `MEMORY_CONFLICT`。锁创建成功后的 owner 写入失败直接清理本次锁并报错，不进入获取重试。
 
-迁移预检与合并仍在原锁内完成。发布项目范围后才能清空私有范围；后一步失败不回滚已经发布的项目数据，重放继续按原身份和内容去重或拒绝冲突。跨 Session/附件归属的恢复决定仍属于 AttachmentTransactions，不能由文件函数独立迁移。后续维护规则见[开发说明](../DEVELOPMENT.md#memory-file-and-storage-boundaries)。
+迁移预检与合并仍在原锁内完成。发布项目范围后才能清空私有范围；后一步失败不回滚已经发布的项目数据，重放继续按原身份和内容去重或拒绝冲突。跨 Session/附件归属的恢复决定仍属于 MetadataTransactions，不能由文件函数独立迁移。后续维护规则见[开发说明](../DEVELOPMENT.md#memory-file-and-storage-boundaries)。
 
 ## 验证与未实现范围
 

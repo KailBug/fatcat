@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, readdir, realpath, rename, stat, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, realpath, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { AttachmentStore } from "../attachments/store.js";
@@ -13,8 +13,8 @@ import { invalidSession, isRecord } from "./history.js";
 import { decodeSessionRecord, encodeSessionRecord, projectIdOf, sessionIdPattern, sessionSummary, workspaceKey } from "./record.js";
 import type { SessionRecord, SessionSummary } from "./record.js";
 import type { SessionExecutionIdentity } from "./execution.js";
-
-const maxFileBytes = 64 * 1024 * 1024;
+import { listSessionDirectories, maxSessionSnapshotBytes, publishSessionSnapshot, readSessionSnapshot,
+  removeSessionSnapshot, sessionDirectory } from "./snapshots.js";
 
 interface ProjectMember extends SessionSummary {
   storageWorkspace: string;
@@ -54,17 +54,8 @@ export class SessionStore {
     this.attachments = new AttachmentStore({ root: this.root, sessions: {
       load: (id) => this.loadAnyUnlocked(id),
       prepareDraft: (record) => this.prepareAttachmentDraft(record),
-      publish: async (record) => {
-        const directory = this.directory(record.storageWorkspace ?? record.workspace);
-        await mkdir(directory, { recursive: true, mode: 0o700 });
-        await this.publish(directory, record);
-      },
-      remove: async (id, workspace) => {
-        if (!sessionIdPattern.test(id)) return invalidSession();
-        await unlink(join(this.directory(workspace), `${id}.json`)).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== "ENOENT") throw error;
-        });
-      },
+      publish: (record) => publishSessionSnapshot(this.root, record),
+      remove: (id, workspace) => removeSessionSnapshot(this.root, workspace, id),
     } });
   }
 
@@ -107,7 +98,7 @@ export class SessionStore {
         const record = await this.read(member.storageWorkspace, member.id);
         const moved = movedProjectSession(record, move);
         const encoded = encodeSessionRecord(moved);
-        if (Buffer.byteLength(JSON.stringify(encoded)) > maxFileBytes) {
+        if (Buffer.byteLength(JSON.stringify(encoded)) > maxSessionSnapshotBytes) {
           throw new HarnessError("SESSION_LIMIT", "A project session cannot fit another directory change within the 64 MiB storage limit.");
         }
         decodeSessionRecord(encoded, member.storageWorkspace, member.id);
@@ -144,7 +135,7 @@ export class SessionStore {
 
   private async projectMembers(projectId: string): Promise<ProjectMember[]> {
     const members: ProjectMember[] = [];
-    for (const directory of await this.directories()) {
+    for (const directory of await listSessionDirectories(this.root)) {
       for (const file of await readdir(directory)) {
         if (!file.endsWith(".json") || !sessionIdPattern.test(file.slice(0, -5))) continue;
         // A corrupt snapshot may hide membership; management fails closed instead of leaving it orphaned.
@@ -180,7 +171,7 @@ export class SessionStore {
 
   private async listAllUnlocked(): Promise<SessionSummary[]> {
     const summaries: SessionSummary[] = [];
-    for (const directory of await this.directories()) {
+    for (const directory of await listSessionDirectories(this.root)) {
       for (const file of await readdir(directory)) {
         if (!file.endsWith(".json") || !sessionIdPattern.test(file.slice(0, -5))) continue;
         try { summaries.push(sessionSummary(await this.readDirectory(directory, file.slice(0, -5)))); }
@@ -230,7 +221,7 @@ export class SessionStore {
       return this.loadAnyUnlocked(matches[0]!.id);
     }
     let selected: SessionRecord | undefined;
-    for (const directory of await this.directories()) {
+    for (const directory of await listSessionDirectories(this.root)) {
       let record: SessionRecord;
       try { record = await this.readDirectory(directory, selector); }
       catch (error) {
@@ -242,17 +233,6 @@ export class SessionStore {
     }
     if (!selected) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists. Use /sessions.");
     return selected;
-  }
-
-  private async directories(): Promise<string[]> {
-    try {
-      const entries = await readdir(this.root, { withFileTypes: true });
-      return entries.filter((entry) => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name))
-        .map((entry) => join(this.root, entry.name));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw new HarnessError("SESSION_STORAGE", "Could not list the local session directory.");
-    }
   }
 
   async load(workspace: string, selector: string): Promise<SessionRecord> {
@@ -299,7 +279,7 @@ export class SessionStore {
     project?: ProjectRecord): Promise<SessionRecord> {
     const workspace = record.storageWorkspace ?? await canonicalWorkspace(record.workspace);
     if (!sessionIdPattern.test(record.id)) return invalidSession();
-    const directory = this.directory(workspace);
+    const directory = sessionDirectory(this.root, workspace);
     let release: (() => Promise<void>) | undefined;
     try {
       await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -364,7 +344,7 @@ export class SessionStore {
     replacement?: SessionRecord): Promise<SessionRecord | undefined> {
     const canonical = workspace;
     if (!sessionIdPattern.test(id)) throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
-    const directory = this.directory(canonical);
+    const directory = sessionDirectory(this.root, canonical);
     let release: (() => Promise<void>) | undefined;
     let published: SessionRecord | undefined;
     try {
@@ -407,17 +387,6 @@ export class SessionStore {
     } finally { await release?.(); }
   }
 
-  private async publish(directory: string, record: SessionRecord): Promise<void> {
-    const json = JSON.stringify(encodeSessionRecord(record));
-    if (Buffer.byteLength(json) > maxFileBytes) throw new HarnessError("SESSION_LIMIT", "Session data exceeds the 64 MiB storage limit. Start a new session.");
-    const temporary = join(directory, `${record.id}.${randomUUID()}.tmp`);
-    try {
-      const handle = await open(temporary, "wx", 0o600);
-      try { await handle.writeFile(json, "utf8"); await handle.sync(); } finally { await handle.close(); }
-      await rename(temporary, join(directory, `${record.id}.json`));
-    } finally { await unlink(temporary).catch(() => {}); }
-  }
-
   private async prepareAttachmentDraft(record: SessionRecord): Promise<SessionRecord> {
     if (record.revision !== 0 || !sessionIdPattern.test(record.id)) return invalidSession();
     try {
@@ -445,11 +414,9 @@ export class SessionStore {
     return this.projects.withProjectUnlocked(projectId, record.projectRevision, prepare);
   }
 
-  private directory(workspace: string): string { return join(this.root, workspaceKey(workspace)); }
-
   private async records(workspace: string): Promise<SessionRecord[]> {
     let files: string[];
-    try { files = await readdir(this.directory(workspace)); }
+    try { files = await readdir(sessionDirectory(this.root, workspace)); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw new HarnessError("SESSION_STORAGE", "Could not list the local session directory.");
@@ -466,39 +433,12 @@ export class SessionStore {
   }
 
   private async read(workspace: string, id: string): Promise<SessionRecord> {
-    return this.readDirectory(this.directory(workspace), id);
+    return this.readDirectory(sessionDirectory(this.root, workspace), id);
   }
 
   private async readDirectory(directory: string, id: string): Promise<SessionRecord> {
-    let handle;
-    try {
-      handle = await open(join(directory, `${id}.json`), "r");
-      const info = await handle.stat();
-      if (!info.isFile() || info.size > maxFileBytes) return invalidSession();
-      // Read a bounded buffer even if another writer changes the file after stat.
-      const bytes = Buffer.alloc(Math.min(info.size + 1, maxFileBytes + 1));
-      let count = 0;
-      while (count < bytes.length) {
-        const next = await handle.read(bytes, count, bytes.length - count, count);
-        if (!next.bytesRead) break;
-        count += next.bytesRead;
-      }
-      if (count > maxFileBytes || count !== info.size) return invalidSession();
-      const json = bytes.subarray(0, count).toString("utf8");
-      if (!Buffer.from(json, "utf8").equals(bytes.subarray(0, count))) return invalidSession();
-      let parsed: unknown;
-      try { parsed = JSON.parse(json); } catch { return invalidSession(); }
-      if (!isRecord(parsed) || (parsed.version === 1 ? typeof parsed.workspace !== "string" : typeof parsed.storageWorkspace !== "string")) return invalidSession();
-      const storageWorkspace = String(parsed.storageWorkspace ?? parsed.workspace);
-      if (this.directory(storageWorkspace) !== directory) return invalidSession();
-      return this.projectProjection(decodeSessionRecord(parsed, storageWorkspace, id));
-    } catch (error) {
-      if (error instanceof HarnessError) throw error;
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new HarnessError("SESSION_NOT_FOUND", "No matching session exists in this workspace. Use /sessions.");
-      }
-      throw new HarnessError("SESSION_STORAGE", "Could not read the saved session.");
-    } finally { await handle?.close(); }
+    const record = await readSessionSnapshot(this.root, directory, id);
+    return this.projectProjection(record);
   }
 
   private requireAvailable(record: SessionRecord, options: SessionSaveOptions = {}): void {

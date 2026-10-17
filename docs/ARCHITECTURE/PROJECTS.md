@@ -18,7 +18,7 @@ Project 是显式组织实体，持有统一工作目录。成员 Session 历史
 
 Project v1 存于 Session 根的 `projects/<id>.json`，名称最多 120 字符、记录最多 64 KiB。成员列表从 Session location 派生，不维护另一份成员表；Session 只存 projectId，有效目录从 Project 解析，原 storageWorkspace 不变。旧 Session 格式兼容归 [Session](SESSION.md)。
 
-终端命令保留 `runSessionCommand` 入口；确认消费及会话切换失效规则见 [Session 的宿主命令边界](SESSION.md)。这些临时令牌与下述 Web UI 管理确认分别维护，不持久化、不授予工具权限。
+终端统一入口 `runInteractiveCommand` 直接调用 Project 命令处理器；确认消费及会话切换失效规则见 [Session 的宿主命令边界](SESSION.md)。这些临时令牌与下述 Web UI 管理确认分别维护，不持久化、不授予工具权限。
 
 项目创建验证已有目录，不创建目录或自动切换会话。项目成员不能单独覆盖目录；项目不可用时执行失败，不回退启动目录。目录级 Tools 可以共用，资料授权不能按目录缓存。
 

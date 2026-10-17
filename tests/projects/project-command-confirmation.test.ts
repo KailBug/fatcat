@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TestContext } from "node:test";
 import { runInteractiveCommand } from "../../src/commands.js";
-import { runSessionCommand } from "../../src/session/commands.js";
 import { SessionManager } from "../../src/session/manager.js";
 import { SessionStore } from "../../src/session/store.js";
 import { temporaryWorkspace } from "../support/workspace.js";
@@ -18,7 +17,7 @@ async function fixture(t: TestContext) {
 	await session.newSession("Other");
 	const otherId = session.current.id;
 	await session.resume(originalId);
-	const preview = await runSessionCommand(session, `/project join ${project.id}`);
+	const preview = await runInteractiveCommand(session, `/project join ${project.id}`);
 	const token = /Confirm with \/project confirm ([a-f0-9-]+)/.exec(preview!.text)?.[1];
 	assert.ok(token);
 	return { session, project, originalId, otherId, confirm: `/project confirm ${token}` };
@@ -33,7 +32,7 @@ describe("project command confirmation across dispatch boundaries", () => {
 			assert.equal((await runInteractiveCommand(session, command))!.switched, true);
 			// Bypass command dispatch on return so this cannot hide a missing invalidation.
 			await session.resume(originalId);
-			await assert.rejects(runSessionCommand(session, confirm), {
+			await assert.rejects(runInteractiveCommand(session, confirm), {
 				code: "USAGE", message: "No matching project confirmation. Use /project join again.",
 			});
 			assert.equal(session.current.projectId, undefined);

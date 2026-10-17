@@ -8,7 +8,7 @@ import type { WebPermission } from "./tools/web.js";
 import { runChat } from "./chat.js";
 import { SessionManager } from "./session/manager.js";
 import { SessionStore } from "./session/store.js";
-import { formatSessionList } from "./session/commands.js";
+import { formatSessionList } from "./session/labels.js";
 import { loadConfig } from "./config.js";
 import { HarnessError, formatError } from "./errors.js";
 import { createTurnReporter } from "./execution-report.js";

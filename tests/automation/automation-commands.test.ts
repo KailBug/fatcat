@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { automationCommandPrompt, runInteractiveCommand } from "../../src/commands.js";
+import { runInteractiveCommand } from "../../src/commands.js";
+import { automationCommandPrompt } from "../../src/automation/commands.js";
 import { Session } from "../../src/session/session.js";
 
 describe("cron command routing", () => {

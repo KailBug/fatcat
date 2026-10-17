@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
-import type { LoopOptions } from "../loop.js";
 import type { Message } from "../model.js";
 import { AgentSession } from "./agent-session.js";
 import type { SessionAgentOptions, SessionRunOptions, SessionTurnResult } from "./agent-session.js";
@@ -34,9 +33,8 @@ import { withMemories, withMemoryContext } from "../memory/tools.js";
 import type { MemoryAccess } from "../memory/tools.js";
 import { changeSessionMemory, memoryChangeForRequest, memoryJoinState, memoryScopes } from "./memory.js";
 import type { MemoryChange } from "./memory.js";
-
-export type { MemoryChange } from "./memory.js";
-export type { AttachmentUploadTarget } from "./attachments.js";
+import { prepareAutomationRun, sessionAutomations } from "./automations.js";
+import type { AutomationRunOptions } from "./automations.js";
 
 interface DraftAttachmentScope {
 	identity: AttachmentTarget;
@@ -241,14 +239,7 @@ export class SessionManager {
 			if (summary.projectError || summary.workspace !== workspace) continue;
 			if (!summary.automationCount) continue;
 			const record = this.persistent ? await this.store.loadAny(summary.id) : await this.selectedRecord(summary.id);
-			if (record.workspace !== workspace) continue;
-			result.push(...(record.automations ?? []).map((task) => ({
-				...structuredClone(task),
-				workspace: record.workspace,
-				locationRevision: record.locationRevision ?? 0,
-				sessionId: record.id,
-				sessionTitle: record.name ?? record.title,
-			})));
+			result.push(...sessionAutomations(record, workspace));
 		}
 		return result;
 	}
@@ -283,7 +274,7 @@ export class SessionManager {
 	}
 
 	async runAutomation(sessionId: string, taskId: string, scheduledAt: number, paths: string[],
-		options: Pick<LoopOptions, "signal" | "onEvent"> & { locationRevision?: number } = {}): Promise<string> {
+		options: AutomationRunOptions = {}): Promise<string> {
 		this.requireIdle();
 		this.busy = true;
 		try {
@@ -299,19 +290,11 @@ export class SessionManager {
 				}
 			}
 			const target = sessionId === this.current.id ? this : await this.automationSession(sessionId);
-			const task = target.runtime.snapshot.automations?.find((item) => item.id === taskId);
-			if (target.workspace !== this.workspace
-				|| (options.locationRevision !== undefined && options.locationRevision !== (target.current.locationRevision ?? 0))
-				|| !task || !taskIsEnabled(task) || task.lastStatus === "running"
-				|| (task.lastScheduledAt !== undefined && scheduledAt <= task.lastScheduledAt)) {
-				throw new HarnessError("AUTOMATION_INACTIVE", "This activation is no longer eligible in the selected workspace.");
-			}
-			const expiry = AbortSignal.timeout(Math.max(1, task.expiresAt - Date.now()));
+			const prepared = prepareAutomationRun(target.runtime.snapshot, this.workspace, taskId, scheduledAt, paths, options);
 			if (target === this) {
 				this.busy = false;
 			}
-			return await target.run(task.prompt, { ...options,
-				signal: options.signal ? AbortSignal.any([options.signal, expiry]) : expiry, automation: { taskId, scheduledAt, paths } });
+			return await target.run(prepared.prompt, prepared.options);
 		} finally {
 			this.finishOperation();
 		}

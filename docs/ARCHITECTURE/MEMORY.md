@@ -73,6 +73,8 @@ memory/ 下分 `session-<uuid>.json`、`project-<uuid>.json` 和 `global.json`�
 
 锁 owner 读取只返回有界文件内的有效 PID 或未知结果，取消仍传播；PID 存活检查、回收 gate 和释放顺序留在 Store。Memory 的取消点、链接检查及错误转换与附件 JSON 文件操作不同，因此保留自己的文件函数，不共用通用存储框架或兼容转导出。
 
+Windows 上独占创建锁时，旧锁等待删除可能返回 `EPERM`；仅该获取阶段沿用最多 40 次、间隔 25 ms 的可取消重试，不据此回收或删除别人的锁。持续拒绝访问仍报 `MEMORY_IO`；`EEXIST` 保留原 owner 检查与忙锁 `MEMORY_CONFLICT`。锁创建成功后的 owner 写入失败直接清理本次锁并报错，不进入获取重试。
+
 迁移预检与合并仍在原锁内完成。发布项目范围后才能清空私有范围；后一步失败不回滚已经发布的项目数据，重放继续按原身份和内容去重或拒绝冲突。跨 Session/附件归属的恢复决定仍属于 AttachmentTransactions，不能由文件函数独立迁移。后续维护规则见[开发说明](../DEVELOPMENT.md#memory-file-and-storage-boundaries)。
 
 ## 验证与未实现范围

@@ -177,19 +177,28 @@ export class MemoryStore {
 		const path = join(this.root!, "store.lock");
 		for (let attempt = 0; attempt < lockAttempts; attempt++) {
 			checkCancellation(signal);
+			let handle;
 			try {
-				const handle = await open(path, "wx", 0o600);
-				try { await handle.writeFile(JSON.stringify({ pid: process.pid })); }
-				catch (error) { await handle.close(); await unlink(path).catch(() => {}); throw error; }
-				return async () => { await handle.close().catch(() => {}); await unlink(path).catch(() => {}); };
+				handle = await open(path, "wx", 0o600);
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+				const code = (error as NodeJS.ErrnoException).code;
+				// Windows can deny exclusive creation while the previous lock is pending deletion.
+				const retryAccess = process.platform === "win32" && code === "EPERM" && attempt < lockAttempts - 1;
+				if (code !== "EEXIST" && !retryAccess) {
 					throw new HarnessError("MEMORY_IO", "Could not lock the memory scope.");
 				}
-				await this.recoverLock(path, signal);
+				if (code === "EEXIST") await this.recoverLock(path, signal);
 				try { await delay(lockRetryMilliseconds, undefined, { signal }); }
 				catch { checkCancellation(signal); throw new HarnessError("MEMORY_IO", "Could not wait for the memory scope lock."); }
+				continue;
 			}
+			try { await handle.writeFile(JSON.stringify({ pid: process.pid })); }
+			catch {
+				await handle.close().catch(() => {});
+				await unlink(path).catch(() => {});
+				throw new HarnessError("MEMORY_IO", "Could not lock the memory scope.");
+			}
+			return async () => { await handle.close().catch(() => {}); await unlink(path).catch(() => {}); };
 		}
 		throw new HarnessError("MEMORY_CONFLICT", "The memory scope is busy or its lock is incomplete. Try again shortly.");
 	}

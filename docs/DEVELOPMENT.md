@@ -19,6 +19,16 @@ Ordinary tests use fake credentials and injected model transports, without loadi
 
 For startup and local configuration checks, use `pnpm start --help` and `pnpm start --checkConfig`. Configuration validation does not contact a model. See the [quick start](QUICK_START.md) for setup and [configuration reference](REFERENCE/CONFIGURATION.md) for environment values.
 
+## Host command boundaries
+
+Keep host command parsing, help and response formatting with the capability they expose: `src/project/commands.ts`, `src/attachments/commands.ts`, `src/automation/commands.ts`, and the existing Context and Memory command modules. Use explicit handlers; the current command set does not need a registry or plugin framework. Session selection and workspace commands stay in `src/session/commands.ts`; shared text parsing/escaping belongs in `src/utils/command.ts`, and session labels in `src/session/labels.ts`.
+
+`src/commands.ts` composes interactive dispatch and help. Preserve its exports and the existing `src/session/commands.ts` API: `runSessionCommand` also routes Project and Attachment commands, and `sessionCommandHelp` includes their help. Keep that compatibility in the active entry modules. New handlers must leave unmatched input to the caller and preserve validation order, error codes/messages, output, cancellation forwarding and the `switched` result. Do not silently change accepted syntax while moving parsing code.
+
+Command handlers call the existing SessionManager operations. They must not own another active record, add persistence or bypass permissions and operation locks. Temporary confirmation state belongs to the command interaction, stays bound to its manager and preview, and must retain its consumption/invalidation timing across successful and failed operations. Natural-language `/cron` conversion only prepares a model prompt; local Cron management must not call the model. See [Session](ARCHITECTURE/SESSION.md) for the maintained routing and state boundaries.
+
+Keep command behavior tests with the owning capability; entry parsing belongs with the client. Exercise retained public entry points as well as cross-domain lifecycle effects, especially confirmation invalidation after switching away and back. Reuse injected models and temporary stores, and verify that local commands do not enter model history.
+
 ## Test and verification layout
 
 Keep offline tests outside production code, grouped by the contract they verify. Use `*.test.ts` for test entry points and descriptive filenames for helpers.

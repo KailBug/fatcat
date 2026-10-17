@@ -15,9 +15,12 @@
 | `lock.ts`、`runner.ts` | 存储根/工作区独占与独立 JSON 模式 |
 | `src/session/automations.ts`、`agent-session.ts` | 变更校验、持久领取/计数及回合提交 |
 | `src/session/manager.ts` | 后台目标解析与宿主互斥，保持前台选择 |
-| `src/commands.ts`、`webui/client/cron.ts` | 本地管理、模型调度请求及表单入口 |
+| `src/automation/commands.ts` | Cron 本地管理命令、帮助及自然语言调度请求转换 |
+| `src/commands.ts`、`webui/client/cron.ts` | 统一命令分发与原导出入口、Web UI 表单入口 |
 
 用户描述/表单 → 校验并保存绑定 → 空闲发现/激活 → 先持久增加尝试数并领取 → 原执行链 → 保存目标历史和状态 → 更新基线。触发元数据只进入请求指导，文件正文仍由 read 取得。
+
+`automationCommandPrompt` 继续从 `src/commands.ts` 导出：自然语言 `/cron <description>` 只转换为待发送的模型请求；`/cron`、list/pause/resume/delete 由命令处理器调用既有 SessionManager 操作，不调用模型或写入对话历史。列表仍仅展示当前会话绑定的任务；持久计数、权限和后台目标选择不属于命令层。
 
 ## 身份、持久化与切换
 

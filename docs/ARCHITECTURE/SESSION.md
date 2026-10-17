@@ -16,9 +16,21 @@ Session 系统区分成功对话、当前持久记录、宿主选择和存储。
 | `src/session/record.ts`、`history.ts` | 格式解码、记录约束、完整回合及工具关联校验 |
 | `src/session/execution.ts` | 捕获 Session、Project、归属代次与有效工作目录 |
 | `src/session/automations.ts` | 任务变更校验与待保存记录，不持有第二份活动状态 |
-| `src/session/commands.ts` | chat/TUI 的本地管理命令 |
+| `src/session/commands.ts`、`labels.ts` | 本地会话命令及项目/附件命令的既有入口协调；会话标签与列表格式化 |
 
 程序化普通 Session 保留内存入口；日常界面使用 SessionManager.open 和 run。Manager 通过 AgentSession 的防御性快照读取 record，不维护第二份可变副本。跨目录切换先准备目标 Agent，失败则保留当前状态；目录级 Tools/journals 由 `src/agent.ts` 的 workspaceAgentFactory 缓存，会话身份及资料访问按运行目标重新绑定，具体边界见 [Agent Loop](AGENT_LOOP.md)。
+
+## 宿主命令边界
+
+`src/commands.ts` 保留 `runInteractiveCommand`、`interactiveCommandHelp` 和 `automationCommandPrompt` 导出。交互分发顺序仍为 Memory、Context、Cron、Skills、会话管理；其中只有显式 compact 会在命令处理中请求模型摘要。自然语言 `/cron` 由入口先转换成普通模型请求，转换本身不执行调度操作。
+
+命令实现按能力归属：Project 的解析、列表、加入预览和确认在 `src/project/commands.ts`，附件列表、导入、移除关联与删除确认在 `src/attachments/commands.ts`，Cron 本地管理及提示转换在 `src/automation/commands.ts`。Context 和 Memory 沿用各自模块。`src/utils/command.ts` 只提供无状态的参数文本解析与输出转义；`src/session/labels.ts` 提供会话标签和列表，避免领域处理器反向依赖分发器的运行时代码。
+
+`runSessionCommand` 继续接受原有会话、项目和附件命令，`sessionCommandHelp` 继续包含全部三组帮助，`Conversation`、`sessionLabel`、`sessionScopeLabel`、`formatSessionList` 的旧导出路径保持可用。会话模块保留入口识别、既有校验顺序和成功切换后的确认失效协调，项目/附件的具体操作交给领域处理器。未匹配命令仍返回 undefined，参数、错误、输出和 switched 语义不变。
+
+项目加入令牌保存在 Project 命令模块的 WeakMap，仍按 SessionManager 实例绑定预览，不进入历史或持久记录。匹配确认先消费令牌，再校验活动会话并调用 joinProject；失败也不能重用已消费的令牌。取消、成功 project use，以及成功 new/clear/reset/resume/fork 命令清除待确认状态；列表、无参数 resume 和失败的选择操作不清除。切换后的清理由会话入口显式通知项目处理器，不把该交互状态移入 Manager，也不改变程序化 Manager 方法的行为。
+
+领域命令调用既有 SessionManager API；业务状态、权限、互斥和持久提交仍由原模块负责。Web UI 继续使用自己的管理接口，不接入完整终端命令集。开发和测试规则见[开发说明](../DEVELOPMENT.md)，用户语法见[命令参考](../REFERENCE/COMMANDS.md)。
 
 ## 持久格式与兼容
 

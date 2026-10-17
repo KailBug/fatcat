@@ -10,12 +10,15 @@ Project 是显式组织实体，持有统一工作目录。成员 Session 历史
 | --- | --- |
 | `src/project/record.ts`、`store.ts` | 项目身份、名称、唯一工作目录、修订与原子存储 |
 | `src/project/operations.ts` | 迁入预览与确认后的记录转换 |
+| `src/project/commands.ts` | 终端项目命令的解析、帮助、输出与按 Manager 绑定的加入确认令牌；业务操作仍调用 SessionManager |
 | `src/project/management.ts` | 目录/删除影响预览、成员指纹和有界目录 patch |
 | `src/session/store.ts`、`manager.ts` | 发现成员、重验修订、协调提交并准备目标 Agent |
 | `src/session/execution.ts` | 实际执行身份及归属代次 |
 | `webui/projects.ts`、`project-management.ts` | UI 操作预览、一次性确认与入口协调 |
 
 Project v1 存于 Session 根的 `projects/<id>.json`，名称最多 120 字符、记录最多 64 KiB。成员列表从 Session location 派生，不维护另一份成员表；Session 只存 projectId，有效目录从 Project 解析，原 storageWorkspace 不变。旧 Session 格式兼容归 [Session](SESSION.md)。
+
+终端命令保留 `runSessionCommand` 入口；确认消费及会话切换失效规则见 [Session 的宿主命令边界](SESSION.md)。这些临时令牌与下述 Web UI 管理确认分别维护，不持久化、不授予工具权限。
 
 项目创建验证已有目录，不创建目录或自动切换会话。项目成员不能单独覆盖目录；项目不可用时执行失败，不回退启动目录。目录级 Tools 可以共用，资料授权不能按目录缓存。
 

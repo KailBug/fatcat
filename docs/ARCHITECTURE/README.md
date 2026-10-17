@@ -10,7 +10,7 @@ Fatcat 是面向本地编码任务的 TypeScript Agent Harness。CLI、chat、TU
 
 | 层次 | 当前源码 | 唯一职责 |
 | --- | --- | --- |
-| 入口与交互 | `src/cli.ts`、`src/chat.ts`、`src/terminal.ts`、`tui/`、`webui/` | 输入、宿主命令、审批交互、取消与呈现 |
+| 入口与交互 | `src/cli.ts`、`src/cli/`、`src/chat.ts`、`src/terminal.ts`、`tui/`、`webui/` | 启动参数与编排、输入、宿主命令、审批交互、取消与呈现 |
 | 宿主命令 | `src/commands.ts`、各能力的 `commands.ts` | 统一分发与按能力归属的解析、帮助和输出；分发与确认生命周期见 [Session](SESSION.md) |
 | 装配 | `src/agent.ts` | 按工作目录准备 Tools/Skills，按实际 Session 绑定父子执行身份与资料访问；装配与缓存边界见 [Agent Loop](AGENT_LOOP.md) |
 | 会话 | `src/session/` | 成功历史、当前记录、运行领取、会话选择和持久存储 |
@@ -27,6 +27,14 @@ Fatcat 是面向本地编码任务的 TypeScript Agent Harness。CLI、chat、TU
 - **请求上下文**是历史与当前指导的有界投影，不能代替完整历史或当前文件。
 - **Project、附件与 Memory 作用域**依实际执行身份校验，不能从同目录、UI 选择或模型提供的 ID 推断。
 - **执行报告**说明观察到的事实，不认证模型答案正确，也不是完整 Task 验收系统。
+
+## CLI 启动边界
+
+`src/cli.ts` 是进程入口，仅读取 argv、调用 `runCli()` 并设置退出码。`src/cli/options.ts` 维护参数定义、帮助文本、可选 `--resume` 值的规范化、隐式 chat 选择及组合校验，返回 Node parseArgs 推断的类型化结果；不访问配置、存储或终端。`src/cli/run.ts` 负责本地检查、交互式会话选择、配置/权限装配、客户端分流、输出和宿主清理，导入本身不启动 CLI。保留可执行入口是实际启动契约，不是旧导入路径的兼容转导出。
+
+组合校验先于帮助/版本等提前返回；非交互的无选择值 `--resume` 先列出会话，再考虑提示为空、TTY 和模型配置检查。自动化配置及监视路径检查也先于模型配置读取。交互选择器在 chat 中复用原 TerminalInput，进入 TUI/Web UI 前关闭；各客户端继续持有自己的运行生命周期，权限决策仍由 PermissionPolicy 负责。参数错误、配置错误及取消的退出码和 stdout/stderr 分工保持现有契约。
+
+`scripts/start.ts` 继续独占 pnpm 的 `INIT_CWD` 恢复；直接执行 CLI 不解释该变量。启动规则见[命令参考](../REFERENCE/COMMANDS.md)，维护约束与注入模型终端检查见[开发说明](../DEVELOPMENT.md)。
 
 ## 专题索引
 

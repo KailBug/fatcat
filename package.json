@@ -15,6 +15,7 @@
     "start": "pnpm run build && node --env-file-if-exists=.env dist/scripts/start.js",
     "test": "pnpm run build && node dist/scripts/test.js",
     "verify:tui": "pnpm run build && node dist/scripts/verify/native/verify-tui.js",
+    "verify:cli": "pnpm run build && node dist/scripts/verify/native/verify-cli.js",
     "verify:delegation": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify/live/verify-delegation.js",
     "verify:coding": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify/live/verify-coding.js",
     "verify:workflow": "pnpm run build && node --env-file-if-exists=.env dist/scripts/verify/live/verify-workflow.js",

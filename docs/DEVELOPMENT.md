@@ -25,6 +25,16 @@ Internal APIs, names and import paths may change to clarify ownership. Update al
 
 Keep user commands and output, persisted formats and recovery semantics, state ownership, permissions, cancellation and side-effect ordering stable unless the task explicitly changes them. Source compatibility and persisted-data compatibility are separate requirements.
 
+## CLI parsing and startup boundaries
+
+Keep `src/cli.ts` as the executable argv/exit-code entry. `src/cli/options.ts` owns the option definitions, help text, optional resume-selector normalization, implicit chat selection and argument-combination validation. Return typed parsed data without loading configuration, reading stores, opening input or registering signals. `src/cli/run.ts` owns startup orchestration and error/cleanup handling; importing either internal module must not execute argv. These are internal APIs, not compatibility re-exports. Keep the real executable entry used by the package launcher and process tests.
+
+Preserve validation order and early returns. Syntax/combination errors precede help/version; selector-free resume through pipes lists sessions before empty-prompt, TTY or provider checks. Configuration checking and automation-file/watched-path validation retain their existing stages. Do not move all validation into parsing or eagerly load credentials for local operations. Keep permission defaults and enforcement in the existing PermissionPolicy path; argument parsing does not grant access.
+
+The launcher owns its cancellation controller and temporary TerminalInput. Reuse picker input for chat; close it before starting TUI/Web UI so clients never compete for input. Keep signal registration, cancellation forwarding, stdout/stderr output and finally cleanup ordering unchanged. `scripts/start.ts` alone restores pnpm's invocation directory; direct CLI invocation ignores inherited `INIT_CWD`. Do not introduce a shared client-launch framework or move Session state into the launcher.
+
+Keep parser and subprocess regressions in `tests/cli/`, including competing errors, `--` literals, optional resume values, credential-free paths and startup-directory semantics. Use the injected-model Windows terminal check below for picker/input handoff changes, in addition to typecheck and offline tests. The maintained module overview is in [Architecture](ARCHITECTURE/README.md); user syntax remains in [Commands](REFERENCE/COMMANDS.md).
+
 ## Host command boundaries
 
 Keep host command parsing, help and response formatting with the capability they expose: `src/project/commands.ts`, `src/attachments/commands.ts`, `src/automation/commands.ts`, and the existing Context and Memory command modules. Use explicit handlers; the current command set does not need a registry or plugin framework. Session selection and workspace commands stay in `src/session/commands.ts`; shared text parsing/escaping belongs in `src/utils/command.ts`, and session labels in `src/session/labels.ts`.
@@ -119,6 +129,14 @@ pnpm exec node --test "dist/tests/tools/**/*.test.js"
 When moving or deleting tests, update static imports, `import.meta.url` paths, child-process/preload paths, source assets referenced from compiled files, package commands and documentation. TypeScript does not remove obsolete outputs: remove only the corresponding generated `.js` and `.js.map` files under the repository's `dist/`, then verify that every source test has exactly one compiled counterpart and no orphan compiled tests remain. Preserve test names, assertions, fixture data, timeouts and environment gates during a layout-only change. Offline tests may use local HTTP servers and native PowerShell; they still must not load `.env`, launch Edge or contact real model providers.
 
 ## Windows terminal checks
+
+Run `pnpm run verify:cli` in an interactive, VT-capable Windows terminal to check CLI startup and input handoff. `TERM=dumb` is deliberately rejected. If a ConPTY host supports VT but incorrectly inherits `TERM=dumb`, set `$env:TERM = 'xterm-256color'` in that verification shell; do not relax the production TUI guard. The runner uses a temporary session store/workspace, fake credentials and an intercepted model transport, without loading `.env` or contacting a provider. Follow its three phases:
+
+1. Select `native-cli`, submit `approval`, answer the fresh write approval with `yes`, wait for `CLI APPROVAL VERIFIED`, then submit `/exit`.
+2. At the next resume picker, enter `/exit`. This must leave the model request count unchanged.
+3. Select `native-cli` again to enter TUI. Submit `cancel`, wait for the active request and press Esc. After cancellation settles, submit `continue`, wait for `CLI TUI HANDOFF VERIFIED`, then press Ctrl+D.
+
+The runner asserts exit statuses, the actual approved file, the exact model prompt sequence, persisted history without approval answers/cancelled input, and raw-mode/SIGINT-listener restoration between hosts. A successful run prints `passed: true` and removes the temporary directory. This exercises the real launcher, readline, TUI and model SDK with an injected response transport; it does not exercise native browser-opening handoff, full IME behavior or real model quality. Subprocess offline tests separately cover the executable CLI and Web UI startup through pipes.
 
 Run `pnpm run verify:tui` in a native Windows interactive terminal (ConPTY is supported), with stdin/stdout attached to that terminal. This builds and launches `scripts/verify/native/verify-tui.ts` with an injected model and real ProcessTerminal. It uses a temporary workspace, does not load `.env` or contact providers, and removes its fixture directory on exit. Ordinary `pnpm test` does not launch this interactive check.
 

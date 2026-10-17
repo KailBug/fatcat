@@ -42,6 +42,8 @@ Run `pnpm start --help` for the installed checkout's help. `pnpm start` builds f
 
 There are no startup `--skills`, `--sessions` or `--subagent` switches. Use chat/TUI catalog/list commands and ordinary task-driven delegation.
 
+Without a selector, `--resume` lists saved sessions and exits when stdin or stderr is not a terminal; this path does not require model credentials. In an interactive terminal it asks for an ID/name, and `/exit` cancels selection. Argument-combination errors are still checked before listing or showing help. TUI requires terminal stdin/stdout and rejects `TERM=dumb`. Maintainer guidance for parsing and launch ordering is in [Development](../DEVELOPMENT.md).
+
 ## Permission modes
 
 | Mode / Web UI label | Controlled file changes | Commands | File and HTTP(S) scope |

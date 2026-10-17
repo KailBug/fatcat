@@ -46,6 +46,12 @@ export function projectJoinPreview(record: SessionRecord, project: ProjectRecord
 	};
 }
 
+export function requireProjectJoinPreview(current: ProjectJoinPreview, supplied: ProjectJoinPreview): void {
+	if (Object.keys(current).some((key) => current[key as keyof ProjectJoinPreview] !== supplied[key as keyof ProjectJoinPreview])) {
+		throw new HarnessError("SESSION_CONFLICT", "The session or project changed. Review a fresh move preview before confirming.");
+	}
+}
+
 export function joinedProjectRecord(record: SessionRecord, project: ProjectRecord): SessionRecord {
 	const changes = record.locationChanges ?? [];
 	if (changes.filter((change) => !change.acknowledged).length >= 100) {

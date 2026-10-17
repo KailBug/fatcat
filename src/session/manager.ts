@@ -9,7 +9,7 @@ import { projectIdOf, sessionName, sessionSummary, workspaceKey } from "./record
 import type { SessionRecord, SessionSummary } from "./record.js";
 import type { SessionSaveOptions } from "./store.js";
 import type { ProjectRecord } from "../project/record.js";
-import { joinedProjectRecord, projectJoinPreview } from "../project/operations.js";
+import { joinedProjectRecord, requireProjectJoinPreview } from "../project/operations.js";
 import type { ProjectJoinPreview } from "../project/operations.js";
 import type { ProjectDeletePreview, ProjectWorkspacePreview } from "../project/management.js";
 import { executionIdentity, withSessionIdentity } from "./execution.js";
@@ -35,6 +35,7 @@ import { changeSessionMemory, memoryChangeForRequest, memoryJoinState, memorySco
 import type { MemoryChange } from "./memory.js";
 import { prepareAutomationRun, sessionAutomations } from "./automations.js";
 import type { AutomationRunOptions } from "./automations.js";
+import { projectDraftRecord, sessionProjectJoinPreview } from "./projects.js";
 
 interface DraftAttachmentScope {
 	identity: AttachmentTarget;
@@ -324,10 +325,7 @@ export class SessionManager {
 			const project = await this.store.renameProject(id, name, expectedRevision);
 			if (this.current.projectId !== id) return;
 			const record = this.runtime.snapshot;
-			let updated: SessionRecord;
-			if (record.revision > 0) updated = await this.store.loadAny(record.id);
-			else if (workspaceKey(record.workspace) !== workspaceKey(project.workspace)) updated = joinedProjectRecord(record, project);
-			else updated = { ...record, projectName: project.name, projectRevision: project.revision };
+			const updated = record.revision > 0 ? await this.store.loadAny(record.id) : projectDraftRecord(record, project);
 			if (!updated.projectError) this.agent = await this.prepareWorkspace(updated.workspace);
 			this.activate(updated);
 		});
@@ -351,7 +349,7 @@ export class SessionManager {
 			let draft: SessionRecord | undefined;
 			if (active && record.revision === 0 && workspaceKey(record.workspace) !== workspaceKey(preview.toWorkspace)) {
 				const project = await this.store.projects.load(preview.projectId);
-				draft = joinedProjectRecord(record, { ...project, workspace: preview.toWorkspace });
+				draft = projectDraftRecord(record, { ...project, workspace: preview.toWorkspace });
 			}
 			const project = await this.store.changeProjectWorkspace(preview);
 			if (!active) return;
@@ -422,14 +420,9 @@ export class SessionManager {
 			available(record);
 			const project = await this.selectProject(projectId);
 			await this.prepareWorkspace(project.workspace);
-			preview = projectJoinPreview(record, project);
-			Object.assign(preview, await this.memoryJoinState(record));
-			if (record.revision > 0) {
-				const sharing = await this.store.attachments.sharingState(executionIdentity(record));
-				preview.attachmentCount = sharing.count;
-				preview.attachmentRevision = sharing.revision;
-				preview.attachmentFingerprint = sharing.fingerprint;
-			}
+			preview = await sessionProjectJoinPreview(record, project, {
+				attachments: this.store.attachments, memoryState: () => this.memoryJoinState(record),
+			});
 		});
 		return preview;
 	}
@@ -441,17 +434,10 @@ export class SessionManager {
 			available(selected);
 			const project = await this.store.projects.load(preview.projectId);
 			if (projectIdOf(selected) === project.id) return;
-			const current = projectJoinPreview(selected, project);
-			Object.assign(current, await this.memoryJoinState(selected));
-			if (selected.revision > 0) {
-				const sharing = await this.store.attachments.sharingState(executionIdentity(selected));
-				current.attachmentCount = sharing.count;
-				current.attachmentRevision = sharing.revision;
-				current.attachmentFingerprint = sharing.fingerprint;
-			}
-			if (Object.keys(current).some((key) => current[key as keyof ProjectJoinPreview] !== preview[key as keyof ProjectJoinPreview])) {
-				throw new HarnessError("SESSION_CONFLICT", "The session or project changed. Review a fresh move preview before confirming.");
-			}
+			const current = await sessionProjectJoinPreview(selected, project, {
+				attachments: this.store.attachments, memoryState: () => this.memoryJoinState(selected),
+			});
+			requireProjectJoinPreview(current, preview);
 			const agent = await this.prepareWorkspace(project.workspace);
 			const updated = joinedProjectRecord(selected, project);
 			const saved = selected.revision === 0 ? updated : await this.persist(updated, undefined,

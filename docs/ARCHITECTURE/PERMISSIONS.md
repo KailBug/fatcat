@@ -8,13 +8,13 @@
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/permissions/types.ts`、`policy.ts` | 模式、低层策略、启动上限、操作快照和忙碌锁 |
-| `src/permissions/approval.ts` | 唯一待批项、唯一 ID、一次决定及取消收尾 |
-| `src/permissions/terminal.ts` | 审批适配与控制字符转义 |
-| `src/permissions/workspace.ts`、`text-file.ts` | 规范路径、模式范围、文件身份和有界文本读取 |
-| `src/permissions/command-risk.ts` | Free to go 的有界词法风险分类 |
-| `src/permissions/process.ts` | PowerShell 环境、期限、输出及清理 |
-| `src/permissions/web-request.ts`、`browser.ts` | HTTP 地址/下载防护与浏览器审批/本地资源校验 |
+| `packages/runtime/src/permissions/types.ts`、`policy.ts` | 模式、低层策略、启动上限、操作快照和忙碌锁 |
+| `packages/runtime/src/permissions/approval.ts` | 唯一待批项、唯一 ID、一次决定及取消收尾 |
+| `packages/cli/src/permissions/terminal.ts` | 审批适配与控制字符转义 |
+| `packages/runtime/src/permissions/workspace.ts`、`text-file.ts` | 规范路径、模式范围、文件身份和有界文本读取 |
+| `packages/runtime/src/permissions/command-risk.ts` | Free to go 的有界词法风险分类 |
+| `packages/runtime/src/permissions/process.ts` | PowerShell 环境、期限、输出及清理 |
+| `packages/runtime/src/permissions/web-request.ts`、`browser.ts` | HTTP 地址/下载防护与浏览器审批/本地资源校验 |
 
 工具协议和操作 journal 仍归 Tools，界面只提交模式选择或单次决定。
 

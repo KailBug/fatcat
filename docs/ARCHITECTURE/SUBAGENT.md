@@ -6,7 +6,7 @@
 
 ## 装配与协议
 
-`src/subagent.ts` 为父 Tools 增加 delegate_task；`src/agent.ts` 装配父子 Model 并添加任务选择指导。子工具集合不含 delegate_task，避免递归。
+`packages/runtime/src/subagent.ts` 为父 Tools 增加 delegate_task；`packages/runtime/src/agent.ts` 装配父子 Model 并添加任务选择指导。子工具集合不含 delegate_task，避免递归。
 
 输入 task 是最多 4000 字符的非空任务说明。每次子任务从空历史开始，只带自己的任务和当前系统/目录/权限/Skill 元数据，不复制父消息或父已加载 Skill 正文。需要的材料由子任务重新读取，最终 answer 最多 12000 字符，超出则返回失败；子内部对话不并入父成功历史。
 

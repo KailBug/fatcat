@@ -1,5 +1,5 @@
 import { isAbsolute } from "node:path";
-import { HarnessError, formatError } from "../src/errors.js";
+import { HarnessError, formatError } from "@fatcat/runtime/errors";
 
 // pnpm runs scripts in the package root; restore the caller's directory only here.
 // Node has already loaded the package-root .env before this module executes.
@@ -14,4 +14,4 @@ try {
   process.exitCode = 1;
 }
 
-if (process.exitCode !== 1) await import("../src/cli.js");
+if (process.exitCode !== 1) await import("@fatcat/cli/entry");

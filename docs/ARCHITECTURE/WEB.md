@@ -8,10 +8,10 @@
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/tools/web.ts` | search/fetch 参数、权限、调用期限与结构化结果 |
-| `src/tools/web-content.ts` | HTML 文本/链接提取、Bing RSS 与 DuckDuckGo 解析 |
-| `src/permissions/web-request.ts` | URL/IP/DNS、连接固定、跳转、解压与下载 |
-| `src/skill/web/` | 检索和天气指导，不承担网络授权 |
+| `packages/runtime/src/tools/web.ts` | search/fetch 参数、权限、调用期限与结构化结果 |
+| `packages/runtime/src/tools/web-content.ts` | HTML 文本/链接提取、Bing RSS 与 DuckDuckGo 解析 |
+| `packages/runtime/src/permissions/web-request.ts` | URL/IP/DNS、连接固定、跳转、解压与下载 |
+| `packages/runtime/src/skill/web/` | 检索和天气指导，不承担网络授权 |
 
 普通入口显式装配 web allow，程序化 createTools 未传 WebOptions 不增加该工具，传入但省略 permission 默认 deny。父子共享同一策略。
 

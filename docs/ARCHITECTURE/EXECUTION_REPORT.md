@@ -2,7 +2,7 @@
 
 [架构总览](README.md) · [结果核对指南](../GUIDES/CODING.md#review-results-and-recover-from-failures)
 
-`src/execution-report.ts` 的 createTurnReporter 只消费事件并汇总，不访问文件、调用工具或请求模型。报告是观察结果，不是任务验收证书；taskVerification 当前固定为 not_assessed。
+`packages/runtime/src/execution-report.ts` 的 createTurnReporter 只消费事件并汇总，不访问文件、调用工具或请求模型。报告是观察结果，不是任务验收证书；taskVerification 当前固定为 not_assessed。
 
 ## 事件边界
 

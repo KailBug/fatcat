@@ -8,11 +8,11 @@ Context 决定本次发送什么，不拥有原始历史、文件、资料或长
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/context/manager.ts` | CompactionState 校验、projectHistory 与上下文字节/消息统计 |
-| `src/context/request.ts` | 完整请求计量与旧 read 省略，无持久状态或 I/O |
-| `src/context/compaction.ts` | 规划有界摘要、分块调用及候选结果 |
-| `src/context/commands.ts` | 本地统计和显式 compact 入口 |
-| `src/session/session.ts`、`agent-session.ts` | 应用投影、回合内自动恢复及摘要持久提交 |
+| `packages/runtime/src/context/manager.ts` | CompactionState 校验、projectHistory 与上下文字节/消息统计 |
+| `packages/runtime/src/context/request.ts` | 完整请求计量与旧 read 省略，无持久状态或 I/O |
+| `packages/runtime/src/context/compaction.ts` | 规划有界摘要、分块调用及候选结果 |
+| `packages/commands/src/context/commands.ts` | 本地统计和显式 compact 入口 |
+| `packages/runtime/src/session/session.ts`、`agent-session.ts` | 应用投影、回合内自动恢复及摘要持久提交 |
 
 ## 旧读取省略
 

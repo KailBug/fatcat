@@ -8,12 +8,12 @@ Tools 提供模型可见定义、参数校验和异步执行。工具不自行�
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/tools.ts`、`src/tools/types.ts` | 集合装配、统一结果、取消及 forTurn 包装 |
-| `src/tools/read.ts`、`search.ts` | 文件/目录分页与字面查询 |
-| `src/tools/write.ts` | 精确文本创建/替换、提交协议与写入 journal |
-| `src/tools/shell.ts` | 命令协议、授权与命令 journal；进程生命周期委托 permissions/process |
-| `src/tools/sum.ts` | 无副作用算术工具 |
-| `src/tools/web.ts`、`browser.ts` | [HTTP 研究](WEB.md)与[本地浏览器](BROWSER.md)入口 |
+| `packages/runtime/src/tools.ts`、`packages/runtime/src/tools/types.ts` | 集合装配、统一结果、取消及 forTurn 包装 |
+| `packages/runtime/src/tools/read.ts`、`search.ts` | 文件/目录分页与字面查询 |
+| `packages/runtime/src/tools/write.ts` | 精确文本创建/替换、提交协议与写入 journal |
+| `packages/runtime/src/tools/shell.ts` | 命令协议、授权与命令 journal；进程生命周期委托 permissions/process |
+| `packages/runtime/src/tools/sum.ts` | 无副作用算术工具 |
+| `packages/runtime/src/tools/web.ts`、`browser.ts` | [HTTP 研究](WEB.md)与[本地浏览器](BROWSER.md)入口 |
 
 程序化 createTools 省略目录时基础集合只有 sum；传入目录增加 read/write/shell，默认文件只读、shell deny。日常入口显式选择目录与权限，并装配 web/browser。Skills、附件、Memory 在通用 read/write 外包装，协议归各自专题，不在此复制。
 
@@ -36,7 +36,7 @@ query 是区分大小写的单行字面子串，不支持正则、glob 或跨行
 
 遍历超限失败并要求缩小范围；递归搜索可跳过超大/编码不支持的候选，返回 skippedFiles 与 complete=false。complete=true 只表示本次发现的候选没有这类跳过，不保证整个磁盘覆盖或扫描期间不变。每页重新遍历，不解析 .gitignore，也没有索引缓存。
 
-普通模式的名称、扩展名与链接规则由 Workspace/text-file 落实；Free to go 使用扩大的本地访问范围，仍保留编码、大小及身份检查。准确扩展名集合以 `src/permissions/text-file.ts` 为准。读取内容进入模型及明文历史，不等于脱敏。
+普通模式的名称、扩展名与链接规则由 Workspace/text-file 落实；Free to go 使用扩大的本地访问范围，仍保留编码、大小及身份检查。准确扩展名集合以 `packages/runtime/src/permissions/text-file.ts` 为准。读取内容进入模型及明文历史，不等于脱敏。
 
 ## write 的提交协议
 

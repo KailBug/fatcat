@@ -8,14 +8,14 @@ Documents 从获准附件生成可定位内容，不创建另一套 Agent Loop�
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/documents/parse.ts` | worker 分派、并发、期限和取消 |
+| `packages/runtime/src/documents/parse.ts` | worker 分派、并发、期限和取消 |
 | `types.ts`、`limits.ts` | 解析单元、定位与资源边界 |
 | `archive.ts`、`xml.ts`、`ooxml.ts` | 有界 ZIP/XML 与现代 Office 内容提取 |
 | `text.ts`、`pdf.ts`、`images.ts` | 文本/标题、PDF 页文字与渲染、PNG/JPEG 解码 |
 | `cache.ts` | 不可变快照、版本索引和转写页指针 |
 | `read.ts` | 范围读取、字面搜索、视觉选择、覆盖和引用 |
 | `vision.ts` | 当前聊天模型的图片请求适配与用量，能力归 [Providers](PROVIDERS.md) |
-| `src/session/attachments.ts` | 将明确的执行身份适配为原件/派生缓存访问；宿主预览与模型读取共用授权包装 |
+| `packages/runtime/src/session/attachments.ts` | 将明确的执行身份适配为原件/派生缓存访问；宿主预览与模型读取共用授权包装 |
 
 执行身份获准读取原件 → 加载/生成原生解析快照 → 通用 read 按任务选择范围、搜索或指定页视觉 → 返回单元/覆盖/来源 → Session 保存工具结果。缓存读取和源预览不会隐式发起视觉请求。
 

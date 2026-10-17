@@ -11,7 +11,7 @@ pnpm start --prompt "Inspect this workspace and summarize its entry points."
 pnpm start --chat --workspace examples/workspace
 ```
 
-Single-task output goes to stdout; diagnostics, approvals and execution events use stderr. For scripts that need to avoid pnpm/build output, build once and invoke `node --env-file-if-exists=.env dist/src/cli.js --prompt "Your task"` from the repository root. Direct Node invocation uses its own working directory and does not restore `INIT_CWD`.
+Single-task output goes to stdout; diagnostics, approvals and execution events use stderr. For scripts that need to avoid pnpm/build output, build once and invoke `node --env-file-if-exists=.env packages/cli/dist/cli.js --prompt "Your task"` from the repository root. Direct Node invocation uses its own working directory and does not restore `INIT_CWD`.
 
 Chat accepts one prompt per line. Empty lines are ignored. Local slash commands must occupy their own line; unknown commands report a local error instead of becoming model prompts. `/help` lists available commands and `/exit` ends the conversation. Approval replies apply only to the pending operation. Resetting or switching a session does not undo completed writes or commands.
 

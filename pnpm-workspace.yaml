@@ -1,2 +1,5 @@
+packages:
+  - packages/*
+
 minimumReleaseAgeExclude:
   - openai@7.18.0

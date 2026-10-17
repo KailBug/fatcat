@@ -8,20 +8,32 @@ Project 是显式组织实体，持有统一工作目录。成员 Session 历史
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/project/record.ts`、`store.ts` | 项目身份、名称、唯一工作目录、修订与原子存储 |
-| `src/project/operations.ts` | 基础迁入预览、完整预览比较与确认后的记录转换 |
-| `src/session/projects.ts` | 组合迁入所需的 Memory/附件状态，准备未保存项目会话的投影；不持有活动会话或执行提交 |
-| `src/project/commands.ts` | 终端项目命令的解析、帮助、输出与按 Manager 绑定的加入确认令牌；业务操作仍调用 SessionManager |
-| `src/project/management.ts` | 目录/删除影响预览、成员指纹和有界目录 patch |
-| `src/session/store.ts`、`manager.ts` | 发现成员、重验修订、协调提交并准备目标 Agent |
-| `src/session/execution.ts` | 实际执行身份及归属代次 |
-| `webui/projects.ts`、`project-management.ts` | UI 操作预览、一次性确认与入口协调 |
+| `packages/runtime/src/project/record.ts` | 项目身份、名称、工作目录、修订及 Project v1 格式校验 |
+| `packages/runtime/src/project/store.ts` | 创建与查询策略、修订检查、metadata gate 和项目锁/恢复 |
+| `packages/runtime/src/project/files.ts` | 项目记录的有界读取、原子发布和锁 owner 记录读取 |
+| `packages/runtime/src/project/operations.ts` | 基础迁入预览、完整预览比较与确认后的记录转换 |
+| `packages/runtime/src/session/projects.ts` | 组合迁入所需的 Memory/附件状态，准备未保存项目会话的投影；不持有活动会话或执行提交 |
+| `packages/commands/src/project/commands.ts` | 终端项目命令的解析、帮助、输出与按 Manager 绑定的加入确认令牌；业务操作仍调用 SessionManager |
+| `packages/runtime/src/project/management.ts` | 目录/删除影响预览、成员指纹和有界目录 patch |
+| `packages/runtime/src/session/store.ts`、`manager.ts` | 发现成员、重验修订、协调提交并准备目标 Agent |
+| `packages/runtime/src/session/execution.ts` | 实际执行身份及归属代次 |
+| `packages/webui/src/projects.ts`、`project-management.ts` | UI 操作预览、一次性确认与入口协调 |
 
 Project v1 存于 Session 根的 `projects/<id>.json`，名称最多 120 字符、记录最多 64 KiB。成员列表从 Session location 派生，不维护另一份成员表；Session 只存 projectId，有效目录从 Project 解析，原 storageWorkspace 不变。旧 Session 格式兼容归 [Session](SESSION.md)。
 
 终端统一入口 `runInteractiveCommand` 直接调用 Project 命令处理器；确认消费及会话切换失效规则见 [Session 的宿主命令边界](SESSION.md)。这些临时令牌与下述 Web UI 管理确认分别维护，不持久化、不授予工具权限。
 
 项目创建验证已有目录，不创建目录或自动切换会话。项目成员不能单独覆盖目录；项目不可用时执行失败，不回退启动目录。目录级 Tools 可以共用，资料授权不能按目录缓存。
+
+## 项目文件与存储协调边界
+
+`files.ts` 只接收明确的项目元数据目录、ID、记录或锁文件路径。读取校验 ID、文件大小、UTF-8/JSON 与记录格式；缺失、损坏和其他存储错误保留各自的错误码。发布沿用 Project v1 与 64 KiB 上限，使用 wx/0600 临时文件，写入、sync、close 后 rename，失败清理本次临时文件。文件函数不创建根目录、获取锁、解析当前 Session 或授予访问权限。
+
+`ProjectStore` 保留创建时的名称/真实工作目录校验、存储目录创建、修订检查，以及列表的 10000 个原始条目上限、文件名筛选和名称/ID 排序。列表只跳过 PROJECT_CORRUPT、PROJECT_NOT_FOUND，直接读取则明确报告；其他存储失败不能变成空清单。不存在的仓库在读取时不创建，读取已有记录也不要求其工作目录仍存在；Session 按当前目录可用性处理项目状态，不静默回退。
+
+锁序仍为 metadata gate → Project 锁 → Session 桶锁。`loadUnlocked()` 和 `withProjectUnlocked()` 是已有 gate 内的真实内部入口，SessionStore 等调用者继续使用，不重复取得 gate；它们不是保留旧路径的兼容导出。文件函数只读取 owner PID，存活检查、回收 gate、重试和释放决定仍由 Store 负责。
+
+项目创建由 Store 调用文件发布并使用 PROJECT_STORAGE 错误；重命名、改目录等管理变更继续通过 AttachmentTransactions 的日志发布，保留原来的执行顺序和恢复错误。两条路径的协调上下文不同，不为复用写入函数改变失败语义。后续维护规则见[开发说明](../DEVELOPMENT.md#project-file-and-storage-boundaries)，跨文件协议见[元数据恢复](ATTACHMENTS.md#元数据提交与恢复)。
 
 ## 独立会话迁入
 
@@ -64,5 +76,7 @@ Web UI 提供重命名、修改目录和确认删除；共享核心负责行为�
 以持久归属决定共享，避免删除上传者导致项目资料丢失；以 locationRevision 区分范围变化与普通历史追加，避免 UI 切换或一次聊天改变上传目标。管理确认只批准组织变更，不授权模型工具写文件或执行命令。
 
 检查范围包括项目/独立身份、同目录隔离、预览取消/过期、非活动会话迁入、草稿、后台/子任务身份、双进程领取、日志发布后故障、成员目录统一更新及外部原件保留。Edge 注入模型/目录选择检查不等于真实模型或原生选择器验收；原生选择器边界见 [Web UI](WEBUI.md)。
+
+`packages/verification/tests/projects/` 的文件/协调回归还覆盖不存在仓库的只读行为、列表与直接读取对损坏/超限/无效 UTF-8/身份不匹配记录的不同处理、sync 与 rename 失败清理，以及活跃/不完整/死亡锁 owner 和修订检查。Session 目录投影、项目异常不回退和跨进程管理恢复继续由既有测试覆盖。
 
 尚无解除项目关联、跨项目迁移、回收站、撤销或物理 Memory 清理。解除/迁移时哪些资料和记忆可带走，需要独立产品决策，不能由当前共享规则推断。

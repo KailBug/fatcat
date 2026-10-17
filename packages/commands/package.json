@@ -1,0 +1,51 @@
+{
+  "name": "@fatcat/commands",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Fatcat host commands, confirmations and response formatting.",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11.21.0 <12"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/commands.d.ts",
+      "import": "./dist/commands.js"
+    },
+    "./automation": {
+      "types": "./dist/automation/commands.d.ts",
+      "import": "./dist/automation/commands.js"
+    },
+    "./context": {
+      "types": "./dist/context/commands.d.ts",
+      "import": "./dist/context/commands.js"
+    },
+    "./memory": {
+      "types": "./dist/memory/commands.d.ts",
+      "import": "./dist/memory/commands.js"
+    },
+    "./session": {
+      "types": "./dist/session/commands.d.ts",
+      "import": "./dist/session/commands.js"
+    },
+    "./session/labels": {
+      "types": "./dist/session/labels.d.ts",
+      "import": "./dist/session/labels.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@fatcat/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.5",
+    "typescript": "7.0.2"
+  }
+}

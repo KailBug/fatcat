@@ -1,4 +1,4 @@
-import type { WebUiState } from "../controller.js";
+import type { WebUiState } from "../types.js";
 import type { Trigger } from "../../src/automation/config.js";
 import { icon } from "./icons.js";
 

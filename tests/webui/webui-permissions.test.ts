@@ -9,7 +9,7 @@ import { SessionManager } from "../../src/session/manager.js";
 import { createTools } from "../../src/tools.js";
 import type { Model, ModelTurn } from "../../src/model.js";
 import { WebUiController } from "../../webui/controller.js";
-import type { WebUiState } from "../../webui/controller.js";
+import type { WebUiState } from "../../webui/types.js";
 import { startWebUiServer } from "../../webui/server.js";
 import { temporaryWorkspace } from "../support/workspace.js";
 

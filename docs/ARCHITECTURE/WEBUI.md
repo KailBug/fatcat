@@ -11,6 +11,8 @@ Web UI 是本机单用户入口。浏览器持有草稿、菜单与显示快照�
 | `webui/index.ts`、`open-browser.ts` | 共享核心装配、服务退出与一次性系统浏览器打开 |
 | `webui/server.ts` | 原生 Node HTTP、认证/来源、静态白名单与路由 |
 | `webui/controller.ts` | 显示用 transcript、状态版本、提交/停止、审批和宿主互斥 |
+| `webui/types.ts` | 客户端与服务端共享的显示协议类型，不含运行逻辑 |
+| `webui/turns.ts` | 历史到显示回合的恢复、执行事件到活动文案的无状态转换 |
 | `webui/client/app.ts`、`markdown.ts` | DOM、草稿、轮询/重连与安全文本呈现 |
 | `webui/client/session-menu.ts`、`session-dialog.ts` | 目标快照、菜单/弹窗、键盘与焦点 |
 | `webui/projects.ts`、`project-http.ts`、`project-management.ts` | 项目预览与确认入口，持久语义委托 Manager |
@@ -35,6 +37,12 @@ capability 是本地访问凭证，不是多用户账户或 OS 隔离。持有�
 ## 宿主状态与资料入口
 
 Controller 的 transcript 是显示状态，不替代 Session history。未命名新聊天可为草稿，保存触发条件归 [Session](SESSION.md#管理与跨模块关系)，不能只按是否出现聊天回复判断。恢复历史不恢复审批、实时日志、旧活动报告或过程用量。
+
+`WebUiInfo`、`WebTurn`、`WebUiState` 从 `webui/types.ts` 导入；审批类型直接引用权限模块，Controller 不为旧导入路径提供转导出。`turns.ts` 只接收历史或事件并返回展示数据，不持有 Controller、SessionManager 或可变宿主状态。历史恢复仍按每个成功文本回合提取真实附件读取来源，忽略未完成回合。
+
+Controller 保留活动回合、管理操作、显示列表、revision、审批协调和关闭状态。`startTurn` 负责校验、显示限额、可见性及执行生命周期，私有 `executeTurn` 分派 Memory、Context、Automation 与普通请求；自动任务的 prompt 不经过手动本地命令识别。调用执行入口前先安装 active，执行结束仍先拒绝遗留审批、刷新列表，再释放 active 和运行 Session 标识。事件递归、父请求用量筛选、报告挂接、活动截断与 revision 更新也留在 Controller；文案格式化不改变这些时序。
+
+管理入口通过 `restore` / `preserve` 明确成功后的 transcript 处理。新建、恢复、分叉及修改/删除当前 Session 按原语义恢复显示并清空用量；管理非当前目标或仅改名保留当前显示。项目迁入/改目录、删除以及目录选择成功后的局部用量重置、附件版本更新仍在对应入口执行，不套用统一刷新策略。失败路径分别尝试刷新 Session、Project 元数据，保留原始错误，不为重试覆盖 transcript 或重放操作；操作已提交的持久变化也不回滚。状态所有权与新增回归测试规则见[开发说明](../DEVELOPMENT.md)。
 
 当前显示列表中非 contextOperation 回合达到 100 条后，拒绝新的手动普通提交；已恢复的成功回合也计入，后台自动任务不受此入口门槛约束。context/Memory 操作显示最多保留 20 条，每轮 activity 最多保留 100 条。它们是 UI 限制，不是 Session 历史保留期。
 

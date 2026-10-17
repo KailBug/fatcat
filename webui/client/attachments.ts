@@ -2,7 +2,7 @@ import type { AttachmentInfo } from "../../src/attachments/record.js";
 import type { AttachmentReadResult } from "../../src/attachments/read.js";
 import type { DocumentLocation } from "../../src/documents/types.js";
 import type { SessionSummary } from "../../src/session/record.js";
-import type { WebUiState } from "../controller.js";
+import type { WebUiState } from "../types.js";
 import { AttachmentUploads } from "./attachment-upload.js";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {

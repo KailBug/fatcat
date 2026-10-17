@@ -29,6 +29,8 @@ Read [project goals and boundaries](docs/PROJECT.md), then the documents relevan
 - Internal APIs and import paths may change during refactoring. Migrate all callers, tests, scripts and documentation together; remove obsolete forwarding modules and re-exports instead of preserving historical paths without a real consumer. Preserve user behavior, persisted data and state ownership; document any genuine compatibility requirement.
 - Keep session capability helpers free of active-session ownership, following the [development guide](docs/DEVELOPMENT.md), section "Session capability boundaries". Pass explicit dependencies and identities; preserve per-operation validation, lock boundaries and draft/turn lifecycles. Reuse preview-building rules while reading fresh sources at confirmation; keep each operation's preparation, commit and activation order explicit.
 
+- For Web UI host changes, follow the [development guide](docs/DEVELOPMENT.md), section "Web UI controller boundaries". Keep display conversion stateless and shared types with their owner; Controller retains execution/management lifecycles, approval coordination and display state. Preserve active installation, refresh and cancellation ordering.
+
 ## Common development commands
 
 | Purpose | Command |

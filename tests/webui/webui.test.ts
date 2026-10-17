@@ -16,7 +16,7 @@ import { SessionManager } from "../../src/session/manager.js";
 import { SessionStore } from "../../src/session/store.js";
 import { createTools } from "../../src/tools.js";
 import { WebUiController } from "../../webui/controller.js";
-import type { WebUiInfo, WebUiState } from "../../webui/controller.js";
+import type { WebUiInfo, WebUiState } from "../../webui/types.js";
 import { startWebUiServer } from "../../webui/server.js";
 import { temporaryWorkspace } from "../support/workspace.js";
 

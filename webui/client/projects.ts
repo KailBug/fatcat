@@ -1,4 +1,4 @@
-import type { WebUiState } from "../controller.js";
+import type { WebUiState } from "../types.js";
 import type { ProjectJoinConfirmation } from "../projects.js";
 import type { SessionSummary } from "../../src/session/record.js";
 

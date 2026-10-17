@@ -97,6 +97,18 @@ Migration still validates source fingerprints and destination capacity/conflicts
 
 Keep regressions in `tests/memory/`, covering opened-read cancellation, cancellation after sync but before publication, failed publication cleanup, interrupted migration replay, corrupt scope files, in-memory isolation and cross-process locks. Use temporary stores and deterministic failure/cancellation injection. Run typecheck and offline tests; browser/terminal checks are needed when host interactions change.
 
+## Project file and storage boundaries
+
+Keep bounded project-record reads, atomic creation publication and lock-owner reads in `src/project/files.ts`. Pass an explicit project metadata directory, ID, record or lock path, and reuse `record.ts` validation. Preserve Project v1, file names, the 64 KiB limit, strict UTF-8/JSON checks, file modes, sync/close/rename and temporary-file cleanup. Helpers own their handles, not locks, directory creation, workspace resolution or session state. Do not add compatibility re-exports or a general storage framework.
+
+ProjectStore retains name/workspace validation, storage directory creation, list entry limits/filtering/sorting, revision checks, the metadata gate and project lock/recovery. Listing skips only PROJECT_CORRUPT and PROJECT_NOT_FOUND records; direct reads report those errors, and storage failures must not become empty or partial success. Keep absent-store reads free of directory creation. Loading a saved project must not require its workspace to exist; creation validates the directory, while Session determines current workspace availability without fallback.
+
+Keep metadata gate → project lock → session bucket lock ordering. The loadUnlocked and withProjectUnlocked operations have real callers that already hold the metadata gate; retain their explicit preconditions rather than reacquiring the gate or bypassing the owning store. Reading an owner PID does not decide whether a lock is stale: liveness, recovery gates and release remain in ProjectStore.
+
+Project creation uses the project file publisher and its PROJECT_STORAGE errors. Project management changes continue through AttachmentTransactions and its durable journal, application order and recovery errors. Do not route one through the other merely to share file code or silently change failure behavior. See [Projects](ARCHITECTURE/PROJECTS.md#项目文件与存储协调边界) and the [metadata recovery protocol](ARCHITECTURE/ATTACHMENTS.md#元数据提交与恢复).
+
+Keep regressions in `tests/projects/`, covering strict reads versus listing, malformed/oversized records, failed publication and cleanup, revision conflicts, live/incomplete/dead lock owners, and existing cross-process management recovery and Session project projection. Run typecheck and offline tests; add browser/terminal checks when host interactions change.
+
 ## Web UI controller boundaries
 
 Keep shared display contracts in `webui/types.ts` and stateless history/event conversion in `webui/turns.ts`. Import types from their owner, without forwarding exports from Controller. Display helpers receive explicit history or events and return presentation data; they must not hold a Controller, SessionManager, operation lock or second transcript owner. Continue using the existing attachment evidence and context usage modules.

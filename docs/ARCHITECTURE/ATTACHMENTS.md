@@ -10,6 +10,7 @@
 | --- | --- |
 | `src/attachments/record.ts` | 原件/关联/pin/上传目标格式与固定引用 |
 | `src/attachments/store.ts`、`memory.ts` | 持久与非持久原件、发布及访问 |
+| `src/attachments/files.ts` | 无状态的暂存路径、流式字节写入、大小/哈希完整性读取与上传所有权记录读取 |
 | `src/attachments/transaction.ts` | metadata gate、跨文件提交决定与恢复 |
 | `src/attachments/import.ts` | 通过当前文件权限导入 |
 | `src/attachments/commands.ts` | 终端附件命令解析、帮助、输出与删除确认文本；通过 SessionManager 转发作用域操作及取消信号 |
@@ -50,6 +51,16 @@ read 的 attachment:list 查询只过滤文件名；UTF-8 文本/Markdown 按完
 
 非持久原件最多 1000 件、四个 pending 上传，原件及待传缓冲合计最多 64 MiB；退出丢失。这不是 Node 进程总内存上限。
 
+## 上传暂存与发布协调边界
+
+`AttachmentStore` 保留上传生命周期：校验目标与元数据、领取上传所有权、重验 stageToken、决定幂等返回或冲突、重载目标会话、准备草稿、变更 catalog 并提交。`files.ts` 只接收明确路径、附件目录、字节流、取消信号或预期大小/哈希；不接收整个 Store，不创建上传管理器、会话状态或授权缓存。
+
+暂存按三个阶段执行：先在 metadata gate 内检查 PID/旧领取并保存新的所有权记录；离开 gate 后流式接收字节，保持 16 MiB 上限、取消检查、哈希计算及 sync/close；随后重新进入 gate，确认 token 仍匹配才发布暂存元数据。文件函数返回大小和哈希不代表上传已发布。接收失败先关闭句柄，再由 Store 按捕获的 token 清理；清理自己的 part 后重新读取所有权，仅匹配时才删除对应 json/lock，旧请求不能清除新重试的领取。
+
+`completeUpload` 继续在原短锁中完成身份重验、草稿准备、原件校验/搬入、关联变更和提交。原件字节先就位，再发布可见关联；准备草稿不等于已经保存草稿。上传幂等、已有 blob 的重试校验和失败后的向前恢复仍遵循既有顺序。文件函数不解析当前 Session/Project，不决定 pin、关联或删除权限；内容完整性校验不能替代 Store 的访问授权。
+
+`record.ts` 维护固定引用和暂存格式，`transaction.ts` 维护既有 metadata gate、原件定位、日志格式及恢复协议。非持久附件、Session 接入和 Web 上传交互仍由原模块维护；不为物理文件操作引入通用存储框架或兼容转导出。后续维护规则见[开发说明](../DEVELOPMENT.md#attachment-file-and-publication-boundaries)。
+
 ## 元数据提交与恢复
 
 锁序为 **metadata gate → Project 元数据锁 → Session 桶锁**；同进程同根排队，跨进程明确 busy。锁只覆盖本地元数据，不跨模型、用户确认或流式上传。每次公开读取/修改先恢复已有提交决定，不能绕过半提交。
@@ -62,6 +73,6 @@ catalog 上限 16 MiB，日志 96 MiB，Session 快照 64 MiB。先保存完整�
 
 ## 验证与未实现范围
 
-检查上传取消/重试所有权、草稿发布、身份变化拒绝、共享/隔离、pin 非授权、固定版本、移除/永久删除、故障发布及真实第二进程恢复。Edge 资料检查使用临时材料和注入模型，不证明文档理解质量。
+检查上传取消/重试所有权、草稿发布、身份变化拒绝、共享/隔离、pin 非授权、固定版本、移除/永久删除、故障发布及真实第二进程恢复。`tests/attachments/` 的边界回归还覆盖接收暂停时 metadata gate 可用、旧流结束后不破坏新重试、输入流失败清理及暂存内容损坏不能发布草稿。Edge 资料检查使用临时材料和注入模型，不证明文档理解质量。
 
 尚无强制销毁仍被历史保留的原件、后台清理、跨项目资料迁移或存储加密。原件、派生内容、会话与 Memory 不能合并为同一生命周期。

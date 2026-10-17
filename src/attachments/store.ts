@@ -7,8 +7,10 @@ import type { SessionRecord } from "../session/record.js";
 import type { ProjectRecord } from "../project/record.js";
 import type { ProjectSessionMove } from "../project/management.js";
 import { MemoryStore } from "../memory/store.js";
-import { AttachmentTransactions, atomicJson, boundedJson } from "./transaction.js";
-import type { AttachmentSessionAccess, MetadataCommit } from "./transaction.js";
+import { AttachmentTransactions } from "./transaction.js";
+import { atomicJson, boundedJson } from "./metadata-files.js";
+import type { AttachmentSessionAccess } from "./transaction.js";
+import type { MetadataCommit } from "./journal.js";
 import { diskDocumentCache } from "../documents/cache.js";
 import type { DocumentCache } from "../documents/cache.js";
 import { attachmentIdPattern, attachmentMediaType, attachmentName, decodeStagedAttachment, extractAttachmentReferences,

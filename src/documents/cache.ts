@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { atomicJson, boundedJson } from "../attachments/transaction.js";
+import { atomicJson, boundedJson } from "../attachments/metadata-files.js";
 import { HarnessError } from "../errors.js";
 import type { DocumentLocation, ParsedDocument } from "./types.js";
 

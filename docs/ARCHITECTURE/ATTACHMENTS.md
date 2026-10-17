@@ -12,6 +12,8 @@
 | `src/attachments/store.ts`、`memory.ts` | 持久与非持久原件、发布及访问 |
 | `src/attachments/files.ts` | 无状态的暂存路径、流式字节写入、大小/哈希完整性读取与上传所有权记录读取 |
 | `src/attachments/transaction.ts` | metadata gate、跨文件提交决定与恢复 |
+| `src/attachments/journal.ts` | 提交描述、日志编解码及跨记录一致性校验；不执行文件操作 |
+| `src/attachments/metadata-files.ts` | 有界 JSON 读取与原子 JSON 发布；不拥有锁、日志或恢复策略 |
 | `src/attachments/import.ts` | 通过当前文件权限导入 |
 | `src/attachments/commands.ts` | 终端附件命令解析、帮助、输出与删除确认文本；通过 SessionManager 转发作用域操作及取消信号 |
 | `src/attachments/read.ts`、`tools.ts` | 通用 read 包装、文本分页与授权访问 |
@@ -59,13 +61,17 @@ read 的 attachment:list 查询只过滤文件名；UTF-8 文本/Markdown 按完
 
 `completeUpload` 继续在原短锁中完成身份重验、草稿准备、原件校验/搬入、关联变更和提交。原件字节先就位，再发布可见关联；准备草稿不等于已经保存草稿。上传幂等、已有 blob 的重试校验和失败后的向前恢复仍遵循既有顺序。文件函数不解析当前 Session/Project，不决定 pin、关联或删除权限；内容完整性校验不能替代 Store 的访问授权。
 
-`record.ts` 维护固定引用和暂存格式，`transaction.ts` 维护既有 metadata gate、原件定位、日志格式及恢复协议。非持久附件、Session 接入和 Web 上传交互仍由原模块维护；不为物理文件操作引入通用存储框架或兼容转导出。后续维护规则见[开发说明](../DEVELOPMENT.md#attachment-file-and-publication-boundaries)。
+`record.ts` 维护固定引用和暂存格式，`journal.ts` 维护日志格式，`transaction.ts` 保留 metadata gate、原件定位及恢复协议。非持久附件、Session 接入和 Web 上传交互仍由原模块维护；不为物理文件操作引入通用存储框架或兼容转导出。后续维护规则见[开发说明](../DEVELOPMENT.md#attachment-file-and-publication-boundaries)。
 
 ## 元数据提交与恢复
 
 锁序为 **metadata gate → Project 元数据锁 → Session 桶锁**；同进程同根排队，跨进程明确 busy。锁只覆盖本地元数据，不跨模型、用户确认或流式上传。每次公开读取/修改先恢复已有提交决定，不能绕过半提交。
 
-transaction.ts 先持久写 pending.json，再发布 Session/catalog、项目变更、成员 patch/删除及原件 purge。普通提交写日志 v2，包含 Memory 迁入时写 v3，读取兼容 v1/v2；这些版本与 Session v2、Project v1 独立。已发布日志是持久决定，失败后向前完成，不重放模型或工具。恢复不成功则明确阻塞。
+`journal.ts` 以显式提交描述构造磁盘形状，并从未知数据解码、校验版本、成员 patch、项目变更冲突及 Memory 迁入与 Session 身份的一致性；复用各记录模块的校验，不读取当前仓库或创建状态所有者。普通提交写日志 v2，包含 Memory 迁入时写 v3，读取支持 v1/v2/v3；这些版本与 Session v2、Project v1 独立。
+
+`AttachmentTransactions` 编码并校验完整提交、检查各记录大小后，先持久写 `pending.json`，再按既有顺序执行 Memory 迁入、Session 快照、Project 快照、成员 patch、catalog、Session 删除、Project 删除和原件/派生内容 purge，全部成功后才删除日志。保存的是原始编码日志，执行的是校验结果，不将解码后的运行时记录重新序列化为日志。已发布日志是持久决定，失败后向前完成，不重放模型或工具；锁、提交顺序、幂等重放及 Session 发布/删除回调仍由协调层管理。
+
+`metadata-files.ts` 仅执行调用者指定路径和大小上限的 UTF-8/JSON 读取，或临时文件写入、sync、close、rename 与清理。optional 读取只将不存在视为空；文件损坏、超限及其他读取错误仍拒绝。附件暂存、事务与文档缓存直接使用它，不通过事务模块转导出，也不因此共享授权或事务生命周期。日志读取错误保留 `ATTACHMENT_CORRUPT`；读到 JSON 后解码或执行失败则报告 `ATTACHMENT_RECOVERY_PENDING`，保留日志并阻止后续操作。后续维护规则见[开发说明](../DEVELOPMENT.md#metadata-journal-and-transaction-boundaries)。
 
 catalog 上限 16 MiB，日志 96 MiB，Session 快照 64 MiB。先保存完整原件，再发布可见关联；决定前失败可能留下不可发现 blob，但不得出现可见悬空原件。相同 uploadId 重试不增加第二份关联。Memory 的幂等迁入细节见 [Memory](MEMORY.md)。
 
@@ -73,6 +79,6 @@ catalog 上限 16 MiB，日志 96 MiB，Session 快照 64 MiB。先保存完整�
 
 ## 验证与未实现范围
 
-检查上传取消/重试所有权、草稿发布、身份变化拒绝、共享/隔离、pin 非授权、固定版本、移除/永久删除、故障发布及真实第二进程恢复。`tests/attachments/` 的边界回归还覆盖接收暂停时 metadata gate 可用、旧流结束后不破坏新重试、输入流失败清理及暂存内容损坏不能发布草稿。Edge 资料检查使用临时材料和注入模型，不证明文档理解质量。
+检查上传取消/重试所有权、草稿发布、身份变化拒绝、共享/隔离、pin 非授权、固定版本、移除/永久删除、故障发布及真实第二进程恢复。`tests/attachments/` 的边界回归还覆盖接收暂停时 metadata gate 可用、旧流结束后不破坏新重试、输入流失败清理及暂存内容损坏不能发布草稿；日志/文件回归覆盖持久身份与临时投影分离、版本兼容、决定前冲突拒绝、读取与恢复错误边界，以及 JSON 大小/UTF-8/失败发布清理。项目成员 patch 与 Memory 迁入的中断恢复分别保留在 `tests/projects/`、`tests/memory/`。Edge 资料检查使用临时材料和注入模型，不证明文档理解质量。
 
 尚无强制销毁仍被历史保留的原件、后台清理、跨项目资料迁移或存储加密。原件、派生内容、会话与 Memory 不能合并为同一生命周期。

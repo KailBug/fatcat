@@ -42,6 +42,8 @@ native-text、model-transcription、model-description 分别表示原生文本�
 
 快照存于 `attachments/derived/<id>/<original-version>/`，index.json 记录保留版本和最新转写页。相同版本只复用相同内容；索引发布中断可在同版本保存时修复，损坏明确失败。SessionManager 解析目标，`session/attachments.ts` 对 cache load/transcripts/save 逐次包装授权与取消检查，外发和发布前重新核对范围；解析/网络在 metadata gate 外执行。包装只绑定本次身份，不能因已读到原件字节而复用永久授权，也不能随 UI 切换改用另一会话。宿主预览不增加模型读取 pin，执行中的模型读取仍在读取原件时保存 pin。
 
+`cache.ts` 直接使用 `attachments/metadata-files.ts` 的有界 JSON 读取和原子发布，不依赖事务协调器。共享文件机制不改变缓存索引的修复方式、版本生命周期或逐次授权；跨文件提交决定仍由 [Attachments](ATTACHMENTS.md#元数据提交与恢复) 维护。
+
 删除原件同时清理相应派生目录；移除关联撤销缓存访问，pin 仍按原件规则保护。非持久模式使用 MemoryDocumentCache。新视觉任务不能借旧描述声称已执行。
 
 ## 资源与模型预算

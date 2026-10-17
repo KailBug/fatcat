@@ -7,7 +7,8 @@ import test from "node:test";
 import { HarnessError } from "../../src/errors.js";
 import { maxMemoryContentBytes, maxMemoryRecords, maxMemoryRequestBytes, maxMemoryRevisions, memoryFingerprint, memoryScopeKey } from "../../src/memory/record.js";
 import type { MemoryScope, MemorySource } from "../../src/memory/record.js";
-import { maxMemoryFileBytes, MemoryStore } from "../../src/memory/store.js";
+import { maxMemoryFileBytes } from "../../src/memory/files.js";
+import { MemoryStore } from "../../src/memory/store.js";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const expectCode = (code: string) => (error: unknown) => error instanceof HarnessError && error.code === code;

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, rename, stat, unlink } from "node:fs/promises";
+import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
 import { projectIdOf } from "../session/record.js";
@@ -11,10 +11,11 @@ import { AttachmentTransactions, atomicJson, boundedJson } from "./transaction.j
 import type { AttachmentSessionAccess, MetadataCommit } from "./transaction.js";
 import { diskDocumentCache } from "../documents/cache.js";
 import type { DocumentCache } from "../documents/cache.js";
-import { attachmentIdPattern, attachmentMediaType, attachmentName, decodeStagedAttachment, extractAttachmentReferences, maxAttachmentBytes,
+import { attachmentIdPattern, attachmentMediaType, attachmentName, decodeStagedAttachment, extractAttachmentReferences,
 	parseAttachmentReference, sameAttachmentTarget, scopeKey, scopeOfTarget, validateAttachmentTarget } from "./record.js";
 import type { AttachmentBinding, AttachmentCatalog, AttachmentInfo, AttachmentRecord, AttachmentRef,
 	AttachmentScope, AttachmentSharingState, AttachmentTarget, AttachmentUploadMetadata, StagedAttachment } from "./record.js";
+import { readAttachmentBytes, readStagingOwner, stagedAttachmentPart, stagedAttachmentPath, writeAttachmentPart } from "./files.js";
 
 export class AttachmentStore {
 	readonly root: string;
@@ -49,44 +50,27 @@ export class AttachmentStore {
 		await mkdir(directory, { recursive: true, mode: 0o700 });
 		const stageToken = randomUUID();
 		await this.withMetadata(async () => {
-			const owner = await this.stagingOwner(metadata.uploadId);
+			const owner = await readStagingOwner(this.transactions.directory, metadata.uploadId);
 			if (owner) {
 				if (processAlive(owner.pid)) throw new HarnessError("ATTACHMENT_UPLOAD_CONFLICT", "This upload is already in progress. Wait for it to complete or cancel it before retrying.");
 				await this.discardStaging(metadata.uploadId, owner.stageToken);
 			}
-			await atomicJson(this.stagedPath(metadata.uploadId, ".lock"), { pid: process.pid, stageToken }, 4096);
+			await atomicJson(stagedAttachmentPath(this.transactions.directory, metadata.uploadId, ".lock"), { pid: process.pid, stageToken }, 4096);
 		});
-		const path = this.stagedPart(metadata.uploadId, stageToken);
-		let handle;
+		const path = stagedAttachmentPart(this.transactions.directory, metadata.uploadId, stageToken);
 		try {
-			handle = await open(path, "wx", 0o600);
-			let size = 0;
-			const hash = createHash("sha256");
-			for await (const chunk of body) {
-				checkCancellation(signal);
-				if (!(chunk instanceof Uint8Array)) throw new HarnessError("ATTACHMENT_UPLOAD", "Expected attachment bytes.");
-				size += chunk.byteLength;
-				if (size > maxAttachmentBytes) throw new HarnessError("ATTACHMENT_LIMIT", "Each attachment must fit within 16 MiB.");
-				hash.update(chunk);
-				await handle.writeFile(chunk);
-			}
-			checkCancellation(signal);
-			await handle.sync();
-			await handle.close();
-			handle = undefined;
-			const sha256 = hash.digest("hex");
+			const { size, sha256 } = await writeAttachmentPart(path, body, signal);
 			const staged: StagedAttachment = { uploadId: metadata.uploadId, stageToken, target: captured, id: randomUUID(),
 				contentVersion: sha256, sha256, name, mediaType, size, createdAt: new Date().toISOString() };
 			await this.withMetadata(async () => {
-				if ((await this.stagingOwner(metadata.uploadId))?.stageToken !== stageToken) {
+				if ((await readStagingOwner(this.transactions.directory, metadata.uploadId))?.stageToken !== stageToken) {
 					throw new HarnessError("ATTACHMENT_UPLOAD_CONFLICT", "The upload was cancelled before publication.");
 				}
-				await atomicJson(this.stagedPath(metadata.uploadId, ".json"), staged, 16384);
+				await atomicJson(stagedAttachmentPath(this.transactions.directory, metadata.uploadId, ".json"), staged, 16384);
 			});
 			checkCancellation(signal);
 			return staged;
 		} catch (error) {
-			await handle?.close().catch(() => {});
 			await this.discardUpload(metadata.uploadId, stageToken);
 			throw error;
 		}
@@ -96,9 +80,9 @@ export class AttachmentStore {
 		if (draft && draft.revision !== 0) throw new HarnessError("ATTACHMENT_UPLOAD", "Only an unsaved draft can be included with an upload.");
 		return this.withMetadata(async () => {
 			const catalog = await this.transactions.catalog();
-			const stagedValue = await boundedJson(this.stagedPath(uploadId, ".json"), 16384, true);
+			const stagedValue = await boundedJson(stagedAttachmentPath(this.transactions.directory, uploadId, ".json"), 16384, true);
 			const staged = stagedValue === undefined ? undefined : decodeStagedAttachment(stagedValue);
-			if (staged && (staged.stageToken !== stageToken || (await this.stagingOwner(uploadId))?.stageToken !== stageToken)) {
+			if (staged && (staged.stageToken !== stageToken || (await readStagingOwner(this.transactions.directory, uploadId))?.stageToken !== stageToken)) {
 				throw new HarnessError("ATTACHMENT_UPLOAD_CONFLICT", "Only the request that staged this upload can publish it.");
 			}
 			const existing = catalog.assets.find((asset) => asset.uploadId === uploadId);
@@ -137,10 +121,10 @@ export class AttachmentStore {
 			try { await stat(blob); }
 			catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-				await this.readBytes(this.stagedPart(uploadId, staged.stageToken), staged);
-				await rename(this.stagedPart(uploadId, staged.stageToken), blob);
+				await readAttachmentBytes(stagedAttachmentPart(this.transactions.directory, uploadId, staged.stageToken), staged);
+				await rename(stagedAttachmentPart(this.transactions.directory, uploadId, staged.stageToken), blob);
 			}
-			await this.readBytes(blob, staged);
+			await readAttachmentBytes(blob, staged);
 			const asset: AttachmentRecord = { ...staged, uploaderSessionId: staged.target.sessionId };
 			const binding: AttachmentBinding = { ...ref, scope: scopeOfTarget(staged.target) };
 			catalog.assets.push(asset);
@@ -176,7 +160,7 @@ export class AttachmentStore {
 			const catalog = await this.transactions.catalog();
 			const binding = this.binding(catalog, target, ref);
 			const asset = this.asset(catalog, ref);
-			const bytes = await this.readBytes(this.transactions.blobPath(ref), asset);
+			const bytes = await readAttachmentBytes(this.transactions.blobPath(ref), asset);
 			checkCancellation(options.signal);
 			if (options.pin && !catalog.pins.some((pin) => pin.sessionId === target.sessionId && pin.attachmentId === ref.attachmentId)) {
 				catalog.pins.push({ ...ref, sessionId: target.sessionId });
@@ -420,53 +404,11 @@ export class AttachmentStore {
 			deleted: asset.deletedAt !== undefined };
 	}
 
-	private async readBytes(path: string, asset: Pick<AttachmentRecord, "size" | "sha256">): Promise<Uint8Array> {
-		let handle;
-		try {
-			handle = await open(path, "r");
-			const info = await handle.stat();
-			if (!info.isFile() || info.size !== asset.size || info.size > maxAttachmentBytes) throw new Error();
-			const bytes = Buffer.alloc(asset.size + 1);
-			let count = 0;
-			while (count < bytes.length) {
-				const next = await handle.read(bytes, count, bytes.length - count, count);
-				if (!next.bytesRead) break;
-				count += next.bytesRead;
-			}
-			if (count !== asset.size) throw new Error();
-			const result = bytes.subarray(0, count);
-			if (createHash("sha256").update(result).digest("hex") !== asset.sha256) throw new Error();
-			return result;
-		} catch { throw new HarnessError("ATTACHMENT_CONTENT", "The original attachment is missing or no longer matches its recorded version."); }
-		finally { await handle?.close(); }
-	}
-
-	private stagedPath(id: string, extension: ".json" | ".lock"): string {
-		if (!attachmentIdPattern.test(id)) throw new HarnessError("ATTACHMENT_UPLOAD", "Invalid upload identity.");
-		return join(this.transactions.directory, "staging", `${id}${extension}`);
-	}
-
-	private stagedPart(id: string, stageToken: string): string {
-		if (!attachmentIdPattern.test(id) || !attachmentIdPattern.test(stageToken)) throw new HarnessError("ATTACHMENT_UPLOAD", "Invalid upload ownership.");
-		return join(this.transactions.directory, "staging", `${id}.${stageToken}.part`);
-	}
-
-	private async stagingOwner(id: string): Promise<{ pid: number; stageToken: string } | undefined> {
-		const owner = await boundedJson(this.stagedPath(id, ".lock"), 4096, true);
-		if (owner === undefined) return undefined;
-		if (typeof owner !== "object" || owner === null || !("pid" in owner) || !("stageToken" in owner)
-			|| !Number.isSafeInteger(owner.pid) || Number(owner.pid) < 1 || typeof owner.stageToken !== "string"
-			|| !attachmentIdPattern.test(owner.stageToken)) {
-			throw new HarnessError("ATTACHMENT_UPLOAD_CONFLICT", "The upload ownership record is invalid. Confirm no upload is running before repairing staging metadata.");
-		}
-		return { pid: Number(owner.pid), stageToken: owner.stageToken };
-	}
-
 	private async discardStaging(id: string, stageToken: string): Promise<void> {
-		await unlink(this.stagedPart(id, stageToken)).catch(() => {});
-		if ((await this.stagingOwner(id))?.stageToken !== stageToken) return;
-		await unlink(this.stagedPath(id, ".json")).catch(() => {});
-		await unlink(this.stagedPath(id, ".lock")).catch(() => {});
+		await unlink(stagedAttachmentPart(this.transactions.directory, id, stageToken)).catch(() => {});
+		if ((await readStagingOwner(this.transactions.directory, id))?.stageToken !== stageToken) return;
+		await unlink(stagedAttachmentPath(this.transactions.directory, id, ".json")).catch(() => {});
+		await unlink(stagedAttachmentPath(this.transactions.directory, id, ".lock")).catch(() => {});
 	}
 }
 

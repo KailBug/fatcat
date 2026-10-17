@@ -85,6 +85,18 @@ Keep bounded JSON reads and atomic JSON writes in `src/attachments/metadata-file
 
 Keep journal/file regressions in `tests/attachments/`; retain project member/deletion and memory migration recovery scenarios with those capabilities. Run typecheck and offline tests covering legacy formats, invalid/conflicting decisions before publication, partial commit recovery, real second-process ownership, error boundaries and failed file publication. Add browser/terminal checks when host interactions change. See [Attachments](ARCHITECTURE/ATTACHMENTS.md#元数据提交与恢复) for the maintained protocol.
 
+## Memory file and storage boundaries
+
+Keep scope-file reads, atomic publication and bounded lock-owner reads in `src/memory/files.ts`, using explicit memory directories, scopes, records, lock paths and cancellation signals. Reuse `record.ts` for scope keys and record validation. Helpers own only their file handles; they do not receive MemoryStore, create the storage root, acquire locks, resolve session identity or cache authorization. Import file limits and functions from this module directly, without forwarding exports from Store.
+
+MemoryStore retains its per-instance in-memory records and queue, directory creation, process lock/recovery, record and revision limits, mutation rules, migration fingerprints and conflict decisions. Keep persistent operations inside their existing locks. In-memory mode must remain isolated, clone caller-owned data and avoid disk access. Session identity/attempt-owner authorization, turn budgets and call-ID reuse remain with the existing Session modules.
+
+Preserve the v1 scope envelope, file names, 64 MiB limit, symbolic-link rejection on scope reads, strict UTF-8 and missing-versus-corrupt behavior. Keep cancellation checks during reads and before rename, file modes, sync/close/rename order, temporary-file cleanup and the existing MEMORY_IO/MEMORY_LIMIT/CANCELLED behavior. Lock-owner parsing must propagate cancellation without turning it into an absent owner; only the coordinator decides whether an owner is stale. Do not replace these functions with attachment JSON helpers that have different cancellation, link and error contracts.
+
+Migration still validates source fingerprints and destination capacity/conflicts under the store lock, publishes the project scope before clearing the private scope, and deduplicates already-published records on replay. Cross-owner recovery remains with AttachmentTransactions; moving file code does not create a new transaction or permission boundary. See [Memory](ARCHITECTURE/MEMORY.md#作用域文件与存储协调边界) for ownership and [Attachments](ARCHITECTURE/ATTACHMENTS.md#元数据提交与恢复) for the journal protocol.
+
+Keep regressions in `tests/memory/`, covering opened-read cancellation, cancellation after sync but before publication, failed publication cleanup, interrupted migration replay, corrupt scope files, in-memory isolation and cross-process locks. Use temporary stores and deterministic failure/cancellation injection. Run typecheck and offline tests; browser/terminal checks are needed when host interactions change.
+
 ## Web UI controller boundaries
 
 Keep shared display contracts in `webui/types.ts` and stateless history/event conversion in `webui/turns.ts`. Import types from their owner, without forwarding exports from Controller. Display helpers receive explicit history or events and return presentation data; they must not hold a Controller, SessionManager, operation lock or second transcript owner. Continue using the existing attachment evidence and context usage modules.

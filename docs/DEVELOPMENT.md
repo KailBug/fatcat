@@ -53,6 +53,14 @@ Controller owns active/changing operations, transcript, revisions, approval coor
 
 Use explicit restore/preserve intent for management operations. Combine transcript restoration and usage reset only where both already occur together; keep project-specific usage resets and attachment revisions at their existing operation boundaries. Preserve success/failure refresh order and partial committed effects. A failed management operation may refresh metadata for a new confirmation, but must not automatically replay the change or replace the displayed conversation as part of error recovery. Keep public-entry regressions in `tests/webui/`, including synchronous approval, cancellation, refresh failures, background tasks and restored evidence. See [Web UI](ARCHITECTURE/WEBUI.md) for the maintained behavior.
 
+## Web UI browser view boundaries
+
+Keep the authoritative page snapshot, ETag, connection/sending state, draft and request/polling lifecycle in `webui/client/app.ts`. The entry coordinates menus, dialogs, approvals, scrolling and preview reset. `TranscriptView` in `client/transcript.ts` owns only rendered turn nodes and signatures; `SessionListView` in `client/session-list.ts` owns only list nodes, its signature and display formatting. Pass rendering data explicitly and expose concrete action callbacks; do not add a second application store or let views call the API. Import `displaySessions` from its list owner wherever menus or details need the same projection.
+
+Preserve DOM reuse, expanded details, captured source Session IDs, preview path filtering, list grouping and keyboard/drag behavior when moving rendering code. Consult live management availability at event time, and resolve dropped Session IDs against the entry's current snapshot. Apply button disabled states even when rendering is skipped by a matching signature. Keep request completion, draft clearing, old-revision rejection, scrolling and focus ordering unchanged.
+
+Register new browser runtime modules in the explicit `webui/server.ts` asset whitelist and extend HTTP asset checks in `tests/webui/`; compilation alone does not make an ES module URL available. Use the existing injected-model Edge runners for DOM, focus and interaction checks, with local helper probes under `scripts/verify/browser/support/`. The `verify:webui` runner checks view caching, expanded sections, source identity and live drag gating; use Project and document/attachment runners for affected cross-component flows. These runs do not validate real provider behavior or the native folder dialog. See [Web UI](ARCHITECTURE/WEBUI.md) for the maintained ownership and behavior.
+
 ## Test and verification layout
 
 Keep offline tests outside production code, grouped by the contract they verify. Use `*.test.ts` for test entry points and descriptive filenames for helpers.

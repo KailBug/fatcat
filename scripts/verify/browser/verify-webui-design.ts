@@ -11,6 +11,7 @@ import { SessionStore } from "../../../src/session/store.js";
 import { createTools } from "../../../src/tools.js";
 import { WebUiController } from "../../../webui/controller.js";
 import { startWebUiServer } from "../../../webui/server.js";
+import { verifyWebUiViews } from "./support/webui-views.js";
 
 // Explicit Edge validation with temporary data and injected decisions; no model API or credentials.
 const temporaryRoot = await realpath(tmpdir());
@@ -76,6 +77,8 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(server.url);
   await page.waitForFunction(() => !(document.getElementById("prompt") as HTMLTextAreaElement).disabled);
+
+  await verifyWebUiViews(page, controller.snapshot());
 
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
@@ -218,7 +221,7 @@ try {
   assert.equal(await noScript.locator("h1").isVisible(), true);
   await noScript.close();
   assert.deepEqual(errors, []);
-  console.log("Verified real Edge: four widths, both themes, all four Cron triggers fit without scrolling, menus/dialogs, mobile focus and Escape, logo/send, approval, cancellation, preview, injected workspace picker, session switching, reduced motion and JavaScript fallback. No model requests.");
+  console.log("Verified real Edge: view caching and replacement, expanded sections, captured source identity, live drag gating, four widths, both themes, all four Cron triggers fit without scrolling, menus/dialogs, mobile focus and Escape, logo/send, approval, cancellation, preview, injected workspace picker, session switching, reduced motion and JavaScript fallback. No model API requests.");
 } finally {
   await browser?.close();
   if (server) await server.close();

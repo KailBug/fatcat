@@ -13,7 +13,9 @@ Web UI 是本机单用户入口。浏览器持有草稿、菜单与显示快照�
 | `webui/controller.ts` | 显示用 transcript、状态版本、提交/停止、审批和宿主互斥 |
 | `webui/types.ts` | 客户端与服务端共享的显示协议类型，不含运行逻辑 |
 | `webui/turns.ts` | 历史到显示回合的恢复、执行事件到活动文案的无状态转换 |
-| `webui/client/app.ts`、`markdown.ts` | DOM、草稿、轮询/重连与安全文本呈现 |
+| `webui/client/app.ts` | 页面装配、快照、请求/轮询、草稿与跨组件协调 |
+| `webui/client/transcript.ts`、`markdown.ts` | 回合 DOM、节点缓存、展开状态与安全文本呈现 |
+| `webui/client/session-list.ts` | 会话/项目分组、列表缓存、菜单入口与拖拽事件 |
 | `webui/client/session-menu.ts`、`session-dialog.ts` | 目标快照、菜单/弹窗、键盘与焦点 |
 | `webui/projects.ts`、`project-http.ts`、`project-management.ts` | 项目预览与确认入口，持久语义委托 Manager |
 | `webui/attachments.ts`、`attachment-http.ts`、`attachment-evidence.ts` | 上传、当前作用域与实际来源呈现 |
@@ -21,6 +23,16 @@ Web UI 是本机单用户入口。浏览器持有草稿、菜单与显示快照�
 | `webui/folder-picker.ts`、`native-folder-dialog.ps1` | 有界原生目录选择，不是模型工具 |
 | `webui/context-usage.ts` | 最近普通父请求 token 与已知模型容量 |
 | `webui/client/cron.ts`、`permission-menu.ts`、`browser-evidence.ts` | 对共享服务的调度、模式和证据操作 |
+
+## 浏览器页面与视图边界
+
+`app.ts` 持有唯一页面快照、ETag、连接状态与提交锁，并协调输入草稿、审批/详情、滚动跟随、预览重置及各菜单和弹窗。请求成功后的刷新和草稿清空时机不由视图决定；轮询继续过滤旧 revision，304 只更新连接状态，断连不丢弃草稿。
+
+`TranscriptView` 接收回合、Session ID 与工作目录，只持有回合节点和序列化签名缓存。未变化的回合复用 DOM；变化时保留按 `data-kind` 区分的展开区域；删除的回合移除对应缓存。Markdown 与来源按钮捕获渲染时的 Session ID，不在点击时改用新选中的聊天。预览按钮与浏览器证据仍调用现有组件；滚动跟随条件和执行时机留在 `app.ts`。
+
+`SessionListView` 接收列表所需快照，只持有列表签名、DOM 和显示格式器。`displaySessions` 统一菜单、详情与列表对已保存当前会话的补入规则，不把未保存草稿加入持久列表。点击和菜单事件携带明确目标；拖拽开始/悬停通过回调读取实时可操作状态，放下时由入口按当前快照解析 Session 并打开项目确认。视图不请求 API、不保存另一份页面快照，也不负责业务校验或持久状态。按钮禁用在每次 controls 更新时应用，即使列表签名未变化也有效。
+
+新增客户端运行时模块必须同步加入服务端静态白名单，并通过真实 HTTP 核对资源可加载；不开放目录映射。开发约束与验证归属见[开发说明](../DEVELOPMENT.md)。
 
 ## HTTP 与本地访问
 
@@ -73,6 +85,8 @@ Controller 保留活动回合、管理操作、显示列表、revision、审批�
 ## 验证与未实现范围
 
 检查真实 HTTP 的认证/来源/大小/静态路径、忙碌与旧确认、断连、取消、空草稿、跨标签、目录与共享材料变化。Edge 检查使用临时数据和注入模型/目录选择，涵盖桌面/窄屏、主题、焦点、审批和预览；原生选择器单独检查真实 Win32 行为，不能相互替代。真实视觉和模型质量未由这些 UI 检查证明。
+
+浏览器视图调整还需验证节点复用/替换、展开状态、来源身份捕获和实时拖拽门禁；这些检查由 `verify:webui` 使用实际提供的模块执行。项目分组和跨标签迁入使用 `verify:projects`，资料引用及来源显示使用 `verify:documents` / `verify:attachments`，按改动范围选择。离线静态资源检查不能替代真实 DOM 和焦点验证。
 
 原生 helper 的启动和取消已有检查，原生窗口内实际选择/取消点击往返尚未完成验收；非 Windows、实体手机和其他浏览器也未完成实机验证。
 

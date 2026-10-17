@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { AttachmentTransactions, atomicJson } from "../../../src/attachments/transaction.js";
+import { AttachmentTransactions } from "../../../src/attachments/transaction.js";
+import { atomicJson } from "../../../src/attachments/metadata-files.js";
 import { encodeSessionRecord, workspaceKey } from "../../../src/session/record.js";
 import { SessionStore } from "../../../src/session/store.js";
 

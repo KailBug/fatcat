@@ -75,6 +75,16 @@ Keep completeUpload under its existing metadata gate, including target revalidat
 
 Keep upload/file boundary regressions in `tests/attachments/`, including paused streams, failed producers, token-isolated cleanup, corrupted staged bytes, draft publication and real second-process ownership/recovery. Run typecheck and offline tests. Add injected-model Edge attachment checks when changing host upload interactions; extraction confined to Store file mechanics does not require repeating the browser flow. See [Attachments](ARCHITECTURE/ATTACHMENTS.md#上传暂存与发布协调边界).
 
+## Metadata journal and transaction boundaries
+
+Keep the MetadataCommit contract and pure journal encoding/decoding in `src/attachments/journal.ts`. Reuse record codecs, preserve disk versions and cross-record validation, and pass explicit values rather than a store or current session. Internal API migration does not remove persistent-format compatibility: ordinary commits write v2, memory migrations write v3, and readers accept v1/v2/v3. Do not add a version or serialize decoded runtime projections merely to reorganize code.
+
+AttachmentTransactions retains the per-root queue, process lock/recovery, preflight size limits, durable decision and ordered application. Validate the complete encoded journal before publishing it; write the original encoded shape and apply the validated result. Preserve Memory-before-Session, original-before-association and catalog-before-deletion ordering, fixed session buckets, idempotent member patches, injected Session publication/removal and fallback behavior. Remove the journal only after all effects succeed. Keep journal reads outside the recovery error wrapper: read failures and decoded-decision failures retain their existing distinct errors and must block the operation.
+
+Keep bounded JSON reads and atomic JSON writes in `src/attachments/metadata-files.ts`, with explicit paths and byte limits. Preserve strict UTF-8, optional-missing-only reads, file modes, sync/close/rename ordering and temporary-file cleanup. File helpers do not acquire locks, choose transaction targets, decide recovery, or grant attachment/document access. Attachment staging and document caches import them directly; do not re-export them from the coordinator or create a general storage framework across unrelated stores.
+
+Keep journal/file regressions in `tests/attachments/`; retain project member/deletion and memory migration recovery scenarios with those capabilities. Run typecheck and offline tests covering legacy formats, invalid/conflicting decisions before publication, partial commit recovery, real second-process ownership, error boundaries and failed file publication. Add browser/terminal checks when host interactions change. See [Attachments](ARCHITECTURE/ATTACHMENTS.md#元数据提交与恢复) for the maintained protocol.
+
 ## Web UI controller boundaries
 
 Keep shared display contracts in `webui/types.ts` and stateless history/event conversion in `webui/turns.ts`. Import types from their owner, without forwarding exports from Controller. Display helpers receive explicit history or events and return presentation data; they must not hold a Controller, SessionManager, operation lock or second transcript owner. Continue using the existing attachment evidence and context usage modules.

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
 import { attachmentIdPattern, maxAttachmentBytes } from "./record.js";
 import type { AttachmentRecord } from "./record.js";
-import { boundedJson } from "./transaction.js";
+import { boundedJson } from "./metadata-files.js";
 
 export function stagedAttachmentPath(directory: string, id: string, extension: ".json" | ".lock"): string {
 	if (!attachmentIdPattern.test(id)) throw new HarnessError("ATTACHMENT_UPLOAD", "Invalid upload identity.");

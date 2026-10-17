@@ -3,9 +3,10 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { createAgent } from "../../src/agent.js";
+import { runInteractiveCommand } from "../../src/commands.js";
 import { loadConfig } from "../../src/config.js";
 import type { Message, Model } from "../../src/model.js";
-import { runSessionCommand, sessionScopeLabel } from "../../src/session/commands.js";
+import { sessionScopeLabel } from "../../src/session/labels.js";
 import { SessionManager } from "../../src/session/manager.js";
 import { Session } from "../../src/session/session.js";
 import { SessionStore } from "../../src/session/store.js";
@@ -28,7 +29,7 @@ test("project commands create and select projects without model calls or shared 
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const session = await SessionManager.open(agent, { workspace, store });
 	const originalId = session.current.id;
-	const created = await runSessionCommand(session, `/project create "Project name" "${projectDirectory}"`);
+	const created = await runInteractiveCommand(session, `/project create "Project name" "${projectDirectory}"`);
 	assert.match(created!.text, /Project created:/);
 	assert.equal(created!.switched, false);
 	assert.equal(session.current.id, originalId);
@@ -36,26 +37,26 @@ test("project commands create and select projects without model calls or shared 
 	assert.ok(project);
 	assert.equal(project.name, "Project name");
 	assert.equal(project.workspace, projectDirectory);
-	assert.match((await runSessionCommand(session, "/projects"))!.text, /Project name/);
-	assert.equal((await runSessionCommand(session, '/project use "Project name"'))!.switched, true);
+	assert.match((await runInteractiveCommand(session, "/projects"))!.text, /Project name/);
+	assert.equal((await runInteractiveCommand(session, '/project use "Project name"'))!.switched, true);
 	assert.equal(session.current.projectId, project.id);
 	assert.equal(session.current.workspace, projectDirectory);
-	assert.match((await runSessionCommand(session, "/project"))!.text, /workspace is fixed/);
+	assert.match((await runInteractiveCommand(session, "/project"))!.text, /workspace is fixed/);
 	assert.match(sessionScopeLabel(session.current), /Project name/);
 	assert.equal(requests, 0);
 	await session.run("First project conversation");
 	const firstId = session.current.id;
-	await runSessionCommand(session, "/new Second conversation");
+	await runInteractiveCommand(session, "/new Second conversation");
 	assert.notEqual(session.current.id, firstId);
 	assert.equal(session.current.projectId, project.id);
 	assert.equal(session.history.length, 0);
 	assert.equal(session.current.name, "Second conversation");
-	await assert.rejects(runSessionCommand(session, `/workspace "${workspace}"`), /project/i);
-	await runSessionCommand(session, "/new --standalone Private");
+	await assert.rejects(runInteractiveCommand(session, `/workspace "${workspace}"`), /project/i);
+	await runInteractiveCommand(session, "/new --standalone Private");
 	assert.equal(session.current.projectId, undefined);
 	assert.equal(session.current.name, "Private");
 	assert.match(sessionScopeLabel(session.current), /Standalone/);
-	await runSessionCommand(session, `/resume ${firstId}`);
+	await runInteractiveCommand(session, `/resume ${firstId}`);
 	assert.equal(session.current.workspace, projectDirectory);
 	assert.equal(session.current.projectId, project.id);
 	assert.deepEqual(session.history.filter((message) => message.role === "user").map((message) => message.content), ["First project conversation"]);
@@ -70,7 +71,7 @@ test("project joins require a reviewed token, cancellation and replay leave sess
 	const original = session.current;
 	const history = session.history;
 	const project = await session.createProject("Shared", outside);
-	const preview = (await runSessionCommand(session, `/project join ${project.id}`))!;
+	const preview = (await runInteractiveCommand(session, `/project join ${project.id}`))!;
 	assert.equal(preview.switched, false);
 	assert.ok(preview.text.includes(JSON.stringify(workspace)));
 	assert.ok(preview.text.includes(JSON.stringify(outside)));
@@ -78,18 +79,18 @@ test("project joins require a reviewed token, cancellation and replay leave sess
 	assert.match(preview.text, /histories stay separate/);
 	assert.deepEqual(session.current, original);
 	const cancelled = confirmation(preview.text);
-	await runSessionCommand(session, "/project cancel");
-	await assert.rejects(runSessionCommand(session, cancelled), { code: "USAGE" });
+	await runInteractiveCommand(session, "/project cancel");
+	await assert.rejects(runInteractiveCommand(session, cancelled), { code: "USAGE" });
 	assert.deepEqual(session.current, original);
-	const next = confirmation((await runSessionCommand(session, `/project join ${project.id}`))!.text);
-	await assert.rejects(runSessionCommand(session, "/project confirm fabricated-token"), { code: "USAGE" });
-	assert.equal((await runSessionCommand(session, next))!.switched, true);
+	const next = confirmation((await runInteractiveCommand(session, `/project join ${project.id}`))!.text);
+	await assert.rejects(runInteractiveCommand(session, "/project confirm fabricated-token"), { code: "USAGE" });
+	assert.equal((await runInteractiveCommand(session, next))!.switched, true);
 	assert.equal(session.current.id, original.id);
 	assert.equal(session.current.projectId, project.id);
 	assert.equal(session.current.workspace, outside);
 	assert.deepEqual(session.history, history);
-	await assert.rejects(runSessionCommand(session, next), { code: "USAGE" });
-	assert.match((await runSessionCommand(session, `/project join ${project.id}`))!.text, /already belongs/);
+	await assert.rejects(runInteractiveCommand(session, next), { code: "USAGE" });
+	assert.match((await runInteractiveCommand(session, `/project join ${project.id}`))!.text, /already belongs/);
 });
 
 test("project confirmation cannot follow a stale revision or a session switch", async (t) => {
@@ -97,14 +98,14 @@ test("project confirmation cannot follow a stale revision or a session switch", 
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const session = await SessionManager.open({ maxIterations: 1, model: async () => answer() }, { workspace, store });
 	const project = await session.createProject("Shared", outside);
-	const token = confirmation((await runSessionCommand(session, `/project join ${project.id}`))!.text);
+	const token = confirmation((await runInteractiveCommand(session, `/project join ${project.id}`))!.text);
 	await session.rename("Changed after preview");
-	await assert.rejects(runSessionCommand(session, token), { code: "SESSION_CONFLICT" });
-	await assert.rejects(runSessionCommand(session, token), { code: "USAGE" });
+	await assert.rejects(runInteractiveCommand(session, token), { code: "SESSION_CONFLICT" });
+	await assert.rejects(runInteractiveCommand(session, token), { code: "USAGE" });
 	assert.equal(session.current.projectId, undefined);
-	const second = confirmation((await runSessionCommand(session, `/project join ${project.id}`))!.text);
-	await runSessionCommand(session, "/new Another session");
-	await assert.rejects(runSessionCommand(session, second), { code: "USAGE" });
+	const second = confirmation((await runInteractiveCommand(session, `/project join ${project.id}`))!.text);
+	await runInteractiveCommand(session, "/new Another session");
+	await assert.rejects(runInteractiveCommand(session, second), { code: "USAGE" });
 	assert.equal(session.current.projectId, undefined);
 });
 
@@ -113,16 +114,16 @@ test("project command parsing rejects ambiguous names and malformed creation wit
 	const session = await SessionManager.open({ maxIterations: 1, model: async () => answer() },
 		{ workspace, store: new SessionStore({ root: join(base, "sessions") }) });
 	for (const command of ['/project create "missing close', '/project create "name"', "/projects unexpected", "/project cancel unexpected"]) {
-		await assert.rejects(runSessionCommand(session, command), { code: "USAGE" });
+		await assert.rejects(runInteractiveCommand(session, command), { code: "USAGE" });
 	}
 	assert.deepEqual(await session.listProjects(), []);
 	const first = await session.createProject("Same name", workspace);
 	await session.createProject("Same name", workspace);
-	await assert.rejects(runSessionCommand(session, "/project use Same name"), /ambiguous/);
-	await runSessionCommand(session, `/project use ${first.id}`);
+	await assert.rejects(runInteractiveCommand(session, "/project use Same name"), /ambiguous/);
+	await runInteractiveCommand(session, `/project use ${first.id}`);
 	assert.equal(session.current.projectId, first.id);
 	const unmanaged = new Session({ maxIterations: 1, model: async () => answer() });
-	await assert.rejects(runSessionCommand(unmanaged, "/projects"), { code: "USAGE" });
+	await assert.rejects(runInteractiveCommand(unmanaged, "/projects"), { code: "USAGE" });
 });
 
 test("project switches preserve an injected parent model and rebind delegated identity in the same directory", async (t) => {
@@ -152,7 +153,7 @@ test("project switches preserve an injected parent model and rebind delegated id
 	const first = await session.createProject("A", workspace);
 	const second = await session.createProject("B", workspace);
 	for (const project of [first, second, undefined]) {
-		await runSessionCommand(session, project ? `/project use ${project.id}` : "/new --standalone");
+		await runInteractiveCommand(session, project ? `/project use ${project.id}` : "/new --standalone");
 		const id = session.current.id;
 		assert.equal(await session.run("Delegate the scope check"), "Saved answer");
 		assert.equal(parentScopes.at(-1)?.sessionId, id);

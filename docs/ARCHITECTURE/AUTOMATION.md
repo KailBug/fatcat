@@ -13,14 +13,15 @@
 | `scheduler.ts`、`files.ts` | 有界队列、轮转、去抖与文本快照 |
 | `conversations.ts` | 工作区任务发现、基线、租约与宿主生命周期 |
 | `lock.ts`、`runner.ts` | 存储根/工作区独占与独立 JSON 模式 |
-| `src/session/automations.ts`、`agent-session.ts` | 变更校验、持久领取/计数及回合提交 |
+| `src/session/automations.ts` | 无活动状态的任务投影、触发资格/截止信号准备与变更校验 |
+| `src/session/agent-session.ts` | 任务变更提交、持久领取/计数及回合提交 |
 | `src/session/manager.ts` | 后台目标解析与宿主互斥，保持前台选择 |
 | `src/automation/commands.ts` | Cron 本地管理命令、帮助及自然语言调度请求转换 |
-| `src/commands.ts`、`webui/client/cron.ts` | 统一命令分发与原导出入口、Web UI 表单入口 |
+| `src/commands.ts`、`webui/client/cron.ts` | 统一命令分发、Web UI 表单入口 |
 
 用户描述/表单 → 校验并保存绑定 → 空闲发现/激活 → 先持久增加尝试数并领取 → 原执行链 → 保存目标历史和状态 → 更新基线。触发元数据只进入请求指导，文件正文仍由 read 取得。
 
-`automationCommandPrompt` 继续从 `src/commands.ts` 导出：自然语言 `/cron <description>` 只转换为待发送的模型请求；`/cron`、list/pause/resume/delete 由命令处理器调用既有 SessionManager 操作，不调用模型或写入对话历史。列表仍仅展示当前会话绑定的任务；持久计数、权限和后台目标选择不属于命令层。
+`automationCommandPrompt` 直接从 `src/automation/commands.ts` 导入：自然语言 `/cron <description>` 只转换为待发送的模型请求；`/cron`、list/pause/resume/delete 由命令处理器调用既有 SessionManager 操作，不调用模型或写入对话历史。列表仍仅展示当前会话绑定的任务；持久计数、权限和后台目标选择不属于命令层。
 
 ## 身份、持久化与切换
 
@@ -31,6 +32,14 @@
 发现限当前工作区，不等于全局 Session 列表或 UI 当前 Project。激活绑定实际 sessionId、locationRevision 和 workspace，执行前重验；项目迁入/改目录原子暂停任务并使旧激活失效。重新启用不重置次数或期限。切换目录更换租约，返回不补跑离开事件。
 
 自动回合不切换前台历史，子任务继承后台实际身份。当前模型工具不能由子任务或自动回合新增/修改调度，也不能写 Memory。
+
+## Session 接入边界
+
+`session/automations.ts` 只接收快照和明确参数，不持有 Manager、活动会话或调度缓存。sessionAutomations 从加载后的记录生成深拷贝任务投影，prepareAutomationRun 校验工作目录、可选 locationRevision、任务存在/启用/期限/次数、运行状态和触发时间，再组合调用方取消与任务到期信号；prepareSessionAutomation 继续准备管理变更，提交由 AgentSession 执行。
+
+Manager 的 listAutomations 先排除其他工作区、项目异常和无任务的摘要，再加载记录、复核工作区并投影。当前会话运行前重新加载持久记录并检查 owner、目录和归属代次，必要时激活新修订；后台任务经目标解析打开独立 Manager，沿用工作目录 Agent 装配，不替换前台选择。后台管理也沿原目标路由和操作锁执行。
+
+资格检查完成后，当前目标才释放外层 busy 标志并进入自身 run 的互斥；后台运行期间前台 Manager 持续处于 busy。所有退出路径保留原 finally 释放顺序。准备函数不增加 runs、不保存记录；真正开始时 AgentSession 原子领取并增加次数，运行入口已取消则不领取，领取后失败或取消计数并收尾。任务到期仍中止当前回合。调度器继续拥有租约、队列和文件基线，不把这些状态迁入 Session 接入模块。
 
 ## 调度与文件语义
 

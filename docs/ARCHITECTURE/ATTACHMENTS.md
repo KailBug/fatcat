@@ -44,7 +44,7 @@
 
 uploadId 用于幂等，stageToken/PID lease 标明传输所有者；同 ID 并发拒绝，旧请求只能清理自己的 part。死进程 lease 可在同 ID 重试时回收，无后台扫描全部残留数据的保证。
 
-宿主入口由 SessionManager 解析目标并保持原有 API；内部访问适配归 `session/attachments.ts`。传输不占用宿主操作互斥区，完成后由 Manager 排队、检查取消及草稿令牌，再调用仓库发布。发布成功或失败都按本次 stageToken 清理；大小不匹配不发布草稿，可使用原 uploadId 重试。状态归属与后续扩展规则见 [Session](SESSION.md#管理与跨模块关系)。
+宿主入口由 SessionManager 解析目标；内部访问适配及 AttachmentUploadTarget 类型归 `session/attachments.ts`，调用者直接从所属模块导入。传输不占用宿主操作互斥区，完成后由 Manager 排队、检查取消及草稿令牌，再调用仓库发布。发布成功或失败都按本次 stageToken 清理；大小不匹配不发布草稿，可使用原 uploadId 重试。状态归属与后续扩展规则见 [Session](SESSION.md#管理与跨模块关系)。
 
 read 的 attachment:list 查询只过滤文件名；UTF-8 文本/Markdown 按完整行分页，默认 100、最多 200 行，页上限 16 KiB，单行超限明确失败。清单最多扫描 1000 项。固定版本仍有覆盖/未读信息；搜索命中不代表全文已审阅。非文本格式和解析引用见 Documents。
 

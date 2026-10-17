@@ -1,3 +1,5 @@
+import { attachmentCommandHelp, runAttachmentCommand } from "./attachments/commands.js";
+import { projectCommandHelp, runProjectCommand } from "./project/commands.js";
 import { automationCommandHelp, runAutomationCommand } from "./automation/commands.js";
 import { quoted } from "./utils/command.js";
 import { HarnessError } from "./errors.js";
@@ -9,9 +11,7 @@ import { contextCommandHelp, runContextCommand } from "./context/commands.js";
 import type { CompactionOptions } from "./context/compaction.js";
 import { memoryCommandHelp, runMemoryCommand } from "./memory/commands.js";
 
-export const interactiveCommandHelp = `${automationCommandHelp} /skills: list available skills; ${contextCommandHelp} ${memoryCommandHelp} ${sessionCommandHelp}`;
-
-export { automationCommandPrompt } from "./automation/commands.js";
+export const interactiveCommandHelp = `${automationCommandHelp} /skills: list available skills; ${contextCommandHelp} ${memoryCommandHelp} ${sessionCommandHelp} ${projectCommandHelp} ${attachmentCommandHelp}`;
 
 /** Dispatch host commands; only explicit compaction may request a model summary. */
 export async function runInteractiveCommand(session: Conversation, prompt: string,
@@ -23,7 +23,13 @@ export async function runInteractiveCommand(session: Conversation, prompt: strin
 	const automation = await runAutomationCommand(session, prompt);
 	if (automation) return automation;
 	const match = /^\/skills(?:\s+([\s\S]*))?$/.exec(prompt);
-	if (!match) return runSessionCommand(session, prompt, options);
+	if (!match) {
+		const project = await runProjectCommand(session, prompt);
+		if (project) return project;
+		const attachment = await runAttachmentCommand(session, prompt, options);
+		if (attachment) return attachment;
+		return runSessionCommand(session, prompt);
+	}
 	if (match[1]?.trim()) throw new HarnessError("USAGE", "/skills does not take an argument.");
 	if (session instanceof SessionManager && session.skills) skills = session.skills.skills;
 	return {

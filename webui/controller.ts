@@ -20,7 +20,7 @@ import { newBoundTask } from "../src/automation/tasks.js";
 import type { SessionAutomation } from "../src/automation/tasks.js";
 import type { Activation } from "../src/automation/scheduler.js";
 import { FileChanges } from "../src/automation/files.js";
-import { automationCommandPrompt } from "../src/commands.js";
+import { automationCommandPrompt } from "../src/automation/commands.js";
 import type { WorkspacePicker } from "./folder-picker.js";
 import type { ProjectRecord } from "../src/project/record.js";
 import { ProjectJoinConfirmations } from "./projects.js";

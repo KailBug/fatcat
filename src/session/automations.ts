@@ -2,7 +2,41 @@ import { HarnessError, checkCancellation } from "../errors.js";
 import { FileChanges } from "../automation/files.js";
 import { newBoundTask, taskIsEnabled } from "../automation/tasks.js";
 import type { BoundTask, SessionAutomation } from "../automation/tasks.js";
+import type { LoopOptions } from "../loop.js";
+import type { SessionRunOptions } from "./agent-session.js";
 import type { SessionRecord } from "./record.js";
+
+export interface AutomationRunOptions extends Pick<LoopOptions, "signal" | "onEvent"> {
+	locationRevision?: number;
+}
+
+/** Project a freshly loaded record without sharing mutable tasks with the scheduler. */
+export function sessionAutomations(record: SessionRecord, workspace: string): SessionAutomation[] {
+	if (record.workspace !== workspace) return [];
+	return (record.automations ?? []).map((task) => ({
+		...structuredClone(task),
+		workspace: record.workspace,
+		locationRevision: record.locationRevision ?? 0,
+		sessionId: record.id,
+		sessionTitle: record.name ?? record.title,
+	}));
+}
+
+/** Check a selected target and prepare its turn; claiming and counting remain in AgentSession. */
+export function prepareAutomationRun(record: SessionRecord, workspace: string, taskId: string,
+	scheduledAt: number, paths: string[], options: AutomationRunOptions): { prompt: string; options: SessionRunOptions } {
+	const task = record.automations?.find((item) => item.id === taskId);
+	if (record.workspace !== workspace
+		|| (options.locationRevision !== undefined && options.locationRevision !== (record.locationRevision ?? 0))
+		|| !task || !taskIsEnabled(task) || task.lastStatus === "running"
+		|| (task.lastScheduledAt !== undefined && scheduledAt <= task.lastScheduledAt)) {
+		throw new HarnessError("AUTOMATION_INACTIVE", "This activation is no longer eligible in the selected workspace.");
+	}
+	const expiry = AbortSignal.timeout(Math.max(1, task.expiresAt - Date.now()));
+	return { prompt: task.prompt, options: { ...options,
+		signal: options.signal ? AbortSignal.any([options.signal, expiry]) : expiry,
+		automation: { taskId, scheduledAt, paths } } };
+}
 
 export interface SessionAutomationOptions {
 	persistent: boolean;

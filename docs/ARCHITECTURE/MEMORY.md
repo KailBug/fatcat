@@ -22,7 +22,7 @@ Memory 保存当前用户直接提供的持久事实、定义、偏好和决定�
 
 `session/memory.ts` 接收明确的 MemoryStore、执行身份和变更来源，处理来源 sessionId 一致性、作用域选择、相同 active 内容复用及增改删；它不是独立授权入口。Manager 的 memoryOperation 必须包住整个读取与修改过程，持久模式由 SessionStore.withMemorySession 在元数据锁内重验，非持久模式由 Manager 核对当前 sessionId、locationRevision 及可选回合 owner。不能只在创建访问对象时校验，也不能在读取与写入之间释放既有校验边界。
 
-Manager 保留 listMemories、changeMemory 及 MemoryChange 的原导出路径。首次宿主修改仍先保存并激活草稿，再执行 Memory 变更；后者失败不撤销已保存会话，操作开始前取消则不保存草稿。模型写入请求的默认私有/项目作用域按捕获的执行身份转换，证据、八次额度和 callId 结果仍由 AgentSession 管理。
+Manager 提供 listMemories、changeMemory 宿主操作；MemoryChange 直接从 `session/memory.ts` 导入，不经 manager 转导出。首次宿主修改仍先保存并激活草稿，再执行 Memory 变更；后者失败不撤销已保存会话，操作开始前取消则不保存草稿。模型写入请求的默认私有/项目作用域按捕获的执行身份转换，证据、八次额度和 callId 结果仍由 AgentSession 管理。
 
 MemoryAccess 的闭包在 activate 时捕获原身份及必要的草稿快照，每次 list 重新进入 Manager 校验，不缓存清单或授权。持久会话切换后旧绑定仍指向原会话；原会话迁入项目、改变作用域或被删除后按存储校验拒绝访问。非持久绑定则要求当前活动会话仍匹配。迁入预览在受校验的读取后计算 active 数量及全记录指纹，不能因数量为零而排除 tombstone。
 

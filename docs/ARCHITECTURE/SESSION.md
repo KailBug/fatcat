@@ -16,20 +16,20 @@ Session 系统区分成功对话、当前持久记录、宿主选择和存储。
 | `src/session/store.ts` | 有界磁盘读写、桶锁、修订和活动 owner 校验，协调跨文件提交 |
 | `src/session/record.ts`、`history.ts` | 格式解码、记录约束、完整回合及工具关联校验 |
 | `src/session/execution.ts` | 捕获 Session、Project、归属代次与有效工作目录 |
-| `src/session/automations.ts` | 任务变更校验与待保存记录，不持有第二份活动状态 |
-| `src/session/commands.ts`、`labels.ts` | 本地会话命令及项目/附件命令的既有入口协调；会话标签与列表格式化 |
+| `src/session/automations.ts` | 任务列表投影、触发资格与截止信号准备、变更校验及待保存记录，不持有第二份活动状态 |
+| `src/session/commands.ts`、`labels.ts` | 本地会话命令和成功切换后的确认失效通知；会话标签与列表格式化 |
 
 程序化普通 Session 保留内存入口；日常界面使用 SessionManager.open 和 run。Manager 通过 AgentSession 的防御性快照读取 record，不维护第二份可变副本。跨目录切换先准备目标 Agent，失败则保留当前状态；目录级 Tools/journals 由 `src/agent.ts` 的 workspaceAgentFactory 缓存，会话身份及资料访问按运行目标重新绑定，具体边界见 [Agent Loop](AGENT_LOOP.md)。
 
 ## 宿主命令边界
 
-`src/commands.ts` 保留 `runInteractiveCommand`、`interactiveCommandHelp` 和 `automationCommandPrompt` 导出。交互分发顺序仍为 Memory、Context、Cron、Skills、会话管理；其中只有显式 compact 会在命令处理中请求模型摘要。自然语言 `/cron` 由入口先转换成普通模型请求，转换本身不执行调度操作。
+`src/commands.ts` 提供 `runInteractiveCommand` 和 `interactiveCommandHelp`，直接组合 Memory、Context、Cron、Skills、Project、Attachment 和会话命令；其中只有显式 compact 会在命令处理中请求模型摘要。自然语言 `/cron` 由入口先转换成普通模型请求，转换本身不执行调度操作。
 
 命令实现按能力归属：Project 的解析、列表、加入预览和确认在 `src/project/commands.ts`，附件列表、导入、移除关联与删除确认在 `src/attachments/commands.ts`，Cron 本地管理及提示转换在 `src/automation/commands.ts`。Context 和 Memory 沿用各自模块。`src/utils/command.ts` 只提供无状态的参数文本解析与输出转义；`src/session/labels.ts` 提供会话标签和列表，避免领域处理器反向依赖分发器的运行时代码。
 
-`runSessionCommand` 继续接受原有会话、项目和附件命令，`sessionCommandHelp` 继续包含全部三组帮助，`Conversation`、`sessionLabel`、`sessionScopeLabel`、`formatSessionList` 的旧导出路径保持可用。会话模块保留入口识别、既有校验顺序和成功切换后的确认失效协调，项目/附件的具体操作交给领域处理器。未匹配命令仍返回 undefined，参数、错误、输出和 switched 语义不变。
+`runSessionCommand` 与 `sessionCommandHelp` 只覆盖会话命令，完整交互入口和帮助由 `src/commands.ts` 组合。`Conversation` 类型仍在会话命令模块；`sessionLabel`、`sessionScopeLabel`、`formatSessionList` 直接从 `session/labels.ts` 导入，`automationCommandPrompt` 直接从 `automation/commands.ts` 导入。内部路径迁移不保留历史转导出。未匹配命令仍返回 undefined，用户参数、校验顺序、错误、输出和 switched 语义不变。
 
-项目加入令牌保存在 Project 命令模块的 WeakMap，仍按 SessionManager 实例绑定预览，不进入历史或持久记录。匹配确认先消费令牌，再校验活动会话并调用 joinProject；失败也不能重用已消费的令牌。取消、成功 project use，以及成功 new/clear/reset/resume/fork 命令清除待确认状态；列表、无参数 resume 和失败的选择操作不清除。切换后的清理由会话入口显式通知项目处理器，不把该交互状态移入 Manager，也不改变程序化 Manager 方法的行为。
+项目加入令牌保存在 Project 命令模块的 WeakMap，仍按 SessionManager 实例绑定预览，不进入历史或持久记录。匹配确认先消费令牌，再校验活动会话并调用 joinProject；失败也不能重用已消费的令牌。取消、成功 project use，以及成功 new/clear/reset/resume/fork 命令清除待确认状态；列表、无参数 resume、workspace 命令和失败的选择操作不清除。切换后的清理由会话入口显式通知项目处理器，不把该交互状态移入 Manager，也不改变程序化 Manager 方法的行为。
 
 领域命令调用既有 SessionManager API；业务状态、权限、互斥和持久提交仍由原模块负责。Web UI 继续使用自己的管理接口，不接入完整终端命令集。开发和测试规则见[开发说明](../DEVELOPMENT.md)，用户语法见[命令参考](../REFERENCE/COMMANDS.md)。
 
@@ -65,11 +65,13 @@ Web UI 未命名新会话可以是 revision 0 草稿。普通回合开始前、�
 
 同一 Manager 同时只允许一个活动操作，不在运行中切换、清空、命名或管理。后台调度解析任务绑定的 Session，不能依赖 UI 当前选择。目录缓存只复用文件工具与日志，资料访问按真实执行身份装配。
 
-附件对外入口仍由 SessionManager 提供，AttachmentUploadTarget 仍可从 manager 模块导入。Manager 负责解析目标快照、捕获上传身份、持有草稿 scope token、排队发布、重试待收尾操作，并在发布结果属于当前会话时激活该记录；非持久附件仓库也仍由 Manager 创建和持有。`session/attachments.ts` 只接收明确的仓库、快照或执行身份，不保存当前选择、不持有操作锁、不负责激活或持久化 Session。流式接收、大小核对和 stage 清理由该模块处理，发布回调仍进入 Manager 的原有互斥区。后续扩展沿此边界，不能把整个 Manager 传给访问适配函数，也不能为便利另存一份活动 record。
+附件宿主操作由 SessionManager 提供，AttachmentUploadTarget 直接从 `session/attachments.ts` 导入。Manager 负责解析目标快照、捕获上传身份、持有草稿 scope token、排队发布、重试待收尾操作，并在发布结果属于当前会话时激活该记录；非持久附件仓库也仍由 Manager 创建和持有。`session/attachments.ts` 只接收明确的仓库、快照或执行身份，不保存当前选择、不持有操作锁、不负责激活或持久化 Session。流式接收、大小核对和 stage 清理由该模块处理，发布回调仍进入 Manager 的原有互斥区。后续扩展沿此边界，不能把整个 Manager 传给访问适配函数，也不能为便利另存一份活动 record。
 
 跨文件元数据锁序、提交决定和向前恢复由 [Attachments](ATTACHMENTS.md#元数据提交与恢复) 维护；项目成员与迁入规则归 [Projects](PROJECTS.md)。Context 保存投影参数而不删除完整历史。Tools 的写入、命令和浏览器日志不由 resume 恢复，旧工具结果不证明当前状态。
 
-Memory 的业务规则集中在 `session/memory.ts`，Manager 保留 MemoryStore 的创建/持有、宿主操作互斥、草稿保存和激活，以及 memoryOperation 的身份与 owner 校验；公开方法和 MemoryChange 的旧导出入口不变。activate 仍按原会话身份绑定动态访问，每次调用重新校验，不把活动 record 或授权结果交给辅助模块长期持有。AgentSession 继续管理当前用户证据、写入额度和 callId 复用；SessionStore 的元数据锁和持久身份重验不迁移。详细规则见 [Memory](MEMORY.md)。
+Memory 的业务规则集中在 `session/memory.ts`，Manager 保留 MemoryStore 的创建/持有、宿主操作互斥、草稿保存和激活，以及 memoryOperation 的身份与 owner 校验；MemoryChange 直接从 `session/memory.ts` 导入。activate 仍按原会话身份绑定动态访问，每次调用重新校验，不把活动 record 或授权结果交给辅助模块长期持有。AgentSession 继续管理当前用户证据、写入额度和 callId 复用；SessionStore 的元数据锁和持久身份重验不迁移。详细规则见 [Memory](MEMORY.md)。
+
+Automation 接入沿同一边界：`session/automations.ts` 接收记录快照，生成独立任务投影并校验触发资格、组合取消与到期信号；它不加载或激活会话，也不领取任务。Manager 保留当前记录刷新、owner 检查、后台目标装配及宿主互斥，AgentSession 保留任务变更提交、领取计数和回合收尾。调度队列、租约和文件基线仍归 ConversationAutomations。具体顺序与约束见 [Automation](AUTOMATION.md#session-接入边界)。
 
 ## 验证与未实现范围
 

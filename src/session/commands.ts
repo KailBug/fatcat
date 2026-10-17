@@ -1,27 +1,24 @@
-import { attachmentCommandHelp, runAttachmentCommand } from "../attachments/commands.js";
 import { quoted } from "../utils/command.js";
 import { HarnessError } from "../errors.js";
-import { clearProjectConfirmation, projectCommandHelp, runProjectCommand } from "../project/commands.js";
+import { clearProjectConfirmation } from "../project/commands.js";
 import { formatSessionList, sessionLabel, sessionScopeLabel } from "./labels.js";
 import { SessionManager } from "./manager.js";
 import type { Session } from "./session.js";
 
-export { formatSessionList, sessionLabel, sessionScopeLabel } from "./labels.js";
 export type Conversation = Session | SessionManager;
 
 export const sessionCommandHelp = "/new [--standalone] [name], /clear, /reset: start a new session; /sessions: list sessions; "
-	+ "/resume <id|name>: switch; /workspace [path]: show or change workspace; /rename <name>: rename; /fork [name]: copy history into a new session. "
-	+ `${projectCommandHelp} ${attachmentCommandHelp}`;
+	+ "/resume <id|name>: switch; /workspace [path]: show or change workspace; /rename <name>: rename; /fork [name]: copy history into a new session.";
 
 /** Local session commands never become user messages or grant tool permissions. */
-export async function runSessionCommand(session: Conversation, prompt: string, options: { signal?: AbortSignal } = {}): Promise<{
+export async function runSessionCommand(session: Conversation, prompt: string): Promise<{
 	text: string; switched: boolean;
 } | undefined> {
-	const match = /^\/(new|clear|reset|sessions|resume|rename|fork|workspace|projects|project|attachments|attach|attachment)(?:\s+([\s\S]*))?$/.exec(prompt);
+	const match = /^\/(new|clear|reset|sessions|resume|rename|fork|workspace)(?:\s+([\s\S]*))?$/.exec(prompt);
 	if (!match) return undefined;
 	const command = match[1]!;
 	const argument = match[2]?.trim();
-	if ((command === "clear" || command === "reset" || command === "sessions" || command === "projects") && argument) {
+	if ((command === "clear" || command === "reset" || command === "sessions") && argument) {
 		throw new HarnessError("USAGE", `/${command} does not take an argument.`);
 	}
 	if (!(session instanceof SessionManager)) {
@@ -30,10 +27,6 @@ export async function runSessionCommand(session: Conversation, prompt: string, o
 			return { text: "History cleared.", switched: true };
 		}
 		throw new HarnessError("USAGE", "Session management requires a managed conversation.");
-	}
-	if (command === "project" || command === "projects") return runProjectCommand(session, prompt);
-	if (command === "attachments" || command === "attach" || command === "attachment") {
-		return runAttachmentCommand(session, prompt, options);
 	}
 	if (command === "sessions" || (command === "resume" && !argument)) {
 		return { text: formatSessionList(await session.list(), session.current.id), switched: false };

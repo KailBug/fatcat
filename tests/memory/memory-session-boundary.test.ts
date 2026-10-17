@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import type { MemoryAccess } from "../../src/memory/tools.js";
 import type { SessionAgentOptions } from "../../src/session/agent-session.js";
 import { SessionManager } from "../../src/session/manager.js";
-import type { MemoryChange } from "../../src/session/manager.js";
+import type { MemoryChange } from "../../src/session/memory.js";
 import { SessionStore } from "../../src/session/store.js";
 import { temporaryWorkspace } from "../support/workspace.js";
 

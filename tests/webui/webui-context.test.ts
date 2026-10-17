@@ -10,7 +10,7 @@ import { SessionStore } from "../../src/session/store.js";
 import type { Tools } from "../../src/tools.js";
 import { WebContextUsage } from "../../webui/context-usage.js";
 import { WebUiController } from "../../webui/controller.js";
-import type { WebUiInfo } from "../../webui/controller.js";
+import type { WebUiInfo } from "../../webui/types.js";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const info: WebUiInfo = { provider: "deepseek", model: "deepseek-flash", workspace: "fixture", permission: "ask",

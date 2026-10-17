@@ -1,4 +1,5 @@
-import type { Approval, WebTurn, WebUiState } from "../controller.js";
+import type { PendingApproval as Approval } from "../../src/permissions/types.js";
+import type { WebTurn, WebUiState } from "../types.js";
 import { renderMarkdown } from "./markdown.js";
 import type { SessionSummary } from "../../src/session/record.js";
 import { SessionMenu } from "./session-menu.js";

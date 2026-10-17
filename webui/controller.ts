@@ -3,8 +3,7 @@ import { HarnessError, formatError } from "../src/errors.js";
 import { createTurnReporter } from "../src/execution-report.js";
 import { isContextCommand, runContextCommand } from "../src/context/commands.js";
 import { isMemoryCommand, runMemoryCommand } from "../src/memory/commands.js";
-import type { ExecutionReport, ReportEvent } from "../src/execution-report.js";
-import type { Message } from "../src/model.js";
+import type { ReportEvent } from "../src/execution-report.js";
 import type { SessionManager } from "../src/session/manager.js";
 import type { SessionSummary } from "../src/session/record.js";
 import type { ShellRequest } from "../src/tools/shell.js";
@@ -13,7 +12,6 @@ import { ApprovalCoordinator } from "../src/permissions/approval.js";
 import { PermissionPolicy } from "../src/permissions/policy.js";
 import type { PermissionMode } from "../src/permissions/policy.js";
 import { WebContextUsage } from "./context-usage.js";
-import type { ContextUsage } from "./context-usage.js";
 import type { BrowserRequest } from "../src/browser/protocol.js";
 import { ConversationAutomations } from "../src/automation/conversations.js";
 import { newBoundTask } from "../src/automation/tasks.js";
@@ -29,34 +27,12 @@ import { WebAttachments } from "./attachments.js";
 import { ProjectManagementConfirmations } from "./project-management.js";
 import type { ProjectManagementConfirmation } from "./project-management.js";
 import { attachmentEvidence } from "./attachment-evidence.js";
-import type { AttachmentEvidence } from "./attachment-evidence.js";
+import type { SessionRunOptions } from "../src/session/agent-session.js";
+import type { WebUiInfo, WebUiState, WebTurn } from "./types.js";
+import { activityMessage, restoredTurns } from "./turns.js";
 
-export type WebUiInfo = {
-  provider: string; model: string; workspace: string;
-  permission: string; shellPermission: string; webPermission: string;
-  maxIterations: number; maxRequestBytes: number; skills: number; warnings: string[];
-};
-export type { PendingApproval as Approval } from "../src/permissions/approval.js";
-import type { PendingApproval as Approval } from "../src/permissions/approval.js";
-export type WebTurn = {
-  id: string; prompt: string; answer?: string; error?: string;
-  status: "running" | "answered" | "stopped";
-  activity: string[]; report?: ExecutionReport;
-  automation?: boolean;
-  contextOperation?: boolean;
-  sources?: AttachmentEvidence;
-};
-export type WebUiState = {
-  revision: number; info: WebUiInfo; turns: WebTurn[]; busy: boolean;
-  approval: Approval | null; status: string;
-  current: SessionSummary; sessions: SessionSummary[]; persistent: boolean;
-  contextUsage: ContextUsage;
-  permissionMode: ReturnType<PermissionPolicy["snapshot"]>;
-  automations: SessionAutomation[]; automationNotice: string;
-  runningSessionId: string | null;
-  projects: ProjectRecord[];
-  attachmentRevision: number;
-};
+type AutomaticTurn = { task: SessionAutomation; activation: Activation };
+type TurnCommand = "memory" | "context" | undefined;
 
 /** Browser tabs share one selected session, active turn and pending approval. */
 export class WebUiController {
@@ -148,13 +124,14 @@ export class WebUiController {
     this.startTurn(automationCommandPrompt(prompt) ?? prompt);
   }
 
-  private startTurn(prompt: string, automatic?: { task: SessionAutomation; activation: Activation }): void {
+  private startTurn(prompt: string, automatic?: AutomaticTurn): void {
     this.requireIdle();
     if (!prompt.trim() || Buffer.byteLength(prompt) > 32_768) {
       throw new HarnessError("INPUT", "Enter a message of at most 32768 UTF-8 bytes.");
     }
-    const memoryCommand = !automatic && isMemoryCommand(prompt);
-    const contextCommand = !automatic && (isContextCommand(prompt) || memoryCommand);
+    const command: TurnCommand = automatic ? undefined
+      : isMemoryCommand(prompt) ? "memory" : isContextCommand(prompt) ? "context" : undefined;
+    const contextCommand = command !== undefined;
     if (!automatic && !contextCommand && this.turns.filter((turn) => !turn.contextOperation).length >= 100) {
       throw new HarnessError("INPUT", "Start a new chat after 100 turns.");
     }
@@ -173,11 +150,7 @@ export class WebUiController {
     const done = Promise.resolve().then(async () => {
       try {
         const options = { signal: abort.signal, onEvent: createTurnReporter((event) => this.observe(turn, event, false, visible && !contextCommand)) };
-        turn.answer = memoryCommand ? (await runMemoryCommand(this.session, prompt, options))!.text
-          : contextCommand ? (await runContextCommand(this.session, prompt, options))!.text : automatic
-          ? await this.session.runAutomation(automatic.task.sessionId, automatic.task.id, automatic.activation.scheduledAt, automatic.activation.paths ?? [],
-            { ...options, ...(automatic.task.locationRevision === undefined ? {} : { locationRevision: automatic.task.locationRevision }) })
-          : await this.session.run(prompt, options);
+        turn.answer = await this.executeTurn(prompt, command, options, automatic);
         if (contextCommand && /^\/compact(?:\s|$)/.test(prompt)) this.contextUsage.reset();
         turn.status = "answered";
         if (visible && !contextCommand) turn.sources = attachmentEvidence(this.session.history.slice(historyStart));
@@ -199,6 +172,18 @@ export class WebUiController {
     this.revision++;
   }
 
+  private async executeTurn(prompt: string, command: TurnCommand, options: SessionRunOptions,
+    automatic?: AutomaticTurn): Promise<string> {
+    if (command === "memory") return (await runMemoryCommand(this.session, prompt, options))!.text;
+    if (command === "context") return (await runContextCommand(this.session, prompt, options))!.text;
+    if (automatic) {
+      const { task, activation } = automatic;
+      return this.session.runAutomation(task.sessionId, task.id, activation.scheduledAt, activation.paths ?? [],
+        { ...options, ...(task.locationRevision === undefined ? {} : { locationRevision: task.locationRevision }) });
+    }
+    return this.session.run(prompt, options);
+  }
+
   reset(): Promise<void> { return this.newSession(); }
 
   newSession(name?: string, projectId?: string | null): Promise<void> {
@@ -217,14 +202,14 @@ export class WebUiController {
         if (path === null || selectionSignal.aborted) return;
         await this.session.createProject(name, path);
       } finally { this.workspaceSelection = undefined; }
-    }, false);
+    }, "preserve");
   }
 
   async previewProjectJoin(projectId: string, sessionId: string): Promise<ProjectJoinConfirmation> {
     let confirmation: ProjectJoinConfirmation | undefined;
     await this.changeSession(async () => {
       confirmation = this.projectConfirmations.create(await this.session.previewProjectJoin(projectId, sessionId));
-    }, false);
+    }, "preserve");
     return confirmation!;
   }
 
@@ -234,11 +219,11 @@ export class WebUiController {
       await this.session.joinProject(preview);
       this.approvals.deny();
       if (preview.sessionId === this.session.current.id) this.contextUsage.reset();
-    }, false);
+    }, "preserve");
   }
 
   renameProject(id: string, name: string, revision: number): Promise<void> {
-    return this.changeSession(() => this.session.renameProject(id, name, revision), false);
+    return this.changeSession(() => this.session.renameProject(id, name, revision), "preserve");
   }
 
   async chooseProjectWorkspaceChange(id: string, revision: number, picker: WorkspacePicker,
@@ -258,7 +243,7 @@ export class WebUiController {
         confirmation = this.projectManagement.create({ kind: "workspace",
           preview: await this.session.previewProjectWorkspace(id, path, revision) });
       } finally { this.workspaceSelection = undefined; }
-    }, false);
+    }, "preserve");
     return confirmation;
   }
 
@@ -266,7 +251,7 @@ export class WebUiController {
     let confirmation: ProjectManagementConfirmation | undefined;
     await this.changeSession(async () => {
       confirmation = this.projectManagement.create({ kind: "delete", preview: await this.session.previewProjectDelete(id, revision) });
-    }, false);
+    }, "preserve");
     return confirmation!;
   }
 
@@ -278,7 +263,7 @@ export class WebUiController {
       this.approvals.deny();
       if (this.session.current.projectId === confirmation.preview.projectId) this.contextUsage.reset();
       this.attachmentRevision++;
-    }, false);
+    }, "preserve");
   }
 
   deleteProject(token: string): Promise<void> {
@@ -288,12 +273,9 @@ export class WebUiController {
       const activeProject = this.session.current.projectId === confirmation.preview.projectId;
       await this.session.deleteProject(confirmation.preview);
       this.approvals.deny();
-      if (activeProject) {
-        this.turns = restoredTurns(this.session.history, this.session.current.id);
-        this.contextUsage.reset();
-      }
+      if (activeProject) this.restoreTranscript();
       this.attachmentRevision++;
-    }, false);
+    }, "preserve");
   }
 
   resume(selector: string): Promise<void> {
@@ -301,7 +283,7 @@ export class WebUiController {
   }
 
   setWorkspace(path: string, id?: string): Promise<void> {
-    return this.changeSession(() => this.session.setWorkspace(path, id), id === undefined || id === this.session.current.id);
+    return this.changeSession(() => this.session.setWorkspace(path, id), (id === undefined || id === this.session.current.id) ? "restore" : "preserve");
   }
 
   chooseWorkspace(id: string, picker: WorkspacePicker, signal: AbortSignal): Promise<void> {
@@ -317,12 +299,14 @@ export class WebUiController {
         const path = await picker(selected.workspace, selectionSignal);
         if (path === null || selectionSignal.aborted) return;
         await this.session.setWorkspace(path, id);
-        if (id === this.session.current.id) {
-          this.turns = restoredTurns(this.session.history, this.session.current.id);
-          this.contextUsage.reset();
-        }
+        if (id === this.session.current.id) this.restoreTranscript();
       } finally { this.workspaceSelection = undefined; }
-    }, false);
+    }, "preserve");
+  }
+
+  private restoreTranscript(): void {
+    this.turns = restoredTurns(this.session.history, this.session.current.id);
+    this.contextUsage.reset();
   }
 
   private updateWorkspace(): void {
@@ -334,7 +318,7 @@ export class WebUiController {
   }
 
   rename(name: string, id?: string): Promise<void> {
-    return this.changeSession(() => this.session.rename(name, id), false);
+    return this.changeSession(() => this.session.rename(name, id), "preserve");
   }
 
   fork(name?: string, id?: string): Promise<void> {
@@ -343,7 +327,7 @@ export class WebUiController {
 
   deleteSession(id: string, revision?: number): Promise<void> {
     const selectedRevision = revision ?? this.sessions.find((item) => item.id === id)?.revision;
-    return this.changeSession(() => this.session.delete(id, selectedRevision), id === this.session.current.id);
+    return this.changeSession(() => this.session.delete(id, selectedRevision), id === this.session.current.id ? "restore" : "preserve");
   }
 
   async createAutomation(value: unknown, sessionId?: string): Promise<void> {
@@ -357,24 +341,21 @@ export class WebUiController {
       }
       if (!sessionId) await this.session.newSession();
       await this.session.manageSessionAutomation(sessionId ?? this.session.current.id, { action: "create", ...(value as object) });
-    }, !sessionId);
+    }, sessionId ? "preserve" : "restore");
   }
 
   manageAutomation(sessionId: string, id: string, action: "pause" | "resume" | "delete"): Promise<void> {
-    return this.changeSession(() => this.session.manageSessionAutomation(sessionId, { action, id }), false);
+    return this.changeSession(() => this.session.manageSessionAutomation(sessionId, { action, id }), "preserve");
   }
 
-  private changeSession(change: () => Promise<unknown>, restore = true): Promise<void> {
+  private changeSession(change: () => Promise<unknown>, transcript: "restore" | "preserve" = "restore"): Promise<void> {
     this.requireIdle();
     this.status = "Loading session";
     const done = Promise.resolve().then(async () => {
       try {
         await change();
         this.updateWorkspace();
-        if (restore) {
-          this.turns = restoredTurns(this.session.history, this.session.current.id);
-          this.contextUsage.reset();
-        }
+        if (transcript === "restore") this.restoreTranscript();
         this.sessions = await this.session.list();
         this.projects = await this.session.listProjects();
         this.automationTasks = await this.session.listAutomations();
@@ -435,15 +416,7 @@ export class WebUiController {
     if (event.type === "subagent_event") { this.observe(turn, event.event, true, visible); return; }
     if (!child && visible) this.contextUsage.observe(event);
     if (event.type === "execution_report") turn.report = event.report;
-    let message: string | undefined;
-    const source = child ? "Subagent · " : "";
-    if (event.type === "model_request") message = `${source}${event.purpose === "compaction" ? "Summary" : event.purpose === "document" ? "Document" : "Model"} request ${event.iteration}`;
-    if (event.type === "compaction_start") message = "Request limit reached; compacting older turns";
-    if (event.type === "compaction_end") message = `Context compacted: ${event.beforeBytes} to ${event.afterBytes} conversation bytes; continuing current request`;
-    if (event.type === "tool_result") message = `${source}${event.tool} · ${event.ok ? "completed" : "failed"}`;
-    if (event.type === "write_record") message = `${source}Write ${event.record.path} · ${event.record.status}`;
-    if (event.type === "shell_record") message = `${source}Command · ${event.record.status}`;
-    if (event.type === "browser_record") message = `${source}Browser ${event.record.path} · ${event.record.status}`;
+    const message = activityMessage(event, child);
     if (message) {
       turn.activity.push(message);
       if (turn.activity.length > 100) turn.activity.shift();
@@ -451,20 +424,4 @@ export class WebUiController {
     }
     this.revision++;
   }
-}
-
-/** Recover user text and final answers; approval state and UI telemetry are process-local. */
-function restoredTurns(history: readonly Message[], sessionId: string): WebTurn[] {
-  const turns: WebTurn[] = [];
-  let prompt: string | undefined;
-  let start = 0;
-  for (const [index, message] of history.entries()) {
-    if (message.role === "user" && typeof message.content === "string") { prompt = message.content; start = index; }
-    if (message.role === "assistant" && !message.tool_calls?.length && typeof message.content === "string" && prompt !== undefined) {
-      turns.push({ id: `${sessionId}:${turns.length}`, prompt, answer: message.content, status: "answered", activity: [],
-        sources: attachmentEvidence(history.slice(start, index + 1)) });
-      prompt = undefined;
-    }
-  }
-  return turns;
 }

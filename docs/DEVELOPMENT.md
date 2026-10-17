@@ -45,6 +45,14 @@ For Automation, keep task projection, activation eligibility and deadline signal
 
 For Projects, share complete join-preview assembly between preview and confirmation, but read fresh Memory and attachment state on every call. Keep Memory reads inside the existing identity/owner gate and final revision checks inside the storage transaction. Draft projection helpers only prepare records; Manager keeps operation locks, target selection, Agent preparation and activation. Preserve each operation's ordering: directory changes prepare draft transitions before commit, active-project deletion prepares its replacement first, and rename refresh failures do not undo a committed project name. Do not wrap the whole Manager in a Project service or move transaction locks into these helpers. Keep scope, stale-preview, draft and failure regressions in `tests/projects/`; the maintained contract is in [Projects](ARCHITECTURE/PROJECTS.md#session-接入边界).
 
+## Web UI controller boundaries
+
+Keep shared display contracts in `webui/types.ts` and stateless history/event conversion in `webui/turns.ts`. Import types from their owner, without forwarding exports from Controller. Display helpers receive explicit history or events and return presentation data; they must not hold a Controller, SessionManager, operation lock or second transcript owner. Continue using the existing attachment evidence and context usage modules.
+
+Controller owns active/changing operations, transcript, revisions, approval coordination and shutdown. Keep execution dispatch in a private method and install active state before invoking any operation that can emit events or request approval. Preserve manual-command versus automated-prompt routing, background visibility, parent-only context usage, evidence eligibility, display limits and cleanup order. Final list refresh remains inside the active lifetime; do not release the host lock early.
+
+Use explicit restore/preserve intent for management operations. Combine transcript restoration and usage reset only where both already occur together; keep project-specific usage resets and attachment revisions at their existing operation boundaries. Preserve success/failure refresh order and partial committed effects. A failed management operation may refresh metadata for a new confirmation, but must not automatically replay the change or replace the displayed conversation as part of error recovery. Keep public-entry regressions in `tests/webui/`, including synchronous approval, cancellation, refresh failures, background tasks and restored evidence. See [Web UI](ARCHITECTURE/WEBUI.md) for the maintained behavior.
+
 ## Test and verification layout
 
 Keep offline tests outside production code, grouped by the contract they verify. Use `*.test.ts` for test entry points and descriptive filenames for helpers.

@@ -8,7 +8,7 @@ import { SessionManager } from "../../src/session/manager.js";
 import { SessionStore } from "../../src/session/store.js";
 import { createTools } from "../../src/tools.js";
 import { WebUiController } from "../../webui/controller.js";
-import type { WebUiState } from "../../webui/controller.js";
+import type { WebUiState } from "../../webui/types.js";
 import type { ProjectJoinConfirmation } from "../../webui/projects.js";
 import type { WorkspacePicker } from "../../webui/folder-picker.js";
 import { startWebUiServer } from "../../webui/server.js";

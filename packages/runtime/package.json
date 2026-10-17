@@ -1,0 +1,198 @@
+{
+  "name": "@fatcat/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Fatcat agent execution, capabilities and persistent state.",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11.21.0 <12"
+  },
+  "exports": {
+    "./agent": {
+      "types": "./dist/agent.d.ts",
+      "import": "./dist/agent.js"
+    },
+    "./attachments/read": {
+      "types": "./dist/attachments/read.d.ts",
+      "import": "./dist/attachments/read.js"
+    },
+    "./attachments/record": {
+      "types": "./dist/attachments/record.d.ts",
+      "import": "./dist/attachments/record.js"
+    },
+    "./automation/config": {
+      "types": "./dist/automation/config.d.ts",
+      "import": "./dist/automation/config.js"
+    },
+    "./automation/conversations": {
+      "types": "./dist/automation/conversations.d.ts",
+      "import": "./dist/automation/conversations.js"
+    },
+    "./automation/files": {
+      "types": "./dist/automation/files.d.ts",
+      "import": "./dist/automation/files.js"
+    },
+    "./automation/runner": {
+      "types": "./dist/automation/runner.d.ts",
+      "import": "./dist/automation/runner.js"
+    },
+    "./automation/scheduler": {
+      "types": "./dist/automation/scheduler.d.ts",
+      "import": "./dist/automation/scheduler.js"
+    },
+    "./automation/tasks": {
+      "types": "./dist/automation/tasks.d.ts",
+      "import": "./dist/automation/tasks.js"
+    },
+    "./browser/evidence": {
+      "types": "./dist/browser/evidence.d.ts",
+      "import": "./dist/browser/evidence.js"
+    },
+    "./browser/protocol": {
+      "types": "./dist/browser/protocol.d.ts",
+      "import": "./dist/browser/protocol.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    },
+    "./context/compaction": {
+      "types": "./dist/context/compaction.d.ts",
+      "import": "./dist/context/compaction.js"
+    },
+    "./context/manager": {
+      "types": "./dist/context/manager.d.ts",
+      "import": "./dist/context/manager.js"
+    },
+    "./documents/types": {
+      "types": "./dist/documents/types.d.ts",
+      "import": "./dist/documents/types.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    },
+    "./execution-report": {
+      "types": "./dist/execution-report.d.ts",
+      "import": "./dist/execution-report.js"
+    },
+    "./loop": {
+      "types": "./dist/loop.d.ts",
+      "import": "./dist/loop.js"
+    },
+    "./memory/record": {
+      "types": "./dist/memory/record.d.ts",
+      "import": "./dist/memory/record.js"
+    },
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "import": "./dist/model.js"
+    },
+    "./model-usage": {
+      "types": "./dist/model-usage.d.ts",
+      "import": "./dist/model-usage.js"
+    },
+    "./permissions/approval": {
+      "types": "./dist/permissions/approval.d.ts",
+      "import": "./dist/permissions/approval.js"
+    },
+    "./permissions/policy": {
+      "types": "./dist/permissions/policy.d.ts",
+      "import": "./dist/permissions/policy.js"
+    },
+    "./permissions/text-file": {
+      "types": "./dist/permissions/text-file.d.ts",
+      "import": "./dist/permissions/text-file.js"
+    },
+    "./permissions/types": {
+      "types": "./dist/permissions/types.d.ts",
+      "import": "./dist/permissions/types.js"
+    },
+    "./permissions/workspace": {
+      "types": "./dist/permissions/workspace.d.ts",
+      "import": "./dist/permissions/workspace.js"
+    },
+    "./project/management": {
+      "types": "./dist/project/management.d.ts",
+      "import": "./dist/project/management.js"
+    },
+    "./project/operations": {
+      "types": "./dist/project/operations.d.ts",
+      "import": "./dist/project/operations.js"
+    },
+    "./project/record": {
+      "types": "./dist/project/record.d.ts",
+      "import": "./dist/project/record.js"
+    },
+    "./providers": {
+      "types": "./dist/providers.d.ts",
+      "import": "./dist/providers.js"
+    },
+    "./session/agent-session": {
+      "types": "./dist/session/agent-session.d.ts",
+      "import": "./dist/session/agent-session.js"
+    },
+    "./session/manager": {
+      "types": "./dist/session/manager.d.ts",
+      "import": "./dist/session/manager.js"
+    },
+    "./session/record": {
+      "types": "./dist/session/record.d.ts",
+      "import": "./dist/session/record.js"
+    },
+    "./session/session": {
+      "types": "./dist/session/session.d.ts",
+      "import": "./dist/session/session.js"
+    },
+    "./session/store": {
+      "types": "./dist/session/store.d.ts",
+      "import": "./dist/session/store.js"
+    },
+    "./skills": {
+      "types": "./dist/skills.d.ts",
+      "import": "./dist/skills.js"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "import": "./dist/tools.js"
+    },
+    "./tools/shell": {
+      "types": "./dist/tools/shell.d.ts",
+      "import": "./dist/tools/shell.js"
+    },
+    "./tools/web": {
+      "types": "./dist/tools/web.d.ts",
+      "import": "./dist/tools/web.js"
+    },
+    "./tools/write": {
+      "types": "./dist/tools/write.d.ts",
+      "import": "./dist/tools/write.js"
+    },
+    "./internal/*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && node scripts/copy-skills.mjs"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "1.0.11",
+    "htmlparser2": "12.0.0",
+    "ipaddr.js": "2.5.0",
+    "openai": "7.18.0",
+    "pdfjs-dist": "6.4.299",
+    "playwright": "1.63.0",
+    "saxes": "6.0.0",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.5",
+    "typescript": "7.0.2"
+  }
+}

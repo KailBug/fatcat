@@ -4,21 +4,27 @@
 
 Fatcat 是面向本地编码任务的 TypeScript Agent Harness。CLI、chat、TUI 和本地 Web UI 共用运行核心；界面负责输入、审批展示和结果呈现，核心负责执行、持久化、权限、预算与取消。本文描述当前源码职责，具体操作见使用指南。
 
+## Workspace 包边界
+
+当前 workspace 包含根应用、私有 `@fatcat/runtime`、`@fatcat/commands`、`@fatcat/tui`、`@fatcat/webui`、`@fatcat/cli`，以及开发专用的 `@fatcat/verification`。共享执行、能力与持久状态位于 `packages/runtime/src/`，独立编译为该包的 `dist/`，并通过明确的子路径导出 JavaScript 和声明。CLI、TUI、Web UI、测试与验证脚本按包名导入；runtime 不依赖这些调用者。包内仍按领域组织，没有把每个领域强行拆成独立包。
+
+`packages/commands/src/` 持有共享命令、会话标签、参数工具和交互确认状态，通过 `@fatcat/commands` 及明确子路径导出。客户端可依赖 commands 与 runtime，commands 只依赖 runtime；runtime 不反向依赖命令。`packages/cli/src/` 持有 CLI/chat、终端输入与审批展示，以及应用版本读取；CLI 依赖共享核心、commands 和两个可选界面包，界面不反向依赖 CLI；`packages/tui/src/` 通过 `@fatcat/tui` 提供惰性启动入口，保留 App、视图、遥测和终端生命周期；`packages/webui/src/` 通过 `@fatcat/webui` 提供惰性启动入口，持有 HTTP、Controller、浏览器视图和资源；两个客户端包彼此独立。`packages/verification/tests/` 和 `packages/verification/verify/` 集中保留离线契约与环境验证，由 verification 包独立编译；根 `scripts/start.ts` 保留 pnpm 调用目录适配，根命令继续编排构建与验证。验证包只向产品包单向依赖，不暴露库接口，任何产品包都不能导入它。原运行核心路径已移除，不提供兼容转发；运行命令、持久格式、锁与状态所有权不变。构建、导出与依赖规则见[开发规范](../DEVELOPMENT.md#workspace-package-boundaries)。
+
 ## 调用链与状态归属
 
 一次任务由入口交给 SessionManager，AgentSession 先保存执行领取，再让 Session 在历史副本上调用 Loop。Loop 请求 Model、执行关联工具调用并继续请求，直到最终回答或明确终止。AgentSession 持久提交或记录中断后，入口展示结果与执行报告。
 
 | 层次 | 当前源码 | 唯一职责 |
 | --- | --- | --- |
-| 入口与交互 | `src/cli.ts`、`src/cli/`、`src/chat.ts`、`src/terminal.ts`、`tui/`、`webui/` | 启动参数与编排、输入、宿主命令、审批交互、取消与呈现 |
-| 宿主命令 | `src/commands.ts`、各能力的 `commands.ts` | 统一分发与按能力归属的解析、帮助和输出；分发与确认生命周期见 [Session](SESSION.md) |
-| 装配 | `src/agent.ts` | 按工作目录准备 Tools/Skills，按实际 Session 绑定父子执行身份与资料访问；装配与缓存边界见 [Agent Loop](AGENT_LOOP.md) |
-| 会话 | `src/session/` | 成功历史、当前记录、运行领取、会话选择和持久存储 |
-| 回合 | `src/loop.ts`、`src/subagent.ts` | 模型与工具循环、有界委派、请求余额与事件 |
-| 模型与上下文 | `src/model.ts`、`src/providers.ts`、`src/context/` | 协议转换、请求投影、完整请求预算和上下文压缩 |
-| 工具与安全 | `src/tools.ts`、`src/tools/`、`src/permissions/` | 工具参数/执行事实与权限/资源边界 |
-| 项目与资料 | `src/project/`、`src/attachments/`、`src/documents/`、`src/memory/` | 项目目录、资料关联、不可变原件、派生内容与当前记忆 |
-| 调度与证据 | `src/automation/`、`src/execution-report.ts` | 有界激活与本回合观察结果，不拥有另一份对话历史 |
+| 入口与交互 | `packages/cli/src/cli.ts`、`packages/cli/src/cli/`、`packages/cli/src/chat.ts`、`packages/cli/src/terminal.ts`、`packages/tui/src/`、`packages/webui/src/` | 启动参数与编排、输入、宿主命令、审批交互、取消与呈现 |
+| 宿主命令 | `packages/commands/src/commands.ts`、各能力的 `commands.ts` | 统一分发与按能力归属的解析、帮助和输出；分发与确认生命周期见 [Session](SESSION.md) |
+| 装配 | `packages/runtime/src/agent.ts` | 按工作目录准备 Tools/Skills，按实际 Session 绑定父子执行身份与资料访问；装配与缓存边界见 [Agent Loop](AGENT_LOOP.md) |
+| 会话 | `packages/runtime/src/session/` | 成功历史、当前记录、运行领取、会话选择和持久存储 |
+| 回合 | `packages/runtime/src/loop.ts`、`packages/runtime/src/subagent.ts` | 模型与工具循环、有界委派、请求余额与事件 |
+| 模型与上下文 | `packages/runtime/src/model.ts`、`packages/runtime/src/providers.ts`、`packages/runtime/src/context/` | 协议转换、请求投影、完整请求预算和上下文压缩 |
+| 工具与安全 | `packages/runtime/src/tools.ts`、`packages/runtime/src/tools/`、`packages/runtime/src/permissions/` | 工具参数/执行事实与权限/资源边界 |
+| 项目与资料 | `packages/runtime/src/project/`、`packages/runtime/src/attachments/`、`packages/runtime/src/documents/`、`packages/runtime/src/memory/` | 项目目录、资料关联、不可变原件、派生内容与当前记忆 |
+| 调度与证据 | `packages/runtime/src/automation/`、`packages/runtime/src/execution-report.ts` | 有界激活与本回合观察结果，不拥有另一份对话历史 |
 
 以下状态不能混为一体：
 
@@ -30,7 +36,7 @@ Fatcat 是面向本地编码任务的 TypeScript Agent Harness。CLI、chat、TU
 
 ## CLI 启动边界
 
-`src/cli.ts` 是进程入口，仅读取 argv、调用 `runCli()` 并设置退出码。`src/cli/options.ts` 维护参数定义、帮助文本、可选 `--resume` 值的规范化、隐式 chat 选择及组合校验，返回 Node parseArgs 推断的类型化结果；不访问配置、存储或终端。`src/cli/run.ts` 负责本地检查、交互式会话选择、配置/权限装配、客户端分流、输出和宿主清理，导入本身不启动 CLI。保留可执行入口是实际启动契约，不是旧导入路径的兼容转导出。
+`packages/cli/src/cli.ts` 是进程入口，仅读取 argv、调用 `runCli()` 并设置退出码。`packages/cli/src/cli/options.ts` 维护参数定义、帮助文本、可选 `--resume` 值的规范化、隐式 chat 选择及组合校验，返回 Node parseArgs 推断的类型化结果；不访问配置、存储或终端。`packages/cli/src/cli/run.ts` 负责本地检查、交互式会话选择、配置/权限装配、客户端分流、输出和宿主清理，导入本身不启动 CLI。包根 `@fatcat/cli` 直接映射到可调用的 runCli，`@fatcat/cli/entry` 映射到执行 argv 的入口；测试/原生验证的内部访问使用 `@fatcat/cli/internal/*`。根启动适配器恢复 pnpm 调用目录后导入 /entry。VERSION 从 CLI 自身清单读取，构建边界检查要求 CLI 与根应用版本一致；旧根 src 路径已删除。可执行入口是实际启动契约，不是旧导入路径的兼容转导出。
 
 组合校验先于帮助/版本等提前返回；非交互的无选择值 `--resume` 先列出会话，再考虑提示为空、TTY 和模型配置检查。自动化配置及监视路径检查也先于模型配置读取。交互选择器在 chat 中复用原 TerminalInput，进入 TUI/Web UI 前关闭；各客户端继续持有自己的运行生命周期，权限决策仍由 PermissionPolicy 负责。参数错误、配置错误及取消的退出码和 stdout/stderr 分工保持现有契约。
 
@@ -78,6 +84,6 @@ TypeScript 维护参考 pi agent 的相关实际源码和状态所有权，工�
 
 各专题列出应保持的检查边界与已知缺口，具体命令集中在[开发与验证](../DEVELOPMENT.md)。离线合约、真实 Windows/Edge、公共网络和真实模型分别验证；已有固定样例结果不能代替当前改动的检查。
 
-后续 runtime 重构先核对实际装配、状态所有权和生命周期，保留持久化、权限、预算、取消与副作用契约；尚未确定新的模块布局或存储格式。Web UI/TUI 的后续要求由各自专题维护。已有资料与 Memory 继续作为兼容基线，质量缺口不因开发重心变化而视为完成。
+后续重构沿 workspace 包边界推进，先核对实际装配、状态所有权和生命周期，保留持久化、权限、预算、取消与副作用契约；本次迁包不改变存储格式。Web UI/TUI 的后续要求由各自专题维护。已有资料与 Memory 继续作为兼容基线，质量缺口不因开发重心变化而视为完成。
 
 Graph、Channel/App、远程服务、并行或递归委派、文件恢复检查点和完整 Task 验收系统尚未实现。检索与音频方案暂缓；成本优化须先建立代表性任务、成功率门槛与成本基线。具体顺序由当前任务决定。

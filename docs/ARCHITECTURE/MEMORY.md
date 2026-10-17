@@ -8,17 +8,17 @@ Memory 保存当前用户直接提供的持久事实、定义、偏好和决定�
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/memory/record.ts` | 作用域、来源、完整修订及持久记录格式校验 |
-| `src/memory/store.ts` | 内存状态、存储锁、记录变更与修订冲突、容量规则及迁移协调 |
-| `src/memory/files.ts` | 作用域文件有界读取、原子发布、锁 owner 记录读取及文件大小上限 |
-| `src/memory/tools.ts` | 通用 read 与每次请求的当前状态 notice |
-| `src/memory/write.ts` | 通用 write 保留地址、证据及能力指导 |
-| `src/memory/commands.ts` | 用户主动管理，不请求模型或增加成功历史 |
-| `src/session/memory.ts` | 会话可见作用域、作用域内增改删规则、模型写入请求转换及迁入统计；不持有活动会话状态 |
-| `src/session/manager.ts` | MemoryStore 实例、宿主互斥、草稿保存与激活、按执行身份绑定访问及每次操作的校验入口 |
-| `src/session/agent-session.ts` | 当前父用户回合、变更额度、callId 结果复用 |
-| `src/session/store.ts` | 实际执行身份及持久 attempt owner 重验 |
-| `src/attachments/transaction.ts` | 项目迁入中的幂等 Memory 转移 |
+| `packages/runtime/src/memory/record.ts` | 作用域、来源、完整修订及持久记录格式校验 |
+| `packages/runtime/src/memory/store.ts` | 内存状态、存储锁、记录变更与修订冲突、容量规则及迁移协调 |
+| `packages/runtime/src/memory/files.ts` | 作用域文件有界读取、原子发布、锁 owner 记录读取及文件大小上限 |
+| `packages/runtime/src/memory/tools.ts` | 通用 read 与每次请求的当前状态 notice |
+| `packages/runtime/src/memory/write.ts` | 通用 write 保留地址、证据及能力指导 |
+| `packages/commands/src/memory/commands.ts` | 用户主动管理，不请求模型或增加成功历史 |
+| `packages/runtime/src/session/memory.ts` | 会话可见作用域、作用域内增改删规则、模型写入请求转换及迁入统计；不持有活动会话状态 |
+| `packages/runtime/src/session/manager.ts` | MemoryStore 实例、宿主互斥、草稿保存与激活、按执行身份绑定访问及每次操作的校验入口 |
+| `packages/runtime/src/session/agent-session.ts` | 当前父用户回合、变更额度、callId 结果复用 |
+| `packages/runtime/src/session/store.ts` | 实际执行身份及持久 attempt owner 重验 |
+| `packages/runtime/src/attachments/transaction.ts` | 项目迁入中的幂等 Memory 转移 |
 
 目录 Tools 缓存外绑定 MemoryAccess；每次操作按 Session/Project、locationRevision、projectRevision、有效 workspace 重验。子任务继承可见范围但不能修改，自动任务也不能修改。
 
@@ -79,6 +79,6 @@ memory/ 下分 `session-<uuid>.json`、`project-<uuid>.json` 和 `global.json`�
 
 检查生产装配下的自然语言 write/read、当前证据、Plan/read-only 例外、子/自动任务拒绝、旧能力回复、修订/tombstone、重启与同目录隔离、失败后保留及迁入恢复。固定真实 DeepSeek 样例曾验证保存、独立项目历史共享、重启和其他项目隔离；Edge 回归的模型回复为注入。
 
-`tests/memory/` 的文件/协调回归覆盖文件已打开后的作用域及锁 owner 读取取消、sync 后发布前取消不覆盖原数据且释放 Store 锁、项目已发布而私有范围清空失败后的重放。既有测试继续覆盖损坏/超限文件、修订冲突、内存隔离、真实第二进程写入和锁恢复；文件边界重组不以真实模型或浏览器检查代替这些契约。
+`packages/verification/tests/memory/` 的文件/协调回归覆盖文件已打开后的作用域及锁 owner 读取取消、sync 后发布前取消不覆盖原数据且释放 Store 锁、项目已发布而私有范围清空失败后的重放。既有测试继续覆盖损坏/超限文件、修订冲突、内存隔离、真实第二进程写入和锁恢复；文件边界重组不以真实模型或浏览器检查代替这些契约。
 
 这些结果不代表广泛自然语言选择/使用质量或其他供应商质量已验收。自动提炼、语义合并、冲突消解、按任务语义筛选、文件来源/pin、索引和物理历史清理尚未实现；增强与广泛评估暂缓。恢复时先明确代表性任务及容量演进。

@@ -8,16 +8,16 @@ Project 是显式组织实体，持有统一工作目录。成员 Session 历史
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/project/record.ts` | 项目身份、名称、工作目录、修订及 Project v1 格式校验 |
-| `src/project/store.ts` | 创建与查询策略、修订检查、metadata gate 和项目锁/恢复 |
-| `src/project/files.ts` | 项目记录的有界读取、原子发布和锁 owner 记录读取 |
-| `src/project/operations.ts` | 基础迁入预览、完整预览比较与确认后的记录转换 |
-| `src/session/projects.ts` | 组合迁入所需的 Memory/附件状态，准备未保存项目会话的投影；不持有活动会话或执行提交 |
-| `src/project/commands.ts` | 终端项目命令的解析、帮助、输出与按 Manager 绑定的加入确认令牌；业务操作仍调用 SessionManager |
-| `src/project/management.ts` | 目录/删除影响预览、成员指纹和有界目录 patch |
-| `src/session/store.ts`、`manager.ts` | 发现成员、重验修订、协调提交并准备目标 Agent |
-| `src/session/execution.ts` | 实际执行身份及归属代次 |
-| `webui/projects.ts`、`project-management.ts` | UI 操作预览、一次性确认与入口协调 |
+| `packages/runtime/src/project/record.ts` | 项目身份、名称、工作目录、修订及 Project v1 格式校验 |
+| `packages/runtime/src/project/store.ts` | 创建与查询策略、修订检查、metadata gate 和项目锁/恢复 |
+| `packages/runtime/src/project/files.ts` | 项目记录的有界读取、原子发布和锁 owner 记录读取 |
+| `packages/runtime/src/project/operations.ts` | 基础迁入预览、完整预览比较与确认后的记录转换 |
+| `packages/runtime/src/session/projects.ts` | 组合迁入所需的 Memory/附件状态，准备未保存项目会话的投影；不持有活动会话或执行提交 |
+| `packages/commands/src/project/commands.ts` | 终端项目命令的解析、帮助、输出与按 Manager 绑定的加入确认令牌；业务操作仍调用 SessionManager |
+| `packages/runtime/src/project/management.ts` | 目录/删除影响预览、成员指纹和有界目录 patch |
+| `packages/runtime/src/session/store.ts`、`manager.ts` | 发现成员、重验修订、协调提交并准备目标 Agent |
+| `packages/runtime/src/session/execution.ts` | 实际执行身份及归属代次 |
+| `packages/webui/src/projects.ts`、`project-management.ts` | UI 操作预览、一次性确认与入口协调 |
 
 Project v1 存于 Session 根的 `projects/<id>.json`，名称最多 120 字符、记录最多 64 KiB。成员列表从 Session location 派生，不维护另一份成员表；Session 只存 projectId，有效目录从 Project 解析，原 storageWorkspace 不变。旧 Session 格式兼容归 [Session](SESSION.md)。
 
@@ -77,6 +77,6 @@ Web UI 提供重命名、修改目录和确认删除；共享核心负责行为�
 
 检查范围包括项目/独立身份、同目录隔离、预览取消/过期、非活动会话迁入、草稿、后台/子任务身份、双进程领取、日志发布后故障、成员目录统一更新及外部原件保留。Edge 注入模型/目录选择检查不等于真实模型或原生选择器验收；原生选择器边界见 [Web UI](WEBUI.md)。
 
-`tests/projects/` 的文件/协调回归还覆盖不存在仓库的只读行为、列表与直接读取对损坏/超限/无效 UTF-8/身份不匹配记录的不同处理、sync 与 rename 失败清理，以及活跃/不完整/死亡锁 owner 和修订检查。Session 目录投影、项目异常不回退和跨进程管理恢复继续由既有测试覆盖。
+`packages/verification/tests/projects/` 的文件/协调回归还覆盖不存在仓库的只读行为、列表与直接读取对损坏/超限/无效 UTF-8/身份不匹配记录的不同处理、sync 与 rename 失败清理，以及活跃/不完整/死亡锁 owner 和修订检查。Session 目录投影、项目异常不回退和跨进程管理恢复继续由既有测试覆盖。
 
 尚无解除项目关联、跨项目迁移、回收站、撤销或物理 Memory 清理。解除/迁移时哪些资料和记忆可带走，需要独立产品决策，不能由当前共享规则推断。

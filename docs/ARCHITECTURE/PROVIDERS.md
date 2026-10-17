@@ -8,12 +8,12 @@
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/providers.ts` | 配置描述、固定 endpoint、专有字段及精确模型能力 |
-| `src/config.ts` | 所选凭据/模型/区域与共享预算校验 |
-| `src/model.ts` | createModel、完整请求准备、SDK、响应校验、期限和安全错误 |
-| `src/model-usage.ts` | token 与缓存计数合法性 |
-| `src/documents/vision.ts` | 已获准图片的临时辅助请求 |
-| `webui/context-usage.ts` | 界面已知模型容量与最近父请求观察，不改变 API |
+| `packages/runtime/src/providers.ts` | 配置描述、固定 endpoint、专有字段及精确模型能力 |
+| `packages/runtime/src/config.ts` | 所选凭据/模型/区域与共享预算校验 |
+| `packages/runtime/src/model.ts` | createModel、完整请求准备、SDK、响应校验、期限和安全错误 |
+| `packages/runtime/src/model-usage.ts` | token 与缓存计数合法性 |
+| `packages/runtime/src/documents/vision.ts` | 已获准图片的临时辅助请求 |
+| `packages/webui/src/context-usage.ts` | 界面已知模型容量与最近父请求观察，不改变 API |
 
 原 createDeepSeekModel 保留程序化兼容入口。注入 transport 用于测试，生产不开放任意 base URL；模型协议差异不散入 Loop、Session 或各工具。
 

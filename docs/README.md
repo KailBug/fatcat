@@ -29,6 +29,7 @@ Fatcat 是原生运行于 Windows 的 TypeScript Agent Harness，用于本地编
 | 项目目标、原则与非目标 | [项目说明](PROJECT.md) |
 | 仓库协作、工程与 Git 规则 | [AGENTS.md](../AGENTS.md) |
 | 安装、构建、测试目录与归属规范、离线检查及专项验证 | [开发与验证](DEVELOPMENT.md) |
+| Workspace 包归属、runtime 导出、依赖与资源构建规则 | [Package 边界](DEVELOPMENT.md#workspace-package-boundaries) |
 | 模块职责、状态所有权、数据流与专题设计 | [架构总览](ARCHITECTURE/README.md) |
 
 ## 文档职责

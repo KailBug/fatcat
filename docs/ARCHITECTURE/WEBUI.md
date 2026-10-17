@@ -6,23 +6,29 @@ Web UI 是本机单用户入口。浏览器持有草稿、菜单与显示快照�
 
 ## 模块职责
 
+实现位于私有 workspace 包 `@fatcat/webui`，包根只导出 `runWebUi`。CLI 按原时机惰性加载入口，导入本身不监听端口、打开浏览器、注册信号处理或请求模型。包依赖 runtime 和 commands，不依赖 TUI 或根应用；Controller 和页面各自的状态所有权保持不变。
+
+服务端、浏览器模块和显示类型都在 `src/` 下，独立构建为包内 `dist/`。HTML/CSS、图标及许可证、原生目录 helper 随包构建复制；共享 logo 仍以根 `images/logo/mini-logo.png` 为唯一源，构建时复制进包。运行时按模块位置定位资源，不依赖仓库根目录或启动 cwd。浏览器继续使用原 HTTP URL 和原白名单，构建检查客户端产物不引入 Node 或其他服务端模块；类型导入不会进入浏览器执行代码。
+
+原根 `webui/` 与 `scripts/copy-webui.ts` 已移除，不提供转发。测试仍在 `packages/verification/tests/webui/`，验证脚本仍在 `packages/verification/verify/`，需要内部模块时使用仅限验证的 `@fatcat/webui/internal/*`。包规则见[开发规范](../DEVELOPMENT.md#workspace-package-boundaries)。
+
 | 源码 | 职责 |
 | --- | --- |
-| `webui/index.ts`、`open-browser.ts` | 共享核心装配、服务退出与一次性系统浏览器打开 |
-| `webui/server.ts` | 原生 Node HTTP、认证/来源、静态白名单与路由 |
-| `webui/controller.ts` | 显示用 transcript、状态版本、提交/停止、审批和宿主互斥 |
-| `webui/types.ts` | 客户端与服务端共享的显示协议类型，不含运行逻辑 |
-| `webui/turns.ts` | 历史到显示回合的恢复、执行事件到活动文案的无状态转换 |
-| `webui/client/app.ts` | 页面装配、快照、请求/轮询、草稿与跨组件协调 |
-| `webui/client/transcript.ts`、`markdown.ts` | 回合 DOM、节点缓存、展开状态与安全文本呈现 |
-| `webui/client/session-list.ts` | 会话/项目分组、列表缓存、菜单入口与拖拽事件 |
-| `webui/client/session-menu.ts`、`session-dialog.ts` | 目标快照、菜单/弹窗、键盘与焦点 |
-| `webui/projects.ts`、`project-http.ts`、`project-management.ts` | 项目预览与确认入口，持久语义委托 Manager |
-| `webui/attachments.ts`、`attachment-http.ts`、`attachment-evidence.ts` | 上传、当前作用域与实际来源呈现 |
-| `webui/preview.ts`、`client/preview.ts` | 单文件快照与隔离预览 |
-| `webui/folder-picker.ts`、`native-folder-dialog.ps1` | 有界原生目录选择，不是模型工具 |
-| `webui/context-usage.ts` | 最近普通父请求 token 与已知模型容量 |
-| `webui/client/cron.ts`、`permission-menu.ts`、`browser-evidence.ts` | 对共享服务的调度、模式和证据操作 |
+| `packages/webui/src/index.ts`、`open-browser.ts` | 共享核心装配、服务退出与一次性系统浏览器打开 |
+| `packages/webui/src/server.ts` | 原生 Node HTTP、认证/来源、静态白名单与路由 |
+| `packages/webui/src/controller.ts` | 显示用 transcript、状态版本、提交/停止、审批和宿主互斥 |
+| `packages/webui/src/types.ts` | 客户端与服务端共享的显示协议类型，不含运行逻辑 |
+| `packages/webui/src/turns.ts` | 历史到显示回合的恢复、执行事件到活动文案的无状态转换 |
+| `packages/webui/src/client/app.ts` | 页面装配、快照、请求/轮询、草稿与跨组件协调 |
+| `packages/webui/src/client/transcript.ts`、`markdown.ts` | 回合 DOM、节点缓存、展开状态与安全文本呈现 |
+| `packages/webui/src/client/session-list.ts` | 会话/项目分组、列表缓存、菜单入口与拖拽事件 |
+| `packages/webui/src/client/session-menu.ts`、`session-dialog.ts` | 目标快照、菜单/弹窗、键盘与焦点 |
+| `packages/webui/src/projects.ts`、`project-http.ts`、`project-management.ts` | 项目预览与确认入口，持久语义委托 Manager |
+| `packages/webui/src/attachments.ts`、`attachment-http.ts`、`attachment-evidence.ts` | 上传、当前作用域与实际来源呈现 |
+| `packages/webui/src/preview.ts`、`client/preview.ts` | 单文件快照与隔离预览 |
+| `packages/webui/src/folder-picker.ts`、`native-folder-dialog.ps1` | 有界原生目录选择，不是模型工具 |
+| `packages/webui/src/context-usage.ts` | 最近普通父请求 token 与已知模型容量 |
+| `packages/webui/src/client/cron.ts`、`permission-menu.ts`、`browser-evidence.ts` | 对共享服务的调度、模式和证据操作 |
 
 ## 浏览器页面与视图边界
 
@@ -50,7 +56,7 @@ capability 是本地访问凭证，不是多用户账户或 OS 隔离。持有�
 
 Controller 的 transcript 是显示状态，不替代 Session history。未命名新聊天可为草稿，保存触发条件归 [Session](SESSION.md#管理与跨模块关系)，不能只按是否出现聊天回复判断。恢复历史不恢复审批、实时日志、旧活动报告或过程用量。
 
-`WebUiInfo`、`WebTurn`、`WebUiState` 从 `webui/types.ts` 导入；审批类型直接引用权限模块，Controller 不为旧导入路径提供转导出。`turns.ts` 只接收历史或事件并返回展示数据，不持有 Controller、SessionManager 或可变宿主状态。历史恢复仍按每个成功文本回合提取真实附件读取来源，忽略未完成回合。
+`WebUiInfo`、`WebTurn`、`WebUiState` 从 `packages/webui/src/types.ts` 导入；审批类型直接引用权限模块，Controller 不为旧导入路径提供转导出。`turns.ts` 只接收历史或事件并返回展示数据，不持有 Controller、SessionManager 或可变宿主状态。历史恢复仍按每个成功文本回合提取真实附件读取来源，忽略未完成回合。
 
 Controller 保留活动回合、管理操作、显示列表、revision、审批协调和关闭状态。`startTurn` 负责校验、显示限额、可见性及执行生命周期，私有 `executeTurn` 分派 Memory、Context、Automation 与普通请求；自动任务的 prompt 不经过手动本地命令识别。调用执行入口前先安装 active，执行结束仍先拒绝遗留审批、刷新列表，再释放 active 和运行 Session 标识。事件递归、父请求用量筛选、报告挂接、活动截断与 revision 更新也留在 Controller；文案格式化不改变这些时序。
 
@@ -84,10 +90,12 @@ Controller 保留活动回合、管理操作、显示列表、revision、审批�
 
 ## 验证与未实现范围
 
+包迁移回归还覆盖从无关工作目录加载入口、静态资源与原生 helper 定位，以及未公开包路径和 HTTP 路径拒绝。
+
 检查真实 HTTP 的认证/来源/大小/静态路径、忙碌与旧确认、断连、取消、空草稿、跨标签、目录与共享材料变化。Edge 检查使用临时数据和注入模型/目录选择，涵盖桌面/窄屏、主题、焦点、审批和预览；原生选择器单独检查真实 Win32 行为，不能相互替代。真实视觉和模型质量未由这些 UI 检查证明。
 
 浏览器视图调整还需验证节点复用/替换、展开状态、来源身份捕获和实时拖拽门禁；这些检查由 `verify:webui` 使用实际提供的模块执行。项目分组和跨标签迁入使用 `verify:projects`，资料引用及来源显示使用 `verify:documents` / `verify:attachments`，按改动范围选择。离线静态资源检查不能替代真实 DOM 和焦点验证。
 
-原生 helper 的启动和取消已有检查，原生窗口内实际选择/取消点击往返尚未完成验收；非 Windows、实体手机和其他浏览器也未完成实机验证。
+原生 Windows helper 已通过实际目录窗口的选择、取消、中止与超时检查，包含 192 DPI 下的 PerMonitorV2、隐藏 owner、无额外任务栏窗口及退出清理。该检查由验证 helper 驱动真实窗口，不代表所有 Windows/DPI 配置；非 Windows、实体手机和其他浏览器仍未完成实机验证。
 
 后续 UI 调整按实际任务确定方案，继续保留共享核心所有权，验证目标操作、键盘、窄屏、错误和取消。尚无确定的新布局或排期。账户、多用户、远程发布、语言切换、运行时模型选择、流式/思考协议、完整 Markdown、Office 高保真查看器、文件恢复和操作重放尚未实现。

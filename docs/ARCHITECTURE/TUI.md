@@ -6,14 +6,18 @@ TUI 是可选交互入口，共用 SessionManager、Agent、Tools 和 Permission
 
 ## 模块与数据流
 
+实现位于私有 workspace 包 `@fatcat/tui`，通过包根直接导出 `runTui`。CLI 完成参数校验和输入所有权交接后才惰性加载该入口；导入本身不接管 stdin、注册信号处理或调用模型。TUI 依赖 runtime、commands 和原有 pi-tui，独立生成 JavaScript 与类型声明，没有新的终端框架或状态所有者。
+
+原根 `tui/` 实现已迁走，不保留路径转发。离线测试仍集中在 `packages/verification/tests/tui/`；测试和原生验证脚本通过 `@fatcat/tui/internal/*` 访问 App、视图与遥测，生产代码只使用包根。包依赖与导出规范见[开发说明](../DEVELOPMENT.md#workspace-package-boundaries)。
+
 | 源码 | 职责 |
 | --- | --- |
-| `tui/index.ts` | 配置与共享核心装配，注入审批回调 |
-| `tui/app.ts` | 输入、运行/审批状态、AbortController、命令和终端收尾 |
-| `tui/presentation.ts` | 无状态的事件显示转换，以及写入、命令、浏览器审批说明格式化 |
-| `tui/view.ts`、`theme.ts` | Markdown、宽度、布局、颜色与控制字符处理 |
-| `tui/telemetry.ts`、`metrics.ts` | 本轮/进程、父子、最新请求与缓存覆盖的事件观察 |
-| `src/commands.ts` | 本地命令分发；具体语义归核心模块 |
+| `packages/tui/src/index.ts` | 配置与共享核心装配，注入审批回调 |
+| `packages/tui/src/app.ts` | 输入、运行/审批状态、AbortController、命令和终端收尾 |
+| `packages/tui/src/presentation.ts` | 无状态的事件显示转换，以及写入、命令、浏览器审批说明格式化 |
+| `packages/tui/src/view.ts`、`theme.ts` | Markdown、宽度、布局、颜色与控制字符处理 |
+| `packages/tui/src/telemetry.ts`、`metrics.ts` | 本轮/进程、父子、最新请求与缓存覆盖的事件观察 |
+| `packages/commands/src/commands.ts` | 本地命令分发；具体语义归核心模块 |
 
 编辑提交 → Manager 执行 → 事件/报告 → 遥测快照 → 视图。只有持久边界确认后才增加已保存回合。工具等待独立审批输入，界面答复不进入模型历史；授权后工具仍自行复核。
 

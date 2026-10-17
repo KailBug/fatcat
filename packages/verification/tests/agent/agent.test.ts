@@ -1,0 +1,219 @@
+import assert from "node:assert/strict";
+import { readdir, realpath } from "node:fs/promises";
+import { join } from "node:path";
+import test from "node:test";
+import { createAgent } from "@fatcat/runtime/agent";
+import { loadConfig } from "@fatcat/runtime/config";
+import { runAgent, runAgentTurn } from "@fatcat/runtime/loop";
+import { createTools } from "@fatcat/runtime/tools";
+import { discoverSkills } from "@fatcat/runtime/skills";
+import type { Message } from "@fatcat/runtime/model";
+import { temporaryWorkspace } from "../support/workspace.js";
+import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
+
+const config = loadConfig({ DEEPSEEK_API_KEY: "offline-agent-only", HARNESS_MAX_ITERATIONS: "3" });
+function answer(content: string) {
+  return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content } }] });
+}
+function calls(...tools: { name: string; args: unknown; id: string }[]) {
+  return Response.json({ choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
+    tool_calls: tools.map(({ name, args, id }) => ({ id, type: "function", function: { name, arguments: JSON.stringify(args) } })),
+  } }] });
+}
+type RequestBody = { messages: Message[]; tools: { function: { name: string } }[]; tool_choice: string };
+
+test("parent and child guidance forwards their independent final-answer options", async () => {
+  let parents = 0;
+  let children = 0;
+  const agent = createAgent(config, undefined, async (input, init) => {
+    const body = await new Request(input, init).json() as RequestBody;
+    const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
+    const iteration = parent ? ++parents : ++children;
+    assert.equal(body.tool_choice, iteration === 3 ? "none" : "auto");
+    assert.match(String(body.messages[0]?.content), new RegExp(`request ${iteration} of 3`));
+    if (iteration === 3) return answer(parent ? "Parent summary" : "Child summary");
+    if (parent && iteration === 1) return calls({ name: "delegate_task", args: { task: "Compute the fixture sum" }, id: "delegate-budget" });
+    return calls({ name: "sum", args: { numbers: [1, 2] }, id: `${parent ? "parent" : "child"}-${iteration}` });
+  });
+  assert.equal(await runAgent("Review the calculation", agent), "Parent summary");
+  assert.equal(parents, 3);
+  assert.equal(children, 3);
+});
+
+test("default agent construction is idle and direct tasks make no child requests", async () => {
+  let requests = 0;
+  const agent = createAgent(config, undefined, async (input, init) => {
+    requests++;
+    const body = await new Request(input, init).json() as RequestBody;
+    assert.deepEqual(body.tools.map((tool) => tool.function.name), ["sum", "delegate_task", "automation"]);
+    assert.ok(!String(body.messages[0]?.content).includes("Workspace root (JSON string):"));
+    return answer("Direct answer");
+  });
+  assert.equal(requests, 0);
+  assert.equal(await runAgent("A simple question", agent), "Direct answer");
+  assert.equal(requests, 1);
+});
+
+test("assembled SDK parent and child use distinct definitions and isolated histories", async () => {
+  let parents = 0;
+  let children = 0;
+  const agent = createAgent(config, undefined, async (input, init) => {
+    const body = await new Request(input, init).json() as RequestBody;
+    const names = body.tools.map((tool) => tool.function.name);
+    if (names.includes("delegate_task")) {
+      assert.match(String(body.messages[0]?.content), /prefer delegate_task/);
+      if (++parents === 1) return calls({ name: "delegate_task", args: { task: "Focused child context" }, id: "parent-delegate" });
+      assert.equal(body.messages.at(-1)?.role, "tool");
+      assert.equal((body.messages.at(-1) as { tool_call_id: string }).tool_call_id, "parent-delegate");
+      assert.match(String(body.messages.at(-1)?.content), /Child result: 42/);
+      assert.ok(!JSON.stringify(body.messages).includes("child-sum"));
+      return answer("Reviewed child result");
+    }
+    children++;
+    assert.deepEqual(names, ["sum"]);
+    assert.ok(!String(body.messages[0]?.content).includes("prefer delegate_task"));
+    assert.ok(!JSON.stringify(body.messages).includes("Parent-only details"));
+    assert.equal(body.messages[1]?.content, "Focused child context");
+    if (children === 1) return calls({ name: "sum", args: { numbers: [17, 25] }, id: "child-sum" });
+    assert.equal(body.messages.at(-1)?.content, '{"ok":true,"result":42}');
+    return answer("Child result: 42");
+  });
+  assert.equal(await runAgent("Parent-only details", agent), "Reviewed child result");
+  assert.equal(parents, 2);
+  assert.equal(children, 2);
+});
+
+test("default delegation cannot turn a read-only workspace into write or shell access", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  const base = await createTools(workspace);
+  const agent = createAgent(config, base, async (input, init) => {
+    const body = await new Request(input, init).json() as RequestBody;
+    const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
+    if (parent) {
+      if (body.messages.at(-1)?.role === "user") return calls({ name: "delegate_task", args: { task: "Try requested operations" }, id: "delegate" });
+      return answer("Both operations denied");
+    }
+    assert.deepEqual(body.tools.map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
+    if (body.messages.at(-1)?.role === "user") return calls(
+      { name: "write", args: { path: "blocked.txt", content: "blocked" }, id: "child-write" },
+      { name: "shell", args: { command: "exit 0" }, id: "child-shell" });
+    const results = body.messages.filter((message) => message.role === "tool");
+    assert.equal(results.length, 2);
+    assert.ok(results.every((message) => String(message.content).includes("PERMISSION_DENIED")));
+    return answer("Denied");
+  });
+  assert.equal(await runAgent("Try operations through a child", agent), "Both operations denied");
+  assert.deepEqual(await readdir(workspace), []);
+  assert.deepEqual(base.getWrites!(), []);
+  assert.deepEqual(base.getCommands!(), []);
+});
+
+
+test("parent delegation guidance does not mutate or accumulate in caller history", async () => {
+  let requests = 0;
+  const agent = createAgent(config, undefined, async (input, init) => {
+    const body = await new Request(input, init).json() as RequestBody;
+    const system = String(body.messages[0]?.content);
+    assert.equal((system.match(/prefer delegate_task/g) ?? []).length, 1);
+    requests++;
+    return answer("Ready");
+  });
+  const messages: Message[] = [{ role: "system", content: "Original role." }, { role: "user", content: "Hello" }];
+  const before = structuredClone(messages);
+  await agent.model(messages);
+  await agent.model(messages);
+  assert.deepEqual(messages, before);
+  assert.equal(requests, 2);
+});
+
+test("mode switches reach parent and child guidance and gates without restoring old session authorization", async (t) => {
+  const { workspace, outside } = await temporaryWorkspace(t);
+  const policy = new PermissionPolicy("plan");
+  let approvals = 0;
+  const base = await createTools(workspace, "read-only", async () => { approvals++; return true; }, { permission: "deny" }, undefined, policy);
+  let expected = "plan";
+  let writes = 0;
+  const agent = createAgent(config, base, async (input, init) => {
+    const body = await new Request(input, init).json() as RequestBody;
+    const system = String(body.messages[0]?.content);
+    assert.equal((system.match(/Current permission mode:/g) ?? []).length, 1);
+    assert.ok(system.includes(`Current permission mode: ${expected}.`));
+    if (expected === "plan") assert.match(system, /Do not write files or run commands/);
+    if (expected === "freeToGo") {
+      assert.match(system, /absolute paths outside this workspace/);
+      assert.match(system, /dangerous commands and opaque forms require user approval/);
+      assert.match(system, /including private hosts and custom ports/);
+      assert.ok(!system.includes("Use relative paths with read, write, and shell cwd."));
+    }
+    if (body.tools.some((tool) => tool.function.name === "delegate_task")) {
+      if (body.messages.at(-1)?.role === "user") return calls({ name: "delegate_task", args: { task: "Try the designated fixture write" }, id: "mode-delegate" });
+      return answer("Reviewed child operation");
+    }
+    if (body.messages.at(-1)?.role === "user") return calls({ name: "write",
+      args: { path: expected === "freeToGo" ? join(outside, "free.txt") : "mode.txt", content: "fixture" }, id: "mode-write" });
+    const result = JSON.parse(String(body.messages.at(-1)?.content));
+    if (expected === "plan") assert.equal(result.error.code, "PERMISSION_DENIED");
+    else { assert.equal(result.ok, true); writes++; }
+    return answer("Operation checked");
+  });
+  const plan = await runAgentTurn("Use a focused child", [], agent);
+  assert.equal(base.getWrites!().length, 0);
+  assert.ok(!JSON.stringify(plan.messages).includes("Current permission mode:"));
+  policy.select("acceptEdits");
+  expected = "acceptEdits";
+  const before = structuredClone(plan.messages);
+  const edit = await runAgentTurn("Use a focused child again", plan.messages, agent);
+  assert.deepEqual(plan.messages, before);
+  assert.ok(!JSON.stringify(edit.messages).includes("Current permission mode:"));
+  assert.equal(writes, 1);
+  assert.equal(approvals, 0);
+  assert.equal(base.getWrites!()[0]?.status, "committed");
+  policy.select("freeToGo");
+  expected = "freeToGo";
+  const free = await runAgentTurn("Use a focused child outside the workspace", edit.messages, agent);
+  assert.ok(!JSON.stringify(free.messages).includes("Current permission mode:"));
+  assert.equal(writes, 2);
+  assert.equal(approvals, 0);
+  assert.equal(base.getWrites!()[1]?.path, join(outside, "free.txt"));
+});
+
+test("canonical workspace context reaches parent and child without entering saved history", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  const root = await realpath(workspace);
+  const base = await createTools(join(workspace, "."));
+  const skills = await discoverSkills({ workspace, userHome: join(workspace, "missing-home") });
+  const guidance = `Workspace root (JSON string): ${JSON.stringify(root)}`;
+  let parents = 0;
+  let children = 0;
+  const agent = createAgent(config, base, async (input, init) => {
+    const body = await new Request(input, init).json() as RequestBody;
+    const system = String(body.messages[0]?.content);
+    assert.equal(system.split(guidance).length - 1, 1);
+    assert.match(system, /Use relative paths with read, write, and shell cwd/);
+    assert.ok(system.includes("skill://workspace-editing/SKILL.md"));
+    if (body.tools.some((tool) => tool.function.name === "delegate_task")) {
+      parents++;
+      if (body.messages.at(-1)?.role === "user") {
+        return calls({ name: "delegate_task", args: { task: "Identify the workspace from runtime context" }, id: "location" });
+      }
+      return answer("Workspace identified");
+    }
+    children++;
+    return answer("Child received workspace context");
+  }, skills);
+  assert.equal(base.workspaceRoot, root);
+  assert.equal(agent.tools.workspaceRoot, root);
+  assert.equal(agent.tools.forTurn!().workspaceRoot, root);
+  const first = await runAgentTurn("Identify the workspace", [], agent);
+  const before = structuredClone(first.messages);
+  const second = await runAgentTurn("Identify it again", first.messages, agent);
+  assert.deepEqual(first.messages, before);
+  for (const history of [first.messages, second.messages]) {
+    assert.ok(!JSON.stringify(history).includes("Workspace root (JSON string):"));
+  }
+  await runAgent("Identify after a fresh history", agent);
+  assert.equal(parents, 6);
+  assert.equal(children, 3);
+  assert.deepEqual(base.getWrites!(), []);
+  assert.deepEqual(base.getCommands!(), []);
+});

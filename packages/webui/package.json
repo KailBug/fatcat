@@ -1,0 +1,36 @@
+{
+  "name": "@fatcat/webui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fatcat local HTTP and browser client.",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11.21.0 <12"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./internal/*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && node scripts/copy-assets.mjs"
+  },
+  "dependencies": {
+    "@fatcat/runtime": "workspace:*",
+    "@fatcat/commands": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.5",
+    "typescript": "7.0.2"
+  }
+}

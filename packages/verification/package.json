@@ -1,0 +1,29 @@
+{
+  "name": "@fatcat/verification",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fatcat offline contracts and explicitly invoked environment verification.",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11.21.0 <12"
+  },
+  "exports": {},
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && node scripts/copy-resources.mjs",
+    "test": "node dist/scripts/test.js"
+  },
+  "devDependencies": {
+    "@fatcat/runtime": "workspace:*",
+    "@fatcat/commands": "workspace:*",
+    "@fatcat/tui": "workspace:*",
+    "@fatcat/webui": "workspace:*",
+    "@fatcat/cli": "workspace:*",
+    "@types/node": "24.13.5",
+    "typescript": "7.0.2",
+    "@napi-rs/canvas": "1.0.11",
+    "playwright": "1.63.0",
+    "@earendil-works/pi-tui": "0.87.1"
+  }
+}

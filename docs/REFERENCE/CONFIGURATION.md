@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Quick start](../QUICK_START.md) · [Commands](COMMANDS.md)
 
-Configuration is read at startup. `pnpm start` loads `.env` from the repository root before its launcher restores the invocation directory. Existing environment variables take precedence over the env file. Direct `node dist/src/cli.js` does not implicitly load it; use Node's `--env-file-if-exists=.env` option when needed, resolving that path from your current directory.
+Configuration is read at startup. `pnpm start` loads `.env` from the repository root before its launcher restores the invocation directory. Existing environment variables take precedence over the env file. Direct `node packages/cli/dist/cli.js` does not implicitly load it; use Node's `--env-file-if-exists=.env` option when needed, resolving that path from your current directory.
 
 Keep credentials only in local environment variables or the ignored `.env`. Do not copy real keys into prompts, documentation or logs. `pnpm start --checkConfig` validates local values without testing the account or contacting the provider. Restart to apply provider changes; there is no runtime provider selector.
 

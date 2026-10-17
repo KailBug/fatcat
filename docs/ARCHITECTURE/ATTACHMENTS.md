@@ -8,18 +8,18 @@
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/attachments/record.ts` | 原件/关联/pin/上传目标格式与固定引用 |
-| `src/attachments/store.ts`、`memory.ts` | 持久与非持久原件、发布及访问 |
-| `src/attachments/files.ts` | 无状态的暂存路径、流式字节写入、大小/哈希完整性读取与上传所有权记录读取 |
-| `src/attachments/transaction.ts` | metadata gate、跨文件提交决定与恢复 |
-| `src/attachments/journal.ts` | 提交描述、日志编解码及跨记录一致性校验；不执行文件操作 |
-| `src/attachments/metadata-files.ts` | 有界 JSON 读取与原子 JSON 发布；不拥有锁、日志或恢复策略 |
-| `src/attachments/import.ts` | 通过当前文件权限导入 |
-| `src/attachments/commands.ts` | 终端附件命令解析、帮助、输出与删除确认文本；通过 SessionManager 转发作用域操作及取消信号 |
-| `src/attachments/read.ts`、`tools.ts` | 通用 read 包装、文本分页与授权访问 |
-| `src/session/store.ts`、`manager.ts` | 实际 Session 身份、草稿生命周期、发布互斥及跨文件提交协调 |
-| `src/session/attachments.ts` | 接收明确身份的访问适配、传输/清理、文档缓存授权包装；不拥有活动 Session 状态 |
-| `webui/attachment-http.ts`、`attachments.ts` | 有界上传和宿主资料接口 |
+| `packages/runtime/src/attachments/record.ts` | 原件/关联/pin/上传目标格式与固定引用 |
+| `packages/runtime/src/attachments/store.ts`、`memory.ts` | 持久与非持久原件、发布及访问 |
+| `packages/runtime/src/attachments/files.ts` | 无状态的暂存路径、流式字节写入、大小/哈希完整性读取与上传所有权记录读取 |
+| `packages/runtime/src/attachments/transaction.ts` | metadata gate、跨文件提交决定与恢复 |
+| `packages/runtime/src/attachments/journal.ts` | 提交描述、日志编解码及跨记录一致性校验；不执行文件操作 |
+| `packages/runtime/src/attachments/metadata-files.ts` | 有界 JSON 读取与原子 JSON 发布；不拥有锁、日志或恢复策略 |
+| `packages/runtime/src/attachments/import.ts` | 通过当前文件权限导入 |
+| `packages/commands/src/attachments/commands.ts` | 终端附件命令解析、帮助、输出与删除确认文本；通过 SessionManager 转发作用域操作及取消信号 |
+| `packages/runtime/src/attachments/read.ts`、`tools.ts` | 通用 read 包装、文本分页与授权访问 |
+| `packages/runtime/src/session/store.ts`、`manager.ts` | 实际 Session 身份、草稿生命周期、发布互斥及跨文件提交协调 |
+| `packages/runtime/src/session/attachments.ts` | 接收明确身份的访问适配、传输/清理、文档缓存授权包装；不拥有活动 Session 状态 |
+| `packages/webui/src/attachment-http.ts`、`attachments.ts` | 有界上传和宿主资料接口 |
 
 引用使用 `attachment:<uuid>@<sha256>`，文件名不是身份。调用绑定 sessionId、projectId（如有）、locationRevision，并重载实际 Session/Project 核对有效目录和修订。同目录、已知 ID/哈希、UI 当前选择或模型自报 projectId 均不授权；后台与子任务沿真实运行 Session 访问。
 
@@ -79,6 +79,6 @@ catalog 上限 16 MiB，日志 96 MiB，Session 快照 64 MiB。先保存完整�
 
 ## 验证与未实现范围
 
-检查上传取消/重试所有权、草稿发布、身份变化拒绝、共享/隔离、pin 非授权、固定版本、移除/永久删除、故障发布及真实第二进程恢复。`tests/attachments/` 的边界回归还覆盖接收暂停时 metadata gate 可用、旧流结束后不破坏新重试、输入流失败清理及暂存内容损坏不能发布草稿；日志/文件回归覆盖持久身份与临时投影分离、版本兼容、决定前冲突拒绝、读取与恢复错误边界，以及 JSON 大小/UTF-8/失败发布清理。项目成员 patch 与 Memory 迁入的中断恢复分别保留在 `tests/projects/`、`tests/memory/`。Edge 资料检查使用临时材料和注入模型，不证明文档理解质量。
+检查上传取消/重试所有权、草稿发布、身份变化拒绝、共享/隔离、pin 非授权、固定版本、移除/永久删除、故障发布及真实第二进程恢复。`packages/verification/tests/attachments/` 的边界回归还覆盖接收暂停时 metadata gate 可用、旧流结束后不破坏新重试、输入流失败清理及暂存内容损坏不能发布草稿；日志/文件回归覆盖持久身份与临时投影分离、版本兼容、决定前冲突拒绝、读取与恢复错误边界，以及 JSON 大小/UTF-8/失败发布清理。项目成员 patch 与 Memory 迁入的中断恢复分别保留在 `packages/verification/tests/projects/`、`packages/verification/tests/memory/`。Edge 资料检查使用临时材料和注入模型，不证明文档理解质量。
 
 尚无强制销毁仍被历史保留的原件、后台清理、跨项目资料迁移或存储加密。原件、派生内容、会话与 Memory 不能合并为同一生命周期。

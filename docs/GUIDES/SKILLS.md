@@ -42,4 +42,4 @@ Discovery order is workspace `.fatcat/skills`, workspace `.agents/skills`, the c
 | `weather-lookup` | Resolve weather location/date and report sources |
 | `local-browser-check` | Inspect workspace pages with controlled browser evidence |
 
-Built-ins ship from `src/skill/<subsystem>/<skill-name>/SKILL.md`. Catalog parsing, diagnostics and source boundaries are maintained in [Skills architecture](../ARCHITECTURE/SKILLS.md); permission enforcement belongs to the runtime, not the instructions.
+Built-ins ship from `packages/runtime/src/skill/<subsystem>/<skill-name>/SKILL.md`. Catalog parsing, diagnostics and source boundaries are maintained in [Skills architecture](../ARCHITECTURE/SKILLS.md); permission enforcement belongs to the runtime, not the instructions.

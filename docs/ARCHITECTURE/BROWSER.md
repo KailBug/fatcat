@@ -8,12 +8,12 @@ browser 是执行本地页面并生成证据的模型工具，区别于用户主
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/browser/protocol.ts` | 参数、步骤和记录类型 |
-| `src/tools/browser.ts` | 策略快照、审批、次数/并发、期限与 journal |
-| `src/permissions/browser.ts` | 固定 Workspace、资源类型/大小/身份与哈希 |
-| `src/browser/runtime.ts` | Playwright 生命周期、路由、交互和固定采集 |
-| `src/browser/evidence.ts` | JSON/PNG 独占写入与按 ID 受控读取 |
-| `webui/client/browser-evidence.ts` | 认证展示、取消与 Blob URL 释放 |
+| `packages/runtime/src/browser/protocol.ts` | 参数、步骤和记录类型 |
+| `packages/runtime/src/tools/browser.ts` | 策略快照、审批、次数/并发、期限与 journal |
+| `packages/runtime/src/permissions/browser.ts` | 固定 Workspace、资源类型/大小/身份与哈希 |
+| `packages/runtime/src/browser/runtime.ts` | Playwright 生命周期、路由、交互和固定采集 |
+| `packages/runtime/src/browser/evidence.ts` | JSON/PNG 独占写入与按 ID 受控读取 |
+| `packages/webui/src/client/browser-evidence.ts` | 认证展示、取消与 Blob URL 释放 |
 
 校验路径/参数 → 单次审批 → 新建 headless browser/context → 本地路由和交互 → DOM/几何/PNG 采集 → 关闭 → 保存证据。没有跨调用 cookie、存储或页面复用；模型不能设置浏览器程序、启动参数、远程调试或任意 JS。
 

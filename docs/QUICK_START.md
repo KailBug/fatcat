@@ -4,6 +4,8 @@
 
 Fatcat runs from a local checkout with Node.js 24.x and pnpm 11.21.0. It does not require WSL, Docker, or a remote server. Run the following PowerShell commands from the repository root.
 
+The root install links the local runtime, commands, TUI, Web UI, CLI and development-only verification workspace packages; the existing start and verification commands build them in dependency order. No separate package installation or global Fatcat installation is needed. Contributor layout and build rules are in [Development](DEVELOPMENT.md#workspace-package-boundaries).
+
 ## Install and configure
 
 ```powershell

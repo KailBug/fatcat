@@ -8,20 +8,20 @@
 
 | 源码 | 职责 |
 | --- | --- |
-| `src/automation/config.ts`、`cron.ts` | 触发器/预算和五字段时间匹配 |
+| `packages/runtime/src/automation/config.ts`、`cron.ts` | 触发器/预算和五字段时间匹配 |
 | `tasks.ts`、`tool.ts` | 绑定任务结构与父模型工具 |
 | `scheduler.ts`、`files.ts` | 有界队列、轮转、去抖与文本快照 |
 | `conversations.ts` | 工作区任务发现、基线、租约与宿主生命周期 |
 | `lock.ts`、`runner.ts` | 存储根/工作区独占与独立 JSON 模式 |
-| `src/session/automations.ts` | 无活动状态的任务投影、触发资格/截止信号准备与变更校验 |
-| `src/session/agent-session.ts` | 任务变更提交、持久领取/计数及回合提交 |
-| `src/session/manager.ts` | 后台目标解析与宿主互斥，保持前台选择 |
-| `src/automation/commands.ts` | Cron 本地管理命令、帮助及自然语言调度请求转换 |
-| `src/commands.ts`、`webui/client/cron.ts` | 统一命令分发、Web UI 表单入口 |
+| `packages/runtime/src/session/automations.ts` | 无活动状态的任务投影、触发资格/截止信号准备与变更校验 |
+| `packages/runtime/src/session/agent-session.ts` | 任务变更提交、持久领取/计数及回合提交 |
+| `packages/runtime/src/session/manager.ts` | 后台目标解析与宿主互斥，保持前台选择 |
+| `packages/commands/src/automation/commands.ts` | Cron 本地管理命令、帮助及自然语言调度请求转换 |
+| `packages/commands/src/commands.ts`、`packages/webui/src/client/cron.ts` | 统一命令分发、Web UI 表单入口 |
 
 用户描述/表单 → 校验并保存绑定 → 空闲发现/激活 → 先持久增加尝试数并领取 → 原执行链 → 保存目标历史和状态 → 更新基线。触发元数据只进入请求指导，文件正文仍由 read 取得。
 
-`automationCommandPrompt` 直接从 `src/automation/commands.ts` 导入：自然语言 `/cron <description>` 只转换为待发送的模型请求；`/cron`、list/pause/resume/delete 由命令处理器调用既有 SessionManager 操作，不调用模型或写入对话历史。列表仍仅展示当前会话绑定的任务；持久计数、权限和后台目标选择不属于命令层。
+`automationCommandPrompt` 直接从 `packages/commands/src/automation/commands.ts` 导入：自然语言 `/cron <description>` 只转换为待发送的模型请求；`/cron`、list/pause/resume/delete 由命令处理器调用既有 SessionManager 操作，不调用模型或写入对话历史。列表仍仅展示当前会话绑定的任务；持久计数、权限和后台目标选择不属于命令层。
 
 ## 身份、持久化与切换
 

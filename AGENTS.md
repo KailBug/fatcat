@@ -25,6 +25,7 @@ Read [project goals and boundaries](docs/PROJECT.md), then the documents relevan
 - Deliver a working, reviewable increment driven by the current task. Keep a simple Agent Loop and general-purpose tools; do not add a Graph engine, speculative interfaces, or per-task capability switches. The harness enforces permissions, budgets, and cancellation for parent and delegated work.
 - Use English in repository text outside docs/, including code, comments, tests, help, and scripts. Chinese is allowed under docs/. User prompts and model responses may use any language.
 - Never put real credentials in source, logs, documentation, or version control. Skills and saved history do not grant permissions; restoring a session must not replay operations or restore old approvals.
+- Keep host command parsing, help and output with the owning capability, following the [development guide](docs/DEVELOPMENT.md), section "Host command boundaries". Preserve existing dispatch APIs and confirmation lifecycles; command handlers use SessionManager operations without taking ownership of execution policy or persistent state.
 
 ## Common development commands
 

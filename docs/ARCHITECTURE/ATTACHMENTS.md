@@ -12,6 +12,7 @@
 | `src/attachments/store.ts`、`memory.ts` | 持久与非持久原件、发布及访问 |
 | `src/attachments/transaction.ts` | metadata gate、跨文件提交决定与恢复 |
 | `src/attachments/import.ts` | 通过当前文件权限导入 |
+| `src/attachments/commands.ts` | 终端附件命令解析、帮助、输出与删除确认文本；通过 SessionManager 转发作用域操作及取消信号 |
 | `src/attachments/read.ts`、`tools.ts` | 通用 read 包装、文本分页与授权访问 |
 | `src/session/store.ts`、`manager.ts` | 实际 Session 身份、草稿生命周期、发布互斥及跨文件提交协调 |
 | `src/session/attachments.ts` | 接收明确身份的访问适配、传输/清理、文档缓存授权包装；不拥有活动 Session 状态 |

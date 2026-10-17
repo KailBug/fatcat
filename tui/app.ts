@@ -20,6 +20,7 @@ import type { TuiViewState } from "./view.js";
 import { ConversationAutomations } from "../src/automation/conversations.js";
 import type { SessionAutomation } from "../src/automation/tasks.js";
 import type { Activation } from "../src/automation/scheduler.js";
+import { browserApprovalDetails, eventPresentation, shellApprovalDetails, writeApprovalDetails } from "./presentation.js";
 
 const help = [
   "/help    Show this guide", "/status  Show full configuration and metric definitions",
@@ -146,16 +147,12 @@ export class TuiApp {
       this.automationService = new ConversationAutomations(session, {
         idle: () => !this.state.busy && !this.closing,
         run: async (task, activation) => {
-          this.turnController = new AbortController();
-          this.state.busy = true;
-          this.editor.disableSubmit = true;
-          this.startedAt = Date.now();
-          this.telemetry.beginTurn();
-          this.observedWrites.clear(); this.observedCommands.clear();
+          this.beginOperation();
+          this.beginTurn();
           this.message("system", `Scheduled task in ${task.sessionTitle}`, "[clock] AUTOMATION");
           const prompt = task.prompt;
           if (task.sessionId === session.current.id) this.message("user", prompt);
-          this.activeTurn = this.runTurn(prompt, this.turnController.signal, { task, activation });
+          this.activeTurn = this.runTurn(prompt, this.turnController!.signal, { task, activation });
           await this.activeTurn;
         },
         changed: () => { this.updateSessionFooter(); this.refresh(); },
@@ -199,29 +196,14 @@ export class TuiApp {
     }
   }
 
-  readonly approveWrite: ApproveWrite = (request, signal) => this.confirm("WRITE APPROVAL", [
-    `${request.operation} ${JSON.stringify(request.path)} (${request.bytes} bytes after write)`,
-    ...(request.oldText === undefined ? [] : [`Replace: ${this.preview(request.oldText)}`]),
-    `${request.operation === "create" ? "Content" : "With"}: ${this.preview(request.newText)}`,
-  ].join("\n"), signal);
+  readonly approveWrite: ApproveWrite = (request, signal) =>
+    this.confirm("WRITE APPROVAL", writeApprovalDetails(request), signal);
 
-  readonly approveShell: ApproveShell = (request, signal) => this.confirm("COMMAND APPROVAL", [
-    `Workspace: ${this.options.workspace ?? "disabled"}`, `Working directory: ${JSON.stringify(request.cwd)}`,
-    `Timeout: ${request.timeoutMs} ms`, "PowerShell runs with your user permissions, including outside the workspace and on the network.",
-    ...(request.approvalReason ? [`Approval reason: ${JSON.stringify(request.approvalReason)}`] : []),
-    `Command: ${JSON.stringify(request.command)}`,
-  ].join("\n"), signal);
+  readonly approveShell: ApproveShell = (request, signal) =>
+    this.confirm("COMMAND APPROVAL", shellApprovalDetails(request, this.options.workspace), signal);
 
-  readonly approveBrowser: ApproveBrowser = (request, signal) => this.confirm("BROWSER APPROVAL", [
-    `Workspace: ${this.options.workspace ?? "disabled"}`,
-    `Browser check: ${JSON.stringify(request)}`,
-    "Runs local page scripts with external traffic blocked; saves JSON/PNG under fatcat-browser-evidence.",
-  ].join("\n"), signal);
-
-  private preview(value: string): string {
-    const escaped = JSON.stringify(value);
-    return escaped.length <= 4000 ? escaped : `${escaped.slice(0, 4000)} ... [preview truncated]`;
-  }
+  readonly approveBrowser: ApproveBrowser = (request, signal) =>
+    this.confirm("BROWSER APPROVAL", browserApprovalDetails(request, this.options.workspace), signal);
 
   private async confirm(label: string, details: string, signal?: AbortSignal): Promise<boolean> {
     checkCancellation(signal);
@@ -278,24 +260,30 @@ export class TuiApp {
       return;
     }
     if (prompt.startsWith("/")) {
-      this.turnController = new AbortController();
-      this.state.busy = true;
-      this.startedAt = Date.now();
-      this.editor.disableSubmit = true;
+      this.beginOperation();
       this.activity = "Updating session";
       this.activeTurn = this.runLocalCommand(prompt);
       return;
     }
     this.editor.addToHistory(prompt);
+    this.beginOperation();
+    this.beginTurn();
+    this.message("user", prompt);
+    this.activeTurn = this.runTurn(prompt, this.turnController!.signal);
+  }
+
+  /** Install host state before session work can emit events or request approval. */
+  private beginOperation(): void {
     this.turnController = new AbortController();
-    this.editor.disableSubmit = true;
     this.state.busy = true;
+    this.editor.disableSubmit = true;
     this.startedAt = Date.now();
+  }
+
+  private beginTurn(): void {
     this.observedWrites.clear();
     this.observedCommands.clear();
     this.telemetry.beginTurn();
-    this.message("user", prompt);
-    this.activeTurn = this.runTurn(prompt, this.turnController.signal);
   }
 
   private restoreConversation(): void {
@@ -387,41 +375,26 @@ export class TuiApp {
 
   private observe(event: ReportEvent): void {
     this.telemetry.observe(event);
-    const child = event.type === "subagent_event";
-    const detail = child ? event.event : event;
-    const prefix = child ? "Child" : "Agent";
-    if (detail.type === "model_request") this.activity = `${prefix} ${detail.purpose === "compaction" ? "summary" : "request"} ${detail.iteration}`;
-    if (detail.type === "compaction_start") this.message("system", "Request limit reached; compacting older turns before continuing.", "CONTEXT");
-    if (detail.type === "compaction_end") this.message("system", `Context compacted: ${detail.beforeBytes} to ${detail.afterBytes} conversation bytes; continuing current request.`, "CONTEXT");
-    if (detail.type === "model_usage") this.activity = `${prefix} processing response`;
-    if (detail.type === "tool_result") this.message("tool", `${detail.tool}: ${detail.ok ? "OK" : "error"}`, prefix);
-    if (detail.type === "write_record") {
-      const fingerprint = JSON.stringify(detail.record);
-      if (this.observedWrites.get(detail.record.id) !== fingerprint) {
-        this.observedWrites.set(detail.record.id, fingerprint);
-        this.message("tool", `${detail.record.operation} ${detail.record.path}: ${detail.record.status}`, "WRITE");
-      }
-    }
-    if (detail.type === "shell_record" && !this.observedCommands.has(detail.record.id)) {
-      this.observedCommands.add(detail.record.id);
-      this.message("tool", `Command ${detail.record.status}; exit ${detail.record.exitCode ?? "N/A"}; ${detail.record.durationMs} ms`, "SHELL");
-    }
-    if (event.type === "execution_report") {
-      const report = event.report;
-      this.message("system", `${report.outcome}; ${report.modelRequests.parent} parent + ${report.modelRequests.children} child requests; `
-        + `${report.writes.length} writes, ${report.commands.length} commands. Task verification: not assessed.`, "TURN REPORT");
-      for (const command of report.commands) {
-        if (command.laterWriteAttempt) this.message("system", "A write was attempted after a command. Earlier checks may be stale.", "EVIDENCE");
-      }
-      for (const check of report.browserChecks ?? []) {
-        this.message("system", [`${check.path}: ${check.status}; ${check.errorCount} diagnostics, ${check.blockedCount} blocked.`,
-          ...(check.reportPath ? [`Report: ${check.reportPath}`] : []),
-          ...(check.screenshotPath ? [`Screenshot: ${check.screenshotPath}`] : []),
-          ...(check.laterWriteAttempt ? ["A later write was attempted. Run a fresh browser check."] : []),
-        ].join("\n"), "BROWSER EVIDENCE");
-      }
+    if (this.shouldDisplay(event)) {
+      const presentation = eventPresentation(event);
+      if (presentation.activity !== undefined) this.activity = presentation.activity;
+      for (const message of presentation.messages) this.message(message.role, message.text, message.label);
     }
     this.refresh();
+  }
+
+  private shouldDisplay(event: ReportEvent): boolean {
+    const detail = event.type === "subagent_event" ? event.event : event;
+    if (detail.type === "write_record") {
+      const fingerprint = JSON.stringify(detail.record);
+      if (this.observedWrites.get(detail.record.id) === fingerprint) return false;
+      this.observedWrites.set(detail.record.id, fingerprint);
+    }
+    if (detail.type === "shell_record") {
+      if (this.observedCommands.has(detail.record.id)) return false;
+      this.observedCommands.add(detail.record.id);
+    }
+    return true;
   }
 
   private message(role: TuiViewState["messages"][number]["role"], text: string, label?: string): void {

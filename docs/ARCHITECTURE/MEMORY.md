@@ -12,11 +12,19 @@ Memory 保存当前用户直接提供的持久事实、定义、偏好和决定�
 | `src/memory/tools.ts` | 通用 read 与每次请求的当前状态 notice |
 | `src/memory/write.ts` | 通用 write 保留地址、证据及能力指导 |
 | `src/memory/commands.ts` | 用户主动管理，不请求模型或增加成功历史 |
+| `src/session/memory.ts` | 会话可见作用域、作用域内增改删规则、模型写入请求转换及迁入统计；不持有活动会话状态 |
+| `src/session/manager.ts` | MemoryStore 实例、宿主互斥、草稿保存与激活、按执行身份绑定访问及每次操作的校验入口 |
 | `src/session/agent-session.ts` | 当前父用户回合、变更额度、callId 结果复用 |
 | `src/session/store.ts` | 实际执行身份及持久 attempt owner 重验 |
 | `src/attachments/transaction.ts` | 项目迁入中的幂等 Memory 转移 |
 
 目录 Tools 缓存外绑定 MemoryAccess；每次操作按 Session/Project、locationRevision、projectRevision、有效 workspace 重验。子任务继承可见范围但不能修改，自动任务也不能修改。
+
+`session/memory.ts` 接收明确的 MemoryStore、执行身份和变更来源，处理来源 sessionId 一致性、作用域选择、相同 active 内容复用及增改删；它不是独立授权入口。Manager 的 memoryOperation 必须包住整个读取与修改过程，持久模式由 SessionStore.withMemorySession 在元数据锁内重验，非持久模式由 Manager 核对当前 sessionId、locationRevision 及可选回合 owner。不能只在创建访问对象时校验，也不能在读取与写入之间释放既有校验边界。
+
+Manager 保留 listMemories、changeMemory 及 MemoryChange 的原导出路径。首次宿主修改仍先保存并激活草稿，再执行 Memory 变更；后者失败不撤销已保存会话，操作开始前取消则不保存草稿。模型写入请求的默认私有/项目作用域按捕获的执行身份转换，证据、八次额度和 callId 结果仍由 AgentSession 管理。
+
+MemoryAccess 的闭包在 activate 时捕获原身份及必要的草稿快照，每次 list 重新进入 Manager 校验，不缓存清单或授权。持久会话切换后旧绑定仍指向原会话；原会话迁入项目、改变作用域或被删除后按存储校验拒绝访问。非持久绑定则要求当前活动会话仍匹配。迁入预览在受校验的读取后计算 active 数量及全记录指纹，不能因数量为零而排除 tombstone。
 
 ## 保存与来源契约
 

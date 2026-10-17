@@ -29,6 +29,12 @@ Command handlers call the existing SessionManager operations. They must not own 
 
 Keep command behavior tests with the owning capability; entry parsing belongs with the client. Exercise retained public entry points as well as cross-domain lifecycle effects, especially confirmation invalidation after switching away and back. Reuse injected models and temporary stores, and verify that local commands do not enter model history.
 
+## Session capability boundaries
+
+Keep session-to-capability rules in focused modules such as `src/session/attachments.ts` and `src/session/memory.ts`. Pass explicit stores, identities, sources or snapshots; do not pass the entire SessionManager or create another owner of its active record. SessionManager retains selection, operation locks, draft persistence and runtime activation. AgentSession retains turn state, and the existing stores retain persistence and transaction boundaries. Preserve public exports when moving types or helpers.
+
+For Memory, run the entire scoped read/change inside the existing Manager identity/owner gate, including the persistent metadata lock. Bind access to the executing session and revalidate every operation; never cache authorization or replace the captured identity with the UI's current selection. Preserve draft save ordering, cancellation, source attribution, per-turn budgets, result reuse and independent committed side effects. Keep access and lifecycle regressions in `tests/memory/`, including captured bindings and migration fingerprints with tombstones. The maintained contracts and ownership details are in [Session](ARCHITECTURE/SESSION.md) and [Memory](ARCHITECTURE/MEMORY.md).
+
 ## Test and verification layout
 
 Keep offline tests outside production code, grouped by the contract they verify. Use `*.test.ts` for test entry points and descriptive filenames for helpers.

@@ -26,6 +26,7 @@ Read [project goals and boundaries](docs/PROJECT.md), then the documents relevan
 - Use English in repository text outside docs/, including code, comments, tests, help, and scripts. Chinese is allowed under docs/. User prompts and model responses may use any language.
 - Never put real credentials in source, logs, documentation, or version control. Skills and saved history do not grant permissions; restoring a session must not replay operations or restore old approvals.
 - Keep host command parsing, help and output with the owning capability, following the [development guide](docs/DEVELOPMENT.md), section "Host command boundaries". Preserve existing dispatch APIs and confirmation lifecycles; command handlers use SessionManager operations without taking ownership of execution policy or persistent state.
+- Keep session capability helpers free of active-session ownership, following the [development guide](docs/DEVELOPMENT.md), section "Session capability boundaries". Pass explicit dependencies and identities; preserve per-operation validation, lock boundaries and draft/turn lifecycles.
 
 ## Common development commands
 

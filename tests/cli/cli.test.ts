@@ -62,6 +62,19 @@ test("help works without credentials", () => {
   assert.equal(result.stderr, "");
 });
 
+test("non-interactive resume listing precedes prompt, TUI and model configuration checks", () => {
+  for (const args of [["--resume"], ["--resume", "--prompt", " "], ["--resume", "--tui"], ["-r", "--webui"]]) {
+    const result = run(args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /No saved sessions/);
+    assert.equal(result.stderr, "");
+  }
+  const invalid = run(["--resume", "--tui", "--port", "bad"]);
+  assert.equal(invalid.status, 2);
+  assert.match(invalid.stderr, /Use --port/);
+  assert.doesNotMatch(invalid.stderr, /DEEPSEEK_API_KEY|interactive terminal/);
+});
+
 test("CLI project selection shares the project workspace and preserves independent histories", async (t) => {
 	const { base, workspace, outside } = await temporaryWorkspace(t);
 	const env = { FATCAT_SESSION_DIR: join(base, "sessions"), DEEPSEEK_API_KEY: "offline-project-only" };

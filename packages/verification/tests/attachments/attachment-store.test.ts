@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { attachmentReference, emptyAttachmentCatalog, maxAttachmentBytes, parseAttachmentReference } from "@fatcat/runtime/attachments/record";
 import type { AttachmentInfo, AttachmentTarget } from "@fatcat/runtime/attachments/record";
-import { AttachmentTransactions } from "@fatcat/runtime/internal/attachments/transaction";
-import type { AttachmentSessionAccess } from "@fatcat/runtime/internal/attachments/transaction";
+import { MetadataTransactions } from "@fatcat/runtime/internal/metadata/transaction";
+import type { MetadataSessionAccess } from "@fatcat/runtime/internal/metadata/transaction";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { encodeSessionRecord, projectIdOf, workspaceKey } from "@fatcat/runtime/session/record";
 import type { SessionRecord } from "@fatcat/runtime/session/record";
@@ -263,9 +263,7 @@ test("an interrupted cross-owner commit recovers before any Session reader obser
 	const { base, workspace } = await temporaryWorkspace(t);
 	const root = join(base, "sessions");
 	const session = { ...draft(workspace), revision: 1, storageWorkspace: workspace };
-	const access: AttachmentSessionAccess = {
-		load: async () => { throw new Error("Not used"); },
-		prepareDraft: async () => { throw new Error("Not used"); },
+	const access: MetadataSessionAccess = {
 		publish: async (record) => {
 			await mkdir(join(root, workspaceKey(workspace)), { recursive: true });
 			await writeFile(join(root, workspaceKey(workspace), `${record.id}.json`), JSON.stringify(encodeSessionRecord(record)));
@@ -273,7 +271,7 @@ test("an interrupted cross-owner commit recovers before any Session reader obser
 		},
 		remove: async () => {},
 	};
-	const transactions = new AttachmentTransactions(root, access);
+	const transactions = new MetadataTransactions(root, access);
 	const catalog = emptyAttachmentCatalog();
 	catalog.revision = 1;
 	await assert.rejects(transactions.withLock(() => transactions.commit({ catalog, writes: [session] })), expectCode("ATTACHMENT_RECOVERY_PENDING"));

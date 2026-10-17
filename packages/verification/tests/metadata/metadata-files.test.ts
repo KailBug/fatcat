@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { atomicJson, boundedJson } from "@fatcat/runtime/internal/attachments/metadata-files";
+import { atomicJson, boundedJson } from "@fatcat/runtime/internal/metadata/files";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 describe("attachment metadata files", () => {

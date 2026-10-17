@@ -7,26 +7,34 @@ import type { SessionRecord } from "../session/record.js";
 import type { ProjectRecord } from "../project/record.js";
 import type { ProjectSessionMove } from "../project/management.js";
 import { MemoryStore } from "../memory/store.js";
-import { AttachmentTransactions } from "./transaction.js";
-import { atomicJson, boundedJson } from "./metadata-files.js";
-import type { AttachmentSessionAccess } from "./transaction.js";
-import type { MetadataCommit } from "./journal.js";
+import { MetadataTransactions } from "../metadata/transaction.js";
+import { atomicJson, boundedJson } from "../metadata/files.js";
+import type { MetadataSessionAccess } from "../metadata/transaction.js";
+import type { MetadataCommit } from "../metadata/journal.js";
 import { diskDocumentCache } from "../documents/cache.js";
 import type { DocumentCache } from "../documents/cache.js";
 import { attachmentIdPattern, attachmentMediaType, attachmentName, decodeStagedAttachment, extractAttachmentReferences,
 	parseAttachmentReference, sameAttachmentTarget, scopeKey, scopeOfTarget, validateAttachmentTarget } from "./record.js";
 import type { AttachmentBinding, AttachmentCatalog, AttachmentInfo, AttachmentRecord, AttachmentRef,
 	AttachmentScope, AttachmentSharingState, AttachmentTarget, AttachmentUploadMetadata, StagedAttachment } from "./record.js";
-import { readAttachmentBytes, readStagingOwner, stagedAttachmentPart, stagedAttachmentPath, writeAttachmentPart } from "./files.js";
+import { attachmentBlobPath, readAttachmentBytes, readStagingOwner, stagedAttachmentPart, stagedAttachmentPath, writeAttachmentPart } from "./files.js";
+import { publishAttachmentCatalog, readAttachmentCatalog } from "./catalog.js";
+
+export interface AttachmentSessionAccess extends MetadataSessionAccess {
+	load(id: string): Promise<SessionRecord>;
+	prepareDraft(record: SessionRecord): Promise<SessionRecord>;
+}
 
 export class AttachmentStore {
 	readonly root: string;
-	private readonly transactions: AttachmentTransactions;
+	private readonly transactions: MetadataTransactions;
+	private readonly directory: string;
 
 	constructor(options: { root: string; sessions: AttachmentSessionAccess }) {
 		this.root = options.root;
+		this.directory = join(options.root, "attachments");
 		this.sessions = options.sessions;
-		this.transactions = new AttachmentTransactions(options.root, options.sessions);
+		this.transactions = new MetadataTransactions(options.root, options.sessions);
 	}
 
 	private readonly sessions: AttachmentSessionAccess;
@@ -38,7 +46,7 @@ export class AttachmentStore {
 
 	/** The caller must hold the shared metadata gate. */
 	async isSessionDeletedUnlocked(id: string): Promise<boolean> {
-		return (await this.transactions.catalog()).deletedSessions.includes(id);
+		return (await readAttachmentCatalog(this.directory)).deletedSessions.includes(id);
 	}
 
 	async stageUpload(target: AttachmentTarget, metadata: AttachmentUploadMetadata,
@@ -48,27 +56,27 @@ export class AttachmentStore {
 		const mediaType = attachmentMediaType(name);
 		if (!attachmentIdPattern.test(metadata.uploadId)) throw new HarnessError("ATTACHMENT_UPLOAD", "Invalid upload identity.");
 		checkCancellation(signal);
-		const directory = join(this.transactions.directory, "staging");
+		const directory = join(this.directory, "staging");
 		await mkdir(directory, { recursive: true, mode: 0o700 });
 		const stageToken = randomUUID();
 		await this.withMetadata(async () => {
-			const owner = await readStagingOwner(this.transactions.directory, metadata.uploadId);
+			const owner = await readStagingOwner(this.directory, metadata.uploadId);
 			if (owner) {
 				if (processAlive(owner.pid)) throw new HarnessError("ATTACHMENT_UPLOAD_CONFLICT", "This upload is already in progress. Wait for it to complete or cancel it before retrying.");
 				await this.discardStaging(metadata.uploadId, owner.stageToken);
 			}
-			await atomicJson(stagedAttachmentPath(this.transactions.directory, metadata.uploadId, ".lock"), { pid: process.pid, stageToken }, 4096);
+			await atomicJson(stagedAttachmentPath(this.directory, metadata.uploadId, ".lock"), { pid: process.pid, stageToken }, 4096);
 		});
-		const path = stagedAttachmentPart(this.transactions.directory, metadata.uploadId, stageToken);
+		const path = stagedAttachmentPart(this.directory, metadata.uploadId, stageToken);
 		try {
 			const { size, sha256 } = await writeAttachmentPart(path, body, signal);
 			const staged: StagedAttachment = { uploadId: metadata.uploadId, stageToken, target: captured, id: randomUUID(),
 				contentVersion: sha256, sha256, name, mediaType, size, createdAt: new Date().toISOString() };
 			await this.withMetadata(async () => {
-				if ((await readStagingOwner(this.transactions.directory, metadata.uploadId))?.stageToken !== stageToken) {
+				if ((await readStagingOwner(this.directory, metadata.uploadId))?.stageToken !== stageToken) {
 					throw new HarnessError("ATTACHMENT_UPLOAD_CONFLICT", "The upload was cancelled before publication.");
 				}
-				await atomicJson(stagedAttachmentPath(this.transactions.directory, metadata.uploadId, ".json"), staged, 16384);
+				await atomicJson(stagedAttachmentPath(this.directory, metadata.uploadId, ".json"), staged, 16384);
 			});
 			checkCancellation(signal);
 			return staged;
@@ -81,10 +89,10 @@ export class AttachmentStore {
 	async completeUpload(uploadId: string, draft?: SessionRecord, stageToken?: string): Promise<{ attachment: AttachmentInfo; session: SessionRecord }> {
 		if (draft && draft.revision !== 0) throw new HarnessError("ATTACHMENT_UPLOAD", "Only an unsaved draft can be included with an upload.");
 		return this.withMetadata(async () => {
-			const catalog = await this.transactions.catalog();
-			const stagedValue = await boundedJson(stagedAttachmentPath(this.transactions.directory, uploadId, ".json"), 16384, true);
+			const catalog = await readAttachmentCatalog(this.directory);
+			const stagedValue = await boundedJson(stagedAttachmentPath(this.directory, uploadId, ".json"), 16384, true);
 			const staged = stagedValue === undefined ? undefined : decodeStagedAttachment(stagedValue);
-			if (staged && (staged.stageToken !== stageToken || (await readStagingOwner(this.transactions.directory, uploadId))?.stageToken !== stageToken)) {
+			if (staged && (staged.stageToken !== stageToken || (await readStagingOwner(this.directory, uploadId))?.stageToken !== stageToken)) {
 				throw new HarnessError("ATTACHMENT_UPLOAD_CONFLICT", "Only the request that staged this upload can publish it.");
 			}
 			const existing = catalog.assets.find((asset) => asset.uploadId === uploadId);
@@ -118,13 +126,13 @@ export class AttachmentStore {
 				newSession = true;
 			}
 			const ref = { attachmentId: staged.id, contentVersion: staged.contentVersion };
-			const blob = this.transactions.blobPath(ref);
-			await mkdir(join(this.transactions.directory, "blobs", staged.id), { recursive: true, mode: 0o700 });
+			const blob = attachmentBlobPath(this.directory, ref);
+			await mkdir(join(this.directory, "blobs", staged.id), { recursive: true, mode: 0o700 });
 			try { await stat(blob); }
 			catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-				await readAttachmentBytes(stagedAttachmentPart(this.transactions.directory, uploadId, staged.stageToken), staged);
-				await rename(stagedAttachmentPart(this.transactions.directory, uploadId, staged.stageToken), blob);
+				await readAttachmentBytes(stagedAttachmentPart(this.directory, uploadId, staged.stageToken), staged);
+				await rename(stagedAttachmentPart(this.directory, uploadId, staged.stageToken), blob);
 			}
 			await readAttachmentBytes(blob, staged);
 			const asset: AttachmentRecord = { ...staged, uploaderSessionId: staged.target.sessionId };
@@ -146,7 +154,7 @@ export class AttachmentStore {
 	async list(target: AttachmentTarget, options: { includeRemoved?: boolean; draft?: SessionRecord } = {}): Promise<AttachmentInfo[]> {
 		return this.withMetadata(async () => {
 			await this.currentSession(target, options.draft);
-			const catalog = await this.transactions.catalog();
+			const catalog = await readAttachmentCatalog(this.directory);
 			const key = scopeKey(scopeOfTarget(target));
 			return catalog.bindings.filter((binding) => scopeKey(binding.scope) === key)
 				.map((binding) => this.info(catalog, this.asset(catalog, binding), binding))
@@ -159,15 +167,15 @@ export class AttachmentStore {
 		return this.withMetadata(async () => {
 			checkCancellation(options.signal);
 			await this.currentSession(target, options.pin ? undefined : options.draft);
-			const catalog = await this.transactions.catalog();
+			const catalog = await readAttachmentCatalog(this.directory);
 			const binding = this.binding(catalog, target, ref);
 			const asset = this.asset(catalog, ref);
-			const bytes = await readAttachmentBytes(this.transactions.blobPath(ref), asset);
+			const bytes = await readAttachmentBytes(attachmentBlobPath(this.directory, ref), asset);
 			checkCancellation(options.signal);
 			if (options.pin && !catalog.pins.some((pin) => pin.sessionId === target.sessionId && pin.attachmentId === ref.attachmentId)) {
 				catalog.pins.push({ ...ref, sessionId: target.sessionId });
 				catalog.revision++;
-				await this.transactions.publishCatalog(catalog);
+				await publishAttachmentCatalog(this.directory, catalog);
 			}
 			checkCancellation(options.signal);
 			return { attachment: this.info(catalog, asset, binding), bytes };
@@ -177,7 +185,7 @@ export class AttachmentStore {
 	async sharingState(target: AttachmentTarget): Promise<AttachmentSharingState> {
 		return this.withMetadata(async () => {
 			await this.currentSession(target);
-			return this.sharing(await this.transactions.catalog(), scopeOfTarget(target));
+			return this.sharing(await readAttachmentCatalog(this.directory), scopeOfTarget(target));
 		}, false);
 	}
 
@@ -185,30 +193,30 @@ export class AttachmentStore {
 	async withDocumentCache<T>(target: AttachmentTarget, ref: AttachmentRef, operation: (cache: DocumentCache) => Promise<T>, draft?: SessionRecord): Promise<T> {
 		return this.withMetadata(async () => {
 			await this.currentSession(target, draft);
-			const catalog = await this.transactions.catalog();
+			const catalog = await readAttachmentCatalog(this.directory);
 			this.binding(catalog, target, ref);
 			if (this.asset(catalog, ref).deletedAt) throw new HarnessError("ATTACHMENT_UNAVAILABLE", "This original was permanently deleted.");
-			return operation(diskDocumentCache(join(this.transactions.directory, "derived", ref.attachmentId, ref.contentVersion)));
+			return operation(diskDocumentCache(join(this.directory, "derived", ref.attachmentId, ref.contentVersion)));
 		}, false);
 	}
 
 	async remove(target: AttachmentTarget, ref: AttachmentRef, expectedScopeRevision?: number): Promise<void> {
 		await this.withMetadata(async () => {
 			await this.currentSession(target);
-			const catalog = await this.transactions.catalog();
+			const catalog = await readAttachmentCatalog(this.directory);
 			const binding = this.binding(catalog, target, ref, true);
 			this.expectedScope(catalog, binding.scope, expectedScopeRevision);
 			if (binding.removedAt) return;
 			binding.removedAt = new Date().toISOString();
 			this.changed(catalog, binding.scope);
-			await this.transactions.publishCatalog(catalog);
+			await publishAttachmentCatalog(this.directory, catalog);
 		});
 	}
 
 	async delete(target: AttachmentTarget, ref: AttachmentRef, expectedScopeRevision?: number): Promise<void> {
 		await this.withMetadata(async () => {
 			await this.currentSession(target);
-			const catalog = await this.transactions.catalog();
+			const catalog = await readAttachmentCatalog(this.directory);
 			const binding = this.binding(catalog, target, ref, true);
 			this.expectedScope(catalog, binding.scope, expectedScopeRevision);
 			const asset = this.asset(catalog, ref);
@@ -229,7 +237,7 @@ export class AttachmentStore {
 	/** Called only while SessionStore owns the metadata and session locks. */
 	async publishSession(record: SessionRecord, previous?: SessionRecord, forkSource?: SessionRecord,
 		expectedAttachmentRevision?: number, expectedMemoryFingerprint?: string): Promise<void> {
-		const catalog = await this.transactions.catalog();
+		const catalog = await readAttachmentCatalog(this.directory);
 		if (catalog.deletedSessions.includes(record.id)) throw new HarnessError("SESSION_NOT_FOUND", "The session was deleted and cannot be recreated by an old operation.");
 		let changed = false;
 		let memoryMove: MetadataCommit["memoryMove"];
@@ -279,7 +287,7 @@ export class AttachmentStore {
 
 	/** Deleting a session never deletes a project association or another session's pins. */
 	async deleteSession(record: SessionRecord, replacement?: SessionRecord): Promise<void> {
-		const catalog = await this.transactions.catalog();
+		const catalog = await readAttachmentCatalog(this.directory);
 		const scope: AttachmentScope = { kind: "session", sessionId: record.id };
 		catalog.bindings = catalog.bindings.filter((binding) => scopeKey(binding.scope) !== scopeKey(scope));
 		catalog.pins = catalog.pins.filter((pin) => pin.sessionId !== record.id);
@@ -291,17 +299,17 @@ export class AttachmentStore {
 
 	/** Project management calls these methods while holding the shared metadata gate. */
 	async projectImpact(projectId: string, sessionIds: string[]): Promise<{ attachmentCount: number; retainedAttachmentCount: number; attachmentFingerprint: string }> {
-		const selection = this.projectAssets(await this.transactions.catalog(), projectId, new Set(sessionIds));
+		const selection = this.projectAssets(await readAttachmentCatalog(this.directory), projectId, new Set(sessionIds));
 		return { attachmentCount: selection.assets.length, retainedAttachmentCount: selection.retained.size,
 			attachmentFingerprint: selection.fingerprint };
 	}
 
 	async publishProject(project: ProjectRecord, sessionMoves: ProjectSessionMove[] = []): Promise<void> {
-		await this.transactions.commit({ catalog: await this.transactions.catalog(), projectWrite: project, sessionMoves });
+		await this.transactions.commit({ catalog: await readAttachmentCatalog(this.directory), projectWrite: project, sessionMoves });
 	}
 
 	async deleteProject(projectId: string, members: Array<{ id: string; storageWorkspace: string }>): Promise<void> {
-		const catalog = await this.transactions.catalog();
+		const catalog = await readAttachmentCatalog(this.directory);
 		const ids = new Set(members.map((member) => member.id));
 		const selection = this.projectAssets(catalog, projectId, ids);
 		catalog.bindings = catalog.bindings.filter((binding) => !this.projectBinding(binding, projectId, ids));
@@ -350,7 +358,7 @@ export class AttachmentStore {
 		catch (error) {
 			if (!(error instanceof HarnessError && error.code === "SESSION_NOT_FOUND") || !draft || draft.revision !== 0
 				|| !sameAttachmentTarget(requested, targetOf(draft))) throw error;
-			const catalog = await this.transactions.catalog();
+			const catalog = await readAttachmentCatalog(this.directory);
 			if (catalog.deletedSessions.includes(requested.sessionId)) throw error;
 			session = await this.sessions.prepareDraft(draft);
 		}
@@ -407,10 +415,10 @@ export class AttachmentStore {
 	}
 
 	private async discardStaging(id: string, stageToken: string): Promise<void> {
-		await unlink(stagedAttachmentPart(this.transactions.directory, id, stageToken)).catch(() => {});
-		if ((await readStagingOwner(this.transactions.directory, id))?.stageToken !== stageToken) return;
-		await unlink(stagedAttachmentPath(this.transactions.directory, id, ".json")).catch(() => {});
-		await unlink(stagedAttachmentPath(this.transactions.directory, id, ".lock")).catch(() => {});
+		await unlink(stagedAttachmentPart(this.directory, id, stageToken)).catch(() => {});
+		if ((await readStagingOwner(this.directory, id))?.stageToken !== stageToken) return;
+		await unlink(stagedAttachmentPath(this.directory, id, ".json")).catch(() => {});
+		await unlink(stagedAttachmentPath(this.directory, id, ".lock")).catch(() => {});
 	}
 }
 

@@ -9,7 +9,8 @@ Project 是显式组织实体，持有统一工作目录。成员 Session 历史
 | 源码 | 职责 |
 | --- | --- |
 | `src/project/record.ts`、`store.ts` | 项目身份、名称、唯一工作目录、修订与原子存储 |
-| `src/project/operations.ts` | 迁入预览与确认后的记录转换 |
+| `src/project/operations.ts` | 基础迁入预览、完整预览比较与确认后的记录转换 |
+| `src/session/projects.ts` | 组合迁入所需的 Memory/附件状态，准备未保存项目会话的投影；不持有活动会话或执行提交 |
 | `src/project/commands.ts` | 终端项目命令的解析、帮助、输出与按 Manager 绑定的加入确认令牌；业务操作仍调用 SessionManager |
 | `src/project/management.ts` | 目录/删除影响预览、成员指纹和有界目录 patch |
 | `src/session/store.ts`、`manager.ts` | 发现成员、重验修订、协调提交并准备目标 Agent |
@@ -33,6 +34,16 @@ Project v1 存于 Session 根的 `projects/<id>.json`，名称最多 120 字符�
 迁入不移动工作文件、不改写历史、不恢复审批。重复确认同一已完成目标应识别完成状态，其他冲突需刷新预览。响应丢失不能当作提交未发生而再次执行。
 
 未保存且无材料的 Web UI 草稿可以只更新内存项目绑定；保存触发条件统一见 [Session](SESSION.md#管理与跨模块关系)。草稿使用可撤销 scope token，不能让旧上传静默归入新范围。
+
+## Session 接入边界
+
+迁入预览与确认共同使用 `sessionProjectJoinPreview`，每次从传入的 Session/Project 快照开始，先检查迁入归属约束，再通过 Manager 提供的回调读取私有 Memory，最后读取已保存会话的附件共享状态。Memory 回调始终经过现有身份/owner 校验；草稿不查询持久附件范围。完整预览包含数量、修订和指纹，确认重新组装后由 `requireProjectJoinPreview` 比较，不能用数量相同或已缓存的预览代替重验。最终提交继续在原存储锁内校验资料版本。
+
+`projectDraftRecord` 只生成未保存会话的候选记录：目录相同时更新项目名称/修订；目录变化时复用既有迁入记录转换，保留存储桶、增加归属代次、记录待通知变化并暂停任务。它不保存草稿、不替换 runtime、不持有上传令牌或项目成员缓存。
+
+Manager 保留目标加载、持久 owner 检查、Agent 准备、宿主操作互斥和激活顺序。迁入非当前会话不切换前台；已迁入同一项目的确认保持原有幂等返回。改目录在提交前准备 Agent 和必要的草稿目录转换，提交后补充最终项目名称/修订或重载已保存会话；删除当前项目先准备启动目录的替代草稿再提交删除。重命名仍先提交项目，再刷新当前会话，因此刷新失败不撤销已经提交的名称。各操作保持自己的失败边界，不统一为新的事务或通用生命周期服务。
+
+SessionStore 继续发现成员、重验修订并协调提交；ProjectStore 和附件元数据事务仍使用原锁序与向前恢复。终端/Web UI 的一次性确认令牌继续归交互层，与业务预览校验分开。
 
 ## 项目管理
 

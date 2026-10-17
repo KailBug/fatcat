@@ -12,6 +12,7 @@ Session 系统区分成功对话、当前持久记录、宿主选择和存储。
 | `src/session/agent-session.ts` | 单个活动 record 的唯一所有者；运行领取、检查点、提交/失败收尾和恢复提示 |
 | `src/session/manager.ts` | 会话选择、宿主操作互斥、目录准备、项目管理协调与后台目标路由 |
 | `src/session/attachments.ts` | 无会话选择状态的附件访问适配：传输与清理、清单/下载/移除/删除、文档授权包装及执行身份绑定 |
+| `src/session/projects.ts` | 无活动状态的完整迁入预览组装和项目草稿投影，复用 Project 领域规则 |
 | `src/session/memory.ts` | 无活动会话状态的 Memory 接入规则：作用域、变更、请求转换及迁入统计；在 Manager 的身份/owner 校验边界内使用 |
 | `src/session/store.ts` | 有界磁盘读写、桶锁、修订和活动 owner 校验，协调跨文件提交 |
 | `src/session/record.ts`、`history.ts` | 格式解码、记录约束、完整回合及工具关联校验 |
@@ -72,6 +73,8 @@ Web UI 未命名新会话可以是 revision 0 草稿。普通回合开始前、�
 Memory 的业务规则集中在 `session/memory.ts`，Manager 保留 MemoryStore 的创建/持有、宿主操作互斥、草稿保存和激活，以及 memoryOperation 的身份与 owner 校验；MemoryChange 直接从 `session/memory.ts` 导入。activate 仍按原会话身份绑定动态访问，每次调用重新校验，不把活动 record 或授权结果交给辅助模块长期持有。AgentSession 继续管理当前用户证据、写入额度和 callId 复用；SessionStore 的元数据锁和持久身份重验不迁移。详细规则见 [Memory](MEMORY.md)。
 
 Automation 接入沿同一边界：`session/automations.ts` 接收记录快照，生成独立任务投影并校验触发资格、组合取消与到期信号；它不加载或激活会话，也不领取任务。Manager 保留当前记录刷新、owner 检查、后台目标装配及宿主互斥，AgentSession 保留任务变更提交、领取计数和回合收尾。调度队列、租约和文件基线仍归 ConversationAutomations。具体顺序与约束见 [Automation](AUTOMATION.md#session-接入边界)。
+
+Project 接入规则集中在 `session/projects.ts`：迁入预览和确认每次读取同一组资料来源，Memory 读取仍经过 Manager 的身份/owner 门禁；草稿投影复用 Project 的记录转换。Manager 保留目标选择、持久 owner 检查、操作锁、Agent 准备与激活，Store 保留成员发现、提交和恢复。改目录的草稿转换在提交前准备；重命名后刷新失败不能撤销已提交的项目名称。详细操作顺序和失败边界见 [Projects](PROJECTS.md#session-接入边界)。
 
 ## 验证与未实现范围
 

@@ -27,7 +27,7 @@ Read [project goals and boundaries](docs/PROJECT.md), then the documents relevan
 - Never put real credentials in source, logs, documentation, or version control. Skills and saved history do not grant permissions; restoring a session must not replay operations or restore old approvals.
 - Keep host command parsing, help and output with the owning capability, following the [development guide](docs/DEVELOPMENT.md), section "Host command boundaries". Preserve user-visible command behavior and confirmation lifecycles; command handlers use SessionManager operations without taking ownership of execution policy or persistent state.
 - Internal APIs and import paths may change during refactoring. Migrate all callers, tests, scripts and documentation together; remove obsolete forwarding modules and re-exports instead of preserving historical paths without a real consumer. Preserve user behavior, persisted data and state ownership; document any genuine compatibility requirement.
-- Keep session capability helpers free of active-session ownership, following the [development guide](docs/DEVELOPMENT.md), section "Session capability boundaries". Pass explicit dependencies and identities; preserve per-operation validation, lock boundaries and draft/turn lifecycles.
+- Keep session capability helpers free of active-session ownership, following the [development guide](docs/DEVELOPMENT.md), section "Session capability boundaries". Pass explicit dependencies and identities; preserve per-operation validation, lock boundaries and draft/turn lifecycles. Reuse preview-building rules while reading fresh sources at confirmation; keep each operation's preparation, commit and activation order explicit.
 
 ## Common development commands
 

@@ -151,7 +151,7 @@ Use explicit restore/preserve intent for management operations. Combine transcri
 
 ## Web UI browser view boundaries
 
-Keep the authoritative page snapshot, ETag, connection/sending state, draft and request/polling lifecycle in `packages/webui/src/client/app.ts`. The entry coordinates menus, dialogs, approvals, scrolling and preview reset. `TranscriptView` in `client/transcript.ts` owns only rendered turn nodes and signatures; `SessionListView` in `client/session-list.ts` owns only list nodes, its signature and display formatting. Pass rendering data explicitly and expose concrete action callbacks; do not add a second application store or let views call the API. Import `displaySessions` from its list owner wherever menus or details need the same projection.
+Keep the authoritative page snapshot, ETag, connection/sending state, draft and request/polling lifecycle in `packages/webui/src/client/app.ts`. The entry coordinates menus, dialogs, approvals, scrolling and preview reset. `TranscriptView` in `client/transcript.ts` owns only rendered turn nodes and signatures; `SessionListView` in `client/session-list.ts` owns only list nodes, its signature, per-project collapse display preferences (browser local storage with an in-memory fallback) and display formatting. `ComposerMotion` owns only idle presentation and its timer, with enablement and focus callbacks from the entry; it never submits or modifies the draft. `SettingsPanel` owns its modal/focus behavior and browser-only theme preference; current-session actions remain callbacks into the entry. Pass rendering data explicitly and expose concrete action callbacks; do not add a second application store or let views call the API. Import `displaySessions` from its list owner wherever menus or details need the same projection.
 
 Preserve DOM reuse, expanded details, captured source Session IDs, preview path filtering, list grouping and keyboard/drag behavior when moving rendering code. Consult live management availability at event time, and resolve dropped Session IDs against the entry's current snapshot. Apply button disabled states even when rendering is skipped by a matching signature. Keep request completion, draft clearing, old-revision rejection, scrolling and focus ordering unchanged.
 
@@ -246,9 +246,9 @@ These scripts do not call model APIs or require model credentials. Browser scrip
 | --- | --- |
 | `pnpm run verify:web` | Five fixed public search, page and weather checks; requires network access |
 | `pnpm run verify:browser` | Controlled browser execution and evidence on temporary local pages |
-| `pnpm run verify:webui` | Responsive UI, themes, keyboard navigation, dialogs, approvals, cancellation, preview and Cron controls |
+| `pnpm run verify:webui` | Responsive UI, centered settings/modal dismissal and focus, current draft details and inset keyboard scrolling, compact turn evidence, theme persistence, connection recovery, single-row composer controls, idle collapse and pointer/focus/draft protection, keyboard wake, home/busy exclusions and reduced motion, long drafts/short windows, composer alignment and resizing, split/overlay previews, keyboard navigation, dialogs, approvals, cancellation and Cron controls |
 | `pnpm run verify:sessions` | Saved sessions and workspace switching |
-| `pnpm run verify:projects` | Project grouping, fixed workspace and confirmed migration, including stale/cancelled previews |
+| `pnpm run verify:projects` | Project grouping/collapse and compact spacing, collapse restoration after browser/server restart and storage-unavailable fallback, focused form label clearance, fixed workspace and confirmed migration, including stale/cancelled previews |
 | `pnpm run verify:project-management` | Project rename, directory change and deletion |
 | `pnpm run verify:folder-picker` | Real native Windows directory picker; requires an interactive desktop, with selection/cancellation driven by the verification helper |
 | `pnpm run verify:attachments` | Attachment upload, sharing, source display and lifecycle |

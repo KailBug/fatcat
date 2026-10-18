@@ -44,7 +44,7 @@ export class TranscriptView {
 		if (turn.automation) article.append(node("div", "Scheduled task", "scheduled-turn-label"));
 		article.append(node("div", turn.prompt, "user-message"));
 		const label = node("div", undefined, "assistant-label");
-		const logo = node("img", undefined, "cat-mark"); logo.src = "/mini-logo.png"; logo.alt = "";
+		const logo = node("img", undefined, "cat-mark"); logo.src = "/looking.png"; logo.alt = "";
 		label.append(logo, node("span", "Fatcat")); article.append(label);
 		if (turn.answer) {
 			article.append(renderMarkdown(turn.answer, (reference) => {

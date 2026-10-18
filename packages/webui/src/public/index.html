@@ -12,28 +12,28 @@
 <body>
   <button id="sidebar-backdrop" class="sidebar-backdrop" aria-label="Close sidebar" tabindex="-1"></button>
   <aside id="sidebar" aria-label="Workspace sidebar">
-    <a class="brand" href="/" aria-label="Fatcat home"><img class="cat-mark" src="/mini-logo.png" alt="" width="36" height="36">fatcat<span class="local-tag">LOCAL</span></a>
-    <button id="close-sidebar" class="icon-button sidebar-close" aria-label="Close sidebar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#x"></use></svg></button>
-    <button class="new-chat" id="new-chat"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg> New chat </button>
+    <div class="sidebar-header">
+      <a id="home" class="brand" href="/" aria-label="Fatcat home"><img class="cat-mark" src="/mini-logo.png" alt="" width="36" height="36"><span>fatcat</span></a>
+      <button id="new-chat" class="icon-button" aria-label="New chat" title="New chat"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#square-pen"></use></svg></button>
+      <button id="close-sidebar" class="icon-button sidebar-close" aria-label="Close sidebar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#x"></use></svg></button>
+    </div>
     <button class="cron-entry" id="show-cron" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/icons.svg#clock"></use></svg> Cron tasks</button>
-    <button class="cron-entry" id="new-project" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/icons.svg#folder"></use></svg> New project</button>
-    <div class="section-label">Projects and chats</div>
+    <div class="projects-label"><span>Projects</span><button id="new-project" class="icon-button" aria-label="New project" title="New project" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#plus"></use></svg></button></div>
     <nav id="sessions" class="session-list" aria-label="Saved sessions"></nav>
     <div class="sidebar-bottom">
-      <div class="profile"><span class="avatar">Y</span><div>You<span>Local developer</span></div><span class="private-label">Personal</span></div>
+      <button id="show-settings" class="icon-button" aria-label="Settings" title="Settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-panel"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#settings-2"></use></svg></button>
+      <div class="connection" role="status"><span class="status-dot" id="connection-dot" data-connected="false" aria-hidden="true"></span><span id="connection">Connecting</span></div>
     </div>
   </aside>
   <main>
     <header class="topbar">
-      <div class="topbar-left"><button id="toggle-sidebar" class="icon-button" aria-label="Toggle sidebar" aria-expanded="false" aria-controls="sidebar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#panel-left"></use></svg></button><span class="app-name">Fatcat</span><button id="current-project" class="current-project" type="button" aria-label="Move current chat to project" disabled></button></div>
-      <div class="topbar-actions"><button id="show-attachments" class="preview-entry" aria-haspopup="dialog" disabled>Attachments</button><button id="show-preview" class="preview-entry" aria-controls="file-preview" aria-expanded="false" disabled>Preview</button><div class="connection"><span class="status-dot" id="connection-dot"></span><span id="connection">Connecting</span></div></div>
+      <div class="topbar-left"><button id="toggle-sidebar" class="icon-button" aria-label="Toggle sidebar" aria-expanded="false" aria-controls="sidebar"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#panel-left"></use></svg></button></div>
+      <div class="topbar-actions"><button id="show-preview" class="icon-button" aria-label="Preview" title="Preview" aria-controls="file-preview" aria-expanded="false" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#eye"></use></svg></button></div>
     </header>
     <div class="scroll-area" id="scroll-area">
       <section class="welcome" id="welcome">
-        <img class="welcome-icon" src="/mini-logo.png" alt="" width="72" height="72">
-        <div class="eyebrow">YOUR LOCAL CODING COMPANION</div>
+        <img class="welcome-icon" src="/walking.png" alt="" width="112" height="112">
         <h1>What are we building today?</h1>
-        <p>A fresh perspective on your code. A little help with what’s next.</p>
       </section>
       <noscript class="no-script">Enable JavaScript to connect to your local Fatcat session and start a conversation.</noscript>
       <section id="messages" class="messages" aria-label="Conversation"></section>
@@ -45,21 +45,27 @@
       <div id="attachment-uploads" class="attachment-uploads" aria-label="File uploads"></div>
       <div class="run-status" id="run-status" role="status" aria-live="polite"></div>
       <form id="composer" class="composer">
-        <label class="sr-only" for="prompt">Message Fatcat</label>
-        <textarea id="prompt" rows="1" placeholder="Ask anything about your workspace…" maxlength="32768" disabled></textarea>
+        <div id="composer-input" class="composer-input"><div class="composer-input-clip">
+          <label class="sr-only" for="prompt">Message Fatcat</label>
+          <textarea id="prompt" rows="1" placeholder="Message Fatcat…" maxlength="32768" disabled></textarea>
+        </div></div>
         <div class="composer-toolbar">
           <div class="composer-primary-tools">
+            <button id="show-attachments" class="icon-button" type="button" aria-label="Attachments" title="Attachments" aria-haspopup="dialog" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#paperclip"></use></svg></button>
             <button id="permission-mode" class="permission-mode" type="button" disabled></button>
             <button id="workspace-picker" type="button" class="workspace-path" aria-label="Change workspace" aria-haspopup="dialog" disabled><span class="workspace-path-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#folder"></use></svg></span><span id="workspace" class="composer-workspace" aria-label="Current workspace">Connecting…</span></button>
           </div>
           <div class="composer-secondary-tools">
-            <span id="context-usage" class="context-chip" tabindex="0" aria-label="Model context usage"><span class="context-ring" aria-hidden="true"></span><span id="context-label">Context —</span></span>
-            <span class="model-pill" id="model" aria-label="Selected model">Connecting</span>
-            <button id="send" class="send-button" type="submit" aria-label="Send message" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#arrow-up"></use></svg></button><button id="stop" class="send-button stop-button" type="button" aria-label="Stop current turn" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#square"></use></svg></button>
+            <span class="model-pill" id="model" tabindex="0" aria-label="Selected model">Connecting</span>
+            <span id="context-usage" class="context-chip" tabindex="0" aria-label="Model context usage"><span class="context-ring" aria-hidden="true"></span></span>
+            <div class="composer-action">
+              <button id="send" class="send-button" type="submit" aria-label="Send message" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#arrow-up"></use></svg></button><button id="stop" class="send-button stop-button" type="button" aria-label="Stop current turn" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#square"></use></svg></button>
+              <button id="wake-composer" class="wake-composer" type="button" aria-label="Expand message box" title="Expand message box" aria-controls="composer-input" aria-expanded="true" aria-hidden="true" tabindex="-1" disabled><img src="/sleeping.png" alt="" width="36" height="36"></button>
+            </div>
           </div>
         </div>
       </form>
-      <div class="composer-footer"><p class="footnote">Fatcat can make mistakes. Review changes and check the execution report.</p><span class="composer-shortcut">Shift + Enter for a new line</span></div>
+
     </div>
   </main>
   <section id="file-preview" class="file-preview" aria-labelledby="preview-heading" hidden>
@@ -77,6 +83,22 @@
   <div id="session-menu" class="session-menu" role="menu" aria-label="Session actions" hidden></div>
   <div id="project-menu" class="session-menu" role="menu" aria-label="Project actions" hidden></div>
   <div id="permission-menu" class="permission-menu" role="menu" aria-label="Permission modes" hidden></div>
-  <dialog id="details"><div class="dialog-heading"><h2>Session details</h2><button id="close-details" class="icon-button" aria-label="Close session details"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#x"></use></svg></button></div><dl id="details-content"></dl><p class="dialog-note">Switching sessions restores successful conversation history. Approvals, failed turns and execution reports are not restored. Files and commands stay in effect.</p></dialog>
+  <dialog id="settings-panel" class="settings-panel" aria-labelledby="settings-heading">
+    <div class="dialog-heading"><h2 id="settings-heading">Settings</h2><button id="close-settings" class="icon-button" type="button" aria-label="Close settings" autofocus><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/icons.svg#x"></use></svg></button></div>
+    <details><summary>Appearance</summary><fieldset><legend class="sr-only">Theme</legend>
+      <label><input type="radio" name="theme" value="system" checked> System</label>
+      <label><input type="radio" name="theme" value="light"> Light</label>
+      <label><input type="radio" name="theme" value="dark"> Dark</label>
+    </fieldset></details>
+    <button id="settings-session" type="button" disabled>Current session information</button>
+    <button id="move-current-project" type="button" disabled>Move current chat to project</button>
+  </dialog>
+  <dialog id="details" aria-labelledby="details-heading">
+    <div class="dialog-heading"><h2 id="details-heading">Session details</h2><button id="close-details" class="icon-button" aria-label="Close session details"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#x"></use></svg></button></div>
+    <div class="details-scroll" tabindex="0" role="region" aria-label="Session information">
+      <dl id="details-content"></dl>
+      <p class="dialog-note">Switching sessions restores successful conversation history. Approvals, failed turns and execution reports are not restored. Files and commands stay in effect.</p>
+    </div>
+  </dialog>
 </body>
 </html>

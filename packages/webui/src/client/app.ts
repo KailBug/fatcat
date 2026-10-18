@@ -15,6 +15,8 @@ import { ProjectDialog } from "./projects.js";
 import { ProjectMenu } from "./project-menu.js";
 import { ProjectActionDialog } from "./project-actions.js";
 import { AttachmentsPanel } from "./attachments.js";
+import { SettingsPanel } from "./settings.js";
+import { ComposerMotion } from "./composer-motion.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -27,6 +29,7 @@ const prompt = element<HTMLTextAreaElement>("prompt");
 const send = element<HTMLButtonElement>("send");
 const stop = element<HTMLButtonElement>("stop");
 const newChat = element<HTMLButtonElement>("new-chat");
+const home = element<HTMLAnchorElement>("home");
 const newProject = element<HTMLButtonElement>("new-project");
 const scroll = element("scroll-area");
 const notice = element("notice");
@@ -59,6 +62,11 @@ const projectActions = new ProjectActionDialog(request, () => connected && !send
 const projectMenu = new ProjectMenu(element("project-menu"), (action, project) => projectActions.open(action, project),
   () => connected && !sending && !state?.busy);
 const attachments = new AttachmentsPanel(() => token, () => refresh(true));
+const settings = new SettingsPanel(element<HTMLButtonElement>("show-settings"), element<HTMLDialogElement>("settings-panel"), () => {
+  if (state) void sessionAction("details", state.current);
+});
+const composerMotion = new ComposerMotion(element<HTMLFormElement>("composer"), prompt, element("composer-input"),
+  element<HTMLButtonElement>("wake-composer"), () => { resize(); prompt.focus({ preventScroll: true }); });
 const transcript = new TranscriptView(element("messages"), {
   openReference: (reference, sessionId, name) => { void attachments.openReference(reference, sessionId, name); },
   openPreview: (path) => { void filePreview.open(path); },
@@ -96,8 +104,10 @@ function controls(): void {
   send.disabled = !connected || sending || !prompt.value.trim() || Boolean(state?.current.projectError);
   stop.disabled = !connected || sending;
   newChat.disabled = !connected || sending || busy;
+  home.setAttribute("aria-disabled", String(newChat.disabled));
   newProject.disabled = !connected || sending || busy || !state?.persistent;
-  element<HTMLButtonElement>("current-project").disabled = !connected || sending || busy || !state?.persistent || Boolean(state?.current.projectId);
+  element<HTMLButtonElement>("move-current-project").disabled = !connected || sending || busy || !state?.persistent || Boolean(state?.current.projectId);
+  settings.update(Boolean(state));
   if (state) sessionMenu.update(displaySessions(state));
   sessionDialog.update();
   projectDialog.update();
@@ -108,11 +118,12 @@ function controls(): void {
   sessionList.setDisabled(!connected || sending || busy);
   if (state) cron.update(state, !connected || sending || busy);
   permissionMenu.update(state?.permissionMode, !connected || sending || busy || Boolean(state?.approval));
+  composerMotion.update(connected && !sending && !busy && !state?.approval && Boolean(state?.turns.length));
 }
 function connection(ok: boolean): void {
   connected = ok;
-  element("connection").textContent = ok ? "Local session" : "Disconnected";
-  element("connection-dot").hidden = !ok;
+  element("connection").textContent = ok ? "Local" : "Disconnected";
+  element("connection-dot").dataset.connected = String(ok);
   controls();
 }
 async function api(path: string, body: unknown, timeout = 15_000): Promise<boolean> {
@@ -194,9 +205,6 @@ function render(next: WebUiState): void {
   renderContextUsage(next);
   element("workspace").textContent = next.info.workspace;
   element("workspace").title = `${next.info.workspace}\nWrite ${next.info.permission} · Shell ${next.info.shellPermission} · Web ${next.info.webPermission}`;
-  element("current-project").textContent = next.current.projectName ?? (next.current.projectId ? "Unavailable project" : "Independent chat");
-  element("current-project").title = next.current.projectId ? "This chat belongs to its project." : "Move this chat to a project";
-  element("current-project").setAttribute("aria-label", next.current.projectId ? `Project: ${next.current.projectName ?? "Unavailable project"}` : "Move current chat to project");
   element("workspace-picker").title = next.current.projectId ? "This chat uses its project folder. Use the project menu to change it for every project chat." : "Change workspace";
   sessionList.update(next);
   const warning = element("session-warning");
@@ -216,28 +224,28 @@ function renderContextUsage(next: WebUiState): void {
   const known = promptTokens !== null && capacityTokens !== null;
   const percentage = known ? promptTokens / capacityTokens * 100 : 0;
   const percentageLabel = percentage === 0 ? "0%" : percentage < 0.1 ? "<0.1%" : `${Math.round(percentage * 10) / 10}%`;
-  element("context-label").textContent = known ? `Context ${percentageLabel}`
+  const label = known ? `Context ${percentageLabel}`
     : promptTokens === null ? "Context —" : `Context ${compactTokens.format(promptTokens)} tokens`;
   const usage = promptTokens === null ? "No input token usage is available yet."
     : `Last request input: ${tokenCount.format(promptTokens)} tokens.`;
   const capacity = capacityTokens === null ? "This model's context capacity is unknown."
     : `Model context capacity: ${tokenCount.format(capacityTokens)} tokens.`;
   chip.title = `${usage}\n${capacity}\nProvider-reported input for the latest parent request. Draft text and the latest reply are not counted.`;
-  chip.setAttribute("aria-label", `${element("context-label").textContent}. ${usage} ${capacity}`);
+  chip.setAttribute("aria-label", `${label}. ${usage} ${capacity}`);
   chip.dataset.known = String(known);
   chip.style.setProperty("--context-percent", `${Math.min(100, Math.max(0, percentage))}%`);
 }
 
 function renderDetails(next: WebUiState): void {
   if (!detailsSessionId) return;
-  const selected = displaySessions(next).find((session) => session.id === detailsSessionId);
+  const selected = detailsSessionId === next.current.id ? next.current : displaySessions(next).find((session) => session.id === detailsSessionId);
   if (!selected) { dialog.close(); return; }
   const content = element("details-content"); content.replaceChildren();
   for (const [key, value] of Object.entries({ Provider: next.info.provider, Model: next.info.model, Workspace: selected.workspace,
     Project: selected.projectName ?? selected.projectId ?? "Independent session", "Project status": selected.projectError ?? "Available",
     "Session ID": selected.id, "Session name": selected.name ?? selected.title,
     "Active session": selected.id === next.current.id ? "Yes" : "No",
-    "Saved locally": next.persistent ? "Yes" : "No", "Successful turns": selected.turnCount,
+    "Saved locally": next.persistent && selected.revision > 0 ? "Yes" : "No", "Successful turns": selected.turnCount,
     "Created": selected.createdAt, "Updated": selected.updatedAt,
     "Forked from": selected.forkedFrom ?? "None", "Interrupted turn": selected.interrupted ? "Yes" : "No",
     "Write permission": next.info.permission, "Shell permission": next.info.shellPermission, "Public web": next.info.webPermission,
@@ -302,17 +310,33 @@ element<HTMLFormElement>("composer").addEventListener("submit", (event) => {
   });
 });
 prompt.addEventListener("input", resize);
+let promptWidth = prompt.clientWidth;
+new ResizeObserver(() => {
+	const width = prompt.clientWidth;
+	if (width === promptWidth) return;
+	promptWidth = width;
+	resize();
+}).observe(prompt);
 prompt.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault(); element<HTMLFormElement>("composer").requestSubmit();
   }
 });
 stop.addEventListener("click", () => { void api("stop", {}); });
-newChat.addEventListener("click", () => {
+function startNewChat(): void {
+  if (!connected || sending || state?.busy) return;
   void api("session/new", { projectId: null }).then((accepted) => { if (accepted) sessionChanged(); });
+}
+newChat.addEventListener("click", startNewChat);
+home.addEventListener("click", (event) => {
+  event.preventDefault();
+  startNewChat();
 });
 newProject.addEventListener("click", () => projectDialog.create());
-element("current-project").addEventListener("click", () => { if (state) projectDialog.join(state.current, state); });
+element("move-current-project").addEventListener("click", () => {
+  settings.close(true);
+  if (state) projectDialog.join(state.current, state);
+});
 element("close-details").addEventListener("click", () => dialog.close());
 dialog.addEventListener("close", () => { detailsSessionId = undefined; });
 element("toggle-sidebar").addEventListener("click", () => {
@@ -343,7 +367,8 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key !== "Tab" || !element("session-menu").hidden) return;
-  const buttons = element("sidebar").querySelectorAll<HTMLElement>("a[href], button:not(:disabled)");
+  const buttons = [...element("sidebar").querySelectorAll<HTMLElement>("a[href], button:not(:disabled), summary, input:not(:disabled)")]
+    .filter((button) => button.getClientRects().length > 0);
   const first = buttons[0];
   const last = buttons[buttons.length - 1];
   if (event.shiftKey && document.activeElement === first) {

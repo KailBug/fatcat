@@ -12,6 +12,7 @@ import { createTools } from "@fatcat/runtime/tools";
 import { WebUiController } from "@fatcat/webui/internal/controller";
 import { startWebUiServer } from "@fatcat/webui/internal/server";
 import { verifyWebUiViews } from "./support/webui-views.js";
+import { verifyComposerMotion, verifyConversationLayout, verifyNavigationSettings, verifyPreviewLayout } from "./support/webui-layout.js";
 
 // Explicit Edge validation with temporary data and injected decisions; no model API or credentials.
 const temporaryRoot = await realpath(tmpdir());
@@ -25,7 +26,7 @@ let pickerCalls = 0;
 
 async function checkLayout(page: Page, label: string): Promise<void> {
   const overflow = await page.evaluate(() => {
-    const containers = [document.documentElement, ...document.querySelectorAll<HTMLElement>("main, .scroll-area, .composer, dialog[open]")];
+    const containers = [document.documentElement, ...document.querySelectorAll<HTMLElement>("main, .scroll-area, .topbar, .composer, .composer-toolbar, .composer-footer, .file-preview:not([hidden]), dialog[open]")];
     return containers.filter((node) => node.scrollWidth > node.clientWidth + 1)
       .map((node) => `${node.tagName}.${node.className}: ${node.scrollWidth}/${node.clientWidth}`);
   });
@@ -79,6 +80,11 @@ try {
   await page.waitForFunction(() => !(document.getElementById("prompt") as HTMLTextAreaElement).disabled);
 
   await verifyWebUiViews(page, controller.snapshot());
+  await verifyNavigationSettings(page, checkLayout);
+  await page.locator("#show-preview").focus();
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(1500);
+  assert.notEqual(await page.locator("#composer").getAttribute("data-collapsed"), "true", "Welcome composer never sleeps");
 
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
@@ -168,16 +174,25 @@ try {
 
   assert.equal(await page.locator(".suggestions, [data-prompt]").count(), 0);
   assert.equal(await page.locator(".welcome-icon").evaluate((node) => node instanceof HTMLImageElement && node.complete && node.naturalWidth > 0), true);
+  assert.equal(await page.locator(".welcome-icon").getAttribute("src"), "/walking.png");
   await page.locator("#prompt").fill("Explore this workspace");
   await page.locator("#send").click();
   await page.locator(".answer").waitFor();
+  await page.locator("#stop").waitFor({ state: "hidden" });
+  await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".assistant-label img")]
+    .every((image) => image.complete && image.naturalWidth > 0 && image.getAttribute("src") === "/looking.png"));
   for (const width of [1440, 1024, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await checkLayout(page, `conversation-${width}`);
   }
+  await verifyConversationLayout(page, checkLayout);
+  await verifyComposerMotion(page, checkLayout);
   await page.locator("#prompt").fill("Propose a file");
   await page.locator("#send").click();
   await page.locator("#approval:not([hidden])").waitFor();
+  assert.notEqual(await page.locator("#composer").getAttribute("data-collapsed"), "true", "Approval keeps the composer open");
+  await page.setViewportSize({ width: 320, height: 480 });
+  await page.getByRole("button", { name: "Allow once", exact: true }).scrollIntoViewIfNeeded();
   await checkLayout(page, "approval-mobile");
   await page.getByRole("button", { name: "Allow once", exact: true }).click();
   await page.locator("#approval").waitFor({ state: "hidden" });
@@ -185,17 +200,27 @@ try {
   assert.equal(await readFile(join(workspace, "approved.txt"), "utf8"), "Approved fixture\n");
   await page.locator("#prompt").fill("Wait for cancellation");
   await page.locator("#send").click();
+  await page.waitForFunction(() => (document.getElementById("prompt") as HTMLTextAreaElement).value === "");
+  await page.locator("#show-preview").focus();
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(1500);
+  assert.notEqual(await page.locator("#composer").getAttribute("data-collapsed"), "true", "Running turns retain the stop control and open input");
+  await page.locator("#prompt").fill("Keep this draft after stopping");
   await page.locator("#stop").click();
   await page.locator("#stop").waitFor({ state: "hidden" });
+  assert.equal(await page.locator("#prompt").inputValue(), "Keep this draft after stopping");
+  await page.locator("#prompt").fill("");
 
   await page.locator("#show-preview").click();
   await page.locator("#preview-path").fill("preview.html");
   await page.locator("#preview-open").click();
   await page.frameLocator("#preview-viewport iframe").getByRole("heading", { name: "Local preview is ready" }).waitFor();
   await checkLayout(page, "preview-mobile");
+  await verifyPreviewLayout(page, checkLayout);
   await page.locator("#preview-refresh").click();
   await page.frameLocator("#preview-viewport iframe").getByRole("heading", { name: "Local preview is ready" }).waitFor();
   await page.locator("#preview-close").click();
+  assert.equal(await page.locator("#show-preview").evaluate((node) => node === document.activeElement), true);
   const workspaceBefore = session.current.workspace;
   await page.locator("#workspace-picker").click();
   await page.waitForFunction(() => !(document.getElementById("workspace-picker") as HTMLButtonElement).disabled);
@@ -207,8 +232,28 @@ try {
   await page.locator(`[data-session-id="${savedId}"]`).click();
   await page.waitForFunction((id) => document.querySelector(`[data-session-id="${id}"]`)?.getAttribute("aria-current") === "true", savedId);
   assert.equal(session.current.id, savedId);
+  await page.locator("#show-preview").focus();
+  await page.mouse.move(0, 0);
+  await page.waitForFunction(() => document.querySelector("#composer")?.getAttribute("data-collapsed") === "true");
   await page.locator("#new-chat").click();
   await page.locator("#welcome:not([hidden])").waitFor();
+  assert.notEqual(await page.locator("#composer").getAttribute("data-collapsed"), "true", "New chat restores the expanded welcome composer");
+  assert.ok(await page.locator("#composer-input").evaluate((node) => node.getBoundingClientRect().height >= 44));
+  for (const target of ["image", "text", "keyboard"] as const) {
+    await page.locator(`[data-session-id="${savedId}"]`).click();
+    await page.waitForFunction((id) => document.querySelector(`[data-session-id="${id}"]`)?.getAttribute("aria-current") === "true", savedId);
+    if (target === "keyboard") {
+      await page.locator("#home").focus();
+      await page.locator("#home").press("Enter");
+    } else {
+      await page.locator(target === "image" ? "#home img" : "#home span").click();
+    }
+    await page.locator("#welcome:not([hidden])").waitFor();
+    await page.waitForFunction(() => document.activeElement === document.getElementById("prompt"));
+    assert.notEqual(session.current.id, savedId, `${target}: brand returns to a new home draft`);
+    assert.equal(await page.locator(`[data-session-id="${savedId}"]`).count(), 1, "Home retains the previous session");
+    assert.equal(await page.locator("#messages .turn").count(), 0);
+  }
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
   await page.waitForFunction(() => !(document.getElementById("prompt") as HTMLTextAreaElement).disabled);
@@ -221,7 +266,7 @@ try {
   assert.equal(await noScript.locator("h1").isVisible(), true);
   await noScript.close();
   assert.deepEqual(errors, []);
-  console.log("Verified real Edge: view caching and replacement, expanded sections, captured source identity, live drag gating, four widths, both themes, all four Cron triggers fit without scrolling, menus/dialogs, mobile focus and Escape, logo/send, approval, cancellation, preview, injected workspace picker, session switching, reduced motion and JavaScript fallback. No model API requests.");
+  console.log("Verified real Edge: view caching and replacement, expanded sections, captured source identity, live drag gating, responsive layout in both themes, long drafts and short windows, aligned conversation/composer, draft resize, IME and Shift+Enter, split/overlay previews, all four Cron triggers fit without scrolling, menus/dialogs, mobile focus and Escape, logo/send, approval, cancellation, injected workspace picker, session switching, reduced motion and JavaScript fallback. No model API requests.");
 } finally {
   await browser?.close();
   if (server) await server.close();

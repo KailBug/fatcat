@@ -17,7 +17,7 @@ for (const name of modules) {
 
 const destination = new URL("../dist/public/", import.meta.url);
 await mkdir(destination, { recursive: true });
-for (const name of ["index.html", "styles.css", "icons.svg", "icons-LICENSE.txt"]) {
+for (const name of ["index.html", "styles.css", "icons.svg", "icons-LICENSE.txt", "walking.png", "looking.png", "sleeping.png"]) {
 	await copyFile(new URL(`../src/public/${name}`, import.meta.url), new URL(name, destination));
 }
 // Keep one repository-wide logo source; runtime serves only the package-local copy.

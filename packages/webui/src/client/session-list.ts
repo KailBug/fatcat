@@ -28,6 +28,7 @@ export function displaySessions(next: Pick<WebUiState, "current" | "sessions">):
 /** Owns list nodes and their render signature; actions use the page's live state. */
 export class SessionListView {
 	private signature = "";
+	private readonly collapsedProjects = new Map<string, boolean>();
 	private readonly sessionDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 	constructor(private readonly container: HTMLElement, private readonly actions: SessionListActions) {}
@@ -44,14 +45,44 @@ export class SessionListView {
 		if (signature === this.signature) return;
 		this.signature = signature;
 		this.container.replaceChildren();
+		for (const id of this.collapsedProjects.keys()) {
+			if (!next.projects.some((project) => project.id === id)) {
+				this.collapsedProjects.delete(id);
+				try { localStorage.removeItem(`fatcat-project-collapsed:${id}`); } catch { /* Browser storage may be unavailable. */ }
+			}
+		}
 		const groups = new Map<string, HTMLElement>();
 		for (const project of next.projects) {
+			if (!this.collapsedProjects.has(project.id)) {
+				let collapsed = false;
+				try { collapsed = localStorage.getItem(`fatcat-project-collapsed:${project.id}`) === "true"; } catch { /* Default to expanded without storage. */ }
+				this.collapsedProjects.set(project.id, collapsed);
+			}
 			const group = node("section", undefined, "project-group");
 			group.dataset.projectId = project.id;
 			group.setAttribute("aria-label", `Project ${project.name}`);
 			const heading = node("div", undefined, "project-heading");
 			const name = node("span", project.name, "project-name");
 			name.title = `${project.name}\n${project.workspace}`;
+			const sessions = node("div", undefined, "project-sessions");
+			sessions.id = `project-sessions-${project.id}`;
+			sessions.hidden = this.collapsedProjects.get(project.id) === true;
+			const toggle = node("button", undefined, "project-toggle");
+			toggle.type = "button";
+			toggle.setAttribute("aria-controls", sessions.id);
+			const updateToggle = () => {
+				toggle.setAttribute("aria-expanded", String(!sessions.hidden));
+				toggle.setAttribute("aria-label", `${sessions.hidden ? "Expand" : "Collapse"} ${project.name}`);
+				toggle.title = `${sessions.hidden ? "Expand" : "Collapse"} project chats`;
+			};
+			updateToggle();
+			toggle.append(name, icon("chevron-down"));
+			toggle.addEventListener("click", () => {
+				sessions.hidden = !sessions.hidden;
+				this.collapsedProjects.set(project.id, sessions.hidden);
+				try { localStorage.setItem(`fatcat-project-collapsed:${project.id}`, String(sessions.hidden)); } catch { /* Keep the choice for this page. */ }
+				updateToggle();
+			});
 			const create = node("button", undefined, "project-new-chat icon-button");
 			create.type = "button";
 			create.setAttribute("aria-label", `New chat in ${project.name}`);
@@ -85,8 +116,8 @@ export class SessionListView {
 			});
 			const actions = node("div", undefined, "project-heading-actions");
 			actions.append(create, more);
-			heading.append(name, actions);
-			group.append(heading);
+			heading.append(toggle, actions);
+			group.append(heading, sessions);
 			group.addEventListener("dragover", (event) => {
 				if (!this.actions.canManage() || !event.dataTransfer?.types.includes("application/x-fatcat-session")) return;
 				event.preventDefault();
@@ -102,7 +133,7 @@ export class SessionListView {
 				const id = event.dataTransfer?.getData("application/x-fatcat-session");
 				if (id) this.actions.joinProject(id, project.id);
 			});
-			groups.set(project.id, group);
+			groups.set(project.id, sessions);
 			this.container.append(group);
 		}
 		const independent = node("section", undefined, "independent-sessions");

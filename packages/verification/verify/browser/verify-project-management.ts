@@ -60,6 +60,7 @@ async function menu(page: Page, name: string, action: string): Promise<void> {
 async function rename(page: Page, before: string, after: string): Promise<void> {
 	await menu(page, before, "Rename project");
 	await page.locator("#project-action-name").fill(after);
+	if (process.env.FATCAT_VERIFY_SCREENSHOT) await page.screenshot({ path: resolve(`${process.env.FATCAT_VERIFY_SCREENSHOT}.rename.png`), animations: "disabled" });
 	await page.getByRole("button", { name: "Save project name", exact: true }).click();
 	await page.locator("#project-action-dialog").waitFor({ state: "hidden" });
 	await page.getByRole("button", { name: `Actions for project ${after}`, exact: true }).waitFor();

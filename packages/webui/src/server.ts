@@ -19,6 +19,8 @@ const assets = new Map([
   ["/app.js", ["./client/app.js", "text/javascript; charset=utf-8"]],
   ["/transcript.js", ["./client/transcript.js", "text/javascript; charset=utf-8"]],
   ["/session-list.js", ["./client/session-list.js", "text/javascript; charset=utf-8"]],
+  ["/composer-motion.js", ["./client/composer-motion.js", "text/javascript; charset=utf-8"]],
+  ["/settings.js", ["./client/settings.js", "text/javascript; charset=utf-8"]],
   ["/markdown.js", ["./client/markdown.js", "text/javascript; charset=utf-8"]],
   ["/session-menu.js", ["./client/session-menu.js", "text/javascript; charset=utf-8"]],
   ["/session-dialog.js", ["./client/session-dialog.js", "text/javascript; charset=utf-8"]],
@@ -35,6 +37,9 @@ const assets = new Map([
   ["/icons.svg", ["./public/icons.svg", "image/svg+xml"]],
   ["/icons-LICENSE.txt", ["./public/icons-LICENSE.txt", "text/plain; charset=utf-8"]],
   ["/mini-logo.png", ["./public/mini-logo.png", "image/png"]],
+  ["/walking.png", ["./public/walking.png", "image/png"]],
+  ["/looking.png", ["./public/looking.png", "image/png"]],
+  ["/sleeping.png", ["./public/sleeping.png", "image/png"]],
 ]);
 
 class HttpError extends Error {

@@ -67,8 +67,16 @@ export async function verifyWebUiViews(page: Page, state: WebUiState): Promise<v
 		button.dispatchEvent(new DragEvent("dragstart", { cancelable: true, dataTransfer }));
 		listContainer.querySelector(".project-group")!.dispatchEvent(new DragEvent("drop", { cancelable: true, dataTransfer }));
 		button.click();
+		listContainer.querySelector<HTMLButtonElement>(".project-toggle")!.click();
+		list.update({ ...next, projects: [{ ...project, name: "Renamed project" }],
+			sessions: [session, { ...session, id: "new-session", projectId: project.id }] });
+		const collapsedAfterRefresh = listContainer.querySelector<HTMLElement>(".project-sessions")!.hidden;
+		const collapsedLabel = listContainer.querySelector(".project-toggle")!.getAttribute("aria-label");
+		listContainer.querySelector<HTMLButtonElement>(".project-toggle")!.click();
+		const expandedAfterClick = !listContainer.querySelector<HTMLElement>(".project-sessions")!.hidden;
 		return { reused, replaced, expanded, removed, opened, reference, listReused, disabled, enabled,
-			blockedDrag: blockedDrag.defaultPrevented, selections, joins, sessionId: session.id };
+			blockedDrag: blockedDrag.defaultPrevented, selections, joins, sessionId: session.id,
+			collapsedAfterRefresh, collapsedLabel, expandedAfterClick };
 	}, state);
 	assert.equal(result.reused, true);
 	assert.equal(result.replaced, true);
@@ -81,4 +89,7 @@ export async function verifyWebUiViews(page: Page, state: WebUiState): Promise<v
 	assert.equal(result.blockedDrag, true);
 	assert.deepEqual(result.selections, [result.sessionId]);
 	assert.deepEqual(result.joins, [[result.sessionId, "view-project"]]);
+	assert.equal(result.collapsedAfterRefresh, true);
+	assert.equal(result.collapsedLabel, "Expand Renamed project");
+	assert.equal(result.expandedAfterClick, true);
 }

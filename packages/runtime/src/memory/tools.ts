@@ -5,10 +5,12 @@ import { failure } from "../tools/types.js";
 import type { Tool, ToolResult } from "../tools/types.js";
 import { memoryIdPattern } from "./record.js";
 import type { MemoryRecord } from "./record.js";
+import { mapModelMessages } from "../model-preparation.js";
 
 /** Access follows the executing session, including child requests and workspace changes. */
 export interface MemoryAccess {
 	list: (signal?: AbortSignal) => Promise<MemoryRecord[]>;
+	preview?: (signal?: AbortSignal) => Promise<MemoryRecord[]>;
 }
 
 const maxRecords = 192;
@@ -167,8 +169,9 @@ function memoryNotice(records: MemoryRecord[], signal?: AbortSignal): Message {
 
 /** Refresh current state per request without adding memory snapshots to successful history. */
 export function withMemoryContext(model: Model, access: MemoryAccess): Model {
-	return async (messages, signal, observe, options) => {
-		const records = await currentRecords(access, signal);
+	const transform = async (messages: Message[], signal: AbortSignal | undefined, preview: boolean): Promise<Message[]> => {
+		if (preview && !access.preview) throw new HarnessError("CONTEXT_PREVIEW", "Read-only Memory preview is unavailable.");
+		const records = await currentRecords(preview ? { list: access.preview! } : access, signal);
 		const notice = memoryNotice(records, signal);
 		checkCancellation(signal);
 		const request = [...messages];
@@ -176,6 +179,8 @@ export function withMemoryContext(model: Model, access: MemoryAccess): Model {
 		if (first?.role === "system" && typeof first.content === "string") {
 			request[0] = { ...first, content: `${first.content}\n\n${notice.content}` };
 		} else request.unshift(notice);
-		return model(request, signal, observe, options);
+		return request;
 	};
+	return mapModelMessages(model, (messages, signal) => transform(messages, signal, false),
+		(messages, signal) => transform(messages, signal, true));
 }

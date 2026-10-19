@@ -108,9 +108,9 @@ describe("session-owned model selection", () => {
 		gate.resolve();
 		await running;
 		const competitor = await SessionManager.open(agent, { workspace, store, selection: { resume: manager.current.id } });
-		await competitor.setModel({ ...defaultModelSelection("deepseek"), thinking: "medium" });
+		await competitor.setModel({ ...defaultModelSelection("deepseek"), thinking: "high" });
 		await assert.rejects(manager.setModel(defaultModelSelection("deepseek")), { code: "SESSION_CONFLICT" });
-		assert.equal(manager.current.modelSelection?.thinking, "off");
+		assert.equal(manager.current.modelSelection?.thinking, "medium");
 	});
 
 	it("reads a saved unavailable model without fallback and can explicitly recover", async (t) => {
@@ -214,7 +214,7 @@ describe("provider reasoning history projection", () => {
 		const observe = (event: { type: string; bytes?: number }) => { if (event.type === "model_input") inputBytes = event.bytes!; };
 		await model(history, undefined, observe);
 		await model(history, undefined, observe, { toolChoice: "none", purpose: "compaction" });
-		await createModel(config, async (input, init) => {
+		await createModel({ ...config, thinking: "off" }, async (input, init) => {
 			assert.ok(!(await new Request(input, init).text()).includes("PRIVATE_REASONING"));
 			return response();
 		})(history);

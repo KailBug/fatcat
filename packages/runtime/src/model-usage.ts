@@ -2,7 +2,7 @@ export type TokenUsage = {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  /** Provider-reported prompt cache hits, absent when not reported or inconsistent. */
+  /** Prompt cache hits from consistent provider counters, including input minus explicit misses. */
   cachedPromptTokens?: number;
 };
 
@@ -16,12 +16,15 @@ function cachedPromptTokens(raw: Record<string, unknown>, promptTokens: number):
     ? (details as Record<string, unknown>).cached_tokens : undefined;
   const deepseek = raw.prompt_cache_hit_tokens;
   const reported = [standard, deepseek].filter((value) => value !== undefined);
+  // DeepSeek defines prompt = hit + miss. An explicit miss count can supply a missing hit count.
+  const miss = raw.prompt_cache_miss_tokens;
+  if (miss !== undefined) {
+    if (!tokenCount(miss) || miss > promptTokens) return undefined;
+    reported.push(promptTokens - miss);
+  }
   if (!reported.length || !reported.every((value) => tokenCount(value) && value <= promptTokens)) return undefined;
   const hit = reported[0] as number;
   if (reported.some((value) => value !== hit)) return undefined;
-  // DeepSeek's optional miss counter must agree when it accompanies a hit counter.
-  const miss = raw.prompt_cache_miss_tokens;
-  if (miss !== undefined && (!tokenCount(miss) || miss > promptTokens || hit + miss !== promptTokens)) return undefined;
   return hit;
 }
 

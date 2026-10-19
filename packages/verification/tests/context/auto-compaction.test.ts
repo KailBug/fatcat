@@ -14,7 +14,6 @@ import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { systemPrompt } from "@fatcat/runtime/internal/system-prompt";
 import { createTuiTelemetry } from "@fatcat/tui/internal/telemetry";
-import { WebContextUsage } from "@fatcat/webui/internal/context-usage";
 import { WebUiController } from "@fatcat/webui/internal/controller";
 import { temporaryWorkspace } from "../support/workspace.js";
 
@@ -37,7 +36,7 @@ function rejectRequest(observe?: (event: ModelObservation) => void): never {
 
 for (const [provider, key] of [["deepseek", "DEEPSEEK_API_KEY"], ["kimi", "MOONSHOT_API_KEY"],
 	["mimo", "MIMO_API_KEY"], ["qwen", "DASHSCOPE_API_KEY"]]) {
-	test(`${provider}: local SDK rejection compacts once within the turn budget and preserves raw history`, async () => {
+	test(`${provider}: local SDK rejection compacts once within the turn budget and preserves raw history`, async (t) => {
 		const config = loadConfig({ HARNESS_PROVIDER: provider!, [key!]: "offline-auto-compaction",
 			HARNESS_MAX_REQUEST_BYTES: "32768", HARNESS_MAX_ITERATIONS: "8" });
 		let summaries = 0;
@@ -61,32 +60,40 @@ for (const [provider, key] of [["deepseek", "DEEPSEEK_API_KEY"], ["kimi", "MOONS
 			return Response.json({ choices: [{ finish_reason: "stop", message: answer(summary ? "Keep amber." : "Continued").message }],
 				usage: { prompt_tokens: summary ? 700 : 50, completion_tokens: 10, total_tokens: summary ? 710 : 60 } });
 		});
-		const original = history(45000);
-		const session = new Session(agent, original);
+		const { base, workspace } = await temporaryWorkspace(t);
+		const store = new SessionStore({ root: join(base, "sessions") });
+		const seed = await SessionManager.open({ model: async (messages) => answer(messages.at(-1)?.content === "Recent requirement"
+			? "Recent answer" : "Old answer"), maxIterations: 8 }, { workspace, store });
+		await seed.run("Keep amber. " + "x".repeat(45000));
+		await seed.run("Recent requirement");
+		const original = seed.history;
+		const session = await SessionManager.open(agent, { workspace, store, selection: { resume: seed.current.id } });
 		const events: ReportEvent[] = [];
 		const telemetry = createTuiTelemetry();
-		const context = new WebContextUsage(provider!, config.model);
 		telemetry.beginTurn();
 		assert.equal(await session.run("Continue", { onEvent: createTurnReporter((event) => {
 			events.push(event);
 			telemetry.observe(event);
-			context.observe(event);
 			if (event.type === "compaction_end") {
 				assert.equal(telemetry.snapshot().parentPromptTokens, null);
-				assert.equal(context.snapshot().promptTokens, null);
+				assert.equal(session.contextUsage?.lastReportedInput, null, "Summary usage must not replace the main observation");
+				assert.equal(session.contextUsage?.estimate.status, "pending");
 			}
 		}) }), "Continued");
 		telemetry.finishTurn("answered");
 		assert.ok(summaries > 1 && summaries <= 6);
 		assert.equal(ordinary, 1);
-		assert.deepEqual(session.messages.slice(0, original.length), original);
+		assert.deepEqual(session.history.slice(0, original.length), original);
 		assert.equal(events.filter((event) => event.type === "compaction_start").length, 1);
 		assert.equal(events.filter((event) => event.type === "completed").length, 1);
 		assert.equal(events.filter((event) => event.type === "stopped").length, 0);
 		assert.equal(events.find((event) => event.type === "execution_report")?.report.modelRequests.parent, summaries + 2);
 		assert.equal(telemetry.snapshot().conversation.completedTurns, 1);
 		assert.equal(telemetry.snapshot().parentPromptTokens, 50);
-		assert.equal(context.snapshot().promptTokens, 50);
+		await session.previewContext();
+		assert.equal(session.contextUsage?.lastReportedInput?.inputTokens, 50);
+		assert.equal(session.contextUsage?.consumption.tokens?.totalTokens, summaries * 710 + 60);
+		assert.notEqual(session.contextUsage?.estimate.inputTokens, 50, "Current occupancy is not the last reported input");
 		assert.equal(telemetry.snapshot().session.tokenUsage.total.totals?.totalTokens, summaries * 710 + 60);
 	});
 }

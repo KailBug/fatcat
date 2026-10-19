@@ -1332,3 +1332,45 @@ dialog[open],.session-menu:not([hidden]),.permission-menu:not([hidden]) { animat
 @media(max-height:600px) {
   textarea { max-height:44px }
 }
+
+/* Composer controls share a 16px icon box and one vertical center. */
+.composer-primary-tools>.icon-button .icon,
+.composer-primary-tools .permission-mode-icon .icon,
+.composer-primary-tools .workspace-path-icon .icon { width:16px; height:16px; display:block }
+.composer-primary-tools .permission-mode-icon,
+.composer-primary-tools .workspace-path-icon { display:flex; align-items:center; justify-content:center; width:16px; height:16px; flex:0 0 16px }
+.composer-primary-tools>.icon-button { display:flex; align-items:center; justify-content:center; padding:0 }
+.model-pill,.context-chip { cursor:pointer; min-height:32px; border-radius:var(--radius-control); transition:background .15s,box-shadow .15s }
+.model-pill { padding:4px 6px }
+.context-chip { min-width:32px }
+.model-pill:hover:not(:disabled),.context-chip:hover:not(:disabled) { box-shadow:0 2px 8px rgb(0 0 0 / .08) }
+.popover-error { color:var(--ink); font-size:12px; overflow-wrap:anywhere; border-left:2px solid currentColor; padding-left:8px }
+.model-pill:disabled { cursor:default; opacity:.6 }
+.composer-popover { position:fixed; margin:0; padding:14px; width:min(320px,calc(100vw - 16px)); max-height:calc(100dvh - 16px); box-sizing:border-box; overflow:hidden; border:1px solid var(--border); border-radius:16px; background:var(--surface); color:var(--ink); box-shadow:0 12px 48px #0002; transform-origin:bottom right }
+.composer-popover[open] { display:flex; flex-direction:column; animation:composer-bubble .2s cubic-bezier(.16,1,.3,1) }
+.composer-popover::backdrop { background:transparent }
+.composer-popover h2 { margin:0 24px 8px 4px; font-size:14px; flex-shrink:0 }
+.popover-close { position:absolute; right:8px; top:8px; width:24px; height:24px; font-size:20px; border-radius:8px; color:var(--muted) }
+.popover-content { overflow-y:auto; min-height:0; padding:4px }
+.model-choice { display:block; position:relative; width:100%; min-width:0; padding:8px 28px 8px 10px; border:1px solid var(--border); border-radius:var(--radius-control); color:var(--ink); text-align:left; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.model-choice::after { content:""; position:absolute; right:12px; top:12px; width:5px; height:5px; border-right:1px solid currentColor; border-bottom:1px solid currentColor; transform:rotate(45deg) }
+.model-choice:focus-visible { outline-offset:1px }
+.model-options { margin-top:6px; padding:4px; max-height:180px; overflow-y:auto; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface); box-shadow:0 4px 12px rgb(0 0 0 / .06); scrollbar-width:thin }
+.model-option { display:block; width:100%; padding:7px 8px; border-radius:8px; text-align:left; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.model-option[aria-selected="true"] { background:var(--hover); font-weight:600 }
+.model-option:focus-visible { outline-offset:-2px }
+#thinking-level { display:block; width:100%; accent-color:var(--accent); margin:10px 0 5px }
+.thinking-ticks { display:flex; justify-content:space-between; gap:4px; font-size:10px; color:var(--muted); flex-wrap:wrap }
+.thinking-ticks span[data-selected="true"] { color:var(--ink); font-weight:600 }
+.model-apply { display:block; margin:10px 0 0 auto; padding:5px 14px; border:1px solid var(--border); border-radius:var(--radius-control); font-size:12px; font-weight:600; color:var(--ink) }
+.model-apply:disabled { opacity:.4; cursor:default }
+#context-panel { width:min(360px,calc(100vw - 16px)); padding:12px; outline:none }
+#context-panel h2,#context-panel .popover-close { display:none }
+.context-summary { display:flex; align-items:baseline; gap:8px; font-size:12px; white-space:nowrap }
+.context-amount,.context-percentage { color:var(--muted); font-variant-numeric:tabular-nums }
+.context-percentage { margin-left:auto }
+.context-track { height:4px; background:var(--border); border-radius:4px; overflow:hidden; margin-top:9px }
+.context-track>div { background:var(--muted); height:100%; border-radius:4px }
+.context-track[data-known="false"] { background:repeating-linear-gradient(110deg,var(--border) 0 4px,transparent 4px 8px) }
+@keyframes composer-bubble { from { opacity:0; transform:scale(.94) translateY(5px) } to { opacity:1; transform:scale(1) translateY(0) } }
+@media(prefers-reduced-motion:reduce) { .composer-popover[open] { animation:none } }

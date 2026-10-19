@@ -31,6 +31,7 @@ const assets = new Map([
   ["/attachment-upload.js", ["./client/attachment-upload.js", "text/javascript; charset=utf-8"]],
   ["/cron.js", ["./client/cron.js", "text/javascript; charset=utf-8"]],
   ["/permission-menu.js", ["./client/permission-menu.js", "text/javascript; charset=utf-8"]],
+  ["/model-controls.js", ["./client/model-controls.js", "text/javascript; charset=utf-8"]],
   ["/preview.js", ["./client/preview.js", "text/javascript; charset=utf-8"]],
   ["/browser-evidence.js", ["./client/browser-evidence.js", "text/javascript; charset=utf-8"]],
   ["/icons.js", ["./client/icons.js", "text/javascript; charset=utf-8"]],
@@ -147,7 +148,16 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
     const body = await readBody(request);
     if (await attachmentHttp.handle(path, body, response)) return;
     if (await projectHttp.handle(path, body, response)) return;
-    if (path === "/api/workspaces") {
+    if (path === "/api/model") {
+      if (Object.keys(body).length !== 4 || typeof body.sessionId !== "string"
+        || !Number.isSafeInteger(body.revision) || Number(body.revision) < 0 || !body.previous || !body.selection) {
+        throw new HttpError(400, "Expected session ID, revision, previous model and new selection.");
+      }
+      await controller.setModel(body.sessionId, Number(body.revision), body.previous, body.selection);
+    } else if (path === "/api/context/refresh") {
+      if (Object.keys(body).length) throw new HttpError(400, "Expected an empty object.");
+      await controller.refreshContext();
+    } else if (path === "/api/workspaces") {
       if (typeof body.path !== "string" || body.path.length > 4096 || Object.keys(body).length !== 1) {
         throw new HttpError(400, "Expected a directory path.");
       }

@@ -9,8 +9,35 @@ import { contextHeadroom } from "@fatcat/runtime/context/usage";
 import type { ContextEstimate } from "@fatcat/runtime/context/usage";
 
 describe("model capability and protocol contracts", () => {
+	it("defaults to medium when supported, otherwise to a real enabled level, without changing saved off", () => {
+		for (const [provider, model, thinking] of [
+			["deepseek", "deepseek-flash", "medium"], ["qwen", "qwen3.8-max", "medium"],
+			["kimi", "kimi-k3", "max"], ["kimi", "kimi-k2.7-code", "on"],
+			["kimi", "kimi-k2.6", "on"], ["mimo", "mimo-v2.6-flash", "on"],
+			["qwen", "qwen-plus", "on"], ["deepseek", "custom", "off"],
+		] as const) {
+			const descriptor = getModelDescriptor(provider, model);
+			assert.equal(descriptor.defaultThinking, thinking);
+			assert.ok(descriptor.thinkingOptions.includes(descriptor.defaultThinking));
+		}
+		const saved = { ...defaultModelSelection("deepseek"), thinking: "off" as const };
+		assert.deepEqual(validateModelSelection(decodeModelSelection(saved)), saved);
+	});
+
 	it("uses exact identities and does not infer capabilities for aliases or foreign providers", () => {
-		assert.equal(getModelDescriptor("deepseek", "deepseek-flash").contextWindowTokens, 1_048_576);
+		// Exact capacity checks belong to the owning runtime catalog.
+		for (const [provider, model, capacity] of [
+			["deepseek", "deepseek-flash", 1_048_576], ["deepseek", "deepseek-v4-pro", 1_048_576],
+			["kimi", "kimi-k2.6", 262_144], ["mimo", "mimo-v2.6-flash", 1_048_576],
+			["mimo", "mimo-v2.6-pro", 1_048_576], ["qwen", "qwen-plus", 1_000_000],
+			["qwen", "qwen3.8-max", 1_000_000], ["qwen", "qwen3.8-flash", 1_000_000],
+			["qwen", "qwen3.7-plus", 1_000_000], ["qwen", "qwen3-vl-plus", 262_144],
+			["kimi", "kimi-k2.7-code", 262_144],
+		] as const) assert.equal(getModelDescriptor(provider, model).contextWindowTokens, capacity);
+		for (const [provider, model] of [["deepseek", "custom"], ["qwen", "qwen-plus-custom"],
+			["kimi", "kimi-k2.5"], ["kimi", "kimi-k3"], ["mimo", "mimo-v2.5-pro"]] as const) {
+			assert.equal(getModelDescriptor(provider, model).contextWindowTokens, null);
+		}
 		for (const [provider, model] of [["deepseek", "deepseek-flash-custom"], ["qwen", "deepseek-flash"]] as const) {
 			const descriptor = getModelDescriptor(provider, model);
 			assert.equal(descriptor.known, false);
@@ -101,7 +128,7 @@ describe("host model connections", () => {
 
 describe("context metric contracts", () => {
 	function estimate(provider: "deepseek" | "qwen", inputTokens: number): Extract<ContextEstimate, { status: "ready" }> {
-		return { kind: "estimated", selection: defaultModelSelection(provider), contextRevision: 1,
+		return { kind: "estimated", selection: { ...defaultModelSelection(provider), thinking: "off" }, contextRevision: 1,
 			status: "ready", inputTokens, measuredAt: "2026-10-19T00:00:00.000Z", method: "fixture",
 			approximate: false, limitations: [] };
 	}

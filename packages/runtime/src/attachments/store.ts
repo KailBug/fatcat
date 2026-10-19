@@ -40,8 +40,8 @@ export class AttachmentStore {
 	private readonly sessions: AttachmentSessionAccess;
 
 	/** SessionStore uses the same gate; callbacks inside it must use its unlocked helpers. */
-	withMetadata<T>(operation: () => Promise<T>, create = true): Promise<T> {
-		return this.transactions.withLock(operation, create);
+	withMetadata<T>(operation: () => Promise<T>, create = true, preview = false): Promise<T> {
+		return this.transactions.withLock(operation, create, preview);
 	}
 
 	/** The caller must hold the shared metadata gate. */

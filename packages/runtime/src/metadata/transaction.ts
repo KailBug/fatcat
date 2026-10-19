@@ -31,30 +31,34 @@ export class MetadataTransactions {
 		this.journal = join(this.attachmentDirectory, "pending.json");
 	}
 
-	async withLock<T>(operation: () => Promise<T>, create = true): Promise<T> {
+	async withLock<T>(operation: () => Promise<T>, create = true, preview = false): Promise<T> {
 		const key = process.platform === "win32" ? this.root.toLowerCase() : this.root;
 		const previous = metadataQueues.get(key) ?? Promise.resolve();
 		let releaseQueue!: () => void;
 		const current = new Promise<void>((resolve) => { releaseQueue = resolve; });
 		metadataQueues.set(key, current);
 		await previous;
-		try { return await this.withProcessLock(operation, create); }
+		try { return await this.withProcessLock(operation, create, preview); }
 		finally {
 			releaseQueue();
 			if (metadataQueues.get(key) === current) metadataQueues.delete(key);
 		}
 	}
 
-	private async withProcessLock<T>(operation: () => Promise<T>, create: boolean): Promise<T> {
-		if (!create) {
+	private async withProcessLock<T>(operation: () => Promise<T>, create: boolean, preview: boolean): Promise<T> {
+		if (!create || preview) {
 			try { await stat(this.root); }
 			catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return operation(); throw error; }
 		}
-		try { await mkdir(this.root, { recursive: true, mode: 0o700 }); }
+		try { if (!preview) await mkdir(this.root, { recursive: true, mode: 0o700 }); }
 		catch { throw new HarnessError("SESSION_STORAGE", "Could not open the local session metadata directory."); }
-		const release = await this.lock();
+		const release = await this.lock(preview);
 		try {
-			await this.recover();
+			if (preview) {
+				if (await boundedJson(this.journal, maxJournalBytes, true) !== undefined) {
+					throw new HarnessError("CONTEXT_PREVIEW", "Metadata recovery is pending; preview cannot apply it.");
+				}
+			} else await this.recover();
 			return await operation();
 		} finally { await release(); }
 	}
@@ -119,7 +123,7 @@ export class MetadataTransactions {
 		await this.publishSession(movedProjectSession(record, move));
 	}
 
-	private async lock(): Promise<() => Promise<void>> {
+	private async lock(preview = false): Promise<() => Promise<void>> {
 		const path = join(this.root, "metadata.lock");
 		for (let attempt = 0; attempt < 2; attempt++) {
 			try {
@@ -130,7 +134,7 @@ export class MetadataTransactions {
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw new HarnessError("SESSION_STORAGE", "Could not lock the local metadata directory.");
 				const pid = await lockOwner(path);
-				if (pid !== undefined && !processAlive(pid)) {
+				if (!preview && pid !== undefined && !processAlive(pid)) {
 					let recovery;
 					try { recovery = await open(`${path}.recovery`, "wx", 0o600); }
 					catch { throw new HarnessError("SESSION_BUSY", "Metadata lock recovery is busy. Try again shortly."); }

@@ -7,6 +7,7 @@ import type { TestContext } from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import type { Message } from "@fatcat/runtime/model";
 import type { SessionRunOptions } from "@fatcat/runtime/session/agent-session";
+import { defaultModelSelection } from "@fatcat/runtime/model-catalog";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { WebUiController } from "@fatcat/webui/internal/controller";
@@ -16,6 +17,7 @@ import { temporaryWorkspace } from "../support/workspace.js";
 async function setup(t: TestContext) {
 	const { base, workspace } = await temporaryWorkspace(t);
 	const manager = await SessionManager.open({
+        modelSelection: defaultModelSelection("deepseek"),
 		model: async (_messages, _signal, observe) => {
 			observe?.({ type: "model_usage", usage: { promptTokens: 42, completionTokens: 1, totalTokens: 43 } });
 			return { message: { role: "assistant", content: "Done" }, toolCalls: [] };
@@ -95,7 +97,9 @@ describe("Web UI turn and display boundaries", () => {
 		assert.equal(turn.activity.at(-1), "Subagent · Document request 2");
 		assert.equal(turn.report?.toolResults.ok, 105);
 		assert.deepEqual(turn.report?.modelRequests, { parent: 1, children: 1 });
-		assert.equal(state.contextUsage.promptTokens, 42);
+		// Injected display events cannot fabricate runtime observations.
+        assert.equal(state.contextUsage?.lastReportedInput, null);
+        assert.equal(turn.report?.tokenUsage.parent.totals?.promptTokens, 42);
 		assert.equal(state.status, "Ready");
 	});
 
@@ -117,13 +121,14 @@ describe("Web UI turn and display boundaries", () => {
 		assert.equal(rename.mock.callCount(), 1);
 		assert.equal(after.sessions.find((session) => session.id === before.current.id)?.name, "Saved name");
 		assert.deepEqual(after.turns, before.turns);
-		assert.deepEqual(after.contextUsage, before.contextUsage);
+		assert.deepEqual(after.contextUsage?.lastReportedInput, before.contextUsage?.lastReportedInput);
+        assert.deepEqual(after.contextUsage?.consumption, before.contextUsage?.consumption);
 		assert.equal(after.busy, false);
 		assert.equal(after.status, "Session change failed");
 		assert.ok(after.revision > before.revision);
 		await controller.newSession();
 		assert.deepEqual(controller.snapshot().turns, []);
-		assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+		assert.equal(controller.snapshot().contextUsage?.lastReportedInput ?? null, null);
 	});
 
 	it("restores only completed text turns with per-turn sources and fresh display telemetry", () => {

@@ -14,7 +14,8 @@ test("status preserves a Qwen workspace endpoint and reports the effective reaso
   const qwen = statusText(snapshot, { ...settings, config: { ...settings.config,
     provider: "qwen", region: "eu", model: "qwen3.8-max", workspaceId: "offline-workspace" } });
   assert.match(qwen, /Endpoint: https:\/\/offline-workspace\.eu-central-1\.maas\.aliyuncs\.com/);
-  assert.match(qwen, /Output token limit: 2048/);
+  assert.match(qwen, /Output token limit: 16384/);
+  assert.match(qwen, /Thinking: medium; streaming: disabled/);
   const kimi = statusText(snapshot, { ...settings, config: { ...settings.config,
     provider: "kimi", region: "cn", model: "kimi-k3" } });
   assert.match(kimi, /Thinking: max; streaming: disabled/);

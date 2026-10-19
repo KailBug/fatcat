@@ -2,7 +2,7 @@
 
 [架构总览](README.md) · [供应商配置](../REFERENCE/CONFIGURATION.md#providers)
 
-配置在启动时提供默认供应商及连接快照；会话保存自己的模型与思考选择，父子 Agent、摘要及图片适配从同一选择构造。固定能力目录、协议映射、runtime 会话切换和思考历史回传已实现。客户端模型菜单、思考滑条及 Web 切换路由仍属于后续 UI 阶段。没有动态注册、路由或故障转移。
+配置在启动时提供默认供应商及连接快照；会话保存自己的模型与思考选择，父子 Agent、摘要及图片适配从同一选择构造。固定能力目录、协议映射、runtime 会话切换和思考历史回传已实现。Web 模型菜单、思考滑条及切换路由调用同一 runtime 契约，详见 [Web UI](WEBUI.md)。没有动态注册、路由或故障转移。
 
 ## 模块职责
 
@@ -17,7 +17,7 @@
 | `packages/runtime/src/model.ts` | createModel、完整请求准备、SDK、响应校验、期限和安全错误 |
 | `packages/runtime/src/model-usage.ts` | token 与缓存计数合法性 |
 | `packages/runtime/src/documents/vision.ts` | 已获准图片的临时辅助请求 |
-| `packages/webui/src/context-usage.ts` | 最近父请求观察；容量读取 runtime 目录，不在客户端维护第二份表 |
+| `packages/webui/src/client/model-controls.ts` | 展示 runtime 模型目录与消费/实测/估算快照，不在客户端维护容量表或用量观察器 |
 
 原 createDeepSeekModel 保留程序化兼容入口。注入 transport 用于测试，生产不开放任意 base URL；模型协议差异不散入 Loop、Session 或各工具。
 
@@ -71,6 +71,8 @@ Qwen 的可选 QWEN_WORKSPACE_ID 只允许安全的单个 DNS label；不接受�
 | 未知自定义名称 | off | 保留原供应商非思考字段 | 不猜测额外思考能力，预留语义未知 |
 
 这些上限是 Fatcat 的显式策略，不是供应商最大输出容量。off 保持 2048；compaction/document 在模型支持时关思考，否则保留强制思考并使用包含推理的 16384。辅助请求不修改父选择。K3/K2.7 普通 Agent 请求已开放，K3 完整消息经过工具往返、保存和恢复的离线回传验证；不等于真实账户与模型服务验收。默认启动型号继续保留 DeepSeek Flash、Kimi K2.6、MiMo V2.6 Flash、Qwen Plus。
+
+共享目录的默认思考策略为：该型号支持 medium 时优先 medium；仅支持 off/on 的型号默认 on；其他采用目录内明确默认档位（K3 为 max、K2.7 Code 为 on）；未知或未接入思考的型号仍为 off。这影响使用启动默认的新会话和直接模型客户端，显式 Config.thinking 及保存的会话选择仍优先，不迁移已有 off 记录。Web 选择器只提供该型号已开启的思考档位，详见 [Web UI](WEBUI.md#模型思考与上下文控件)。
 
 思考响应在规范助手消息旁保存 modelContext 来源与完整厂商消息，读取时核对角色、文本和工具调用事实。只有 provider、region、workspaceId、model 全部匹配且当前协议允许回传时才使用私有消息；思考档位可以在同一模型内改变，但 off 会剥离私有历史。跨模型、跨区域和跨业务空间只发送规范文本与工具事实，内部 modelContext 永不直接上网。DeepSeek 在启用思考且请求带工具定义时回传；Kimi/MiMo/新版 Qwen 按上表处理，旧 Qwen 不回传。摘要序列化也剥离私有数据。该投影先于最终 JSON 字节检查和旧读裁剪，不重复加入规范消息。
 
@@ -127,9 +129,11 @@ MiMo V2.5 Pro 的模型总览与图片指南存在描述差异；按具体 [图�
 
 ## 用量校验
 
-prompt_tokens、completion_tokens、total_tokens 必须为非负安全整数且相加一致。缓存独立校验标准 cached_tokens 和 DeepSeek hit/miss 字段，不能超过相应输入；多字段冲突时缓存未知但基础用量可仍有效。
+prompt_tokens、completion_tokens、total_tokens 必须为非负安全整数且相加一致。缓存独立校验标准 cached_tokens 和 DeepSeek hit/miss 字段，不能超过相应输入；显式 miss 可按官方 prompt=hit+miss 恒等式补出缺失 hit，多字段冲突时缓存未知但基础用量可仍有效。没有计数时不补零。
 
 缺失不是零，累计只包含合法报告并保留覆盖数量，溢出保持未知。缓存率按有效缓存请求的总命中/同批输入计算，不平均百分比；零分母不显示比例。不能推算 KV 容量、显存、价格或账单。统计消费边界见 [执行报告](EXECUTION_REPORT.md)和 [TUI](TUI.md)。
+
+Session 自有累计与普通请求实测观察通过无副作用的 Model.prepare 预览当前有效输入；这些数据及计量限制见 [Context](CONTEXT.md)。当前内置计量为标注近似的 DeepSeek ASCII/Han 字符代理加其他 Unicode 保守后备估算，常见中文标点不会使计数失效；其余模型无匹配本地计数器时未知，不套用另一家的 tokenizer、不增加默认网络调用。Web 圆环和摘要使用这些快照，未知保持未知。
 
 ## 维护与验证要求
 

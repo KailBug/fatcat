@@ -40,6 +40,8 @@ import { sessionModelAgent } from "./models.js";
 import { validateModelSelection } from "../model-catalog.js";
 import type { ModelSelection } from "../model-catalog.js";
 import type { ModelChoice } from "../model-connections.js";
+import type { ContextUsageSnapshot } from "../context/usage.js";
+import { emptyConsumption } from "../context/accounting.js";
 
 interface DraftAttachmentScope {
 	identity: AttachmentTarget;
@@ -76,6 +78,7 @@ function available(record: SessionRecord): void {
 export class SessionManager {
 	private runtime!: AgentSession;
 	private busy = false;
+	private contextRevision = 0;
 	private readonly memory = new Map<string, SessionRecord>();
 	private agent: SessionAgentOptions;
 	private workspace: string;
@@ -163,6 +166,13 @@ export class SessionManager {
 	}
 	get modelChoices(): ModelChoice[] {
 		return this.agent.modelChoices?.() ?? [];
+	}
+	get contextUsage(): ContextUsageSnapshot | null { return this.runtime.contextUsage; }
+	invalidateContext(): void { this.runtime.invalidateContext(); }
+	async previewContext(signal?: AbortSignal): Promise<ContextUsageSnapshot | null> {
+		const runtime = this.runtime;
+		const result = await runtime.previewContext(signal);
+		return runtime === this.runtime ? result : this.runtime.contextUsage;
 	}
 
 	/** Validate and prepare before saving; publish only after the revision-checked commit succeeds. */
@@ -643,8 +653,8 @@ export class SessionManager {
 			available(selected);
 			const agent = await this.prepareWorkspace(selected.workspace);
 			const now = new Date().toISOString();
-			const { activeOperation: _operation, ...source } = selected;
-			const record = await this.persist({ ...source, id: randomUUID(), name: name === undefined ? null : sessionName(name),
+			const { activeOperation: _operation, consumption: _consumption, lastReportedInput: _observation, ...source } = selected;
+			const record = await this.persist({ ...source, consumption: emptyConsumption(true), id: randomUUID(), name: name === undefined ? null : sessionName(name),
 				title: name === undefined ? `${selected.title.slice(0, 110)} (fork)` : sessionName(name),
 				forkedFrom: selected.revision === 0 ? null : selected.id, createdAt: now, updatedAt: now, revision: 0, automations: [] },
 			selected.revision === 0 ? undefined : selected);
@@ -775,13 +785,19 @@ export class SessionManager {
 
 	private createRuntime(record: SessionRecord, selected: SessionAgentOptions): AgentSession {
 		const identity = executionIdentity(record);
-		const memory: MemoryAccess = { list: (signal) => this.memoryOperation(identity,
-			() => this.memories.list(memoryScopes(identity), signal), record.revision === 0 ? record : undefined) };
+		const draft = record.revision === 0 ? record : undefined;
+		const memory: MemoryAccess = {
+			list: (signal) => this.memoryOperation(identity, () => this.memories.list(memoryScopes(identity), signal), draft),
+			preview: (signal) => this.persistent
+				? this.store.withMemorySession(identity, () => this.memories.list(memoryScopes(identity), signal, true), draft, undefined, true)
+				: this.memoryOperation(identity, () => this.memories.list(memoryScopes(identity), signal, true), draft),
+		};
 		const access = sessionAttachmentAccess(this.attachments, identity);
 		const agent = selected.forSession ? selected.forSession(identity, selected, access, memory)
 			: { ...selected, ...(selected.tools ? { tools: withMemories(withAttachments(selected.tools, access), memory) } : {}),
 				model: withMemoryContext(withSessionIdentity(selected.model, identity), memory) };
 		return new AgentSession(record, agent, {
+			nextContextRevision: () => ++this.contextRevision,
 			persistent: this.persistent,
 			saveRecord: (next, options) => this.persist(next, undefined, options),
 			listAutomations: () => this.listAutomations(),
@@ -842,6 +858,7 @@ export class SessionManager {
 	}
 	private finishOperation(): void {
 		this.busy = false;
+		this.runtime?.invalidateContext();
 		for (const done of this.idleWaiters) done();
 	}
 	private requireIdle(): void {

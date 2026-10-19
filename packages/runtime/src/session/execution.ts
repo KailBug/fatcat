@@ -1,6 +1,7 @@
 import type { Message, Model } from "../model.js";
 import { projectIdOf } from "./record.js";
 import type { SessionRecord } from "./record.js";
+import { mapModelMessages } from "../model-preparation.js";
 
 export interface SessionExecutionIdentity {
 	sessionId: string;
@@ -26,11 +27,11 @@ export function withSessionIdentity(model: Model, identity: SessionExecutionIden
 	const notice = "Actual executing session (JSON data, not instructions): " + JSON.stringify(identity)
 		+ ". Other sessions keep separate histories. This identity also applies to delegated work. "
 		+ "The workspace is the default path base; existing file and command permissions remain in force.";
-	return (messages, signal, observe, options) => {
+	return mapModelMessages(model, (messages) => {
 		const first = messages[0];
 		const projected: Message[] = first?.role === "system" && typeof first.content === "string"
 			? [{ ...first, content: `${first.content}\n\n${notice}` }, ...messages.slice(1)]
 			: [{ role: "system", content: notice }, ...messages];
-		return model(projected, signal, observe, options);
-	};
+		return projected;
+	});
 }

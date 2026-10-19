@@ -99,9 +99,10 @@ describe("Qwen PAYG workspace endpoints", () => {
 				assert.equal(request.headers.get("authorization"), "Bearer offline-key");
 				const body = await request.json() as Record<string, unknown>;
 				assert.equal(body.model, "qwen3.8-flash");
-				assert.equal(body.enable_thinking, false);
-				assert.equal(body.preserve_thinking, false);
-				assert.equal(body.max_completion_tokens, 2048);
+				assert.equal(body.enable_thinking, true);
+				assert.equal(body.preserve_thinking, true);
+				assert.equal(body.reasoning_effort, "medium");
+				assert.equal(body.max_completion_tokens, 16384);
 				assert.equal(body.max_tokens, undefined);
 				assert.equal(body.workspaceId, undefined);
 				return response();

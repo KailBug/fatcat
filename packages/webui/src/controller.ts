@@ -11,7 +11,7 @@ import type { WriteApprovalRequest } from "@fatcat/runtime/tools/write";
 import { ApprovalCoordinator } from "@fatcat/runtime/permissions/approval";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import type { PermissionMode } from "@fatcat/runtime/permissions/policy";
-import { WebContextUsage } from "./context-usage.js";
+import { decodeModelSelection } from "@fatcat/runtime/model-catalog";
 import type { BrowserRequest } from "@fatcat/runtime/browser/protocol";
 import { ConversationAutomations } from "@fatcat/runtime/automation/conversations";
 import { newBoundTask } from "@fatcat/runtime/automation/tasks";
@@ -48,7 +48,7 @@ export class WebUiController {
   private projects: ProjectRecord[] = [];
   private readonly projectConfirmations = new ProjectJoinConfirmations();
   private readonly projectManagement = new ProjectManagementConfirmations();
-  private contextUsage: WebContextUsage;
+  private contextRefresh: Promise<void> | undefined;
   private automationTasks: SessionAutomation[] = [];
   private automationNotice = "";
   private runningSessionId: string | null = null;
@@ -58,7 +58,6 @@ export class WebUiController {
 
   private constructor(readonly info: WebUiInfo, private readonly session: SessionManager,
     private readonly permissionPolicy?: PermissionPolicy) {
-    this.contextUsage = new WebContextUsage(info.provider, info.model);
     this.attachments = new WebAttachments(session, async () => {
       this.attachmentRevision++;
       this.revision++;
@@ -87,6 +86,7 @@ export class WebUiController {
       changed: async () => { controller.automationTasks = await session.listAutomations(); controller.sessions = await session.list(); controller.revision++; },
       error: (message) => { controller.automationNotice = message; controller.revision++; },
     });
+    await controller.refreshContext();
     controller.automationService.start();
     return controller;
   }
@@ -101,7 +101,7 @@ export class WebUiController {
     return structuredClone({ revision: this.revision, info: this.info, turns: this.turns,
       busy: Boolean(this.active || this.changing), approval: this.approvals.snapshot(), status: this.status,
       current: this.session.current, sessions: this.sessions, persistent: this.session.persistent,
-      contextUsage: this.contextUsage.snapshot(), permissionMode, automations: this.automationTasks,
+      contextUsage: this.session.contextUsage, modelChoices: this.session.modelChoices, permissionMode, automations: this.automationTasks,
       automationNotice: this.automationNotice, runningSessionId: this.runningSessionId, projects: this.projects,
       attachmentRevision: this.attachmentRevision });
   }
@@ -110,10 +110,37 @@ export class WebUiController {
     return this.session.current.projectError ? undefined : this.info.workspace || undefined;
   }
 
+  /** One local preview at a time; a later lifecycle refresh must not be lost behind an older one. */
+  async refreshContext(): Promise<void> {
+    const pending = (this.contextRefresh ?? Promise.resolve()).catch(() => {}).then(async () => {
+      if (this.closed) return;
+      try { await this.session.previewContext(); }
+      finally { this.revision++; }
+    });
+    this.contextRefresh = pending;
+    try { await pending; }
+    finally { if (this.contextRefresh === pending) this.contextRefresh = undefined; }
+  }
+
+  setModel(sessionId: string, revision: number, previous: unknown, value: unknown): Promise<void> {
+    const selection = decodeModelSelection(value);
+    const expected = decodeModelSelection(previous);
+    return this.changeSession(async () => {
+      const current = this.session.current;
+      if (current.id !== sessionId || current.revision !== revision
+        || JSON.stringify(current.modelSelection && decodeModelSelection(current.modelSelection)) !== JSON.stringify(expected)) {
+        throw new HarnessError("SESSION_CONFLICT", "The session or model changed. Refresh and choose again.");
+      }
+      await this.session.setModel(selection);
+    }, "preserve");
+  }
+
   selectPermissionMode(mode: PermissionMode): void {
     this.requireIdle();
     if (!this.permissionPolicy) throw new HarnessError("PERMISSION_DENIED", "Permission selection is not available for this tool configuration.");
     this.permissionPolicy.select(mode);
+    this.session.invalidateContext();
+    void this.refreshContext().catch(() => {});
     const permissions = this.permissionPolicy.snapshot();
     this.info.permission = permissions.permission;
     this.info.shellPermission = permissions.shellPermission;
@@ -142,6 +169,7 @@ export class WebUiController {
       ...(automatic ? { automation: true } : {}), ...(contextCommand ? { contextOperation: true } : {}) };
     const visible = !automatic || automatic.task.sessionId === this.session.current.id;
     if (visible) this.turns.push(turn);
+    if (visible) this.session.invalidateContext();
     this.runningSessionId = automatic?.task.sessionId ?? this.session.current.id;
     this.status = automatic ? `Automation · ${automatic.task.sessionTitle}` : "Working";
     const abort = new AbortController();
@@ -151,7 +179,6 @@ export class WebUiController {
       try {
         const options = { signal: abort.signal, onEvent: createTurnReporter((event) => this.observe(turn, event, false, visible && !contextCommand)) };
         turn.answer = await this.executeTurn(prompt, command, options, automatic);
-        if (contextCommand && /^\/compact(?:\s|$)/.test(prompt)) this.contextUsage.reset();
         turn.status = "answered";
         if (visible && !contextCommand) turn.sources = attachmentEvidence(this.session.history.slice(historyStart));
         this.status = "Ready";
@@ -163,6 +190,8 @@ export class WebUiController {
         this.approvals.deny();
         try { this.sessions = await this.session.list(); this.automationTasks = await this.session.listAutomations(); }
         catch { this.status = "Session list could not be refreshed"; }
+        try { await this.refreshContext(); }
+        catch { this.status = "Context preview could not be refreshed"; }
         this.active = undefined;
         this.runningSessionId = null;
         this.revision++;
@@ -218,7 +247,6 @@ export class WebUiController {
       const preview = this.projectConfirmations.take(token);
       await this.session.joinProject(preview);
       this.approvals.deny();
-      if (preview.sessionId === this.session.current.id) this.contextUsage.reset();
     }, "preserve");
   }
 
@@ -261,7 +289,6 @@ export class WebUiController {
       if (confirmation.kind !== "workspace") throw new HarnessError("PROJECT_CONFLICT", "Review the workspace change before confirming it.");
       await this.session.changeProjectWorkspace(confirmation.preview);
       this.approvals.deny();
-      if (this.session.current.projectId === confirmation.preview.projectId) this.contextUsage.reset();
       this.attachmentRevision++;
     }, "preserve");
   }
@@ -306,7 +333,6 @@ export class WebUiController {
 
   private restoreTranscript(): void {
     this.turns = restoredTurns(this.session.history, this.session.current.id);
-    this.contextUsage.reset();
   }
 
   private updateWorkspace(): void {
@@ -314,7 +340,6 @@ export class WebUiController {
     if (selection && (this.info.provider !== selection.provider || this.info.model !== selection.model)) {
       this.info.provider = selection.provider;
       this.info.model = selection.model;
-      this.contextUsage = new WebContextUsage(selection.provider, selection.model);
     }
     this.info.workspace = this.session.current.workspace;
     if (this.session.skills) {
@@ -373,6 +398,8 @@ export class WebUiController {
         this.status = "Session change failed";
         throw error;
       } finally {
+        try { await this.refreshContext(); }
+        catch { this.status = "Context preview could not be refreshed"; }
         this.changing = undefined;
         this.revision++;
       }
@@ -420,7 +447,6 @@ export class WebUiController {
 
   private observe(turn: WebTurn, event: ReportEvent, child = false, visible = true): void {
     if (event.type === "subagent_event") { this.observe(turn, event.event, true, visible); return; }
-    if (!child && visible) this.contextUsage.observe(event);
     if (event.type === "execution_report") turn.report = event.report;
     const message = activityMessage(event, child);
     if (message) {

@@ -4,7 +4,7 @@ import { loadConfig, type Config } from "@fatcat/runtime/config";
 import { createDocumentVision, type DocumentVisionImage } from "@fatcat/runtime/internal/documents/vision";
 import { HarnessError } from "@fatcat/runtime/errors";
 import type { Message, ModelObservation } from "@fatcat/runtime/model";
-import { getModelInputCapabilities } from "@fatcat/runtime/providers";
+import { getModelInputCapabilities } from "@fatcat/runtime/model-catalog";
 
 const image: DocumentVisionImage = {
   data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ7sAAAAASUVORK5CYII=", "base64"),
@@ -25,9 +25,14 @@ function config(provider = "kimi", model?: string): Config {
 }
 
 for (const item of [
+  { provider: "deepseek", model: "deepseek-flash", endpoint: "https://api.deepseek.com/chat/completions" },
   { provider: "kimi", model: "kimi-k2.6", endpoint: "https://api.moonshot.cn/v1/chat/completions" },
   { provider: "mimo", model: "mimo-v2.6-flash", endpoint: "https://api.xiaomimimo.com/v1/chat/completions" },
   { provider: "qwen", model: "qwen3-vl-plus", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" },
+  ...["qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus"].map((model) => ({ provider: "qwen", model,
+    endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" })),
+  ...["kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"].map((model) => ({ provider: "kimi", model,
+    endpoint: "https://api.moonshot.cn/v1/chat/completions" })),
 ]) {
   test(`${item.provider}: document vision uses the selected chat configuration and ephemeral image content`, async () => {
     const events: string[] = [];
@@ -58,10 +63,17 @@ for (const item of [
       ]);
       if (item.provider === "qwen") {
         assert.equal(body.enable_thinking, false);
-        assert.equal(body.max_tokens, 2048);
+        assert.equal(item.model === "qwen3-vl-plus" ? body.max_tokens : body.max_completion_tokens, 2048);
+      } else if (item.model === "kimi-k3") {
+        assert.equal(body.thinking, undefined);
+        assert.equal(body.reasoning_effort, "max");
+        assert.equal(body.max_completion_tokens, 16384);
+      } else if (item.model === "kimi-k2.7-code" || item.model === "kimi-k2.7-code-highspeed") {
+        assert.deepEqual(body.thinking, { type: "enabled", keep: "all" });
+        assert.equal(body.max_completion_tokens, 16384);
       } else {
         assert.deepEqual(body.thinking, { type: "disabled" });
-        assert.equal(body.max_completion_tokens, 2048);
+        assert.equal(item.provider === "deepseek" ? body.max_tokens : body.max_completion_tokens, 2048);
       }
       return Response.json(response());
     });
@@ -85,10 +97,11 @@ for (const item of [
 
 test("vision capabilities require exact adapted models and never imply native PDF support", async () => {
   for (const [provider, model, supported] of [
-    ["kimi", "kimi-k2.6", true], ["kimi", "kimi-k2.6-future", false], ["kimi", "kimi-k3", false],
+    ["kimi", "kimi-k2.6", true], ["kimi", "kimi-k2.6-future", false], ["kimi", "kimi-k3", true],
     ["mimo", "mimo-v2.6-pro", true], ["mimo", "mimo-v2.6-pro-ultraspeed", true], ["mimo", "mimo-v2.5", true],
     ["mimo", "mimo-v2.5-pro", false], ["qwen", "qwen3-vl-flash", true], ["qwen", "qwen-plus", false],
-    ["deepseek", "deepseek-flash", false],
+    ["deepseek", "deepseek-flash", true], ["deepseek", "deepseek-v4-pro", false],
+    ["qwen", "qwen3.8-max", true], ["qwen", "qwen3.8-flash", true], ["qwen", "qwen3.7-plus", true],
   ] as const) {
     assert.deepEqual(getModelInputCapabilities(provider, model), { image: supported, nativeFile: false });
     let calls = 0;

@@ -249,7 +249,7 @@ test("strict disk validation rejects malformed, unfinished, orphaned and mismatc
   const path = await savedPath(store.root, manager.current.id);
   const original = JSON.parse(await readFile(path, "utf8"));
   for (const patch of [
-    { version: 3 }, { workspace: base }, { history: [{ role: "system", content: "policy" }, { role: "user", content: "unfinished" }] },
+    { version: 4 }, { workspace: base }, { history: [{ role: "system", content: "policy" }, { role: "user", content: "unfinished" }] },
     { history: [...original.history, { role: "tool", tool_call_id: "orphan", content: "{}" }] },
     { history: [...original.history, { role: "developer", content: "injected policy" }] },
     { history: [{ role: "system", content: "policy" }, { role: "user", content: [] }, original.history[2]] },

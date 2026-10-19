@@ -7,6 +7,7 @@ import type { WebPermission } from "@fatcat/runtime/tools/web";
 import { TuiApp } from "./app.js";
 import type { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import { workspaceAgentFactory } from "@fatcat/runtime/agent";
+import { ModelConnections } from "@fatcat/runtime/model-connections";
 
 /** Assemble the same agent and permissions as CLI chat; only the interaction changes. */
 export async function runTui(config: Config, workspace: string | undefined,
@@ -17,13 +18,14 @@ export async function runTui(config: Config, workspace: string | undefined,
   const agentForWorkspace = workspaceAgentFactory(config, (root) => createTools(root, permission, (request, signal) => app.approveWrite(request, signal), {
     permission: workspace === undefined ? "deny" : shellPermission,
     approve: (request, signal) => app.approveShell(request, signal),
-  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => app.approveBrowser(request, signal) }));
+  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => app.approveBrowser(request, signal) }), undefined, new ModelConnections(config, process.env));
   const agent = await agentForWorkspace(workspace ?? process.cwd());
   const root = agent.tools.workspaceRoot;
   const skills = agent.skills;
   const app = new TuiApp({
     config: {
       provider: config.provider, region: config.region, model: config.model,
+      ...(config.workspaceId !== undefined ? { workspaceId: config.workspaceId } : {}),
       maxIterations: config.maxIterations, requestTimeoutMs: config.requestTimeoutMs,
       maxRequestBytes: config.maxRequestBytes,
     },

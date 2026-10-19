@@ -2,7 +2,8 @@ import type { ChatCompletionContentPart } from "openai/resources/chat/completion
 import type { Config } from "../config.js";
 import { checkCancellation, HarnessError } from "../errors.js";
 import { createModel, type ModelObservation } from "../model.js";
-import { getModelInputCapabilities, type Provider } from "../providers.js";
+import type { Provider } from "../providers.js";
+import { getModelInputCapabilities } from "../model-catalog.js";
 import type { DocumentImage } from "./types.js";
 
 export type DocumentVisionImage = DocumentImage;

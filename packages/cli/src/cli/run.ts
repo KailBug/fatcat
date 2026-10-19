@@ -12,6 +12,7 @@ import { loadConfig } from "@fatcat/runtime/config";
 import { HarnessError, formatError } from "@fatcat/runtime/errors";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import { workspaceAgentFactory } from "@fatcat/runtime/agent";
+import { ModelConnections } from "@fatcat/runtime/model-connections";
 import { createTools } from "@fatcat/runtime/tools";
 import type { SkillCatalog } from "@fatcat/runtime/skills";
 import { PermissionPolicy, isPermissionMode } from "@fatcat/runtime/permissions/policy";
@@ -115,7 +116,7 @@ export async function runCli(args: string[]): Promise<number> {
     const agentForWorkspace = workspaceAgentFactory(config, (root) => createTools(root, permission, terminal?.approveWrite, {
       permission: shellPermission,
       ...(terminal ? { approve: terminal.approveShell } : {}),
-    }, { permission: webPermission }, permissionPolicy, terminal ? { approve: terminal.approveBrowser } : {}));
+    }, { permission: webPermission }, permissionPolicy, terminal ? { approve: terminal.approveBrowser } : {}), undefined, new ModelConnections(config, process.env));
     const agent = await agentForWorkspace(workspace);
     const skills = agent.skills;
     reportSkillWarnings(skills);

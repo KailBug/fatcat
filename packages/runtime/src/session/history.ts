@@ -1,6 +1,7 @@
 import { HarnessError } from "../errors.js";
 import type { Message } from "../model.js";
 import { systemPrompt } from "../system-prompt.js";
+import { decodeModelContext } from "../model-history.js";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -48,8 +49,12 @@ export function validateHistory(value: unknown, complete = true): Message[] {
         } });
       }
       if (!toolCalls.length && (typeof raw.content !== "string" || !raw.content.trim())) return invalidSession();
-      messages.push({ role: "assistant", content: raw.content as string | null,
-        ...(toolCalls.length ? { tool_calls: toolCalls } : {}) });
+      const message: Extract<Message, { role: "assistant" }> = { role: "assistant", content: raw.content as string | null,
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
+      if (raw.modelContext !== undefined) {
+        try { message.modelContext = decodeModelContext(raw.modelContext, message); } catch { return invalidSession(); }
+      }
+      messages.push(message);
       state = toolCalls.length ? "tools" : "user";
     } else if (raw.role === "tool") {
       if (state !== "tools" || typeof raw.tool_call_id !== "string" || !pending.delete(raw.tool_call_id)

@@ -1,5 +1,7 @@
 import type { Config } from "@fatcat/runtime/config";
-import { getProviderProfile, providerEndpoint } from "@fatcat/runtime/providers";
+import { providerEndpoint } from "@fatcat/runtime/providers";
+import { defaultModelSelection } from "@fatcat/runtime/model-catalog";
+import { resolveModelProtocol } from "@fatcat/runtime/model-protocol";
 import type { ShellPermission } from "@fatcat/runtime/tools/shell";
 import type { WorkspacePermission } from "@fatcat/runtime/tools/write";
 import type { WebPermission } from "@fatcat/runtime/tools/web";
@@ -63,10 +65,12 @@ export function metricSections(snapshot: TuiTelemetrySnapshot, settings: TuiConf
 /** Full, unabridged configuration is always available through /status on small terminals. */
 export function statusText(snapshot: TuiTelemetrySnapshot, settings: TuiConfig): string {
   const { config } = settings;
-  const generation = getProviderProfile(config.provider).generation;
+  const selection = { ...defaultModelSelection(config.provider, config.region, config.model, config.workspaceId),
+    ...(config.thinking !== undefined ? { thinking: config.thinking } : {}) };
+  const generation = resolveModelProtocol(selection).generation;
   return [
     "CONFIGURATION", `Provider: ${config.provider}`, `Region: ${config.region}`, `Model: ${config.model}`,
-    `Endpoint: ${providerEndpoint(config.provider, config.region)}`,
+    `Endpoint: ${providerEndpoint(config.provider, config.region, config.workspaceId)}`,
     `Working directory: ${settings.workspace ?? "Disabled (no --workspace)"}`,
     `Process directory: ${process.cwd()}`,
     `Write permission: ${settings.workspace === undefined ? "disabled" : settings.permission}`,
@@ -76,7 +80,9 @@ export function statusText(snapshot: TuiTelemetrySnapshot, settings: TuiConfig):
     `Delegation: at most 2 children, ${Math.min(3, config.maxIterations)} requests each`,
     `Request timeout: ${config.requestTimeoutMs} ms`, `Request byte limit: ${config.maxRequestBytes}`,
     `Output token limit: ${"max_tokens" in generation ? generation.max_tokens : generation.max_completion_tokens}`,
-    "Thinking: disabled; streaming: disabled", "API key: configured (hidden)",
+    selection.thinking === "off" ? "Thinking: disabled; streaming: disabled"
+      : `Thinking: ${selection.thinking}; streaming: disabled`,
+    "API keys: managed by host (hidden)",
     "", ...metricSections(snapshot, settings).flatMap((section) => [section.title,
       ...section.rows.map((row) => `${row.label}: ${row.value}`), ...(section.note ? [section.note] : []), ""]),
     `Parent session tokens: ${tokens(snapshot.session.tokenUsage.parent)} (${coverage(snapshot.session.tokenUsage.parent)})`,

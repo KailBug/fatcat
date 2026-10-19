@@ -11,12 +11,17 @@ import type { TokenUsage } from "./model-usage.js";
 import type { Config } from "./config.js";
 import { HarnessError, checkCancellation } from "./errors.js";
 import { getProviderProfile, providerEndpoint } from "./providers.js";
+import { defaultModelSelection, getModelDescriptor } from "./model-catalog.js";
+import { resolveModelProtocol } from "./model-protocol.js";
+import { decodeModelContext, projectModelHistory } from "./model-history.js";
+import type { ModelContext } from "./model-history.js";
 import { defaultTools } from "./tools.js";
 import type { Tools } from "./tools.js";
 
-export type Message = ChatCompletionMessageParam;
+export type Message = Exclude<ChatCompletionMessageParam, ChatCompletionAssistantMessageParam>
+  | (ChatCompletionAssistantMessageParam & { modelContext?: ModelContext });
 export type ModelTurn = {
-  message: ChatCompletionAssistantMessageParam;
+  message: Extract<Message, { role: "assistant" }>;
   toolCalls: ChatCompletionMessageFunctionToolCall[];
 };
 export type ModelObservation =
@@ -75,7 +80,7 @@ function parseResponse(response: unknown, label: string): ModelTurn {
 /** Share the bounded SDK transport while keeping provider-specific protocol settings explicit. */
 export function createModel(config: Config, transport?: typeof fetch, tools: Tools = defaultTools): Model {
   const profile = getProviderProfile(config.provider);
-  const baseURL = providerEndpoint(config.provider, config.region);
+  const baseURL = providerEndpoint(config.provider, config.region, config.workspaceId);
   if (!Number.isSafeInteger(config.maxRequestBytes) || config.maxRequestBytes < 1 || config.maxRequestBytes > 16 * 1024 * 1024) {
     throw new HarnessError("CONFIG", "maxRequestBytes must be a positive integer no greater than 16777216.");
   }
@@ -92,9 +97,19 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
 
   const callModel: Model = async (messages, signal, observe, options) => {
     checkCancellation(signal);
+    const descriptor = getModelDescriptor(config.provider, config.model);
+    if (descriptor.chatUnavailableReason && options?.purpose !== "document" && options?.purpose !== "compaction") {
+      throw new HarnessError("MODEL_UNAVAILABLE", descriptor.chatUnavailableReason);
+    }
+    const selection = { ...defaultModelSelection(config.provider, config.region, config.model, config.workspaceId),
+      ...(config.thinking !== undefined ? { thinking: config.thinking } : {}) };
+    const protocol = resolveModelProtocol(selection, options?.purpose);
+    const includeTools = options?.purpose !== "compaction" && options?.purpose !== "document"
+      && !(options?.toolChoice === "none" && config.provider === "mimo");
     const body: ChatCompletionCreateParamsNonStreaming = {
       model: config.model,
-      messages,
+      messages: projectModelHistory(messages, selection,
+        protocol.reasoningHistory === "all" || (protocol.reasoningHistory === "with-tools" && includeTools)),
       // MiMo ignores non-auto tool_choice values; omit tools for a text-only request.
       ...(options?.purpose === "compaction" || options?.purpose === "document"
         || (options?.toolChoice === "none" && config.provider === "mimo") ? {} : {
@@ -102,7 +117,7 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
         tool_choice: options?.toolChoice ?? "auto",
       }),
       stream: false,
-      ...profile.generation,
+      ...protocol.generation,
     };
     // Count the complete JSON body, including tools, guidance, history, and execution facts.
     const prepared = prepareRequestContext(body, config.maxRequestBytes, signal);
@@ -126,7 +141,11 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
       observe?.({ type: "model_usage", usage: parseTokenUsage(response?.usage) });
       checkCancellation(signal);
       if (deadline.aborted) throw new HarnessError("MODEL_TIMEOUT", `${profile.label} request timed out.`);
-      return parseResponse(response, profile.label);
+      const turn = parseResponse(response, profile.label);
+      if (!options?.purpose && protocol.reasoningHistory !== "none") {
+        turn.message.modelContext = decodeModelContext({ selection, message: response.choices[0]!.message }, turn.message);
+      }
+      return turn;
     } catch (error) {
       checkCancellation(signal);
       if (deadline.aborted || error instanceof OpenAI.APIConnectionTimeoutError) {

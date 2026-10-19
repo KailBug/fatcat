@@ -36,6 +36,10 @@ import type { MemoryChange } from "./memory.js";
 import { prepareAutomationRun, sessionAutomations } from "./automations.js";
 import type { AutomationRunOptions } from "./automations.js";
 import { projectDraftRecord, sessionProjectJoinPreview } from "./projects.js";
+import { sessionModelAgent } from "./models.js";
+import { validateModelSelection } from "../model-catalog.js";
+import type { ModelSelection } from "../model-catalog.js";
+import type { ModelChoice } from "../model-connections.js";
 
 interface DraftAttachmentScope {
 	identity: AttachmentTarget;
@@ -156,6 +160,24 @@ export class SessionManager {
 	}
 	get context(): ContextStatus {
 		return this.runtime.context;
+	}
+	get modelChoices(): ModelChoice[] {
+		return this.agent.modelChoices?.() ?? [];
+	}
+
+	/** Validate and prepare before saving; publish only after the revision-checked commit succeeds. */
+	async setModel(value: ModelSelection): Promise<void> {
+		await this.change(async () => {
+			await this.prepareExecution();
+			const selection = validateModelSelection(value);
+			if (!this.agent.forModel) throw new HarnessError("MODEL_UNAVAILABLE", "This host does not support model switching.");
+			const agent = this.agent.forModel(selection, this.agent);
+			const updated = { ...this.runtime.snapshot, modelSelection: selection, updatedAt: new Date().toISOString() };
+			// Exercise all binding/history validation before touching the durable record.
+			this.createRuntime(updated, agent);
+			const saved = updated.revision === 0 ? updated : await this.persist(updated);
+			this.activate(saved, agent);
+		});
 	}
 
 	async compact(options: CompactionOptions = {}): Promise<CompactionResult> {
@@ -734,6 +756,7 @@ export class SessionManager {
 		const location = project ? { kind: "project" as const, projectId: project.id }
 			: { kind: "standalone" as const, workspace };
 		return { version: 2, id: randomUUID(), workspace, location, locationRevision: 0, name: validated,
+			...(this.agent.modelSelection ? { modelSelection: structuredClone(this.agent.modelSelection) } : {}),
 			...(project ? { projectName: project.name, projectRevision: project.revision } : {}),
 			title: validated ?? "New session", createdAt: now, updatedAt: now, revision: 0,
 			forkedFrom: null, history: [], attempt: null };
@@ -750,21 +773,27 @@ export class SessionManager {
 		return structuredClone(record);
 	}
 
-	private activate(record: SessionRecord): void {
+	private createRuntime(record: SessionRecord, selected: SessionAgentOptions): AgentSession {
 		const identity = executionIdentity(record);
 		const memory: MemoryAccess = { list: (signal) => this.memoryOperation(identity,
 			() => this.memories.list(memoryScopes(identity), signal), record.revision === 0 ? record : undefined) };
 		const access = sessionAttachmentAccess(this.attachments, identity);
-		const agent = this.agent.forSession ? this.agent.forSession(identity, this.agent, access, memory)
-			: { ...this.agent, ...(this.agent.tools ? { tools: withMemories(withAttachments(this.agent.tools, access), memory) } : {}),
-				model: withMemoryContext(withSessionIdentity(this.agent.model, identity), memory) };
-		const runtime = new AgentSession(record, agent, {
+		const agent = selected.forSession ? selected.forSession(identity, selected, access, memory)
+			: { ...selected, ...(selected.tools ? { tools: withMemories(withAttachments(selected.tools, access), memory) } : {}),
+				model: withMemoryContext(withSessionIdentity(selected.model, identity), memory) };
+		return new AgentSession(record, agent, {
 			persistent: this.persistent,
 			saveRecord: (next, options) => this.persist(next, undefined, options),
 			listAutomations: () => this.listAutomations(),
 			changeMemory: (request, source, owner, signal) => this.applyMemoryChange(identity,
 				memoryChangeForRequest(identity, request), source, signal, owner),
 		});
+	}
+
+	private activate(record: SessionRecord, prepared?: SessionAgentOptions): void {
+		if (!record.modelSelection && this.agent.modelSelection) record = { ...record, modelSelection: structuredClone(this.agent.modelSelection) };
+		const runtime = this.createRuntime(record, prepared ?? sessionModelAgent(this.agent, record.modelSelection));
+		const identity = executionIdentity(record);
 		const draftScope = this.draftAttachmentScope;
 		if (draftScope?.identity.sessionId === identity.sessionId && !sameAttachmentTarget(draftScope.identity, identity)) {
 			draftScope.valid = false;

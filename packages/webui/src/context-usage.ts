@@ -1,22 +1,9 @@
 import type { ReportEvent } from "@fatcat/runtime/execution-report";
 import { parseTokenUsage } from "@fatcat/runtime/model-usage";
+import { getModelDescriptor } from "@fatcat/runtime/model-catalog";
+import { parseProvider } from "@fatcat/runtime/providers";
 
 export type ContextUsage = { promptTokens: number | null; capacityTokens: number | null };
-
-// Official sources checked on 2026-10-01; unknown model overrides stay unknown.
-// DeepSeek: https://api-docs.deepseek.com/api/list-models/
-// Kimi: https://platform.kimi.ai/docs/models
-// https://huggingface.co/moonshotai/Kimi-K2.6/blob/main/generation_config.json
-// MiMo: https://mimo.mi.com/docs/en-US/tokenplan/integration/openclaw
-// Qwen: https://www.alibabacloud.com/help/en/model-studio/qwen-plus
-const capacities = new Map<string, number>([
-  ["deepseek/deepseek-flash", 1_048_576],
-  ["deepseek/deepseek-v4-pro", 1_048_576],
-  ["kimi/kimi-k2.6", 262_144],
-  ["mimo/mimo-v2.6-flash", 1_048_576],
-  ["mimo/mimo-v2.6-pro", 1_048_576],
-  ["qwen/qwen-plus", 1_000_000],
-]);
 
 /** Observe the latest parent request, rather than cumulative turn or subagent usage. */
 export class WebContextUsage {
@@ -25,7 +12,8 @@ export class WebContextUsage {
   private readonly capacityTokens: number | null;
 
   constructor(provider: string, model: string) {
-    this.capacityTokens = capacities.get(`${provider}/${model}`) ?? null;
+    try { this.capacityTokens = getModelDescriptor(parseProvider(provider), model).contextWindowTokens; }
+    catch { this.capacityTokens = null; }
   }
 
   reset(): void { this.promptTokens = null; this.auxiliary = false; }

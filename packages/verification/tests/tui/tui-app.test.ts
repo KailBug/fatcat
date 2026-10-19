@@ -631,6 +631,6 @@ test("status distinguishes provider tokens, unknown model capacity, local bytes 
   assert.match(status, /JSON body: 1,024 B/);
   assert.match(status, /Parent input: 800 tokens/);
   assert.match(status, /Model limit: N\/A/);
-  assert.match(status, /API key: configured \(hidden\)/);
+  assert.match(status, /API keys: managed by host \(hidden\)/);
   assert.equal(metricSections(telemetry.snapshot(), settings)[2]?.meter?.ratio, 1024 / 262144);
 });

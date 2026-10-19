@@ -1,12 +1,15 @@
 import { HarnessError } from "./errors.js";
 import { getProviderProfile, parseProvider, providerEndpoint } from "./providers.js";
 import type { Provider, ProviderRegion } from "./providers.js";
+import type { ThinkingLevel } from "./model-catalog.js";
 
 export type Config = {
   provider: Provider;
   region: ProviderRegion;
+  workspaceId?: string;
   apiKey: string;
   model: string;
+  thinking?: ThinkingLevel;
   maxIterations: number;
   requestTimeoutMs: number;
   maxRequestBytes: number;
@@ -27,7 +30,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const provider = parseProvider((env.HARNESS_PROVIDER ?? "deepseek").trim());
   const profile = getProviderProfile(provider);
   const region = (profile.regionEnv ? env[profile.regionEnv] ?? profile.defaultRegion : profile.defaultRegion).trim();
-  providerEndpoint(provider, region);
+  const workspaceId = provider === "qwen" ? env.QWEN_WORKSPACE_ID?.trim() : undefined;
+  providerEndpoint(provider, region, workspaceId);
   const apiKey = env[profile.apiKeyEnv]?.trim();
   if (!apiKey) {
     throw new HarnessError("CONFIG", `${profile.apiKeyEnv} is required. Set it in .env or the environment.`);
@@ -43,6 +47,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     provider,
     region: region as ProviderRegion,
+    ...(workspaceId !== undefined ? { workspaceId } : {}),
     apiKey,
     model,
     autoCompaction: autoCompaction === "true",

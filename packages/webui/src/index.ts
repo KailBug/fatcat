@@ -10,6 +10,7 @@ import { openWebUiBrowser } from "./open-browser.js";
 import { startWebUiServer } from "./server.js";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import { workspaceAgentFactory } from "@fatcat/runtime/agent";
+import { ModelConnections } from "@fatcat/runtime/model-connections";
 
 export async function runWebUi(config: Config, workspace: string, permission: WorkspacePermission,
   shellPermission: ShellPermission, webPermission: WebPermission, port: number,
@@ -19,7 +20,7 @@ export async function runWebUi(config: Config, workspace: string, permission: Wo
     { readOnly: permission === "read-only", shellDenied: shellPermission === "deny", webDenied: webPermission === "deny" })): Promise<number> {
   const agentForWorkspace = workspaceAgentFactory(config, (root) => createTools(root, permission, (request, signal) => controller.requestApproval("write", request, signal), {
     permission: shellPermission, approve: (request, signal) => controller.requestApproval("shell", request, signal),
-  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => controller.requestApproval("browser", request, signal) }));
+  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => controller.requestApproval("browser", request, signal) }), undefined, new ModelConnections(config, process.env));
   const agent = await agentForWorkspace(workspace);
   const manager = await SessionManager.open(agent, {
     ...sessionOptions, workspace: agent.tools.workspaceRoot!, deferEmptySessions: true, agentForWorkspace,

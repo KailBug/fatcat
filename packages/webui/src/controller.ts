@@ -48,7 +48,7 @@ export class WebUiController {
   private projects: ProjectRecord[] = [];
   private readonly projectConfirmations = new ProjectJoinConfirmations();
   private readonly projectManagement = new ProjectManagementConfirmations();
-  private readonly contextUsage: WebContextUsage;
+  private contextUsage: WebContextUsage;
   private automationTasks: SessionAutomation[] = [];
   private automationNotice = "";
   private runningSessionId: string | null = null;
@@ -310,6 +310,12 @@ export class WebUiController {
   }
 
   private updateWorkspace(): void {
+    const selection = this.session.current.modelSelection;
+    if (selection && (this.info.provider !== selection.provider || this.info.model !== selection.model)) {
+      this.info.provider = selection.provider;
+      this.info.model = selection.model;
+      this.contextUsage = new WebContextUsage(selection.provider, selection.model);
+    }
     this.info.workspace = this.session.current.workspace;
     if (this.session.skills) {
       this.info.skills = this.session.skills.skills.length;

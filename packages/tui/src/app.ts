@@ -306,6 +306,13 @@ export class TuiApp {
 
   private updateSessionFooter(): void {
     if (!(this.session instanceof SessionManager)) return;
+    const selection = this.session.current.modelSelection;
+    if (selection) {
+      const { workspaceId: _workspace, thinking: _thinking, ...config } = this.options.config;
+      this.options.config = { ...config, ...selection };
+      this.state.model = selection.model;
+      this.state.provider = selection.provider;
+    }
     this.options.workspace = this.session.current.workspace;
     this.state.workspace = this.session.current.workspace;
     this.state.scope = sessionScopeLabel(this.session.current);

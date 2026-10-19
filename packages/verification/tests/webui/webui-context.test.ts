@@ -40,12 +40,15 @@ test("context usage uses exact documented model capacities and keeps unknowns di
     ["deepseek", "deepseek-flash", 1_048_576], ["deepseek", "deepseek-v4-pro", 1_048_576],
     ["kimi", "kimi-k2.6", 262_144], ["mimo", "mimo-v2.6-flash", 1_048_576],
     ["mimo", "mimo-v2.6-pro", 1_048_576], ["qwen", "qwen-plus", 1_000_000],
+    ["qwen", "qwen3.8-max", 1_000_000], ["qwen", "qwen3.8-flash", 1_000_000],
+    ["qwen", "qwen3.7-plus", 1_000_000], ["qwen", "qwen3-vl-plus", 262_144],
+    ["kimi", "kimi-k2.7-code", 262_144],
   ];
   for (const [provider, model, capacityTokens] of models) {
     assert.deepEqual(new WebContextUsage(provider, model).snapshot(), { promptTokens: null, capacityTokens });
   }
   for (const [provider, model] of [["deepseek", "custom"], ["other", "deepseek-flash"], ["qwen", "qwen-plus-custom"],
-    ["kimi", "kimi-k2.5"], ["__proto__", "constructor"]]) {
+    ["kimi", "kimi-k2.5"], ["kimi", "kimi-k3"], ["mimo", "mimo-v2.5-pro"], ["__proto__", "constructor"]]) {
     assert.equal(new WebContextUsage(provider!, model!).snapshot().capacityTokens, null);
   }
   const meter = new WebContextUsage("deepseek", "custom");

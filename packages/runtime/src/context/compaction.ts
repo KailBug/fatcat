@@ -1,6 +1,7 @@
 import { HarnessError, checkCancellation } from "../errors.js";
 import type { LoopEvent } from "../loop.js";
 import type { Message, Model } from "../model.js";
+import { conversationMessage } from "../model-history.js";
 import { contextBytes, projectHistory } from "./manager.js";
 import type { CompactionState, ContextStatus } from "./manager.js";
 
@@ -55,7 +56,7 @@ export function prepareCompaction(history: readonly Message[], previous: Compact
 	const summaryBytes = Math.min(8192, Math.floor(maxRequestBytes / 8));
 	const previousSummary = previous?.summary ?? "";
 	const reserveSummary = "\\".repeat(Math.max(summaryBytes, Buffer.byteLength(previousSummary)));
-	const source = history.slice(start, firstKeptMessage).map((message) => JSON.stringify(message)).join("\n");
+	const source = history.slice(start, firstKeptMessage).map((message) => JSON.stringify(conversationMessage(message))).join("\n");
 	const chunks: string[] = [];
 	let offset = 0;
 	while (offset < source.length) {

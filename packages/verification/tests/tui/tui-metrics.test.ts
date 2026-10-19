@@ -9,6 +9,20 @@ const settings = {
   workspace: undefined, permission: "ask" as const, shellPermission: "deny" as const, skills: 4,
 };
 
+test("status preserves a Qwen workspace endpoint and reports the effective reasoning setting", () => {
+  const snapshot = createTuiTelemetry().snapshot();
+  const qwen = statusText(snapshot, { ...settings, config: { ...settings.config,
+    provider: "qwen", region: "eu", model: "qwen3.8-max", workspaceId: "offline-workspace" } });
+  assert.match(qwen, /Endpoint: https:\/\/offline-workspace\.eu-central-1\.maas\.aliyuncs\.com/);
+  assert.match(qwen, /Output token limit: 2048/);
+  const kimi = statusText(snapshot, { ...settings, config: { ...settings.config,
+    provider: "kimi", region: "cn", model: "kimi-k3" } });
+  assert.match(kimi, /Thinking: max; streaming: disabled/);
+  assert.match(statusText(snapshot, { ...settings, config: { ...settings.config,
+    model: "deepseek-flash", thinking: "medium" } }), /Thinking: medium; streaming: disabled/);
+  assert.doesNotMatch(kimi, /Thinking: disabled/);
+});
+
 test("compact metric values carry coverage even when secondary rows are hidden", () => {
   const telemetry = createTuiTelemetry();
   telemetry.beginTurn();

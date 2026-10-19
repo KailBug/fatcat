@@ -229,12 +229,41 @@ try {
   assert.equal(await page.locator("#workspace-dialog").count(), 0);
 
   await page.setViewportSize({ width: 1440, height: 1000 });
+  // Hold frame callbacks to reproduce an early blur between state publication and focus restoration.
+  await page.evaluate(() => {
+    const nativeFrame = window.requestAnimationFrame.bind(window);
+    const pending: FrameRequestCallback[] = [];
+    const fixture = window as Window & { resumeFrames?: { pending: FrameRequestCallback[]; release: () => void } };
+    fixture.resumeFrames = { pending, release: () => {
+      window.requestAnimationFrame = nativeFrame;
+      for (const callback of pending) nativeFrame(callback);
+      delete fixture.resumeFrames;
+    } };
+    window.requestAnimationFrame = (callback) => { pending.push(callback); return -pending.length; };
+  });
   await page.locator(`[data-session-id="${savedId}"]`).click();
   await page.waitForFunction((id) => document.querySelector(`[data-session-id="${id}"]`)?.getAttribute("aria-current") === "true", savedId);
   assert.equal(session.current.id, savedId);
+  await page.waitForFunction(() => (window as Window & { resumeFrames?: { pending: unknown[] } }).resumeFrames!.pending.length >= 2);
+  await page.locator("#show-preview").focus();
+  assert.equal(await page.locator("#show-preview").evaluate((node) => node === document.activeElement), true);
+  await page.evaluate(() => (window as Window & { resumeFrames?: { release: () => void } }).resumeFrames!.release());
+  // aria-current alone does not mean sessionChanged's deferred focus has completed.
+  await page.waitForFunction(() => document.activeElement === document.getElementById("prompt"));
+  assert.notEqual(await page.locator("#composer").getAttribute("data-collapsed"), "true", "Resuming focuses and expands the composer");
   await page.locator("#show-preview").focus();
   await page.mouse.move(0, 0);
-  await page.waitForFunction(() => document.querySelector("#composer")?.getAttribute("data-collapsed") === "true");
+  try {
+    await page.waitForFunction(() => document.querySelector("#composer")?.getAttribute("data-collapsed") === "true");
+  } catch (error) {
+    console.error("Composer idle failure", await page.evaluate(() => ({
+      active: document.activeElement?.id, draft: (document.querySelector("#prompt") as HTMLTextAreaElement).value,
+      enabled: (document.querySelector("#composer") as HTMLElement).dataset.sleepEnabled,
+      hovered: document.querySelector("#composer")?.matches(":hover"),
+      disabled: (document.querySelector("#prompt") as HTMLTextAreaElement).disabled,
+    })));
+    throw error;
+  }
   await page.locator("#new-chat").click();
   await page.locator("#welcome:not([hidden])").waitFor();
   assert.notEqual(await page.locator("#composer").getAttribute("data-collapsed"), "true", "New chat restores the expanded welcome composer");

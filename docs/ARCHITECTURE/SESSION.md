@@ -11,6 +11,7 @@ Session 系统区分成功对话、当前持久记录、宿主选择和存储。
 | `packages/runtime/src/session/session.ts` | 内存成功历史、上下文投影与顺序运行；成功后才替换历史 |
 | `packages/runtime/src/session/agent-session.ts` | 单个活动 record 的唯一所有者；运行领取、检查点、提交/失败收尾和恢复提示 |
 | `packages/runtime/src/session/manager.ts` | 会话选择、宿主操作互斥、目录准备、项目管理协调与后台目标路由 |
+| `packages/runtime/src/session/models.ts` | 无活动状态的保存模型恢复适配；不可用选择保持可读，执行明确失败 |
 | `packages/runtime/src/session/attachments.ts` | 无会话选择状态的附件访问适配：传输与清理、清单/下载/移除/删除、文档授权包装及执行身份绑定 |
 | `packages/runtime/src/session/projects.ts` | 无活动状态的完整迁入预览组装和项目草稿投影，复用 Project 领域规则 |
 | `packages/runtime/src/session/memory.ts` | 无活动会话状态的 Memory 接入规则：作用域、变更、请求转换及迁入统计；在 Manager 的身份/owner 校验边界内使用 |
@@ -41,7 +42,7 @@ Session 系统区分成功对话、当前持久记录、宿主选择和存储。
 
 记录包含版本、身份、名称/时间、修订、完整成功 history、最近未完成 attempt、compaction、自动任务、归属代次/待通知变更及可选 activeOperation。配置凭据、审批、权限和进程遥测不持久化。用户提示、工具参数/结果、网页/文件正文和已加载 Skill 则是明文历史。
 
-- 新写入使用 v2；旧 v1 只读映射为独立会话，不按路径推断 Project。
+- 带 modelSelection 或供应商思考历史的新写入使用 v3，已是 v3 的记录不降级；无模型身份的注入 Session 仍可写 v2。旧 v1/v2 保持可读，v1 只读映射为独立会话，不按路径推断 Project。
 - 首次成功持久写入原子升级，保留原 ID、历史、attempt、任务、摘要和存储桶；模型随后失败不降回 v1。
 - 旧程序不能安全写入新格式或恢复协议。升级前停止旧实例，不支持混用版本并发写同一存储根。
 - 单快照上限 64 MiB。解码校验身份、修订、消息与工具关联；成功 history 必须由完整回合构成，attempt 不能混入。
@@ -73,7 +74,7 @@ AgentSession 延迟根 completed 事件，Manager 释放操作锁后再通知观
 
 新建保留旧会话；fork 复制完整已完成历史并获得新 ID，自动任务不复制。附件关联/pin 与 Memory 的分支规则分别见 [Attachments](ATTACHMENTS.md) 和 [Memory](MEMORY.md)。
 
-Web UI 未命名新会话可以是 revision 0 草稿。普通回合开始前、成功附件发布、显式命名/fork、创建自动任务都会保存会话；主机 Memory 变更先保存来源会话，再执行修改，因此后续 Memory 错误不撤销已保存草稿。仅浏览资料、查询 Memory/context 或改变空草稿目录/项目绑定不保存。无持久化模式仍只写内存。
+Web UI 未命名新会话可以是 revision 0 草稿。普通回合开始前、成功附件发布、显式命名/fork、创建自动任务都会保存会话；主机 Memory 变更先保存来源会话，再执行修改，因此后续 Memory 错误不撤销已保存草稿。仅浏览资料、查询 Memory/context、切换草稿模型或改变空草稿目录/项目绑定不保存。无持久化模式仍只写内存。
 
 同一 Manager 同时只允许一个活动操作，不在运行中切换、清空、命名或管理。后台调度解析任务绑定的 Session，不能依赖 UI 当前选择。目录缓存只复用文件工具与日志，资料访问按真实执行身份装配。
 
@@ -88,6 +89,18 @@ Automation 接入沿同一边界：`session/automations.ts` 接收记录快照�
 Project 接入规则集中在 `session/projects.ts`：迁入预览和确认每次读取同一组资料来源，Memory 读取仍经过 Manager 的身份/owner 门禁；草稿投影复用 Project 的记录转换。Manager 保留目标选择、持久 owner 检查、操作锁、Agent 准备与激活，Store 保留成员发现、提交和恢复。改目录的草稿转换在提交前准备；重命名后刷新失败不能撤销已提交的项目名称。详细操作顺序和失败边界见 [Projects](PROJECTS.md#session-接入边界)。
 
 ## 验证与未实现范围
+
+### 会话模型选择（第二阶段）
+
+`SessionManager.modelChoices` 返回不含凭据的目录；`setModel(ModelSelection)` 是共享核心的切换入口。操作先取得宿主互斥、重试待收尾提交、校验项目/记录新鲜度，再校验能力与凭据并准备目标运行实例，最后按 revision 保存并激活。运行中、其他进程持有执行领取、并发版本冲突、准备或保存失败均不会发布新选择。revision 0 草稿只更新内存，切换本身不调用生成模型、工具、网络探测或压缩。
+
+`modelSelection` 仅保存 provider、region、workspaceId?、model、thinking，随 SessionSummary 返回。新会话采用宿主启动默认；恢复、fork、工作目录变更保留该会话选择。旧记录没有该字段时在内存采用启动默认，读取不会改文件，下一次真实持久写入升级。恢复时对应连接或能力不可用仍能查看历史，执行报错，必须显式切换，不自动使用另一供应商、区域或 Key。
+
+`createAgent.forModel` 按显式连接快照重建父模型、委派子模型、摘要模型和图片适配；目录级工具和执行日志保持原对象。`forSession` 再绑定实际执行会话、附件与 Memory。调用者替换的 model/tools 不擅自覆盖，未提供切换实现的注入 Agent 明确拒绝。后台任务从自己的持久会话恢复选择。
+
+思考响应保存在 assistant.modelContext，包含来源身份和完整厂商 assistant message；解码核对角色、内容及工具事实与规范历史一致。模型请求只在身份匹配且当前协议允许时回传私有数据，跨模型保留普通文本和工具事实。摘要输入剥离该字段；记录仍受既有大小和历史校验约束。该字段不授予权限、恢复审批或重放工具。具体协议见 [Providers](PROVIDERS.md)。
+
+本阶段提供 runtime API 与恢复后的客户端模型标签同步；模型菜单、思考滑条、Web 切换路由和上下文估算仍待后续阶段，不把 API 验证表述为这些交互已经完成。
 
 检查应覆盖保存/恢复、v1 升级与只读不改写、非法历史/UTF-8/超大文件、错误存储桶、文件发布失败清理与重试、项目状态新鲜度及列表/成员扫描的拒绝差异，以及修订冲突、真实第二进程 run/compact 互斥、领取释放失败、恢复提示、跨目录准备失败及三入口行为。快照与存储边界回归放在 `packages/verification/tests/session/`，项目和附件事务恢复继续在各能力测试中验证。固定存储与注入模型检查不代表真实长任务质量；浏览器会话检查不代表模型连通性。
 

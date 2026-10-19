@@ -21,8 +21,13 @@ import { memoryWriteGuidance, withMemoryWriter } from "../memory/write.js";
 import type { MemoryWriteRequest } from "../memory/write.js";
 import type { MemoryRecord, MemorySource } from "../memory/record.js";
 import { maxMemoryRequestBytes } from "../memory/record.js";
+import type { ModelSelection } from "../model-catalog.js";
+import type { ModelChoice } from "../model-connections.js";
 
 export interface SessionAgentOptions extends SessionOptions {
+	modelSelection?: ModelSelection;
+	modelChoices?: () => ModelChoice[];
+	forModel?: (selection: ModelSelection, current: SessionAgentOptions) => SessionAgentOptions;
 	skills?: SkillCatalog;
 	forSession?: (identity: SessionExecutionIdentity, current: SessionAgentOptions, attachments?: AttachmentAccess, memory?: MemoryAccess) => SessionAgentOptions;
 }

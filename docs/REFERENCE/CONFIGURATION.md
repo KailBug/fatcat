@@ -15,11 +15,15 @@ Keep credentials only in local environment variables or the ignored `.env`. Do n
 | DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_MODEL=deepseek-flash` | No region option |
 | Kimi | `MOONSHOT_API_KEY` | `KIMI_MODEL=kimi-k2.6` | `KIMI_REGION=cn` (default) or `global` |
 | MiMo | `MIMO_API_KEY` | `MIMO_MODEL=mimo-v2.6-flash` | Pay-as-you-go API, not Token Plan |
-| Qwen | `DASHSCOPE_API_KEY` | `QWEN_MODEL=qwen-plus` | `QWEN_REGION=cn` (default) or `intl` |
+| Qwen | `DASHSCOPE_API_KEY` | `QWEN_MODEL=qwen-plus` | `QWEN_REGION=cn` (default), `intl`, `us`, `eu`, `jp`, `hk` |
 
 Only the selected provider's configuration is used. There is no fallback to another provider's key or `OPENAI_API_KEY`. Region-specific keys must match their region. Optional values use defaults when absent; explicitly empty selected values are invalid. Fields are trimmed before validation.
 
-The shared OpenAI-compatible client uses non-streaming Chat Completions with thinking disabled. Exact endpoints, request fields and image capabilities live in [provider architecture](../ARCHITECTURE/PROVIDERS.md). New-provider protocol checks use fake credentials and injected transport; they do not establish real account access or task quality. Existing live verification scripts remain DeepSeek-specific.
+Qwen optionally accepts `QWEN_WORKSPACE_ID`, a lowercase DNS label (1–63 letters, digits or hyphens, starting and ending with a letter/digit). When present, it selects the workspace-specific PAYG endpoint. `cn` maps to Beijing, `intl` to Singapore, `us` to Virginia, `eu` to Frankfurt, `jp` to Tokyo and `hk` to Hong Kong. Without a workspace ID, only `cn` and `intl` can use their existing DashScope endpoints. Credentials must belong to the selected workspace and region; the application never probes or falls back to another endpoint. Workspace identity is public configuration, not a credential. Leave the variable absent to keep an existing configuration; an explicitly empty value is invalid.
+
+Current Qwen alternatives include `qwen3.8-max`, `qwen3.8-flash` and `qwen3.7-plus`. Existing startup defaults remain unchanged. Kimi K3 and K2.7 Code are recorded in the catalog but main-agent execution is blocked until session reasoning history replay is implemented. Stateless document requests use the model's mandatory thinking protocol. The catalog is not a guarantee of account access, region-specific model availability or online verification.
+
+The shared OpenAI-compatible client uses non-streaming Chat Completions. Ordinary supported agent requests keep thinking disabled in this phase. Exact endpoints, request fields, model versions, image capabilities, retirement notices and subscription-only entry points live in [provider architecture](../ARCHITECTURE/PROVIDERS.md). Protocol checks use fake credentials and injected transport; they do not establish real account access or task quality. Existing live verification scripts remain DeepSeek-specific.
 
 ## Request budgets
 

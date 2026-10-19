@@ -15,6 +15,10 @@ const cases = [
     endpoint: "https://api.xiaomimimo.com/v1/chat/completions" },
   { provider: "qwen", key: "DASHSCOPE_API_KEY", label: "Qwen", model: "qwen-plus",
     endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" },
+  ...["qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus"].map((model) => ({
+    provider: "qwen", key: "DASHSCOPE_API_KEY", label: "Qwen", model, inclusive: true,
+    endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+  })),
 ];
 const usage = { prompt_tokens: 30, completion_tokens: 12, total_tokens: 42 };
 const toolCall = { id: "sum-call", type: "function", function: { name: "sum", arguments: '{"numbers":[17,25]}' } };
@@ -26,9 +30,10 @@ function response(tool = false) {
 }
 
 for (const item of cases) {
-  const config = loadConfig({ HARNESS_PROVIDER: item.provider, [item.key]: `offline-${item.provider}` });
+  const config = loadConfig({ HARNESS_PROVIDER: item.provider, [item.key]: `offline-${item.provider}`,
+    [`${item.provider.toUpperCase()}_MODEL`]: item.model });
 
-  test(`${item.label}: documented endpoint, auth, generation settings, tool round trip, and usage`, async () => {
+  test(`${item.label} (${item.model}): documented endpoint, auth, generation settings, tool round trip, and usage`, async () => {
     const observations: ModelObservation[] = [];
     let calls = 0;
     const model = createModel(config, async (input, init) => {
@@ -47,14 +52,20 @@ for (const item of cases) {
       }
       if (item.provider === "qwen") {
         assert.equal(body.enable_thinking, false);
-        assert.equal(body.max_tokens, 2048);
+        if ("inclusive" in item) {
+          assert.equal(body.max_completion_tokens, 2048);
+          assert.equal(body.preserve_thinking, false);
+          assert.ok(!("max_tokens" in body));
+        } else {
+          assert.equal(body.max_tokens, 2048);
+          assert.ok(!("max_completion_tokens" in body));
+        }
         assert.ok(!("thinking" in body));
-        assert.ok(!("max_completion_tokens" in body));
       } else {
         assert.deepEqual(body.thinking, { type: "disabled" });
-        assert.equal(body.max_completion_tokens, 2048);
+        assert.equal(item.provider === "deepseek" ? body.max_tokens : body.max_completion_tokens, 2048);
         assert.ok(!("enable_thinking" in body));
-        assert.ok(!("max_tokens" in body));
+        assert.ok(!(item.provider === "deepseek" ? "max_completion_tokens" in body : "max_tokens" in body));
       }
       assert.ok(!("extra_body" in body));
       assert.ok(!("temperature" in body));
@@ -73,7 +84,7 @@ for (const item of cases) {
     ]);
   });
 
-  test(`${item.label}: exact serialized budget passes and one-byte overflow sends no request`, async () => {
+  test(`${item.label} (${item.model}): exact serialized budget passes and one-byte overflow sends no request`, async () => {
     let bytes = 0;
     let calls = 0;
     const transport: typeof fetch = async (input, init) => {
@@ -90,7 +101,7 @@ for (const item of cases) {
     assert.equal(calls, 2);
   });
 
-  test(`${item.label}: HTTP failures never retry or disclose provider bodies and unsupported responses keep usage`, async () => {
+  test(`${item.label} (${item.model}): HTTP failures never retry or disclose provider bodies and unsupported responses keep usage`, async () => {
     for (const status of [401, 429, 500]) {
       let calls = 0;
       const model = createModel(config, async () => {
@@ -112,7 +123,7 @@ for (const item of cases) {
     }
   });
 
-  test(`${item.label}: caller cancellation stops the request and pre-cancel sends nothing`, async () => {
+  test(`${item.label} (${item.model}): caller cancellation stops the request and pre-cancel sends nothing`, async () => {
     const controller = new AbortController();
     let calls = 0;
     const model = createModel(config, async (_input, init) => new Promise<Response>((_resolve, reject) => {
@@ -125,7 +136,7 @@ for (const item of cases) {
     assert.equal(calls, 1);
   });
 
-  test(`${item.label}: deadline bounds a stalled transport`, async () => {
+  test(`${item.label} (${item.model}): deadline bounds a stalled transport`, async () => {
     let calls = 0;
     const model = createModel({ ...config, requestTimeoutMs: 20 }, async (_input, init) => new Promise<Response>((resolve, reject) => {
       calls++;

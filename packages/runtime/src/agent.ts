@@ -18,10 +18,15 @@ import { createDocumentVision } from "./documents/vision.js";
 import { withMemories, withMemoryContext } from "./memory/tools.js";
 import type { MemoryAccess } from "./memory/tools.js";
 import { withMemoryWriter } from "./memory/write.js";
+import { ModelConnections } from "./model-connections.js";
+import { defaultModelSelection } from "./model-catalog.js";
+import type { ModelSelection } from "./model-catalog.js";
+import { HarnessError } from "./errors.js";
 
 /** Assemble shared tools, a bounded child, and parent-only capabilities for every host. */
 export function createAgent(config: Config, baseTools: Tools = defaultTools, transport?: typeof fetch,
-  skills?: SkillCatalog, identity?: SessionExecutionIdentity, attachments?: AttachmentAccess, memory?: MemoryAccess) {
+  skills?: SkillCatalog, identity?: SessionExecutionIdentity, attachments?: AttachmentAccess, memory?: MemoryAccess,
+  connections = new ModelConnections(config)) {
   const attachmentTools = attachments ? withAttachments(baseTools, attachments, createDocumentVision(config, transport)) : baseTools;
   const fileTools = memory ? withMemories(attachmentTools, memory) : attachmentTools;
   const sharedTools = skills ? withSkills(fileTools, skills) : fileTools;
@@ -33,10 +38,23 @@ export function createAgent(config: Config, baseTools: Tools = defaultTools, tra
   const tools = memory ? withMemoryWriter(parentTools) : parentTools;
   const model = bind(withGuidance(createModel(config, transport, tools),
     () => [delegationPolicy, sharedGuidance(), `Current local time: ${new Date().toString()}. ${automationGuidance}`].filter(Boolean).join("\n\n")));
-  return { tools, model, maxIterations: config.maxIterations,
+  const modelSelection = { ...defaultModelSelection(config.provider, config.region, config.model, config.workspaceId),
+    ...(config.thinking !== undefined ? { thinking: config.thinking } : {}) };
+  return { tools, model, maxIterations: config.maxIterations, modelSelection,
+    modelChoices: () => connections.list(),
+    forModel: (selection: ModelSelection, current: SessionAgentOptions): SessionAgentOptions => {
+      if (current.model !== model || current.tools !== tools) {
+        throw new HarnessError("MODEL_UNAVAILABLE", "This injected agent does not support model switching.");
+      }
+      const resolved = connections.resolve(selection);
+      const { workspaceId: _workspace, thinking: _thinking, ...base } = config;
+      const bound = createAgent({ ...base, ...resolved.selection, apiKey: resolved.apiKey },
+        baseTools, transport, skills, identity, attachments, memory, connections);
+      return { ...current, ...bound };
+    },
     // Rebind generated components while preserving caller-supplied tools and models.
     forSession: (scope: SessionExecutionIdentity, current: SessionAgentOptions, access?: AttachmentAccess, memories?: MemoryAccess): SessionAgentOptions => {
-      const bound = createAgent(config, baseTools, transport, skills, scope, access, memories);
+      const bound = createAgent(config, baseTools, transport, skills, scope, access, memories, connections);
       return { ...current,
         ...(current.tools === tools ? { tools: bound.tools } : {}),
         model: current.model === model ? bound.model : bindSessionModel(current.model, scope, memories) };
@@ -46,7 +64,8 @@ export function createAgent(config: Config, baseTools: Tools = defaultTools, tra
 }
 
 /** Retain execution journals per workspace while refreshing its skill catalog on selection. */
-export function workspaceAgentFactory(config: Config, buildTools: (workspace: string) => Promise<Tools>, transport?: typeof fetch) {
+export function workspaceAgentFactory(config: Config, buildTools: (workspace: string) => Promise<Tools>, transport?: typeof fetch,
+  connections = new ModelConnections(config)) {
   const workspaces = new Map<string, Tools>();
   return async (workspace: string) => {
     const canonical = await canonicalWorkspace(workspace);
@@ -57,7 +76,7 @@ export function workspaceAgentFactory(config: Config, buildTools: (workspace: st
       workspaces.set(key, tools);
     }
     const skills = await discoverSkills({ workspace: tools.workspaceRoot! });
-    return { ...createAgent(config, tools, transport, skills), skills };
+    return { ...createAgent(config, tools, transport, skills, undefined, undefined, undefined, connections), skills };
   };
 }
 

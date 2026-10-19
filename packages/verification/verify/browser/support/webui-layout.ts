@@ -64,16 +64,20 @@ export async function verifyNavigationSettings(page: Page, checkLayout: (page: P
 		assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
 		await page.setViewportSize({ width, height: 480 });
 		assert.equal(await page.locator("#settings-panel").evaluate((node) => node.matches(":modal")), true);
+		// The entrance intentionally translates the dialog; measure its settled geometry.
+		await page.waitForFunction(() => document.querySelector("#settings-panel")!.getAnimations()
+			.every((animation) => animation.playState === "finished"));
 		await checkLayout(page, `settings-short-${width}`);
 		await page.setViewportSize({ width, height: 768 });
 		await checkLayout(page, `settings-dark-${width}`);
 		const dialog = await page.locator("#settings-panel").evaluate((node) => {
 			const box = node.getBoundingClientRect();
 			return { modal: node.matches(":modal"), x: box.left + box.width / 2 - innerWidth / 2,
-				y: box.top + box.height / 2 - innerHeight / 2 };
+				y: box.top + box.height / 2 - innerHeight / 2, transform: getComputedStyle(node).transform,
+				animations: node.getAnimations().map((animation) => ({ state: animation.playState, time: animation.currentTime })) };
 		});
 		assert.equal(dialog.modal, true, "Settings blocks background interaction");
-		assert.ok(Math.abs(dialog.x) <= 1 && Math.abs(dialog.y) <= 1, "Settings is centered in the whole viewport");
+		assert.ok(Math.abs(dialog.x) <= 1 && Math.abs(dialog.y) <= 1, `Settings is centered in the whole viewport: ${JSON.stringify(dialog)}`);
 		await page.locator("#close-settings").focus();
 		await page.keyboard.press("Shift+Tab");
 		assert.equal(await page.locator("#settings-panel button:not(:disabled)").last().evaluate((node) => node === document.activeElement), true,

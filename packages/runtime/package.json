@@ -65,6 +65,10 @@
       "types": "./dist/context/manager.d.ts",
       "import": "./dist/context/manager.js"
     },
+    "./context/usage": {
+      "types": "./dist/context/usage.d.ts",
+      "import": "./dist/context/usage.js"
+    },
     "./documents/types": {
       "types": "./dist/documents/types.d.ts",
       "import": "./dist/documents/types.js"
@@ -92,6 +96,18 @@
     "./model-usage": {
       "types": "./dist/model-usage.d.ts",
       "import": "./dist/model-usage.js"
+    },
+    "./model-catalog": {
+      "types": "./dist/model-catalog.d.ts",
+      "import": "./dist/model-catalog.js"
+    },
+    "./model-connections": {
+      "types": "./dist/model-connections.d.ts",
+      "import": "./dist/model-connections.js"
+    },
+    "./model-protocol": {
+      "types": "./dist/model-protocol.d.ts",
+      "import": "./dist/model-protocol.js"
     },
     "./permissions/approval": {
       "types": "./dist/permissions/approval.d.ts",

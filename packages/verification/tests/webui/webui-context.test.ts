@@ -8,7 +8,7 @@ import type { Model, ModelTurn } from "@fatcat/runtime/model";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import type { Tools } from "@fatcat/runtime/tools";
-import { WebContextUsage } from "@fatcat/webui/internal/context-usage";
+import { defaultModelSelection } from "@fatcat/runtime/model-catalog";
 import { WebUiController } from "@fatcat/webui/internal/controller";
 import type { WebUiInfo } from "@fatcat/webui/internal/types";
 import { temporaryWorkspace } from "../support/workspace.js";
@@ -28,63 +28,27 @@ async function finished(controller: WebUiController): Promise<void> {
 
 async function controllerFor(t: TestContext, model: Model, tools?: Tools): Promise<WebUiController> {
   const { workspace } = await temporaryWorkspace(t);
-  const manager = await SessionManager.open({ model, maxIterations: 3, ...(tools ? { tools } : {}) },
+  const manager = await SessionManager.open({ model, modelSelection: defaultModelSelection("deepseek"), maxIterations: 3, ...(tools ? { tools } : {}) },
     { workspace, persistence: false });
   const controller = await WebUiController.create({ ...info, workspace }, manager);
   t.after(() => controller.close());
   return controller;
 }
 
-test("context usage uses exact documented model capacities and keeps unknowns distinct from zero", () => {
-  const models: [string, string, number][] = [
-    ["deepseek", "deepseek-flash", 1_048_576], ["deepseek", "deepseek-v4-pro", 1_048_576],
-    ["kimi", "kimi-k2.6", 262_144], ["mimo", "mimo-v2.6-flash", 1_048_576],
-    ["mimo", "mimo-v2.6-pro", 1_048_576], ["qwen", "qwen-plus", 1_000_000],
-    ["qwen", "qwen3.8-max", 1_000_000], ["qwen", "qwen3.8-flash", 1_000_000],
-    ["qwen", "qwen3.7-plus", 1_000_000], ["qwen", "qwen3-vl-plus", 262_144],
-    ["kimi", "kimi-k2.7-code", 262_144],
-  ];
-  for (const [provider, model, capacityTokens] of models) {
-    assert.deepEqual(new WebContextUsage(provider, model).snapshot(), { promptTokens: null, capacityTokens });
-  }
-  for (const [provider, model] of [["deepseek", "custom"], ["other", "deepseek-flash"], ["qwen", "qwen-plus-custom"],
-    ["kimi", "kimi-k2.5"], ["kimi", "kimi-k3"], ["mimo", "mimo-v2.5-pro"], ["__proto__", "constructor"]]) {
-    assert.equal(new WebContextUsage(provider!, model!).snapshot().capacityTokens, null);
-  }
-  const meter = new WebContextUsage("deepseek", "custom");
-  meter.observe({ type: "model_usage", iteration: 1, usage: usage(150) });
-  assert.deepEqual(meter.snapshot(), { promptTokens: 150, capacityTokens: null });
-  meter.snapshot().promptTokens = 999;
-  assert.equal(meter.snapshot().promptTokens, 150);
-  meter.observe({ type: "model_usage", iteration: 2, usage: usage(290) });
-  assert.equal(meter.snapshot().promptTokens, 290);
-  meter.observe({ type: "model_request", iteration: 3 });
-  meter.observe({ type: "model_input", iteration: 3, bytes: 100, limitBytes: 12345, accepted: false });
-  assert.equal(meter.snapshot().promptTokens, null);
-  meter.observe({ type: "model_usage", iteration: 3, usage: { promptTokens: 10, completionTokens: 1, totalTokens: 22 } });
-  assert.equal(meter.snapshot().promptTokens, null);
-  meter.observe({ type: "model_usage", iteration: 3, usage: usage(-1) });
-  assert.equal(meter.snapshot().promptTokens, null);
-  meter.observe({ type: "model_usage", iteration: 4, usage: usage(0) });
-  assert.equal(meter.snapshot().promptTokens, 0);
-  meter.observe({ type: "model_usage", iteration: 4, usage: null });
-  assert.equal(meter.snapshot().promptTokens, null);
-});
-
-test("Web UI context reflects the latest parent request without child or cumulative tokens", async (t) => {
+test("Web UI keeps reported main input, cumulative usage and current estimates separate", async (t) => {
   let controller: WebUiController;
   const tools: Tools = { definitions: [], execute: async () => ({ ok: true, result: "Unused" }),
     forTurn: (onEvent) => ({ definitions: [], execute: async () => {
       onEvent?.({ type: "subagent_event", callId: "child", event: { type: "model_request", iteration: 1 } });
       onEvent?.({ type: "subagent_event", callId: "child", event: { type: "model_usage", iteration: 1, usage: usage(222) } });
-      assert.equal(controller.snapshot().contextUsage.promptTokens, 90);
+      assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 90);
       return { ok: true, result: "Child completed" };
     } }) };
   let requests = 0;
   const model: Model = async (_messages, _signal, observe) => {
     requests++;
-    // A new parent request clears the prior response before any transport observation.
-    assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+    // Occupancy becomes pending; historical reported input remains a separate observation.
+    assert.equal(controller.snapshot().contextUsage?.estimate.status, "pending");
     if (requests === 1) {
       observe?.({ type: "model_usage", usage: usage(90) });
       const toolCalls = [{ id: "child", type: "function" as const, function: { name: "fixture", arguments: "{}" } }];
@@ -99,80 +63,70 @@ test("Web UI context reflects the latest parent request without child or cumulat
   controller = await controllerFor(t, model, tools);
   controller.submit("Delegate"); await finished(controller);
   const state = controller.snapshot();
-  assert.deepEqual(state.contextUsage, { promptTokens: 170, capacityTokens: 1_048_576 });
+  assert.equal(state.contextUsage?.lastReportedInput?.inputTokens, 170);
+  assert.equal(state.contextUsage?.consumption.tokens?.promptTokens, 482);
+  assert.equal(state.contextUsage?.estimate.status, "unknown");
   assert.equal(state.turns[0]?.report?.tokenUsage.parent.totals?.promptTokens, 260);
   assert.equal(state.turns[0]?.report?.tokenUsage.children.totals?.promptTokens, 222);
   controller.submit("Transport fails"); await finished(controller);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens, 170);
   controller.submit("Missing usage"); await finished(controller);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, null);
   controller.submit("Response fails after usage"); await finished(controller);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, 75);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 75);
 });
 
-test("auxiliary document usage is not presented as conversation context capacity", () => {
-  const meter = new WebContextUsage("kimi", "kimi-k2.6");
-  meter.observe({ type: "model_request", iteration: 1 });
-  meter.observe({ type: "model_usage", iteration: 1, usage: usage(90) });
-  assert.equal(meter.snapshot().promptTokens, 90);
-  meter.observe({ type: "model_request", iteration: 2, purpose: "document" });
-  meter.observe({ type: "model_usage", iteration: 2, usage: usage(1800) });
-  assert.deepEqual(meter.snapshot(), { promptTokens: null, capacityTokens: 262_144 });
-  meter.observe({ type: "model_request", iteration: 3 });
-  meter.observe({ type: "model_usage", iteration: 3, usage: usage(140) });
-  assert.equal(meter.snapshot().promptTokens, 140);
-});
-
-test("active session changes clear context telemetry while inactive management preserves it", async (t) => {
+test("Web session switches restore runtime usage and new sessions or forks start fresh accounting", async (t) => {
   let requests = 0;
   const controller = await controllerFor(t, async (_messages, _signal, observe) => {
     observe?.({ type: "model_usage", usage: usage(++requests * 10) }); return answer();
   });
   const first = controller.snapshot().current.id;
   controller.submit("First"); await finished(controller);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, 10);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 10);
   await controller.newSession("Second");
-  assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, null);
   controller.submit("Second"); await finished(controller);
   const second = controller.snapshot().current.id;
   await controller.rename("Inactive renamed", first);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, 20);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 20);
   await controller.deleteSession(first);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, 20);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 20);
   await controller.rename("Active renamed", second);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, 20);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 20);
   await assert.rejects(controller.resume("missing-session"), /matching in-memory session/);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, 20);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 20);
   await controller.fork("Branch", second);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, null);
   controller.submit("Branch"); await finished(controller);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, 30);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 30);
   await controller.resume(second);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens, 20);
   controller.submit("Resumed"); await finished(controller);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, 40);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 40);
   await controller.deleteSession(second);
-  assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, null);
   controller.submit("Replacement"); await finished(controller);
   await controller.reset();
-  assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+  assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, null);
 });
 
 test("restored transcripts do not fabricate context token observations", async (t) => {
   const { base, workspace } = await temporaryWorkspace(t);
   const store = new SessionStore({ root: join(base, "sessions") });
-  const agent = { maxIterations: 1, model: (async (_messages, _signal, observe) => {
+  const agent = { modelSelection: defaultModelSelection("deepseek"), maxIterations: 1, model: (async (_messages, _signal, observe) => {
     observe?.({ type: "model_usage", usage: usage(42) }); return answer();
   }) satisfies Model };
   const first = await WebUiController.create({ ...info, workspace }, await SessionManager.open(agent, { workspace, store }));
   t.after(() => first.close());
   first.submit("Saved"); await finished(first);
-  assert.equal(first.snapshot().contextUsage.promptTokens, 42);
+  assert.equal(first.snapshot().contextUsage?.lastReportedInput?.inputTokens ?? null, 42);
   const id = first.snapshot().current.id;
   await first.close();
   const restored = await WebUiController.create({ ...info, workspace }, await SessionManager.open(agent,
     { workspace, store, selection: { resume: id } }));
   t.after(() => restored.close());
   assert.equal(restored.snapshot().turns[0]?.answer, "Done");
-  assert.deepEqual(restored.snapshot().contextUsage, { promptTokens: null, capacityTokens: 1_048_576 });
+  assert.deepEqual(restored.snapshot().contextUsage?.lastReportedInput, first.snapshot().contextUsage?.lastReportedInput);
+  assert.equal(restored.snapshot().contextUsage?.estimate.status, "unknown");
 });

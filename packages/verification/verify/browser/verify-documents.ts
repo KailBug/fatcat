@@ -82,6 +82,15 @@ await manager.newSession("Reader", project.id);
 const reader = manager.current.id;
 const controller = await WebUiController.create({ workspace, provider: config.provider, model: config.model, permission: "read-only",
 	shellPermission: "deny", webPermission: "deny", maxIterations: config.maxIterations, maxRequestBytes: 262144, skills: 0, warnings: [] }, manager);
+// A visible answer is not the turn-settlement signal. Hold final preview to exercise that interval.
+let releasePreview!: () => void;
+const pendingPreview = new Promise<void>((done) => { releasePreview = done; });
+const previewContext = manager.previewContext.bind(manager);
+let previewHeld = false;
+manager.previewContext = async (signal) => {
+	if (imageRequests === 1 && !manager.isBusy && !previewHeld) { previewHeld = true; await pendingPreview; }
+	return previewContext(signal);
+};
 const server = await startWebUiServer(controller, 0);
 let browser: Browser | undefined;
 
@@ -152,6 +161,9 @@ try {
 	for (const [prompt, label, provenance] of [["Describe the image.", "Visual evidence", "Model description"],
 		["Transcribe the image.", "Transcribed evidence", "Model transcription"]] as const) {
 		await page.getByLabel("Message Fatcat", { exact: true }).fill(prompt);
+		await page.waitForFunction(() => {
+			const send = document.querySelector("#send") as HTMLButtonElement; return !send.hidden && !send.disabled;
+		});
 		await page.getByLabel("Message Fatcat", { exact: true }).press("Enter");
 		await page.getByRole("button", { name: label, exact: true }).click();
 		await source.getByText(new RegExp(provenance)).first().waitFor();
@@ -160,9 +172,15 @@ try {
 		if (provenance === "Model description") assert.match(await source.innerText(), /not a verbatim transcription/);
 		else assert.match(await source.innerText(), /Two reviews required/);
 		await page.getByRole("button", { name: "Close source", exact: true }).click();
+		if (provenance === "Model description") {
+			assert.equal(previewHeld, true);
+			assert.equal(controller.snapshot().busy, true, "The answer can be viewed while context refresh still holds the turn");
+			assert.equal(await page.getByRole("button", { name: "Send message", exact: true }).isVisible(), false);
+			releasePreview();
+		}
 		const turn = controller.snapshot().turns.at(-1)!;
 		assert.equal(turn.report?.modelRequests.parent, 3);
-		assert.equal(controller.snapshot().contextUsage.promptTokens, 20);
+		assert.equal(controller.snapshot().contextUsage?.lastReportedInput?.inputTokens, 20);
 		assert.equal(turn.sources?.reads[0]?.mode, provenance === "Model description" ? "visual" : "transcribe");
 	}
 	assert.equal(imageRequests, 2);
@@ -188,7 +206,14 @@ try {
 	assert.equal(modelRequests, 12);
 	assert.deepEqual(errors, []);
 	console.log("Verified real Edge with real local parsing and createAgent: project-shared DOCX headings, XLSX formula/cache warnings, PPTX notes, PNG uncovered status, legacy format status, immutable PDF source selection and exact download, source evidence after reload, mobile layout, same-model visual/transcription source provenance and request accounting, no credential/image bytes in history, cross-chat cached transcription without another model request, and delegated source evidence with working source links. SDK responses were injected; no live API calls or visual-quality claim.");
+} catch (error) {
+	console.error(JSON.stringify({ busy: controller.snapshot().busy, status: controller.snapshot().status,
+		turns: controller.snapshot().turns.map((turn) => ({ prompt: turn.prompt, status: turn.status, error: turn.error })), modelRequests, imageRequests,
+		composer: await browser?.contexts()[0]?.pages()[0]?.evaluate(() => ({ draft: (document.querySelector("#prompt") as HTMLTextAreaElement).value,
+			sendDisabled: (document.querySelector("#send") as HTMLButtonElement).disabled })) }));
+	throw error;
 } finally {
+	releasePreview();
 	await browser?.close();
 	await server.close();
 	const target = resolve(base);

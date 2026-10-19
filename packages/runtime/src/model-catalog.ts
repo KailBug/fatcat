@@ -100,7 +100,8 @@ export function getModelDescriptor(provider: Provider, model: string): ModelDesc
 	const canonical = provider === "qwen" && Object.hasOwn(snapshots, model) ? snapshots[model] : model;
 	const entry = catalog.find((item) => item.provider === provider && item.model === canonical);
 	return entry ? { ...structuredClone(entry), model, label: model === canonical ? entry.label : `${entry.label} (${model})`,
-		known: true, defaultThinking: entry.defaultThinking ?? "off" }
+		known: true, defaultThinking: entry.thinkingOptions.includes("medium") ? "medium"
+			: entry.defaultThinking ?? (entry.thinkingOptions.includes("on") ? "on" : "off") }
 		: { provider, model, label: model, known: false, contextWindowTokens: null, inputLimitTokens: null,
 			imageInput: false, thinkingOptions: ["off"], defaultThinking: "off",
 			protocol: provider === "qwen" ? "qwen-legacy" : provider === "kimi" ? "kimi-toggle" : provider };

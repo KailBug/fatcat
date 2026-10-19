@@ -25,7 +25,8 @@ test("cache parsing supports both documented formats without inventing missing c
   assert.deepEqual(parseTokenUsage({ ...counts, prompt_tokens_details: { cached_tokens: 30 } }), { ...basic, cachedPromptTokens: 30 });
   assert.deepEqual(parseTokenUsage({ ...counts, prompt_cache_hit_tokens: 40, prompt_cache_miss_tokens: 60 }), { ...basic, cachedPromptTokens: 40 });
   assert.deepEqual(parseTokenUsage({ ...counts, prompt_cache_hit_tokens: 0 }), { ...basic, cachedPromptTokens: 0 });
-  assert.deepEqual(parseTokenUsage({ ...counts, prompt_cache_miss_tokens: 100 }), basic);
+  assert.deepEqual(parseTokenUsage({ ...counts, prompt_cache_miss_tokens: 100 }), { ...basic, cachedPromptTokens: 0 });
+  assert.deepEqual(parseTokenUsage({ ...counts, prompt_cache_miss_tokens: 60 }), { ...basic, cachedPromptTokens: 40 });
   assert.deepEqual(parseTokenUsage({ ...counts, prompt_cache_hit_tokens: 50,
     prompt_cache_miss_tokens: 50, prompt_tokens_details: { cached_tokens: 50 } }), { ...basic, cachedPromptTokens: 50 });
 });

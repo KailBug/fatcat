@@ -100,7 +100,9 @@ Project 接入规则集中在 `session/projects.ts`：迁入预览和确认每�
 
 思考响应保存在 assistant.modelContext，包含来源身份和完整厂商 assistant message；解码核对角色、内容及工具事实与规范历史一致。模型请求只在身份匹配且当前协议允许时回传私有数据，跨模型保留普通文本和工具事实。摘要输入剥离该字段；记录仍受既有大小和历史校验约束。该字段不授予权限、恢复审批或重放工具。具体协议见 [Providers](PROVIDERS.md)。
 
-本阶段提供 runtime API 与恢复后的客户端模型标签同步；模型菜单、思考滑条、Web 切换路由和上下文估算仍待后续阶段，不把 API 验证表述为这些交互已经完成。
+runtime API 与恢复后的客户端模型标签同步已实现。只读请求预览及消费/实测/估算分离见 [Context](CONTEXT.md#当前输入估算第三阶段已实现的-runtime-接口)；第四阶段的模型菜单、思考滑条、Web 切换路由和圆环/详情已接入同一 Manager，交互与注入 Edge 验证范围见 [Web UI](WEBUI.md#模型思考与上下文控件)。
+
+SessionRecord 的可选 v3 字段 consumption、lastReportedInput 保存合法用量累计与最近普通响应观察；它们由 AgentSession 消费执行事件并随现有持久化边界提交。无字段的旧历史无法回填，读取不改写；预览估算和 contextRevision 只在运行实例中，恢复总是 pending。换模型/压缩保留累计，fork 清空新会话消费与观察。AgentSession 保有状态所有权，纯计量/聚合与校验位于 context 模块；SessionManager 保有活动实例及跨实例的预览结果拒绝规则。用量缺失、覆盖和缓存比例语义以 Context 为准。
 
 检查应覆盖保存/恢复、v1 升级与只读不改写、非法历史/UTF-8/超大文件、错误存储桶、文件发布失败清理与重试、项目状态新鲜度及列表/成员扫描的拒绝差异，以及修订冲突、真实第二进程 run/compact 互斥、领取释放失败、恢复提示、跨目录准备失败及三入口行为。快照与存储边界回归放在 `packages/verification/tests/session/`，项目和附件事务恢复继续在各能力测试中验证。固定存储与注入模型检查不代表真实长任务质量；浏览器会话检查不代表模型连通性。
 

@@ -48,6 +48,8 @@ read 支持 memory:list 及当前 UUID@revision；清单可做 active 正文字�
 
 每次父子模型请求重新加载当前 manifest 与部分 active 正文。notice 不写入成功历史，遗漏正文可再 read；不存在、过期或删除的记录不能因旧 read、fork 或 compact 恢复有效。该机制提供状态依据，不保证模型永不重复旧事实。
 
+上下文预览使用 MemoryAccess.preview，复用相同的 manifest、正文预算与 notice 组装，但通过只读 metadata/Memory 门禁读取。它保留执行身份与作用域校验，不创建缺失目录、不恢复事务、不回收陈旧锁；只获取和释放短暂同步锁。没有提供只读 preview 的注入访问器使上下文估算未知，不退回普通 list。普通模型执行继续使用 list 的既有恢复语义，详见 [Context](CONTEXT.md) 与 [Metadata](METADATA.md)。
+
 ## 存储与生命周期
 
 | 边界 | 上限 |

@@ -15,6 +15,7 @@ import { defaultModelSelection, getModelDescriptor } from "./model-catalog.js";
 import { resolveModelProtocol } from "./model-protocol.js";
 import { decodeModelContext, projectModelHistory } from "./model-history.js";
 import type { ModelContext } from "./model-history.js";
+import type { ModelRequestOptions, PreparedModelRequest } from "./model-preparation.js";
 import { defaultTools } from "./tools.js";
 import type { Tools } from "./tools.js";
 
@@ -28,9 +29,11 @@ export type ModelObservation =
   | { type: "context_reduction"; beforeBytes: number; afterBytes: number; omittedReadResults: number }
   | { type: "model_input"; bytes: number; limitBytes: number; accepted: boolean }
   | { type: "model_usage"; usage: TokenUsage | null };
-export type Model = (messages: Message[], signal?: AbortSignal,
+export type Model = ((messages: Message[], signal?: AbortSignal,
   observe?: (event: ModelObservation) => void,
-  options?: { toolChoice: "auto" | "none"; purpose?: "compaction" | "document" }) => Promise<ModelTurn>;
+  options?: ModelRequestOptions) => Promise<ModelTurn>) & {
+  prepare?: (messages: Message[], signal?: AbortSignal, options?: ModelRequestOptions) => Promise<PreparedModelRequest>;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -95,14 +98,14 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
     ...(transport ? { fetch: transport } : {}),
   });
 
-  const callModel: Model = async (messages, signal, observe, options) => {
+  const selection = { ...defaultModelSelection(config.provider, config.region, config.model, config.workspaceId),
+    ...(config.thinking !== undefined ? { thinking: config.thinking } : {}) };
+  const prepare: NonNullable<Model["prepare"]> = async (messages, signal, options) => {
     checkCancellation(signal);
     const descriptor = getModelDescriptor(config.provider, config.model);
     if (descriptor.chatUnavailableReason && options?.purpose !== "document" && options?.purpose !== "compaction") {
       throw new HarnessError("MODEL_UNAVAILABLE", descriptor.chatUnavailableReason);
     }
-    const selection = { ...defaultModelSelection(config.provider, config.region, config.model, config.workspaceId),
-      ...(config.thinking !== undefined ? { thinking: config.thinking } : {}) };
     const protocol = resolveModelProtocol(selection, options?.purpose);
     const includeTools = options?.purpose !== "compaction" && options?.purpose !== "document"
       && !(options?.toolChoice === "none" && config.provider === "mimo");
@@ -120,7 +123,12 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
       ...protocol.generation,
     };
     // Count the complete JSON body, including tools, guidance, history, and execution facts.
-    const prepared = prepareRequestContext(body, config.maxRequestBytes, signal);
+    return { ...prepareRequestContext(body, config.maxRequestBytes, signal, options?.completedHistory === true ? 1 : 2),
+      selection: structuredClone(selection), limitBytes: config.maxRequestBytes };
+  };
+  const callModel: Model = async (messages, signal, observe, options) => {
+    const prepared = await prepare(messages, signal, options);
+    const protocol = resolveModelProtocol(selection, options?.purpose);
     const { bytes } = prepared;
     if (prepared.omittedReadResults) observe?.({ type: "context_reduction", beforeBytes: prepared.beforeBytes,
       afterBytes: bytes, omittedReadResults: prepared.omittedReadResults });
@@ -162,6 +170,7 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
     }
   };
 
+  callModel.prepare = prepare;
   return callModel;
 }
 

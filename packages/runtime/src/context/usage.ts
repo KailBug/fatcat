@@ -1,6 +1,7 @@
 import { getModelDescriptor } from "../model-catalog.js";
 import type { ModelSelection } from "../model-catalog.js";
 import { resolveModelProtocol } from "../model-protocol.js";
+import type { SessionConsumption } from "./accounting.js";
 
 interface EstimateIdentity {
 	kind: "estimated";
@@ -24,18 +25,20 @@ export type ContextEstimate = EstimateIdentity & ({
 });
 
 /** Immutable fact about one ordinary parent request; never an estimate of current context. */
-export interface ContextObservation {
+export type ContextObservation = {
 	kind: "reported";
 	requestId: string;
 	selection: ModelSelection;
-	inputTokens: number;
 	observedAt: string;
-}
+} & ({ inputTokens: number } | { inputTokens: null; reason: string });
 
 export type ContextHeadroom = { tokens: number; status: "estimated" | "reference" }
 	| { tokens: null; status: "unknown"; reason: string };
 
 export interface ContextUsageSnapshot {
+	consumption: SessionConsumption;
+	/** Weighted cache-hit ratio (0..1) for the covered requests; null without a positive denominator. */
+	cacheHitRate: number | null;
 	contextRevision: number;
 	estimate: ContextEstimate;
 	lastReportedInput: ContextObservation | null;
@@ -56,7 +59,9 @@ export function contextHeadroom(estimate: ContextEstimate): Pick<ContextUsageSna
 		return { windowCapacityTokens, windowRemaining: unknown(reason), inputHeadroom: unknown(reason) };
 	}
 	const windowRemaining: ContextHeadroom = { tokens: windowCapacityTokens - estimate.inputTokens, status: "reference" };
-	const protocol = resolveModelProtocol(estimate.selection);
+	let protocol;
+	try { protocol = resolveModelProtocol(estimate.selection); }
+	catch { return { windowCapacityTokens, windowRemaining, inputHeadroom: unknown("The model protocol is unavailable.") }; }
 	if (protocol.outputReservationTokens === null) return { windowCapacityTokens, windowRemaining,
 		inputHeadroom: unknown("The model's generation reservation is unknown.") };
 	const inputLimit = Math.min(windowCapacityTokens - protocol.outputReservationTokens,

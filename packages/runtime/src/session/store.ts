@@ -189,7 +189,7 @@ export class SessionStore {
 
   /** Keep Memory access and project/session management under the same identity gate. */
   async withMemorySession<T>(identity: SessionExecutionIdentity, operation: () => Promise<T>, draft?: SessionRecord,
-    owner?: { ownerPid: number; startedAt: string }): Promise<T> {
+    owner?: { ownerPid: number; startedAt: string }, preview = false): Promise<T> {
     return this.attachments.withMetadata(async () => {
       let record: SessionRecord;
       try {
@@ -210,7 +210,7 @@ export class SessionStore {
         throw new HarnessError("MEMORY_SOURCE", "The user turn no longer owns this session's Memory operation.");
       }
       return operation();
-    }, false);
+    }, false, preview);
   }
 
   private async loadAnyUnlocked(selector: string): Promise<SessionRecord> {

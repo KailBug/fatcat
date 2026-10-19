@@ -33,10 +33,10 @@ for (const item of cases) {
   const config = loadConfig({ HARNESS_PROVIDER: item.provider, [item.key]: `offline-${item.provider}`,
     [`${item.provider.toUpperCase()}_MODEL`]: item.model });
 
-  test(`${item.label} (${item.model}): documented endpoint, auth, generation settings, tool round trip, and usage`, async () => {
+  test(`${item.label} (${item.model}): documented endpoint, auth, explicit thinking off, tool round trip, and usage`, async () => {
     const observations: ModelObservation[] = [];
     let calls = 0;
-    const model = createModel(config, async (input, init) => {
+    const model = createModel({ ...config, thinking: "off" }, async (input, init) => {
       const request = new Request(input, init);
       assert.equal(request.url, item.endpoint);
       assert.equal(request.headers.get("authorization"), `Bearer offline-${item.provider}`);

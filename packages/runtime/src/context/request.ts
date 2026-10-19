@@ -24,7 +24,7 @@ function omission(content: Message["content"]): string | undefined {
 }
 
 /** Project older successful reads into explicit markers; never mutate the saved conversation. */
-export function prepareRequestContext<T extends { messages: Message[] }>(body: T, limitBytes: number, signal?: AbortSignal) {
+export function prepareRequestContext<T extends { messages: Message[] }>(body: T, limitBytes: number, signal?: AbortSignal, protectedTurns = 2) {
   checkCancellation(signal);
   const beforeBytes = Buffer.byteLength(JSON.stringify(body));
   let bytes = beforeBytes;
@@ -38,7 +38,7 @@ export function prepareRequestContext<T extends { messages: Message[] }>(body: T
   let users = 0;
   for (let index = body.messages.length - 1; index >= 0; index--) {
     checkCancellation(signal);
-    if (body.messages[index]!.role === "user" && ++users === 2) { protectedFrom = index; break; }
+    if (body.messages[index]!.role === "user" && ++users === protectedTurns) { protectedFrom = index; break; }
   }
   const previous = body.messages[protectedFrom - 1];
   if (previous?.role !== "assistant" || previous.tool_calls?.length

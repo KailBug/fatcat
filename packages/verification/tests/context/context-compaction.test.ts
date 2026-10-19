@@ -343,7 +343,7 @@ test("Web UI compaction uses shared cancellation and context without presenting 
 	while (controller.snapshot().busy && performance.now() < deadline) await delay(10);
 	assert.equal(controller.snapshot().busy, false);
 	assert.match(controller.snapshot().turns.at(-1)!.answer!, /Context compacted/);
-	assert.equal(controller.snapshot().contextUsage.promptTokens, null);
+	assert.equal(controller.snapshot().contextUsage, null);
 	assert.equal(session.current.turnCount, 2);
 	assert.ok(session.context.summarizedMessages > 0);
 	await controller.resume(session.current.id);

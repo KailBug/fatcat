@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, unlink } from "node:fs/promises";
+import { mkdir, open, unlink, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { checkCancellation, HarnessError } from "../errors.js";
@@ -24,7 +24,7 @@ export class MemoryStore {
 		this.root = root === undefined ? undefined : join(resolve(root), "memory");
 	}
 
-	async list(scopes: readonly MemoryScope[], signal?: AbortSignal): Promise<MemoryRecord[]> {
+	async list(scopes: readonly MemoryScope[], signal?: AbortSignal, preview = false): Promise<MemoryRecord[]> {
 		checkCancellation(signal);
 		if (!Array.isArray(scopes)) {
 			throw new HarnessError("INVALID_ARGUMENTS", "List memory using explicit scopes.");
@@ -42,7 +42,7 @@ export class MemoryStore {
 			}
 			checkCancellation(signal);
 			return structuredClone(records);
-		}, signal);
+		}, signal, preview);
 	}
 
 	/** The caller holds the shared metadata gate until its durable session-move journal is published. */
@@ -153,16 +153,23 @@ export class MemoryStore {
 		}, signal);
 	}
 
-	private async withLock<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+	private async withLock<T>(operation: () => Promise<T>, signal?: AbortSignal, preview = false): Promise<T> {
 		checkCancellation(signal);
 		if (this.root === undefined) {
 			const result = this.pending.then(() => { checkCancellation(signal); return operation(); });
 			this.pending = result.then(() => {}, () => {});
 			return result;
 		}
-		try { await mkdir(this.root, { recursive: true, mode: 0o700 }); }
+		if (preview) {
+			try { await stat(this.root); }
+			catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return operation();
+				throw error;
+			}
+		}
+		try { if (!preview) await mkdir(this.root, { recursive: true, mode: 0o700 }); }
 		catch { throw new HarnessError("MEMORY_IO", "Could not create the local memory directory."); }
-		const release = await this.lock(signal);
+		const release = await this.lock(signal, preview);
 		try { checkCancellation(signal); return await operation(); }
 		finally { await release(); }
 	}
@@ -173,7 +180,7 @@ export class MemoryStore {
 		return structuredClone(this.records.get(memoryScopeKey(scope)) ?? []);
 	}
 
-	private async lock(signal?: AbortSignal): Promise<() => Promise<void>> {
+	private async lock(signal?: AbortSignal, preview = false): Promise<() => Promise<void>> {
 		const path = join(this.root!, "store.lock");
 		for (let attempt = 0; attempt < lockAttempts; attempt++) {
 			checkCancellation(signal);
@@ -187,7 +194,7 @@ export class MemoryStore {
 				if (code !== "EEXIST" && !retryAccess) {
 					throw new HarnessError("MEMORY_IO", "Could not lock the memory scope.");
 				}
-				if (code === "EEXIST") await this.recoverLock(path, signal);
+				if (code === "EEXIST" && !preview) await this.recoverLock(path, signal);
 				try { await delay(lockRetryMilliseconds, undefined, { signal }); }
 				catch { checkCancellation(signal); throw new HarnessError("MEMORY_IO", "Could not wait for the memory scope lock."); }
 				continue;

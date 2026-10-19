@@ -5,7 +5,8 @@ import type { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import type { ProjectRecord } from "@fatcat/runtime/project/record";
 import type { SessionSummary } from "@fatcat/runtime/session/record";
 import type { AttachmentEvidence } from "./attachment-evidence.js";
-import type { ContextUsage } from "./context-usage.js";
+import type { ContextUsageSnapshot } from "@fatcat/runtime/context/usage";
+import type { ModelChoice } from "@fatcat/runtime/model-connections";
 
 export interface WebUiInfo {
 	provider: string;
@@ -44,7 +45,8 @@ export interface WebUiState {
 	current: SessionSummary;
 	sessions: SessionSummary[];
 	persistent: boolean;
-	contextUsage: ContextUsage;
+	contextUsage: ContextUsageSnapshot | null;
+	modelChoices: ModelChoice[];
 	permissionMode: ReturnType<PermissionPolicy["snapshot"]>;
 	automations: SessionAutomation[];
 	automationNotice: string;

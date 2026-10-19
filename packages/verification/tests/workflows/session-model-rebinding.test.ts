@@ -19,7 +19,8 @@ test("session switching rebinds parent, child, image and summary requests across
 	const connections = new ModelConnections(config, { MIMO_API_KEY: "offline-mimo" });
 	let reference = "";
 	const seen: string[] = [];
-	const factory = workspaceAgentFactory(config, (root) => createTools(root), async (input, init) => {
+	let projection = "";
+	const baseFactory = workspaceAgentFactory(config, (root) => createTools(root), async (input, init) => {
 		const request = new Request(input, init);
 		const body = await request.json() as { model: string; thinking: { type: string }; messages: { role: string; content: unknown }[];
 			tools?: { function: { name: string } }[] };
@@ -40,8 +41,17 @@ test("session switching rebinds parent, child, image and summary requests across
 				tool_calls: [{ id: "request-call", type: "function", function: call }] };
 		}
 		if (kind === "summary") assert.ok(!JSON.stringify(body).includes("PRIVATE_PARENT"));
-		return Response.json({ choices: [{ finish_reason: message.tool_calls ? "tool_calls" : "stop", message }] });
+		const inputTokens = { parent: 100, child: 300, image: 400, summary: 500 }[kind];
+		return Response.json({ choices: [{ finish_reason: message.tool_calls ? "tool_calls" : "stop", message }],
+			usage: { prompt_tokens: inputTokens, completion_tokens: 10, total_tokens: inputTokens + 10 } });
 	}, connections);
+	const factory = async (root: string) => ({ ...await baseFactory(root), inputCounter: {
+		supports: () => true,
+		count: async (request: import("@fatcat/runtime/internal/model-preparation").PreparedModelRequest) => {
+			projection = JSON.stringify(request.body.messages);
+			return { inputTokens: projection.length, method: "fixture", approximate: true, limitations: [] };
+		},
+	} });
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const manager = await SessionManager.open(await factory(workspace), { workspace, store, agentForWorkspace: factory });
 	await manager.setModel(selected);
@@ -49,10 +59,24 @@ test("session switching rebinds parent, child, image and summary requests across
 	const target = await manager.beginAttachmentUpload(manager.current.id, "fixture.png", bytes.length);
 	reference = attachmentReference(await manager.uploadAttachment(target, (async function* () { yield bytes; })()));
 	await manager.run("Delegate");
+	assert.equal(manager.contextUsage?.consumption.tokens?.promptTokens, 500);
+	assert.equal(manager.contextUsage?.lastReportedInput?.inputTokens, 100);
+	await manager.previewContext();
+	assert.match(projection, /child complete/);
 	await manager.setWorkspace(outside);
 	assert.deepEqual(manager.current.modelSelection, selected);
 	await manager.run("Inspect image");
+	await manager.previewContext();
+	assert.match(projection, /image complete/);
+	assert.equal(manager.contextUsage?.consumption.tokens?.promptTokens, 1100);
+	assert.equal(manager.contextUsage?.lastReportedInput?.inputTokens, 100);
+	const observed = manager.contextUsage?.lastReportedInput;
 	await manager.compact();
+	await manager.previewContext();
+	assert.match(projection, /summary complete/);
+	assert.equal(manager.contextUsage?.consumption.tokens?.totalTokens, 1670);
+	assert.equal(manager.contextUsage?.consumption.reportedRequests, 7);
+	assert.deepEqual(manager.contextUsage?.lastReportedInput, observed);
 	assert.deepEqual(seen, ["parent", "child", "parent", "parent", "image", "parent", "summary"]);
 	assert.equal(manager.current.turnCount, 2);
 	assert.ok(manager.context.summarizedMessages > 0);

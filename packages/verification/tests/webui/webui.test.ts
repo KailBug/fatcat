@@ -297,7 +297,7 @@ test("local HTTP boundary protects state and mutations and serves only built UI 
   assert.equal(state.status, 200);
   assert.ok(!(await state.text()).includes(token));
   assert.equal((await fetch(`${server.origin}/api/state`, { headers: { ...headers, "If-None-Match": state.headers.get("etag")! } })).status, 304);
-  for (const path of ["/", "/app.js", "/transcript.js", "/session-list.js", "/composer-motion.js", "/settings.js", "/markdown.js", "/session-menu.js", "/session-dialog.js", "/styles.css", "/mini-logo.png", "/walking.png", "/looking.png", "/sleeping.png", "/icons.js", "/icons.svg", "/icons-LICENSE.txt"]) {
+  for (const path of ["/", "/app.js", "/transcript.js", "/session-list.js", "/composer-motion.js", "/model-controls.js", "/settings.js", "/markdown.js", "/session-menu.js", "/session-dialog.js", "/styles.css", "/mini-logo.png", "/walking.png", "/looking.png", "/sleeping.png", "/icons.js", "/icons.svg", "/icons-LICENSE.txt"]) {
     const response = await fetch(server.origin + path);
     assert.equal(response.status, 200, path);
     assert.match(response.headers.get("content-security-policy")!, /frame-ancestors 'none'/);

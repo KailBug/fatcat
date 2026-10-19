@@ -23,6 +23,7 @@
     "verify:web": "pnpm run build && node packages/verification/dist/verify/network/verify-web.js",
     "verify:browser": "pnpm run build && node packages/verification/dist/verify/browser/verify-browser.js",
     "verify:webui": "pnpm run build && node packages/verification/dist/verify/browser/verify-webui-design.js",
+    "verify:webui-models": "pnpm run build && node packages/verification/dist/verify/browser/verify-webui-models.js",
     "verify:sessions": "pnpm run build && node packages/verification/dist/verify/browser/verify-session-workspaces.js",
     "verify:projects": "pnpm run build && node packages/verification/dist/verify/browser/verify-projects.js",
     "verify:project-management": "pnpm run build && node packages/verification/dist/verify/browser/verify-project-management.js",

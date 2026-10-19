@@ -56,8 +56,8 @@
             <button id="workspace-picker" type="button" class="workspace-path" aria-label="Change workspace" aria-haspopup="dialog" disabled><span class="workspace-path-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#folder"></use></svg></span><span id="workspace" class="composer-workspace" aria-label="Current workspace">Connecting…</span></button>
           </div>
           <div class="composer-secondary-tools">
-            <span class="model-pill" id="model" tabindex="0" aria-label="Selected model">Connecting</span>
-            <span id="context-usage" class="context-chip" tabindex="0" aria-label="Model context usage"><span class="context-ring" aria-hidden="true"></span></span>
+            <button class="model-pill" id="model" type="button" aria-label="Selected model" disabled>Connecting</button>
+            <button id="context-usage" class="context-chip" type="button" aria-label="Current context usage" disabled><span class="context-ring" aria-hidden="true"></span></button>
             <div class="composer-action">
               <button id="send" class="send-button" type="submit" aria-label="Send message" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#arrow-up"></use></svg></button><button id="stop" class="send-button stop-button" type="button" aria-label="Stop current turn" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="/icons.svg#square"></use></svg></button>
               <button id="wake-composer" class="wake-composer" type="button" aria-label="Expand message box" title="Expand message box" aria-controls="composer-input" aria-expanded="true" aria-hidden="true" tabindex="-1" disabled><img src="/sleeping.png" alt="" width="36" height="36"></button>

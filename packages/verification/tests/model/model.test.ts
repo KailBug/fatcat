@@ -23,7 +23,9 @@ test("SDK requests use only the DeepSeek endpoint and the configured non-streami
     const body = await request.json() as Record<string, unknown>;
     assert.equal(body.model, "deepseek-flash");
     assert.equal(body.stream, false);
-    assert.deepEqual(body.thinking, { type: "disabled" });
+    assert.deepEqual(body.thinking, { type: "enabled" });
+    assert.equal(body.reasoning_effort, "high");
+    assert.equal(body.max_tokens, 16384);
     assert.equal(body.tool_choice, "auto");
     assert.equal((body.tools as unknown[]).length, 1);
     assert.deepEqual(body.messages, messages);

@@ -17,6 +17,7 @@ import { ProjectActionDialog } from "./project-actions.js";
 import { AttachmentsPanel } from "./attachments.js";
 import { SettingsPanel } from "./settings.js";
 import { ComposerMotion } from "./composer-motion.js";
+import { ModelControls } from "./model-controls.js";
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
@@ -53,7 +54,6 @@ const sessionDialog = new SessionDialog(sessionMutation, () => connected && !sen
 const permissionMenu = new PermissionMenu(element<HTMLButtonElement>("permission-mode"), element("permission-menu"),
   (mode) => { void api("permission-mode", { mode }); });
 const tokenCount = new Intl.NumberFormat("en-US");
-const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 const filePreview = new FilePreview(() => token);
 const browserEvidence = new BrowserEvidenceView(() => token);
 const cron = new CronPanel(api);
@@ -95,8 +95,14 @@ element("workspace-picker").addEventListener("click", () => {
   if (state) void api("session/choose-workspace", { id: state.current.id }, 310_000);
 });
 
+const modelControls = new ModelControls(element<HTMLButtonElement>("model"), element<HTMLButtonElement>("context-usage"),
+  async (selection, current) => { await request("model", { sessionId: current.current.id, revision: current.current.revision,
+    previous: current.current.modelSelection, selection }); }, async () => { if (!sending) await request("context/refresh", {}); });
+element("model").addEventListener("click", () => { if (state) modelControls.openModel(state); });
+
 function showError(message: string): void { notice.textContent = message; notice.hidden = false; }
 function controls(): void {
+  modelControls.update(state, connected, sending);
   filePreview.update(connected && !state?.current.projectError);
   const busy = Boolean(state?.busy);
   prompt.disabled = !connected;
@@ -200,9 +206,7 @@ function render(next: WebUiState): void {
   const follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140 || next.turns.length !== state?.turns.length || next.approval?.id !== state?.approval?.id || next.current.id !== state?.current.id;
   state = next;
   element("welcome").hidden = next.turns.length > 0;
-  element("model").textContent = next.info.model;
-  element("model").title = `${next.info.provider} · ${next.info.model}`;
-  renderContextUsage(next);
+
   element("workspace").textContent = next.info.workspace;
   element("workspace").title = `${next.info.workspace}\nWrite ${next.info.permission} · Shell ${next.info.shellPermission} · Web ${next.info.webPermission}`;
   element("workspace-picker").title = next.current.projectId ? "This chat uses its project folder. Use the project menu to change it for every project chat." : "Change workspace";
@@ -218,30 +222,12 @@ function render(next: WebUiState): void {
   controls();
 }
 
-function renderContextUsage(next: WebUiState): void {
-  const { promptTokens, capacityTokens } = next.contextUsage;
-  const chip = element("context-usage");
-  const known = promptTokens !== null && capacityTokens !== null;
-  const percentage = known ? promptTokens / capacityTokens * 100 : 0;
-  const percentageLabel = percentage === 0 ? "0%" : percentage < 0.1 ? "<0.1%" : `${Math.round(percentage * 10) / 10}%`;
-  const label = known ? `Context ${percentageLabel}`
-    : promptTokens === null ? "Context —" : `Context ${compactTokens.format(promptTokens)} tokens`;
-  const usage = promptTokens === null ? "No input token usage is available yet."
-    : `Last request input: ${tokenCount.format(promptTokens)} tokens.`;
-  const capacity = capacityTokens === null ? "This model's context capacity is unknown."
-    : `Model context capacity: ${tokenCount.format(capacityTokens)} tokens.`;
-  chip.title = `${usage}\n${capacity}\nProvider-reported input for the latest parent request. Draft text and the latest reply are not counted.`;
-  chip.setAttribute("aria-label", `${label}. ${usage} ${capacity}`);
-  chip.dataset.known = String(known);
-  chip.style.setProperty("--context-percent", `${Math.min(100, Math.max(0, percentage))}%`);
-}
-
 function renderDetails(next: WebUiState): void {
   if (!detailsSessionId) return;
   const selected = detailsSessionId === next.current.id ? next.current : displaySessions(next).find((session) => session.id === detailsSessionId);
   if (!selected) { dialog.close(); return; }
   const content = element("details-content"); content.replaceChildren();
-  for (const [key, value] of Object.entries({ Provider: next.info.provider, Model: next.info.model, Workspace: selected.workspace,
+  for (const [key, value] of Object.entries({ Provider: selected.modelSelection?.provider ?? "Unknown", Model: selected.modelSelection?.model ?? "Unknown", Workspace: selected.workspace,
     Project: selected.projectName ?? selected.projectId ?? "Independent session", "Project status": selected.projectError ?? "Available",
     "Session ID": selected.id, "Session name": selected.name ?? selected.title,
     "Active session": selected.id === next.current.id ? "Yes" : "No",
@@ -253,8 +239,8 @@ function renderDetails(next: WebUiState): void {
     "File access scope": next.permissionMode.fileAccess === "unrestricted" ? "Local files, including outside the workspace" : "Selected workspace",
     "Web tool network scope": next.info.webPermission === "deny" ? "Disabled at launch" : next.permissionMode.networkAccess === "unrestricted" ? "Local and public HTTP(S)" : "Public HTTP(S) only",
     "Parent iteration limit": next.info.maxIterations, "Request budget (bytes)": next.info.maxRequestBytes, "Available skills": next.info.skills,
-    "Model context capacity (tokens)": next.contextUsage.capacityTokens === null ? "Unknown" : tokenCount.format(next.contextUsage.capacityTokens),
-    "Last parent request input (tokens)": selected.id !== next.current.id || next.contextUsage.promptTokens === null ? "Unavailable" : tokenCount.format(next.contextUsage.promptTokens),
+    "Model context capacity (tokens)": selected.id !== next.current.id || next.contextUsage?.windowCapacityTokens == null ? "Unknown" : tokenCount.format(next.contextUsage.windowCapacityTokens),
+    "Last parent request input (tokens)": selected.id !== next.current.id || next.contextUsage?.lastReportedInput?.inputTokens == null ? "Unavailable" : tokenCount.format(next.contextUsage.lastReportedInput.inputTokens),
     "Skill warnings": next.info.warnings.join("\n") || "None" })) content.append(node("dt", key), node("dd", String(value)));
 }
 

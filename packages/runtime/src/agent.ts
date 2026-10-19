@@ -22,6 +22,7 @@ import { ModelConnections } from "./model-connections.js";
 import { defaultModelSelection } from "./model-catalog.js";
 import type { ModelSelection } from "./model-catalog.js";
 import { HarnessError } from "./errors.js";
+import { mapModelMessages } from "./model-preparation.js";
 
 /** Assemble shared tools, a bounded child, and parent-only capabilities for every host. */
 export function createAgent(config: Config, baseTools: Tools = defaultTools, transport?: typeof fetch,
@@ -99,14 +100,14 @@ function sharedAgentGuidance(tools: Tools, skillGuidance: string, attachments?: 
 
 function withGuidance(model: Model, guidance: string | (() => string)): Model {
   if (!guidance) return model;
-  return (messages, signal, observe, options) => {
+  return mapModelMessages(model, (messages) => {
     const currentGuidance = typeof guidance === "function" ? guidance() : guidance;
-    if (!currentGuidance) return model(messages, signal, observe, options);
+    if (!currentGuidance) return messages;
     // Request-only guidance leaves Session history and independent child history untouched.
     const first = messages[0];
     const system = first?.role === "system" && typeof first.content === "string";
-    return model(system
+    return system
       ? [{ ...first, content: `${first.content}\n\n${currentGuidance}` }, ...messages.slice(1)]
-      : [{ role: "system", content: currentGuidance }, ...messages], signal, observe, options);
-  };
+      : [{ role: "system", content: currentGuidance }, ...messages];
+  });
 }

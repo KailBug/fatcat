@@ -9,6 +9,9 @@ import type { CompactionState } from "../context/manager.js";
 import { invalidSession, isRecord, validateHistory } from "./history.js";
 import { decodeModelSelection } from "../model-catalog.js";
 import type { ModelSelection } from "../model-catalog.js";
+import { decodeConsumption, decodeObservation } from "../context/accounting.js";
+import type { SessionConsumption } from "../context/accounting.js";
+import type { ContextObservation } from "../context/usage.js";
 
 export const sessionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export interface SessionAttempt {
@@ -22,6 +25,8 @@ export interface SessionAttempt {
 }
 
 export interface SessionRecord {
+	consumption?: SessionConsumption;
+	lastReportedInput?: ContextObservation;
 	version: 1 | 2 | 3;
 	modelSelection?: ModelSelection;
 	id: string;
@@ -132,6 +137,7 @@ export function decodeSessionRecord(value: unknown, workspace: string, id: strin
 		|| !isDate(value.createdAt) || !isDate(value.updatedAt) || !Number.isSafeInteger(value.revision)
 		|| Number(value.revision) < 1 || (value.forkedFrom !== null && (typeof value.forkedFrom !== "string" || !sessionIdPattern.test(value.forkedFrom)))) return invalidSession();
 	let location: SessionLocation;
+	if (value.version !== 3 && (value.consumption !== undefined || value.lastReportedInput !== undefined)) return invalidSession();
 	if (value.version === 1) {
 		if (typeof value.workspace !== "string" || !isAbsolute(value.workspace)) return invalidSession();
 		location = { kind: "standalone", workspace: value.workspace };
@@ -178,6 +184,8 @@ export function decodeSessionRecord(value: unknown, workspace: string, id: strin
 	if (value.version !== 3 && [...history, ...(attempt?.messages ?? [])]
 		.some((message) => message.role === "assistant" && message.modelContext !== undefined)) return invalidSession();
 	return { version: value.version, id, workspace: location.kind === "standalone" ? location.workspace : "",
+		...(value.consumption === undefined ? {} : { consumption: decodeConsumption(value.consumption) }),
+		...(value.lastReportedInput === undefined ? {} : { lastReportedInput: decodeObservation(value.lastReportedInput) }),
 		...(modelSelection ? { modelSelection } : {}),
 		location, locationRevision: Number(value.locationRevision ?? 0), name, title: value.title, createdAt: value.createdAt,
 		...(locationChanges ? { locationChanges } : {}), ...(activeOperation ? { activeOperation } : {}),
@@ -220,8 +228,10 @@ function decodeActiveOperation(value: unknown): SessionActiveOperation {
 export function encodeSessionRecord(record: SessionRecord): Record<string, unknown> {
 	const modelHistory = [...record.history, ...(record.attempt?.messages ?? [])]
 		.some((message) => message.role === "assistant" && message.modelContext !== undefined);
-	return { version: record.version === 3 || record.modelSelection || modelHistory ? 3 : 2,
+	return { version: record.version === 3 || record.modelSelection || modelHistory || record.consumption || record.lastReportedInput ? 3 : 2,
 		...(record.modelSelection ? { modelSelection: decodeModelSelection(record.modelSelection) } : {}),
+		...(record.consumption ? { consumption: decodeConsumption(record.consumption) } : {}),
+		...(record.lastReportedInput ? { lastReportedInput: decodeObservation(record.lastReportedInput) } : {}),
 		id: record.id, location: locationOf(record), locationRevision: record.locationRevision ?? 0,
 		storageWorkspace: record.storageWorkspace ?? record.workspace, name: record.name, title: record.title,
 		createdAt: record.createdAt, updatedAt: record.updatedAt, revision: record.revision,

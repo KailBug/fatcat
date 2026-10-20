@@ -188,6 +188,10 @@
     "./internal/*": {
       "types": "./dist/*.d.ts",
       "import": "./dist/*.js"
+    },
+    "./model-types": {
+      "types": "./dist/model-types.d.ts",
+      "import": "./dist/model-types.js"
     }
   },
   "files": [

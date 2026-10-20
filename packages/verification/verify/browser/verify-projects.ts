@@ -173,14 +173,22 @@ try {
 	await page.getByRole("button", { name: "Collapse Archive", exact: true }).click();
 	const density = await page.evaluate(() => {
 		const label = document.querySelector(".projects-label")!.getBoundingClientRect();
+		const search = document.querySelector(".session-search")!.getBoundingClientRect();
 		const groups = [...document.querySelectorAll(".project-group")].map((group) => group.getBoundingClientRect());
 		const chats = document.querySelector(".independent-sessions .section-label")!.getBoundingClientRect();
-		return { firstGap: groups[0]!.top - label.bottom, betweenGap: groups[1]!.top - groups[0]!.bottom,
+		return { searchGap: search.top - label.bottom, firstGap: groups[0]!.top - search.bottom, betweenGap: groups[1]!.top - groups[0]!.bottom,
 			lastGap: chats.top - groups.at(-1)!.bottom, heights: groups.map((group) => group.height) };
 	});
-	assert.ok(density.firstGap <= 8 && density.betweenGap <= 8 && density.lastGap <= 16,
+	assert.ok(density.searchGap <= 8 && density.firstGap <= 8 && density.betweenGap <= 8 && density.lastGap <= 16,
 		`Collapsed project navigation stays compact: ${JSON.stringify(density)}`);
 	assert.ok(density.heights.every((height) => height <= 40));
+	await page.locator("#session-search").fill("Research");
+	assert.equal(await page.locator(`[data-project-id="${project.id}"] .project-sessions`).isVisible(), true);
+	assert.equal(await page.getByRole("button", { name: "Collapse Research", exact: true }).isDisabled(), true);
+	assert.equal(await page.getByRole("button", { name: "Expand Archive", exact: true }).count(), 0);
+	await page.locator("#clear-session-search").click();
+	await page.getByRole("button", { name: "Expand Research", exact: true }).waitFor();
+	await page.getByRole("button", { name: "Expand Archive", exact: true }).waitFor();
 	if (process.env.FATCAT_VERIFY_SCREENSHOT) await page.screenshot({ path: resolve(`${process.env.FATCAT_VERIFY_SCREENSHOT}.collapsed.png`) });
 	await page.reload();
 	await page.getByRole("button", { name: "Expand Research", exact: true }).waitFor();

@@ -1,6 +1,7 @@
 import type { BrowserRecord } from "@fatcat/runtime/browser/protocol";
 import type { WebTurn } from "../types.js";
 import { renderMarkdown } from "./markdown.js";
+import { copyControl } from "./copy.js";
 
 interface TranscriptActions {
 	openReference(reference: string, sessionId: string, name?: string): void;
@@ -50,6 +51,11 @@ export class TranscriptView {
 			article.append(renderMarkdown(turn.answer, (reference) => {
 				if (sessionId) void this.actions.openReference(reference, sessionId);
 			}));
+			const actions = node("div", undefined, "answer-actions");
+			const copy = copyControl(turn.answer, "Copy answer");
+			copy.title = "Copy answer as Markdown";
+			actions.append(copy);
+			article.append(actions);
 		}
 		if (turn.error) article.append(node("p", `${turn.error}\nThis turn was not saved to model history. Completed operations remain in effect.`, "error"));
 		if (turn.sources?.reads.length) {

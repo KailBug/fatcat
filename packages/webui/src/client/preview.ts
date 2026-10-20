@@ -1,10 +1,14 @@
+import { PreviewResize } from "./preview-resize.js";
+
 type PreviewSnapshot = { path: string; url: string; bytes: number };
 
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 
 /** UI-only preview: no messages, model requests, approval decisions or tool events. */
 export class FilePreview {
-  private readonly panel = element("file-preview");
+  private readonly panel = element<HTMLDialogElement>("file-preview");
+  private readonly overlay = window.matchMedia("(max-width: 1200px)");
+  private readonly resize = new PreviewResize(element("preview-resizer"), this.panel);
   private readonly input = element<HTMLInputElement>("preview-path");
   private readonly openButton = element<HTMLButtonElement>("preview-open");
   private readonly refreshButton = element<HTMLButtonElement>("preview-refresh");
@@ -25,7 +29,15 @@ export class FilePreview {
     this.refreshButton.addEventListener("click", () => { void this.load(this.path); });
     this.input.addEventListener("input", () => this.controls());
     this.panel.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") { event.preventDefault(); this.close(); }
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.close(); }
+    });
+    this.panel.addEventListener("cancel", (event) => { event.preventDefault(); this.close(); });
+    this.overlay.addEventListener("change", () => {
+      if (this.panel.hidden) return;
+      const focused = document.activeElement;
+      this.panel.close();
+      this.show();
+      if (focused instanceof HTMLElement && this.panel.contains(focused)) focused.focus({ preventScroll: true });
     });
   }
 
@@ -39,8 +51,11 @@ export class FilePreview {
   }
 
   open(path?: string): void {
-    if (this.panel.hidden) this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : this.entry;
-    this.panel.hidden = false;
+    if (this.panel.hidden) {
+      this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : this.entry;
+      this.panel.hidden = false;
+      this.show();
+    }
     this.entry.setAttribute("aria-expanded", "true");
     if (path) this.input.value = path;
     this.input.focus();
@@ -50,13 +65,25 @@ export class FilePreview {
   }
 
   private close(): void {
+    if (this.panel.hidden) return;
     this.pending?.abort(); this.pending = undefined;
     this.viewport.replaceChildren();
     this.status.textContent = "";
     this.panel.setAttribute("aria-busy", "false");
     this.panel.hidden = true;
+    this.panel.close();
+    this.resize.update(false);
     this.entry.setAttribute("aria-expanded", "false");
-    if (this.returnFocus?.isConnected) this.returnFocus.focus(); else this.entry.focus();
+    this.controls();
+    const target = this.returnFocus?.isConnected && this.returnFocus.getClientRects().length && !this.returnFocus.matches(":disabled")
+      ? this.returnFocus : !this.entry.disabled ? this.entry : element("scroll-area");
+    target.focus({ preventScroll: true });
+  }
+
+  private show(): void {
+    if (this.overlay.matches) this.panel.showModal();
+    else this.panel.show();
+    this.resize.update(!this.overlay.matches);
   }
 
   private controls(): void {

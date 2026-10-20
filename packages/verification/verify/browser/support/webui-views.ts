@@ -72,11 +72,18 @@ export async function verifyWebUiViews(page: Page, state: WebUiState): Promise<v
 			sessions: [session, { ...session, id: "new-session", projectId: project.id }] });
 		const collapsedAfterRefresh = listContainer.querySelector<HTMLElement>(".project-sessions")!.hidden;
 		const collapsedLabel = listContainer.querySelector(".project-toggle")!.getAttribute("aria-label");
+		const grouped = { ...next, projects: [{ ...project, name: "Renamed project" }],
+			sessions: [session, { ...session, id: "new-session", projectId: project.id }] };
+		const searchCount = list.update(grouped, "ＲＥＮＡＭＥＤ");
+		const searchExpanded = !listContainer.querySelector<HTMLElement>(".project-sessions")!.hidden;
+		list.update(grouped, "missing-project");
+		list.update(grouped);
+		const collapseRestored = listContainer.querySelector<HTMLElement>(".project-sessions")!.hidden;
 		listContainer.querySelector<HTMLButtonElement>(".project-toggle")!.click();
 		const expandedAfterClick = !listContainer.querySelector<HTMLElement>(".project-sessions")!.hidden;
 		return { reused, replaced, expanded, removed, opened, reference, listReused, disabled, enabled,
 			blockedDrag: blockedDrag.defaultPrevented, selections, joins, sessionId: session.id,
-			collapsedAfterRefresh, collapsedLabel, expandedAfterClick };
+			collapsedAfterRefresh, collapsedLabel, expandedAfterClick, searchCount, searchExpanded, collapseRestored };
 	}, state);
 	assert.equal(result.reused, true);
 	assert.equal(result.replaced, true);
@@ -92,4 +99,7 @@ export async function verifyWebUiViews(page: Page, state: WebUiState): Promise<v
 	assert.equal(result.collapsedAfterRefresh, true);
 	assert.equal(result.collapsedLabel, "Expand Renamed project");
 	assert.equal(result.expandedAfterClick, true);
+	assert.equal(result.searchCount, 1);
+	assert.equal(result.searchExpanded, true);
+	assert.equal(result.collapseRestored, true);
 }

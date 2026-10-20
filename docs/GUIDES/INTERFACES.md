@@ -38,6 +38,12 @@ The server binds to `127.0.0.1:3210` by default and opens the default browser. I
 
 Enter sends a message; Shift+Enter inserts a line break. IME composition does not submit. **Stop** cancels the active turn and leaves the conversation usable. Messages are limited to 32768 UTF-8 bytes. Model responses appear when the non-streaming request completes; activity updates remain visible while it runs.
 
+Use **Copy code** for a code block without its fence or language label, or **Copy answer** for the original Markdown answer without activity and execution reports. The control shows **Copied** only after clipboard access succeeds; if the browser blocks copying, retry or select the text and copy manually. Code blocks support keyboard focus and horizontal scrolling. When reading earlier messages, **Back to bottom** returns to the latest content and focuses the message box without changing your draft.
+
+Answers support CommonMark/GFM formatting, including nested lists and quotes, tables, read-only task lists, reference links, heading anchors and fenced or indented code. Tables scroll within their own region on narrow screens. Raw HTML appears as text; images appear as labeled links rather than loading automatically. External links allow HTTP, HTTPS and email; relative file links do not open local files. Math, Mermaid and syntax highlighting are not included.
+
+Use **Search chats** to filter existing chat names, titles, project names and folders. Matching ignores case and requires every space-separated term; it does not search message bodies. Search preserves your draft and current chat. Matching project groups temporarily expand and return to their previous collapse state when cleared. Escape clears the query; ArrowDown focuses the first visible result. The result count and empty state update as you type and remain consistent with polling.
+
 The browser displays proposed writes and commands with **Allow once** and **Deny**. The permission selector can change modes while idle; explicit launch restrictions remain ceilings. See [permissions](../REFERENCE/COMMANDS.md#permission-modes).
 
 All tabs connected to one server share an active session and permission mode. Refreshing reconnects to server state, including pending approval. Closing a tab does not cancel work. **New chat** retains the previous session; draft persistence follows the [session rules](SESSIONS.md#web-ui-drafts). Clicking the sidebar cat logo or **fatcat** text returns to the home screen through the same new-chat flow. This action is unavailable while disconnected or while a request or turn is running.
@@ -61,6 +67,10 @@ There is no account system or remote hosting. Credentials remain on the server. 
 ## Preview an HTML or SVG file
 
 In Web UI, click **Preview**, enter a workspace-relative `.html`, `.htm` or `.svg` path, then **Open**. Current-turn reports also offer preview buttons for committed HTML/SVG writes. For shell-created files or restored history, enter the path yourself.
+
+On narrow windows, Preview is modal: background controls cannot receive keyboard focus or clicks until it closes. Use Escape from the preview controls or the close button to return to the entry point. The embedded page receives its own key events; use Tab or Shift+Tab to return from its content to the preview controls before pressing Escape. Wide windows retain the nonmodal side-by-side layout. Resizing between these modes preserves the loaded preview and your unsent draft.
+
+On wide windows, drag the divider or focus it and use Left/Right to resize Preview. Shift uses larger steps; Home/End select the minimum/maximum width. Escape cancels an active drag. Enter or double-click restores the default width. The width is saved for the current browser origin, including its port, and survives closing Preview or refreshing the page. Narrow-window overlays do not overwrite this preference. If browser storage is unavailable, resizing still works for the current page.
 
 **Refresh** rereads the saved file and restarts the preview. Closing it stops its frame. A failed read clears the old preview. This is a single-file, isolated preview for inline content; it does not load a site's relative assets or run a development server. It works in read-only/Plan mode without model requests, permissions changes or history mutation.
 

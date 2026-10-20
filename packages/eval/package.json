@@ -1,0 +1,21 @@
+{
+  "name": "@fatcat/eval",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline experiment protocols and evaluation evidence for Fatcat.",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11.21.0 <12"
+  },
+  "exports": {},
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "node dist/scripts/test.js"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.5",
+    "typescript": "7.0.2"
+  }
+}

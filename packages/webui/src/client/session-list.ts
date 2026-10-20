@@ -39,10 +39,20 @@ export class SessionListView {
 		});
 	}
 
-	update(next: Pick<WebUiState, "current" | "sessions" | "projects">): void {
-		const sessions = displaySessions(next);
-		const signature = JSON.stringify([next.current.id, sessions, next.projects]);
-		if (signature === this.signature) return;
+	update(next: Pick<WebUiState, "current" | "sessions" | "projects">, query = ""): number {
+		const terms = query.normalize("NFKC").toLowerCase().trim().split(/\s+/).filter(Boolean);
+		const matches = (values: (string | null | undefined)[]) => {
+			const text = values.filter(Boolean).join(" ").normalize("NFKC").toLowerCase();
+			return terms.every((term) => text.includes(term));
+		};
+		const sessions = displaySessions(next).filter((session) => matches([
+			session.name, session.title, session.workspace, session.projectName,
+			next.projects.find((project) => project.id === session.projectId)?.name,
+		]));
+		const projects = next.projects.filter((project) => !terms.length || matches([project.name, project.workspace]) ||
+			sessions.some((session) => session.projectId === project.id));
+		const signature = JSON.stringify([next.current.id, sessions, next.projects, terms]);
+		if (signature === this.signature) return sessions.length;
 		this.signature = signature;
 		this.container.replaceChildren();
 		for (const id of this.collapsedProjects.keys()) {
@@ -52,7 +62,7 @@ export class SessionListView {
 			}
 		}
 		const groups = new Map<string, HTMLElement>();
-		for (const project of next.projects) {
+		for (const project of projects) {
 			if (!this.collapsedProjects.has(project.id)) {
 				let collapsed = false;
 				try { collapsed = localStorage.getItem(`fatcat-project-collapsed:${project.id}`) === "true"; } catch { /* Default to expanded without storage. */ }
@@ -66,9 +76,10 @@ export class SessionListView {
 			name.title = `${project.name}\n${project.workspace}`;
 			const sessions = node("div", undefined, "project-sessions");
 			sessions.id = `project-sessions-${project.id}`;
-			sessions.hidden = this.collapsedProjects.get(project.id) === true;
+			sessions.hidden = !terms.length && this.collapsedProjects.get(project.id) === true;
 			const toggle = node("button", undefined, "project-toggle");
 			toggle.type = "button";
+			toggle.disabled = terms.length > 0;
 			toggle.setAttribute("aria-controls", sessions.id);
 			const updateToggle = () => {
 				toggle.setAttribute("aria-expanded", String(!sessions.hidden));
@@ -140,8 +151,9 @@ export class SessionListView {
 		independent.setAttribute("aria-label", "Independent chats");
 		if (next.projects.length) independent.append(node("div", "Independent chats", "section-label"));
 		this.container.append(independent);
-		if (sessions.length === 0 && next.projects.length === 0) {
-			this.container.append(node("p", "Your conversations will appear here after your first message.", "session-empty"));
+		if (sessions.length === 0 && (terms.length || next.projects.length === 0)) {
+			this.container.append(node("p", terms.length ? "No chats match this search. Try another name, project or folder."
+				: "Your conversations will appear here after your first message.", "session-empty"));
 		}
 		for (const session of sessions) {
 			const button = node("button", undefined, "conversation");
@@ -209,5 +221,6 @@ export class SessionListView {
 			}
 			(session.projectId ? groups.get(session.projectId)! : independent).append(row);
 		}
+		return sessions.length;
 	}
 }

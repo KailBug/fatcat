@@ -158,13 +158,15 @@ export async function verifyConversationLayout(page: Page, checkLayout: (page: P
 	await page.locator("#scroll-area").evaluate((node) => node.scrollTo({ top: node.scrollHeight, behavior: "instant" }));
 	const gaps = await page.locator(".turn").last().evaluate((turn) => {
 		const answer = turn.querySelector(".answer")!.getBoundingClientRect();
+		const actions = turn.querySelector(".answer-actions")!.getBoundingClientRect();
 		const activity = turn.querySelector('details[data-kind="activity"]')!.getBoundingClientRect();
 		const report = turn.querySelector('details[data-kind="report"]')!.getBoundingClientRect();
-		return { answer: activity.top - answer.bottom, summaries: report.top - activity.bottom,
+		return { answer: activity.top - actions.bottom, actions: actions.top - answer.bottom, summaries: report.top - activity.bottom,
 			composer: document.querySelector("#composer")!.getBoundingClientRect().top - report.bottom };
 	});
 	assert.ok(gaps.answer >= 0 && gaps.answer <= 12 && gaps.summaries >= 0 && gaps.summaries <= 4,
 		`Collapsed turn evidence stays close to its answer: ${JSON.stringify(gaps)}`);
+	assert.ok(gaps.actions >= 0 && gaps.actions <= 8, "Copy actions stay close to the answer text");
 	assert.ok(gaps.composer >= 0 && gaps.composer <= 32, `Conversation bottom gap: ${JSON.stringify(gaps)}`);
 	await checkLayout(page, "conversation-evidence");
 	const activitySummary = page.locator('.turn details[data-kind="activity"]>summary').last();
@@ -235,10 +237,35 @@ export async function verifyConversationLayout(page: Page, checkLayout: (page: P
 	await page.locator("#prompt").fill("");
 	assert.equal(await page.locator(".answer pre").first().evaluate((node) => node.scrollWidth > node.clientWidth), true,
 		"Long code lines scroll inside their code block on narrow screens");
+	await page.setViewportSize({ width: 390, height: 480 });
+	await page.locator("#prompt").fill("Keep navigation draft");
 	await page.locator("#scroll-area").evaluate((node) => { node.scrollTo({ top: 0, behavior: "instant" }); });
 	await page.waitForResponse((response) => response.url().endsWith("/api/state"));
 	assert.equal(await page.locator("#scroll-area").evaluate((node) => node.scrollTop), 0,
 		"Polling does not pull the reader away from earlier content");
+	await page.locator("#scroll-bottom").waitFor();
+	await checkLayout(page, "back-to-bottom-mobile");
+	await page.locator("#scroll-bottom").focus();
+	await page.keyboard.press("Enter");
+	await page.locator("#scroll-bottom").waitFor({ state: "hidden" });
+	assert.ok(await page.locator("#scroll-area").evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight < 2));
+	assert.equal(await page.locator("#prompt").evaluate((node) => document.activeElement === node), true,
+		"Returning to the bottom restores a visible keyboard focus");
+	assert.equal(await page.locator("#prompt").inputValue(), "Keep navigation draft");
+	await page.route("**/api/state", (route) => route.abort());
+	try {
+		await page.waitForFunction(() => document.getElementById("connection")?.textContent === "Disconnected");
+		await page.locator("#scroll-area").evaluate((node) => node.scrollTo({ top: 0, behavior: "instant" }));
+		await page.locator("#scroll-bottom").click();
+		await page.locator("#scroll-bottom").waitFor({ state: "hidden" });
+		assert.equal(await page.locator("#scroll-area").evaluate((node) => document.activeElement === node), true,
+			"Offline navigation focuses the reading area instead of a disabled input");
+		assert.equal(await page.locator("#prompt").inputValue(), "Keep navigation draft");
+	} finally {
+		await page.unroute("**/api/state");
+	}
+	await page.waitForFunction(() => document.getElementById("connection")?.textContent === "Local");
+	await page.locator("#prompt").fill("");
 }
 
 export async function verifyPreviewLayout(page: Page, checkLayout: (page: Page, label: string) => Promise<void>): Promise<void> {

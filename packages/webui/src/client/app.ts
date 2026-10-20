@@ -33,6 +33,7 @@ const newChat = element<HTMLButtonElement>("new-chat");
 const home = element<HTMLAnchorElement>("home");
 const newProject = element<HTMLButtonElement>("new-project");
 const scroll = element("scroll-area");
+const scrollBottom = element<HTMLButtonElement>("scroll-bottom");
 const notice = element("notice");
 const dialog = element<HTMLDialogElement>("details");
 const hashToken = new URLSearchParams(location.hash.slice(1)).get("token");
@@ -48,6 +49,9 @@ let connected = false;
 let sending = false;
 let approvalId: string | undefined;
 let detailsSessionId: string | undefined;
+const sessionSearch = element<HTMLInputElement>("session-search");
+const clearSessionSearch = element<HTMLButtonElement>("clear-session-search");
+let sessionQuery = "";
 const sessionMenu = new SessionMenu(element("session-menu"), (action, session) => { void sessionAction(action, session); },
   () => connected && !sending && !state?.busy);
 const sessionDialog = new SessionDialog(sessionMutation, () => connected && !sending && !state?.busy);
@@ -93,6 +97,32 @@ const sessionList = new SessionListView(element("sessions"), {
 });
 element("workspace-picker").addEventListener("click", () => {
   if (state) void api("session/choose-workspace", { id: state.current.id }, 310_000);
+});
+
+function renderSessionList(): void {
+  if (!state) return;
+  const count = sessionList.update(state, sessionQuery);
+  const status = element("session-search-status");
+  status.hidden = !sessionQuery.trim();
+  status.textContent = sessionQuery.trim() ? `${count} matching ${count === 1 ? "chat" : "chats"}` : "";
+  clearSessionSearch.hidden = !sessionQuery;
+  sessionList.setDisabled(!connected || sending || state.busy);
+}
+sessionSearch.addEventListener("input", () => {
+  sessionQuery = sessionSearch.value;
+  sessionMenu.close(); projectMenu.close(); renderSessionList();
+});
+clearSessionSearch.addEventListener("click", () => {
+  sessionSearch.value = ""; sessionQuery = ""; renderSessionList(); sessionSearch.focus();
+});
+sessionSearch.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && sessionQuery) {
+    event.preventDefault(); event.stopPropagation(); clearSessionSearch.click();
+  } else if (event.key === "ArrowDown" && !event.isComposing) {
+    const first = [...element("sessions").querySelectorAll<HTMLButtonElement>("[data-session-id]")]
+      .find((button) => button.getClientRects().length > 0);
+    if (first) { event.preventDefault(); first.focus(); }
+  }
 });
 
 const modelControls = new ModelControls(element<HTMLButtonElement>("model"), element<HTMLButtonElement>("context-usage"),
@@ -201,6 +231,20 @@ function renderApproval(approval: Approval | null): void {
   panel.append(actions);
 }
 
+function updateScrollNavigation(): void {
+  const hidden = !state?.turns.length || scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140;
+  if (hidden && document.activeElement === scrollBottom) (prompt.disabled ? scroll : prompt).focus({ preventScroll: true });
+  scrollBottom.hidden = hidden;
+}
+scroll.addEventListener("scroll", updateScrollNavigation, { passive: true });
+const scrollObserver = new ResizeObserver(updateScrollNavigation);
+scrollObserver.observe(scroll);
+scrollObserver.observe(element("messages"));
+scrollBottom.addEventListener("click", () => {
+  scroll.scrollTo({ top: scroll.scrollHeight, behavior: "instant" });
+  updateScrollNavigation();
+});
+
 function render(next: WebUiState): void {
   if (state && state.info.workspace !== next.info.workspace) filePreview.reset();
   const follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140 || next.turns.length !== state?.turns.length || next.approval?.id !== state?.approval?.id || next.current.id !== state?.current.id;
@@ -210,7 +254,7 @@ function render(next: WebUiState): void {
   element("workspace").textContent = next.info.workspace;
   element("workspace").title = `${next.info.workspace}\nWrite ${next.info.permission} · Shell ${next.info.shellPermission} · Web ${next.info.webPermission}`;
   element("workspace-picker").title = next.current.projectId ? "This chat uses its project folder. Use the project menu to change it for every project chat." : "Change workspace";
-  sessionList.update(next);
+  renderSessionList();
   const warning = element("session-warning");
   warning.hidden = (!next.current.interrupted && !next.current.projectError) || next.busy;
   warning.textContent = next.current.projectError ?? "A turn in this session was interrupted. Model history contains only successful turns. Check current files and commands before retrying; completed operations were not undone.";
@@ -218,7 +262,10 @@ function render(next: WebUiState): void {
   transcript.update(next.turns, next.current.id, next.info.workspace);
   renderApproval(next.approval);
   renderDetails(next);
-  if (follow) requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight; });
+  requestAnimationFrame(() => {
+    if (follow) scroll.scrollTop = scroll.scrollHeight;
+    updateScrollNavigation();
+  });
   controls();
 }
 

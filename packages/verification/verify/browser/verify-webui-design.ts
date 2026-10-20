@@ -12,6 +12,8 @@ import { createTools } from "@fatcat/runtime/tools";
 import { WebUiController } from "@fatcat/webui/internal/controller";
 import { startWebUiServer } from "@fatcat/webui/internal/server";
 import { verifyWebUiViews } from "./support/webui-views.js";
+import { verifyConversationCopy, verifyPreviewKeyboard } from "./support/webui-reading.js";
+import { verifySessionSearch, verifyMarkdown, verifyPreviewResize } from "./support/webui-enhancements.js";
 import { verifyComposerMotion, verifyConversationLayout, verifyNavigationSettings, verifyPreviewLayout } from "./support/webui-layout.js";
 
 // Explicit Edge validation with temporary data and injected decisions; no model API or credentials.
@@ -37,7 +39,7 @@ async function checkLayout(page: Page, label: string): Promise<void> {
 try {
   await mkdir(workspace);
   if (screenshots) await mkdir(resolve(screenshots), { recursive: true });
-  await writeFile(join(workspace, "preview.html"), "<!doctype html><html lang=\"en\"><title>Preview fixture</title><h1>Local preview is ready</h1></html>");
+  await writeFile(join(workspace, "preview.html"), "<!doctype html><html lang=\"en\"><title>Preview fixture</title><h1>Local preview is ready</h1><button>Preview action</button></html>");
   const policy = new PermissionPolicy("default");
   const tools = await createTools(workspace, "ask", (request, signal) => controller!.requestApproval("write", request, signal),
     { permission: "ask" }, undefined, policy);
@@ -80,6 +82,8 @@ try {
   await page.waitForFunction(() => !(document.getElementById("prompt") as HTMLTextAreaElement).disabled);
 
   await verifyWebUiViews(page, controller.snapshot());
+  await verifySessionSearch(page, checkLayout);
+  await verifyMarkdown(page, checkLayout);
   await verifyNavigationSettings(page, checkLayout);
   await page.locator("#show-preview").focus();
   await page.mouse.move(0, 0);
@@ -186,6 +190,9 @@ try {
     await checkLayout(page, `conversation-${width}`);
   }
   await verifyConversationLayout(page, checkLayout);
+  const copiedAnswer = controller.snapshot().turns.at(-1)?.answer;
+  assert.ok(copiedAnswer);
+  await verifyConversationCopy(page, copiedAnswer, checkLayout);
   await verifyComposerMotion(page, checkLayout);
   await page.locator("#prompt").fill("Propose a file");
   await page.locator("#send").click();
@@ -217,6 +224,8 @@ try {
   await page.frameLocator("#preview-viewport iframe").getByRole("heading", { name: "Local preview is ready" }).waitFor();
   await checkLayout(page, "preview-mobile");
   await verifyPreviewLayout(page, checkLayout);
+  await verifyPreviewKeyboard(page);
+  await verifyPreviewResize(page, checkLayout);
   await page.locator("#preview-refresh").click();
   await page.frameLocator("#preview-viewport iframe").getByRole("heading", { name: "Local preview is ready" }).waitFor();
   await page.locator("#preview-close").click();
@@ -295,7 +304,8 @@ try {
   assert.equal(await noScript.locator("h1").isVisible(), true);
   await noScript.close();
   assert.deepEqual(errors, []);
-  console.log("Verified real Edge: view caching and replacement, expanded sections, captured source identity, live drag gating, responsive layout in both themes, long drafts and short windows, aligned conversation/composer, draft resize, IME and Shift+Enter, split/overlay previews, all four Cron triggers fit without scrolling, menus/dialogs, mobile focus and Escape, logo/send, approval, cancellation, injected workspace picker, session switching, reduced motion and JavaScript fallback. No model API requests.");
+  console.log("Verified search normalization, metadata matching, collapse restoration, draft/poll preservation and mobile Escape; Markdown nesting, GFM tables/tasks, reference and heading links, literal code, attachment identity and inert HTML/unsafe links; preview pointer/keyboard resizing, bounds, cancellation, reload persistence and overlay restoration.");
+  console.log("Verified real Edge: view caching and replacement, expanded sections, captured source identity, live drag gating, responsive layout in both themes, long drafts and short windows, aligned conversation/composer, draft resize, IME and Shift+Enter, real code/answer clipboard contents and denied-access retry, back-to-bottom with draft preservation and offline focus, split/overlay previews with native modal background isolation, keyboard return from the frame, responsive document preservation and offline close, all four Cron triggers fit without scrolling, menus/dialogs, mobile focus and Escape, logo/send, approval, cancellation, injected workspace picker, session switching, reduced motion and JavaScript fallback. No model API requests.");
 } finally {
   await browser?.close();
   if (server) await server.close();

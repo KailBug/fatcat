@@ -4,6 +4,8 @@
 
 Session 系统区分成功对话、当前持久记录、宿主选择和存储。工作区文件与工具副作用不属于会话事务。
 
+内存与磁盘历史直接使用 Fatcat 自有消息类型，assistant 的工具调用为 `toolCalls`，结果关联为 `callId`。`session/history.ts` 统一校验成功 history 和未完成 attempt.messages，不维护 Chat Completions 历史转换层。校验完整回合、工具结果关联和历史前缀，厂商私有 modelContext 仍须与当前消息一致；这些是当前数据正确性的约束。系统提示由当前运行时提供，读取、fork 或恢复均不执行历史调用，也不恢复旧授权。API 编码见 [模型边界](PROVIDERS.md#内部消息与-api-边界)。
+
 ## 状态所有者
 
 | 源码 | 职责 |
@@ -36,15 +38,15 @@ Session 系统区分成功对话、当前持久记录、宿主选择和存储。
 
 领域命令调用既有 SessionManager API；业务状态、权限、互斥和持久提交仍由原模块负责。Web UI 继续使用自己的管理接口，不接入完整终端命令集。开发和测试规则见[开发说明](../DEVELOPMENT.md)，用户语法见[命令参考](../REFERENCE/COMMANDS.md)。
 
-## 持久格式与兼容
+## 当前持久格式
 
 存储根见[配置参考](../REFERENCE/CONFIGURATION.md)。Session 位于规范工作目录哈希桶内的 UUID JSON；storageWorkspace 固定原桶，改变有效目录不会移动历史文件。Project 目录单独保存，Session 的 location 只能是独立目录或项目 ID，不能保存可覆盖的项目目录副本。
 
 记录包含版本、身份、名称/时间、修订、完整成功 history、最近未完成 attempt、compaction、自动任务、归属代次/待通知变更及可选 activeOperation。配置凭据、审批、权限和进程遥测不持久化。用户提示、工具参数/结果、网页/文件正文和已加载 Skill 则是明文历史。
 
-- 带 modelSelection 或供应商思考历史的新写入使用 v3，已是 v3 的记录不降级；无模型身份的注入 Session 仍可写 v2。旧 v1/v2 保持可读，v1 只读映射为独立会话，不按路径推断 Project。
-- 首次成功持久写入原子升级，保留原 ID、历史、attempt、任务、摘要和存储桶；模型随后失败不降回 v1。
-- 旧程序不能安全写入新格式或恢复协议。升级前停止旧实例，不支持混用版本并发写同一存储根。
+- 只读写当前 v4 格式，不根据模型身份或思考数据选择不同版本。modelSelection 对无模型身份的注入 Session 仍为可选。
+- 不提供 v1–v3 读取、迁移或回写兼容。旧版本直接读取报告 SESSION_CORRUPT，普通列表沿用跳过不支持记录的规则；已有文件不会自动改写或删除。
+- 版本标记用于明确拒绝不支持的格式；上线后的兼容要求按 [项目原则](../PROJECT.md) 单独建立。不支持混用版本并发写同一存储根。
 - 单快照上限 64 MiB。解码校验身份、修订、消息与工具关联；成功 history 必须由完整回合构成，attempt 不能混入。
 - Project 缺失、损坏或目录不可用时允许查看历史，但拒绝执行，不回退启动目录或独立作用域。
 
@@ -102,8 +104,8 @@ Project 接入规则集中在 `session/projects.ts`：迁入预览和确认每�
 
 runtime API 与恢复后的客户端模型标签同步已实现。只读请求预览及消费/实测/估算分离见 [Context](CONTEXT.md#当前输入估算第三阶段已实现的-runtime-接口)；第四阶段的模型菜单、思考滑条、Web 切换路由和圆环/详情已接入同一 Manager，交互与注入 Edge 验证范围见 [Web UI](WEBUI.md#模型思考与上下文控件)。
 
-SessionRecord 的可选 v3 字段 consumption、lastReportedInput 保存合法用量累计与最近普通响应观察；它们由 AgentSession 消费执行事件并随现有持久化边界提交。无字段的旧历史无法回填，读取不改写；预览估算和 contextRevision 只在运行实例中，恢复总是 pending。换模型/压缩保留累计，fork 清空新会话消费与观察。AgentSession 保有状态所有权，纯计量/聚合与校验位于 context 模块；SessionManager 保有活动实例及跨实例的预览结果拒绝规则。用量缺失、覆盖和缓存比例语义以 Context 为准。
+SessionRecord 的可选字段 consumption、lastReportedInput 保存合法用量累计与最近普通响应观察；它们由 AgentSession 消费执行事件并随现有持久化边界提交。未报告的用量无法回填，读取不改写；预览估算和 contextRevision 只在运行实例中，恢复总是 pending。换模型/压缩保留累计，fork 清空新会话消费与观察。AgentSession 保有状态所有权，纯计量/聚合与校验位于 context 模块；SessionManager 保有活动实例及跨实例的预览结果拒绝规则。用量缺失、覆盖和缓存比例语义以 Context 为准。
 
-检查应覆盖保存/恢复、v1 升级与只读不改写、非法历史/UTF-8/超大文件、错误存储桶、文件发布失败清理与重试、项目状态新鲜度及列表/成员扫描的拒绝差异，以及修订冲突、真实第二进程 run/compact 互斥、领取释放失败、恢复提示、跨目录准备失败及三入口行为。快照与存储边界回归放在 `packages/verification/tests/session/`，项目和附件事务恢复继续在各能力测试中验证。固定存储与注入模型检查不代表真实长任务质量；浏览器会话检查不代表模型连通性。
+检查应覆盖当前格式的保存/恢复、只读不改写、非法历史/UTF-8/超大文件、错误存储桶、文件发布失败清理与重试、项目状态新鲜度及列表/成员扫描的拒绝差异，以及修订冲突、真实第二进程 run/compact 互斥、领取释放失败、恢复提示、跨目录准备失败及三入口行为。快照与存储边界回归放在 `packages/verification/tests/session/`，项目和附件事务恢复继续在各能力测试中验证。固定存储与注入模型检查不代表真实长任务质量；浏览器会话检查不代表模型连通性。
 
 没有历史加密、自动保留期、导出/备份承诺、文件撤销或自动重放。对话提交无法撤销已写文件、命令副作用、已发送数据或费用。新建会话也不清空目录级进程日志。

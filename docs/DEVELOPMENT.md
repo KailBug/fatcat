@@ -17,6 +17,8 @@ pnpm test
 
 Ordinary tests use fake credentials and injected model transports, without loading `.env` or contacting providers. They can use real temporary files and fixed PowerShell commands. They do not launch Edge. Offline provider contract tests cannot validate credentials, connectivity, model quality or real vision behavior.
 
+Model contracts live in `@fatcat/runtime/model-types`; tool definitions live in runtime `tools/types.ts`. The boundary check confines OpenAI SDK imports to `model.ts`, `chat-completions.ts` and `model-protocol.ts`. Injected Models and persisted session histories use canonical messages; HTTP transport fixtures use independent wire types in verification `tests/support/chat-protocol.ts`. Model contract checks cover exact prepared/sent JSON, full encoded byte limits, images and recoverable malformed arguments. Session tests cover the current format, durable tool history, interrupted attempts and recovery without replay; there is no legacy-session conversion or compatibility suite.
+
 On Windows, HTTP fixtures using an OS-assigned port can intermittently fail with Node fetch's `bad port` before sending a request. Preserve the failed log and distinguish this from route/assertion failures when rerunning. A passing rerun does not resolve this existing fixture port-allocation limitation.
 
 For startup and local configuration checks, use `pnpm start --help` and `pnpm start --checkConfig`. Configuration validation does not contact a model. See the [quick start](QUICK_START.md) for setup and [configuration reference](REFERENCE/CONFIGURATION.md) for environment values.
@@ -57,7 +59,7 @@ Eval is included in the workspace glob, root dependency build, lockfile and pack
 
 Internal APIs, names and import paths may change to clarify ownership. Update all production callers, tests, verification scripts and documentation in the same increment. Import helpers and types from their owning module; remove forwarding modules and re-exports retained only for historical paths. A deliberate public facade or an external consumer may justify compatibility, but record that contract and its reason rather than treating every exported symbol as permanent.
 
-Keep user commands and output, persisted formats and recovery semantics, state ownership, permissions, cancellation and side-effect ordering stable unless the task explicitly changes them. Source compatibility and persisted-data compatibility are separate requirements.
+Keep user commands and output, recovery semantics, state ownership, permissions, cancellation and side-effect ordering stable unless the task explicitly changes them. During development, session formats may change without a legacy reader or migration. Do not automatically delete or rewrite existing user files. Establish post-launch compatibility requirements explicitly, following [project boundaries](PROJECT.md).
 
 ## CLI parsing and startup boundaries
 
@@ -91,13 +93,13 @@ For Projects, share complete join-preview assembly between preview and confirmat
 
 ## Session snapshot and storage boundaries
 
-Keep snapshot file mechanics in `packages/runtime/src/session/snapshots.ts`: explicit root/bucket paths, bucket discovery, bounded reads, physical-bucket validation, atomic publication and file removal. Reuse `record.ts` for encoding/decoding and format compatibility. Return the stored record without resolving projects, selecting a session, caching records or creating another store. Close the snapshot handle before SessionStore resolves current project state. A read must not rewrite legacy data or create an absent store.
+Keep snapshot file mechanics in `packages/runtime/src/session/snapshots.ts`: explicit root/bucket paths, bucket discovery, bounded reads, physical-bucket validation, atomic publication and file removal. Reuse `record.ts` for current-format encoding/decoding. Return the stored record without resolving projects, selecting a session, caching records or creating another store. Close the snapshot handle before SessionStore resolves current project state. A read must not rewrite data or create an absent store.
 
 SessionStore retains query policy, project projection, operation validation, lock scopes, revision/owner checks and cross-file coordination. Keep bucket-entry limits, sorting, selector matching, duplicate detection and corrupt-file handling at their existing operation boundaries. Ordinary listing may skip damaged snapshots; explicit ID reads report errors and project management must reject scans that could hide members. Do not implement project membership through the permissive session list.
 
-Snapshot publication/removal helpers are internal file operations, not substitutes for SessionStore save/delete. Invoke them through the existing locked transaction callbacks; preserve storageWorkspace, byte limits, file modes, sync/rename/cleanup and error codes/messages. Do not move metadata/project/bucket locks or journal recovery into these helpers, generalize all stores into a shared filesystem framework, or add compatibility forwarding exports. Persistent-format compatibility remains a real contract even when internal imports change.
+Snapshot publication/removal helpers are internal file operations, not substitutes for SessionStore save/delete. Invoke them through the existing locked transaction callbacks; preserve storageWorkspace, byte limits, file modes, sync/rename/cleanup and error codes/messages. Do not move metadata/project/bucket locks or journal recovery into these helpers, generalize all stores into a shared filesystem framework, or add compatibility forwarding exports.
 
-Keep file/coordination regressions in `packages/verification/tests/session/`; keep project and attachment transaction scenarios with their owning capabilities. Run typecheck and offline tests, covering legacy reads, corrupt/oversized snapshots, fixed buckets, publication failures, conflicts, live owner claims and recovery without replay. Client-specific browser/terminal checks are needed when those interactions change, not solely because persistence code moves. See [Session](ARCHITECTURE/SESSION.md#快照文件与存储协调边界) for the maintained boundary and [Metadata](ARCHITECTURE/METADATA.md) for lock order and journal semantics.
+Keep file/coordination regressions in `packages/verification/tests/session/`; keep project and attachment transaction scenarios with their owning capabilities. Run typecheck and offline tests, covering current-format reads, corrupt/oversized snapshots, fixed buckets, publication failures, conflicts, live owner claims and recovery without replay. Client-specific browser/terminal checks are needed when those interactions change, not solely because persistence code moves. See [Session](ARCHITECTURE/SESSION.md#快照文件与存储协调边界) for the maintained boundary and [Metadata](ARCHITECTURE/METADATA.md) for lock order and journal semantics.
 
 ## Attachment file and publication boundaries
 

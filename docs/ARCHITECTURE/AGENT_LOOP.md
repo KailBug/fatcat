@@ -11,7 +11,7 @@ Loop 执行一个用户回合，保持模型消息与工具结果的关联，落
 | `packages/runtime/src/agent.ts` | workspaceAgentFactory 准备工作目录资源；createAgent 装配父子 Model、Tools、Skills、动态指导及实际 Session 身份 |
 | `packages/runtime/src/loop.ts` | runAgentTurn 在历史副本上请求模型、顺序执行工具并生成事件；runAgent 提供单次调用 |
 | `packages/runtime/src/system-prompt.ts` | 共用 systemPrompt、委派/自动任务/资料指导文本，以及目录和权限说明的纯格式化函数 |
-| `packages/runtime/src/model.ts`、`packages/runtime/src/model-usage.ts` | SDK 请求、响应校验、安全错误及用量观察，见 [Providers](PROVIDERS.md) |
+| `packages/runtime/src/model-types.ts`、`model.ts`、`chat-completions.ts`、`model-usage.ts` | 内部消息契约、SDK 边界、响应校验、安全错误及用量观察，见 [Providers](PROVIDERS.md) |
 | `packages/runtime/src/errors.ts` | 稳定 HarnessError 错误码与取消检查 |
 | `packages/cli/src/cli.ts`、`scripts/start.ts` | 启动参数/入口选择与调用目录恢复，操作见[命令参考](../REFERENCE/COMMANDS.md) |
 

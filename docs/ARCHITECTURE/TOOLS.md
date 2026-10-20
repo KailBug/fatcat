@@ -4,6 +4,8 @@
 
 Tools 提供模型可见定义、参数校验和异步执行。工具不自行读取终端输入；授权和共享执行防护归 [Permissions](PERMISSIONS.md)，各入口只提供审批回调。
 
+工具定义使用 Fatcat 自有 `ToolDefinition`，直接持有 name、description、parameters 和可选 strict；工具装配及包装器不构造 OpenAI 的 function 外层。模型 API 编码器负责加上协议字段，现有定义内容与执行契约保持不变。工具调用的原始 arguments JSON 仍在 Tools.execute 中解析，校验失败按原调用 ID 返回，见 [模型边界](PROVIDERS.md#内部消息与-api-边界)。
+
 ## 装配与专用责任
 
 | 源码 | 职责 |

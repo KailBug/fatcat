@@ -12,14 +12,26 @@
 | `packages/runtime/src/model-catalog.ts` | 精确模型能力、ModelSelection 解码与能力校验 |
 | `packages/runtime/src/model-protocol.ts` | 按模型和请求目的映射思考参数、生成预留与历史回传规则 |
 | `packages/runtime/src/model-connections.ts` | 主机侧凭据隔离、公开选择目录及按供应商/区域/业务空间解析凭据 |
-| `packages/runtime/src/model-history.ts` | 私有助手消息解码与来源校验、按模型身份投影及摘要剥离 |
+| `packages/runtime/src/model-history.ts` | 私有助手消息解码与来源校验、模型身份比较及摘要剥离 |
 | `packages/runtime/src/config.ts` | 所选凭据/模型/区域与共享预算校验 |
-| `packages/runtime/src/model.ts` | createModel、完整请求准备、SDK、响应校验、期限和安全错误 |
+| `packages/runtime/src/model-types.ts` | 自有 Message、ToolCall、ModelTurn、Model 及观察事件契约，不导入模型 SDK |
+| `packages/runtime/src/chat-completions.ts` | 内部消息/工具到 Chat Completions 的编码、响应校验和工具调用解码 |
+| `packages/runtime/src/model.ts` | createModel、完整请求准备、SDK、期限和安全错误 |
 | `packages/runtime/src/model-usage.ts` | token 与缓存计数合法性 |
 | `packages/runtime/src/documents/vision.ts` | 已获准图片的临时辅助请求 |
 | `packages/webui/src/client/model-controls.ts` | 展示 runtime 模型目录与消费/实测/估算快照，不在客户端维护容量表或用量观察器 |
 
 原 createDeepSeekModel 保留程序化兼容入口。注入 transport 用于测试，生产不开放任意 base URL；模型协议差异不散入 Loop、Session 或各工具。
+
+## 内部消息与 API 边界
+
+参考本地 pi `3daa20280` 的自有消息类型与 API 编码边界，Fatcat 使用独立 `Message` 联合类型：文字消息、带 text/image 内容的用户消息、assistant 消息和关联工具结果。assistant 的 `toolCalls` 使用 `{id,name,arguments}`，工具结果使用 `callId`；工具定义由 `tools/types.ts` 的 `ToolDefinition` 持有 name、description、parameters 和可选 strict。Loop、Skills、Memory、附件与客户端只消费这些类型，不导入 SDK 消息或工具类型。类型直接从 `@fatcat/runtime/model-types` 导入，`model` 只提供模型构造，不保留旧类型转导出。
+
+arguments 仍为原始 JSON 字符串：工具层继续负责 JSON 解析和参数校验，非法 JSON 仍成为关联的 INVALID_ARGUMENTS 工具结果，不提前升级为模型协议失败。图片在内部表示为 `{type:"image",url,detail?}`，编码器转成现有 image_url；图片仍只用于临时辅助请求，不扩大持久历史支持范围。
+
+`chat-completions.ts` 编码请求消息与工具，解码模型返回的工具调用；`model-history.ts` 继续验证当前厂商 replay 数据与规范事实一致，来源身份和跨模型剥离规则不变。`ModelContext.message` 是受校验的私有数据，不是 Loop 可执行的调用。当前仍只有 Chat Completions 接入，没有新增 Responses、Anthropic、流式事件或动态协议注册器。
+
+`Model.prepare` 返回确切序列化请求 `json` 和字节/裁剪统计，不暴露 SDK body 类型。请求裁剪操作内部消息，并用当前编码器测量最终完整 JSON；实际发送与预览共用该准备过程。DeepSeek 本地近似仍只解释已知 Chat Completions JSON，不能把这个近似套用到未来协议。Session 直接保存内部消息，当前只支持 v4，不维护旧会话格式转换；见 [Session](SESSION.md)。
 
 ## 请求约定与设计理由
 
@@ -143,6 +155,6 @@ Session 自有累计与普通请求实测观察通过无副作用的 Model.prepa
 
 Kimi/MiMo/Qwen 的现有证据为离线合约；视觉也未调用真实 API，账号可用性、图表理解和转写质量未验收。已有 live 脚本保持 DeepSeek 专用范围，仅在明确请求时运行。新增供应商不必默认产生真实调用。
 
-第二阶段的注入检查覆盖会话独立选择、v1/v2 读取及 v3 写入、保存失败/忙碌/并发冲突、不可信历史、完整 K3 消息回传、跨模型隔离，以及换目录后的父子/图片/摘要模型绑定。真实 Edge 专项的两处失败均定位为测试时序：弹窗入场位移尚未完成，以及会话刷新后的延迟聚焦覆盖了测试提前执行的失焦。等待实际动画/聚焦完成并加入受控帧延迟回归后通过；保持原居中与折叠断言。没有运行真实模型或原生交互终端专项。
+第二阶段的注入检查覆盖会话独立选择、当前格式持久化、保存失败/忙碌/并发冲突、不可信历史、完整 K3 消息回传、跨模型隔离，以及换目录后的父子/图片/摘要模型绑定。真实 Edge 专项的两处失败均定位为测试时序：弹窗入场位移尚未完成，以及会话刷新后的延迟聚焦覆盖了测试提前执行的失焦。等待实际动画/聚焦完成并加入受控帧延迟回归后通过；保持原居中与折叠断言。没有运行真实模型或原生交互终端专项。
 
 独立 OCR、Embedding、音频、流式或故障转移尚未接入；按具体需求新增窄适配，不预建插件框架。

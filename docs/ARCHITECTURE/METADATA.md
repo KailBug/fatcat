@@ -26,7 +26,7 @@ SessionStore、ProjectStore、AttachmentStore 继续按原有入口和锁范围�
 
 上下文预览是显式的只读例外：withMemorySession 经同一 metadata gate 校验执行身份，preview 模式只检查 pending.json 是否存在，存在即拒绝而不恢复、不越过半提交。它不创建缺失根目录、不回收陈旧锁；只允许已有目录中的短暂同步锁，不写领域记录。MemoryStore 的 preview 读取同样不建目录或恢复锁，普通执行和管理入口保留原有恢复语义。相关用途见 [Context](CONTEXT.md)。
 
-`journal.ts` 以显式提交描述构造磁盘形状，并从未知数据解码、校验版本、成员 patch、项目变更冲突及 Memory 迁入与 Session 身份的一致性；复用各记录模块的校验，不读取当前仓库或创建状态所有者。普通提交写日志 v2，包含 Memory 迁入时写 v3，读取支持 v1/v2/v3；这些版本与 Session v2、Project v1 独立。
+`journal.ts` 以显式提交描述构造磁盘形状，并从未知数据解码、校验版本、成员 patch、项目变更冲突及 Memory 迁入与 Session 身份的一致性；复用各记录模块的校验，不读取当前仓库或创建状态所有者。普通提交写日志 v2，包含 Memory 迁入时写 v3，读取支持 v1/v2/v3；这些日志版本与 Session v4、Project v1 独立；日志内嵌会话记录只接受当前 Session 格式。
 
 `MetadataTransactions` 编码并校验完整提交、检查各记录大小后，先持久写 `pending.json`，再按既有顺序执行 Memory 迁入、Session 快照、Project 快照、成员 patch、catalog、Session 删除、Project 删除和原件/派生内容 purge，全部成功后才删除日志。保存的是原始编码日志，执行的是校验结果，不将解码后的运行时记录重新序列化为日志。已发布日志是持久决定，失败后向前完成，不重放模型或工具；锁、提交顺序、幂等重放及 Session 发布/删除回调仍由协调层管理。
 

@@ -6,7 +6,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { runChat } from "@fatcat/cli/internal/chat";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
 import { createTerminalInput } from "@fatcat/cli/internal/terminal";
@@ -26,8 +26,8 @@ function terminalFixture(interactive = true, env: NodeJS.ProcessEnv = {}) {
 }
 const final = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
 function toolCall(name: string, args: unknown): ModelTurn {
-  const toolCalls = [{ id: "write-call", type: "function" as const, function: { name, arguments: JSON.stringify(args) } }];
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = [{ id: "write-call", name, arguments: JSON.stringify(args) }];
+  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
 }
 
 test("chat approves one edit without sending the confirmation to the model", async (t) => {

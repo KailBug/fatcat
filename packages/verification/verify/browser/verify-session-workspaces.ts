@@ -8,7 +8,7 @@ import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Model } from "@fatcat/runtime/model";
+import type { Model } from "@fatcat/runtime/model-types";
 import { WebUiController } from "@fatcat/webui/internal/controller";
 import { startWebUiServer } from "@fatcat/webui/internal/server";
 

@@ -26,8 +26,8 @@ test("Web UI browser approvals are single-operation and evidence endpoints requi
   let callId = 0;
   const session = await SessionManager.open({ tools, maxIterations: 3, model: async (messages) => {
     if (messages.at(-1)?.role === "tool") return { message: { role: "assistant", content: "Browser result received." }, toolCalls: [] };
-    const call = { id: `browser-${++callId}`, type: "function" as const, function: { name: "browser", arguments: '{"path":"index.html"}' } };
-    return { message: { role: "assistant", content: null, tool_calls: [call] }, toolCalls: [call] };
+    const call = { id: `browser-${++callId}`, name: "browser", arguments: '{"path":"index.html"}' };
+    return { message: { role: "assistant", content: null, toolCalls: [call] }, toolCalls: [call] };
   } }, { workspace, persistence: false });
   controller = await WebUiController.create({ provider: "deepseek", model: "offline", workspace,
     permission: "ask", shellPermission: "ask", webPermission: "deny", maxIterations: 3, maxRequestBytes: 262144,

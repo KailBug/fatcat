@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { readdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
@@ -7,7 +8,7 @@ import { loadConfig } from "@fatcat/runtime/config";
 import { runAgent, runAgentTurn } from "@fatcat/runtime/loop";
 import { createTools } from "@fatcat/runtime/tools";
 import { discoverSkills } from "@fatcat/runtime/skills";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import { temporaryWorkspace } from "../support/workspace.js";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 
@@ -20,7 +21,7 @@ function calls(...tools: { name: string; args: unknown; id: string }[]) {
     tool_calls: tools.map(({ name, args, id }) => ({ id, type: "function", function: { name, arguments: JSON.stringify(args) } })),
   } }] });
 }
-type RequestBody = { messages: Message[]; tools: { function: { name: string } }[]; tool_choice: string };
+type RequestBody = { messages: ChatMessage[]; tools: { function: { name: string } }[]; tool_choice: string };
 
 test("parent and child guidance forwards their independent final-answer options", async () => {
   let parents = 0;

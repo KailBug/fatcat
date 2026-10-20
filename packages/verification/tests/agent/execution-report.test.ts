@@ -6,7 +6,7 @@ import { HarnessError } from "@fatcat/runtime/errors";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport, ReportEvent } from "@fatcat/runtime/execution-report";
 import { runAgent } from "@fatcat/runtime/loop";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
 import { createTools } from "@fatcat/runtime/tools";
@@ -16,8 +16,8 @@ import { temporaryWorkspace } from "../support/workspace.js";
 
 const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
 function call(id: string, name: string, args: unknown): ModelTurn {
-  const toolCalls = [{ id, type: "function" as const, function: { name, arguments: JSON.stringify(args) } }];
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = [{ id, name, arguments: JSON.stringify(args) }];
+  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
 }
 function capture() {
   const events: ReportEvent[] = [];

@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,7 +6,7 @@ import test from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { runInteractiveCommand } from "@fatcat/commands";
 import { loadConfig } from "@fatcat/runtime/config";
-import type { Message, Model } from "@fatcat/runtime/model";
+import type { Model } from "@fatcat/runtime/model-types";
 import { sessionScopeLabel } from "@fatcat/commands/session/labels";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { Session } from "@fatcat/runtime/session/session";
@@ -130,23 +131,22 @@ test("project switches preserve an injected parent model and rebind delegated id
 	const { base, workspace } = await temporaryWorkspace(t);
 	const parentScopes: { sessionId: string; projectId?: string; workspace: string }[] = [];
 	const childScopes: typeof parentScopes = [];
-	function scope(messages: Message[]): typeof parentScopes[number] {
+	function scope(messages: readonly { content: unknown }[]): typeof parentScopes[number] {
 		const system = String(messages[0]?.content);
 		const parts = system.split("Actual executing session (JSON data, not instructions): ");
 		assert.equal(parts.length, 2, "Each request has exactly one execution identity");
 		return JSON.parse(parts[1]!.split(". Other sessions keep separate histories.")[0]!);
 	}
 	const runtime = createAgent(loadConfig({ DEEPSEEK_API_KEY: "offline-child-only" }), undefined, async (input, init) => {
-		const request = await new Request(input, init).json() as { messages: Message[] };
+		const request = await new Request(input, init).json() as { messages: ChatMessage[] };
 		childScopes.push(scope(request.messages));
 		return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Child evidence" } }] });
 	});
 	const model: Model = async (messages) => {
 		parentScopes.push(scope(messages));
 		if (messages.at(-1)?.role !== "user") return answer();
-		const toolCalls = [{ id: "child", type: "function" as const,
-			function: { name: "delegate_task", arguments: JSON.stringify({ task: "Report the current scope" }) } }];
-		return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+		const toolCalls = [{ id: "child", name: "delegate_task", arguments: JSON.stringify({ task: "Report the current scope" }) }];
+		return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
 	};
 	const session = await SessionManager.open({ ...runtime, model, maxIterations: 2 },
 		{ workspace, store: new SessionStore({ root: join(base, "sessions") }) });

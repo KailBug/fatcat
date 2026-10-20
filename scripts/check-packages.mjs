@@ -57,6 +57,10 @@ for (const directory of [...packages.flatMap((entry) => entry.directories), reso
 				continue;
 			}
 			const name = specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0];
+			if (owner?.manifest.name === "@fatcat/runtime" && name === "openai"
+				&& !["model.ts", "chat-completions.ts", "model-protocol.ts"].includes(relative(owner.source, file).replaceAll("\\", "/"))) {
+				fail("Model SDK imports belong to the transport and protocol boundary, not shared message or tool contracts");
+			}
 			const dependencies = owner
 				? { ...owner.manifest.dependencies, ...(development ? owner.manifest.devDependencies : {}) }
 				: { ...host.dependencies, ...host.devDependencies };

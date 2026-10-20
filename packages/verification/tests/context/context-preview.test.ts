@@ -1,3 +1,4 @@
+import { preparedChatRequest, type ChatRequest } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,7 +6,7 @@ import { describe, it } from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
 import { createModel } from "@fatcat/runtime/model";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import { defaultModelSelection } from "@fatcat/runtime/model-catalog";
 import { ModelConnections } from "@fatcat/runtime/model-connections";
 import { SessionManager } from "@fatcat/runtime/session/manager";
@@ -31,7 +32,7 @@ const response = (content = "Completed", input = 800) => Response.json({
 function counter(capture: (request: PreparedModelRequest) => void = () => {}): InputTokenCounter {
 	return { supports: () => true, count: async (request) => {
 		capture(request);
-		return { inputTokens: JSON.stringify(request.body.messages).length, method: "fixture character counter",
+		return { inputTokens: JSON.stringify(preparedChatRequest(request).messages).length, method: "fixture character counter",
 			approximate: true, limitations: ["Injected fixture, not a production tokenizer."] };
 	} };
 }
@@ -57,9 +58,9 @@ describe("read-only request preparation", () => {
 			assert.match(current.method, /Unicode.*fallback/);
 			assert.match(current.limitations.join(" "), /not an exact tokenizer/);
 		}
-		const tools: Message[] = [...history, { role: "assistant", content: null, tool_calls: [
-			{ id: "read", type: "function", function: { name: "read", arguments: "{}" } },
-		] }, { role: "tool", tool_call_id: "read", content: "\u7ed3\u679c\uff1a\u5b8c\u6210\u3002 \u2713" }];
+		const tools: Message[] = [...history, { role: "assistant", content: null, toolCalls: [
+			{ id: "read", name: "read", arguments: "{}" },
+		] }, { role: "tool", callId: "read", content: "\u7ed3\u679c\uff1a\u5b8c\u6210\u3002 \u2713" }];
 		assert.equal((await estimateRequest(await model.prepare!(tools), 3)).status, "ready");
 		assert.equal(sent, 0);
 	});
@@ -91,15 +92,15 @@ describe("read-only request preparation", () => {
 		const prepared = await model.prepare!(messages);
 		assert.equal(sent, undefined);
 		await model(messages);
-		assert.deepEqual(prepared.body, sent);
+		assert.deepEqual(preparedChatRequest(prepared), sent);
 		assert.equal(prepared.bytes, Buffer.byteLength(JSON.stringify(sent)));
 		assert.deepEqual(messages, before);
 	});
 
 	it("uses the same clipping boundary with completed history and an actual new turn", () => {
 		const messages: Message[] = [{ role: "system", content: "Rules" }, { role: "user", content: "Old" },
-			{ role: "assistant", content: null, tool_calls: [{ id: "read", type: "function", function: { name: "read", arguments: "{}" } }] },
-			{ role: "tool", tool_call_id: "read", content: JSON.stringify({ ok: true, result: { kind: "file", path: "a", content: "x".repeat(5000) } }) },
+			{ role: "assistant", content: null, toolCalls: [{ id: "read", name: "read", arguments: "{}" }] },
+			{ role: "tool", callId: "read", content: JSON.stringify({ ok: true, result: { kind: "file", path: "a", content: "x".repeat(5000) } }) },
 			{ role: "assistant", content: "Old answer" }, { role: "user", content: "Latest" }, { role: "assistant", content: "Latest answer" }];
 		const preview = prepareRequestContext({ messages }, 1000, undefined, 1);
 		const real = prepareRequestContext({ messages: [...messages, { role: "user", content: "New" } as Message] }, 1000);
@@ -128,8 +129,8 @@ describe("read-only request preparation", () => {
 		}
 		const malformed = { ...exact, count: async () => ({ inputTokens: NaN, method: "invalid", approximate: false, limitations: [] }) };
 		assert.equal((await estimateRequest(prepared, 1, malformed)).inputTokens, null);
-		assert.equal((await estimateRequest({ ...prepared, body: { ...prepared.body,
-			messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }] }] } }, 1)).inputTokens, null);
+		assert.equal((await estimateRequest({ ...prepared, json: JSON.stringify({ ...preparedChatRequest(prepared),
+			messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }] }] }) }, 1)).inputTokens, null);
 	});
 
 	it("does not create absent storage, recover journals, or remove stale locks", async (t) => {
@@ -218,8 +219,8 @@ describe("session context lifecycle", () => {
 		await manager.changeMemory({ action: "add", scope: "session", content: "Fresh preference" }, "Remember preference");
 		assert.equal(manager.contextUsage?.estimate.status, "pending");
 		await manager.previewContext();
-		assert.match(JSON.stringify(prepared.body.messages), /Fresh preference/);
-		assert.match(JSON.stringify(prepared.body.messages), new RegExp(manager.current.id));
+		assert.match(JSON.stringify(preparedChatRequest(prepared).messages), /Fresh preference/);
+		assert.match(JSON.stringify(preparedChatRequest(prepared).messages), new RegExp(manager.current.id));
 		const before = manager.current;
 		pause = true;
 		const preview = manager.previewContext(); await entered.promise;
@@ -230,7 +231,7 @@ describe("session context lifecycle", () => {
 		await assert.rejects(manager.run("Truncate"), { code: "MODEL_TRUNCATED" });
 		assert.equal(manager.contextUsage?.consumption.tokens?.totalTokens, 1820);
 		await manager.previewContext();
-		assert.match(JSON.stringify(prepared.body.messages), /Harness session recovery notice/);
+		assert.match(JSON.stringify(preparedChatRequest(prepared).messages), /Harness session recovery notice/);
 		const onDisk = await store.loadAny(manager.current.id);
 		assert.equal(onDisk.consumption?.tokens?.totalTokens, 1820);
 		await manager.run("Missing usage");
@@ -258,11 +259,11 @@ describe("session context lifecycle", () => {
 		t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-19T00:00:00Z") });
 		const { base, workspace } = await temporaryWorkspace(t);
 		const store = new SessionStore({ root: join(base, "sessions") });
-		const sent: PreparedModelRequest["body"][] = [];
+		const sent: ChatRequest[] = [];
 		let prepared!: PreparedModelRequest;
 		const tools = await createTools(workspace);
 		const agent = { ...createAgent(config, tools, async (input, init) => {
-			const body = await new Request(input, init).json() as PreparedModelRequest["body"];
+			const body = await new Request(input, init).json() as ChatRequest;
 			sent.push(body); return response(body.tools ? "Answer " + "x".repeat(1000) : "Summary", 100000);
 		}), inputCounter: counter((request) => { prepared = request; }) };
 		const manager = await SessionManager.open(agent, { workspace, store });
@@ -274,8 +275,8 @@ describe("session context lifecycle", () => {
 		assert.equal(await readFile(path, "utf8"), original);
 		assert.equal(sent.length, 0);
 		const draft = "Never submitted draft";
-		assert.ok(!JSON.stringify(prepared.body).includes(draft));
-		assert.equal(prepared.body.messages.filter((message) => message.role === "user").length, 0);
+		assert.ok(!JSON.stringify(preparedChatRequest(prepared)).includes(draft));
+		assert.equal(preparedChatRequest(prepared).messages.filter((message) => message.role === "user").length, 0);
 		await manager.run("First");
 		assert.equal(manager.contextUsage?.estimate.status, "pending");
 		const first = await manager.previewContext();
@@ -283,7 +284,7 @@ describe("session context lifecycle", () => {
 		assert.equal(first?.lastReportedInput?.inputTokens, 100000);
 		assert.equal(first?.consumption.tokens?.totalTokens, 100020);
 		assert.notEqual(first?.estimate.inputTokens, first?.lastReportedInput?.inputTokens);
-		const beforeSecond = structuredClone(prepared.body);
+		const beforeSecond = structuredClone(preparedChatRequest(prepared));
 		await manager.run("Second");
 		// Identical assembly, apart from the deliberately excluded new user message.
 		assert.deepEqual(beforeSecond, { ...sent[1]!, messages: sent[1]!.messages.slice(0, -1) });
@@ -300,7 +301,7 @@ describe("session context lifecycle", () => {
 		assert.equal(compacted?.consumption.tokens?.totalTokens, 300060);
 		assert.deepEqual(compacted?.lastReportedInput, observed);
 		assert.ok(compacted!.estimate.inputTokens! < second!.estimate.inputTokens!);
-		assert.match(JSON.stringify(prepared.body.messages), /Summary/);
+		assert.match(JSON.stringify(preparedChatRequest(prepared).messages), /Summary/);
 		const reopened = await SessionManager.open(agent, { workspace, store, selection: { resume: manager.current.id } });
 		assert.equal(reopened.contextUsage?.estimate.status, "pending");
 		assert.deepEqual(reopened.contextUsage?.consumption, compacted?.consumption);
@@ -333,8 +334,8 @@ describe("session context lifecycle", () => {
 		assert.equal(executions, 1);
 		waiting.resolve(); await running;
 		await manager.previewContext();
-		assert.ok(request.body.messages.some((message) => message.role === "tool" && String(message.content).includes("12")));
-		assert.match(JSON.stringify(request.body.messages), /The result is 12/);
+		assert.ok(preparedChatRequest(request).messages.some((message) => message.role === "tool" && String(message.content).includes("12")));
+		assert.match(JSON.stringify(preparedChatRequest(request).messages), /The result is 12/);
 		assert.equal(executions, 1); assert.equal(turns, 2);
 	});
 

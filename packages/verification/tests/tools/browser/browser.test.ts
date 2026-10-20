@@ -41,7 +41,7 @@ test("browser protocol rejects arbitrary code, URLs, excess steps, invalid keys 
 test("browser is opt-in for programmatic callers, requires approval and shares mode locks", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
   await writeFile(join(workspace, "demo.html"), "<h1>Ready</h1>");
-  assert.ok(!(await createTools(workspace)).definitions.some((item) => item.function.name === "browser"));
+  assert.ok(!(await createTools(workspace)).definitions.some((item) => item.name === "browser"));
   const policy = new PermissionPolicy("default");
   let launches = 0; let allowed = false; let approvals = 0;
   const tools = await createTools(workspace, "ask", undefined, { permission: "ask" }, undefined, policy, {
@@ -152,8 +152,8 @@ test("browser records survive failed model turns and child journal duplicates ar
   let calls = 0; let report: ExecutionReport | undefined;
   const model = async () => {
     if (++calls === 1) {
-      const call = { id: "browser-call", type: "function" as const, function: { name: "browser", arguments: '{"path":"demo.html"}' } };
-      return { message: { role: "assistant" as const, content: null, tool_calls: [call] }, toolCalls: [call] };
+      const call = { id: "browser-call", name: "browser", arguments: '{"path":"demo.html"}' };
+      return { message: { role: "assistant" as const, content: null, toolCalls: [call] }, toolCalls: [call] };
     }
     throw new Error("Injected model failure");
   };

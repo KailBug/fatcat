@@ -9,7 +9,7 @@ import type { AttachmentTarget, StagedAttachment } from "@fatcat/runtime/attachm
 import type { SessionRecord } from "@fatcat/runtime/session/record";
 
 function fixture() {
-	const session: SessionRecord = { version: 2, id: randomUUID(), workspace: process.cwd(),
+	const session: SessionRecord = { version: 4, id: randomUUID(), workspace: process.cwd(),
 		location: { kind: "standalone", workspace: process.cwd() }, locationRevision: 0,
 		name: null, title: "Temporary attachments", createdAt: "2026-10-13T00:00:00.000Z",
 		updatedAt: "2026-10-13T00:00:00.000Z", revision: 1, forkedFrom: null, history: [], attempt: null };
@@ -41,7 +41,7 @@ test("fragmented and empty chunks preserve bytes under a bounded real Node heap"
 		import { randomUUID } from "node:crypto";
 		import { MemoryAttachments } from ${JSON.stringify(moduleUrl)};
 		const id = randomUUID();
-		const record = { version: 2, id, workspace: process.cwd(), location: { kind: "standalone", workspace: process.cwd() },
+		const record = { version: 4, id, workspace: process.cwd(), location: { kind: "standalone", workspace: process.cwd() },
 			locationRevision: 0, revision: 1, history: [], attempt: null };
 		const store = new MemoryAttachments({ getSession: async () => record, saveDraft: async () => record });
 		const target = { sessionId: id, locationRevision: 0 };

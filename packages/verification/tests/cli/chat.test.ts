@@ -3,7 +3,7 @@ import { PassThrough, Readable } from "node:stream";
 import test from "node:test";
 import { runChat } from "@fatcat/cli/internal/chat";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Model } from "@fatcat/runtime/model";
+import type { Model } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import type { SkillDescriptor } from "@fatcat/runtime/skills";
 

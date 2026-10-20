@@ -1,5 +1,5 @@
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Model } from "@fatcat/runtime/model";
+import type { Model } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 

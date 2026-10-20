@@ -16,7 +16,7 @@ import { temporaryWorkspace } from "../support/workspace.js";
 
 function records(workspace: string, projectWorkspace: string) {
 	const now = new Date().toISOString();
-	const source: SessionRecord = { version: 2, id: randomUUID(), workspace, storageWorkspace: workspace,
+	const source: SessionRecord = { version: 4, id: randomUUID(), workspace, storageWorkspace: workspace,
 		location: { kind: "standalone", workspace }, locationRevision: 0, name: null, title: "Original",
 		createdAt: now, updatedAt: now, revision: 1, forkedFrom: null, history: [], attempt: null };
 	const project: ProjectRecord = { version: 1, id: randomUUID(), name: "Project", workspace: projectWorkspace,

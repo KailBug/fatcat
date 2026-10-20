@@ -9,7 +9,7 @@ import { acquireAutomationLock } from "@fatcat/runtime/internal/automation/lock"
 import { executeActivation, runAutomations } from "@fatcat/runtime/automation/runner";
 import { Scheduler } from "@fatcat/runtime/automation/scheduler";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Message, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
@@ -172,10 +172,10 @@ test("activations use fresh persistent sessions, normal tool permissions, report
       assert.match(String(messages.at(-1)?.content), /PERMISSION_DENIED/);
       return answer();
     }
-    const toolCalls = [{ id: "write", type: "function" as const, function: { name: "write", arguments: JSON.stringify({
+    const toolCalls = [{ id: "write", name: "write", arguments: JSON.stringify({
       operation: "create", path: "denied.txt", content: "denied",
-    }) } }];
-    return { message: { role: "assistant" as const, content: null, tool_calls: toolCalls }, toolCalls };
+    }) }];
+    return { message: { role: "assistant" as const, content: null, toolCalls: toolCalls }, toolCalls };
   } };
   for (let i = 0; i < 2; i++) await executeActivation({ task, scheduledAt: start }, agent, options);
   assert.deepEqual(requests.filter((messages) => messages.at(-1)?.role === "user").map((messages) => messages.length), [2, 2]);

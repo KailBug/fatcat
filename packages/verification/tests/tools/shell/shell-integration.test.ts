@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import type { LoopEvent } from "@fatcat/runtime/loop";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
 import { createTools } from "@fatcat/runtime/tools";
@@ -13,8 +13,8 @@ import { temporaryWorkspace } from "../../support/workspace.js";
 const windows = { skip: process.platform !== "win32" };
 const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
 function call(name: string, args: unknown): ModelTurn {
-  const toolCalls = [{ id: "execute-1", type: "function" as const, function: { name, arguments: JSON.stringify(args) } }];
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = [{ id: "execute-1", name, arguments: JSON.stringify(args) }];
+  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
 }
 
 test("shell facts survive failed turns and reset while logs omit command and output", windows, async (t) => {

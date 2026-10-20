@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createTools } from "@fatcat/runtime/tools";
 import { runAgent } from "@fatcat/runtime/loop";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport } from "@fatcat/runtime/execution-report";
 import { HarnessError } from "@fatcat/runtime/errors";
@@ -30,8 +30,8 @@ try {
   let phase = 0;
   const observations: Record<string, any>[] = [];
   function call(name: string, args: unknown): ModelTurn {
-    const tool = { id: `fixture-${phase}`, type: "function" as const, function: { name, arguments: JSON.stringify(args) } };
-    return { message: { role: "assistant", content: null, tool_calls: [tool] }, toolCalls: [tool] };
+    const tool = { id: `fixture-${phase}`, name, arguments: JSON.stringify(args) };
+    return { message: { role: "assistant", content: null, toolCalls: [tool] }, toolCalls: [tool] };
   }
   const model: Model = async (messages) => {
     phase++;

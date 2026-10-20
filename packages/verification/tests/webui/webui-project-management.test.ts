@@ -179,10 +179,9 @@ test("project management refuses pending approvals and old confirmations after t
 	const { base, workspace, outside } = await temporaryWorkspace(t);
 	let controller!: WebUiController;
 	const tools = await createTools(workspace, "ask", (request, signal) => controller.requestApproval("write", request, signal));
-	const call = { id: "pending-project-write", type: "function" as const,
-		function: { name: "write", arguments: '{"path":"pending.txt","content":"approval required"}' } };
+	const call = { id: "pending-project-write", name: "write", arguments: '{"path":"pending.txt","content":"approval required"}' };
 	const manager = await SessionManager.open({ tools, maxIterations: 2,
-		model: async () => ({ message: { role: "assistant", content: null, tool_calls: [call] }, toolCalls: [call] }) },
+		model: async () => ({ message: { role: "assistant", content: null, toolCalls: [call] }, toolCalls: [call] }) },
 	{ workspace, store: new SessionStore({ root: join(base, "sessions") }) });
 	const project = await manager.createProject("Guarded", workspace);
 	await manager.newSession("Guarded session", project.id);

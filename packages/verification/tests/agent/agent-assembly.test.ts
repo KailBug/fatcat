@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import { createAgent, workspaceAgentFactory } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
-import type { Message, Model } from "@fatcat/runtime/model";
+import type { Message, Model } from "@fatcat/runtime/model-types";
 import type { SessionAgentOptions } from "@fatcat/runtime/session/agent-session";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";

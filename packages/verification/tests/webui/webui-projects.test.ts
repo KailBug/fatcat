@@ -154,9 +154,9 @@ test("project preview refuses active turns and stop invalidates existing approva
 	const { workspace, outside, base } = await temporaryWorkspace(t);
 	let controller: WebUiController | undefined;
 	const tools = await createTools(workspace, "ask", (request, signal) => controller!.requestApproval("write", request, signal));
-	const call = { id: "project-write", type: "function" as const, function: { name: "write", arguments: '{"path":"pending.txt","content":"blocked"}' } };
+	const call = { id: "project-write", name: "write", arguments: '{"path":"pending.txt","content":"blocked"}' };
 	const manager = await SessionManager.open({ tools, maxIterations: 2,
-		model: async () => ({ message: { role: "assistant", content: null, tool_calls: [call] }, toolCalls: [call] }) },
+		model: async () => ({ message: { role: "assistant", content: null, toolCalls: [call] }, toolCalls: [call] }) },
 		{ workspace, store: new SessionStore({ root: join(base, "sessions") }) });
 	const project = await manager.createProject("Shared", outside);
 	controller = await WebUiController.create({ ...info, workspace }, manager);

@@ -49,7 +49,7 @@ test("shell needs separate authorization and read-only cannot elevate it", async
   const { workspace } = await temporaryWorkspace(t);
   for (const permission of ["read-only", "workspace-write"] as const) {
     const tools = await createTools(workspace, permission);
-    assert.ok(tools.definitions.some((tool) => tool.function.name === "shell"));
+    assert.ok(tools.definitions.some((tool) => tool.name === "shell"));
     const result = await tools.execute("shell", '{"command":"exit 0"}');
     assert.equal(result.ok, false);
     if (!result.ok) assert.equal(result.error.code, "PERMISSION_DENIED");

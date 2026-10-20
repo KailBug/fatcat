@@ -3,7 +3,7 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { attachmentReference } from "@fatcat/runtime/attachments/record";
-import type { Message, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";

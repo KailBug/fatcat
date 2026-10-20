@@ -7,7 +7,7 @@ import { createDocumentVision, type DocumentVision } from "@fatcat/runtime/inter
 import { HarnessError } from "@fatcat/runtime/errors";
 import { createTurnReporter, type ReportEvent } from "@fatcat/runtime/execution-report";
 import { runAgentTurn } from "@fatcat/runtime/loop";
-import type { Message, Model, ModelObservation, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, Model, ModelObservation, ModelTurn } from "@fatcat/runtime/model-types";
 import { withSkills, type SkillCatalog } from "@fatcat/runtime/skills";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
 import type { Tools } from "@fatcat/runtime/tools";
@@ -16,17 +16,15 @@ import { failure } from "@fatcat/runtime/internal/tools/types";
 const config = loadConfig({ HARNESS_PROVIDER: "kimi", MOONSHOT_API_KEY: "offline-vision-budget" });
 const image = { data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ7sAAAAASUVORK5CYII=", "base64"),
   mimeType: "image/png" as const, width: 1, height: 1 };
-const definition: Tools["definitions"][number] = { type: "function", function: {
-  name: "read", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
-} };
+const definition: Tools["definitions"][number] = { name: "read", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } };
 
 function answer(content: string): ModelTurn {
   return { message: { role: "assistant", content }, toolCalls: [] };
 }
 
 function calls(name: string, args: string, ...ids: string[]): ModelTurn {
-  const toolCalls = ids.map((id) => ({ id, type: "function" as const, function: { name, arguments: args } }));
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = ids.map((id) => ({ id, name, arguments: args }));
+  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
 }
 
 function observation(observe?: (event: ModelObservation) => void): void {
@@ -229,7 +227,7 @@ test("context omission retains the exact parse identity without rewriting stored
     { role: "system", content: "Rules" },
     { role: "user", content: "Earlier request" },
     calls("read", JSON.stringify({ path, parserVersion }), "earlier-document").message,
-    { role: "tool", tool_call_id: "earlier-document", content: JSON.stringify(result) },
+    { role: "tool", callId: "earlier-document", content: JSON.stringify(result) },
     answer("Earlier answer").message,
     { role: "user", content: "Recent request" },
     answer("Recent answer").message,

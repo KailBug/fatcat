@@ -9,7 +9,7 @@ import { withAttachments } from "@fatcat/runtime/internal/attachments/tools";
 import type { AttachmentAccess } from "@fatcat/runtime/internal/attachments/tools";
 import { prepareRequestContext } from "@fatcat/runtime/internal/context/request";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import { defaultTools } from "@fatcat/runtime/tools";
 import type { Tools, ToolResult } from "@fatcat/runtime/tools";
 
@@ -132,7 +132,7 @@ test("attachment read wrapper filters names separately and preserves access bind
 	assert.equal(tools.workspaceRoot, base.workspaceRoot);
 	assert.equal(tools.getWrites, writes);
 	assert.equal(tools.getCommands, commands);
-	assert.deepEqual(tools.definitions.map((item) => item.function.name), ["sum", "read"]);
+	assert.deepEqual(tools.definitions.map((item) => item.name), ["sum", "read"]);
 	await tools.execute("sum", "{}", undefined, "known-call");
 	assert.equal(callId, "known-call");
 	const list = resultObject(await tools.execute("read", JSON.stringify({ path: "attachment:list", query: "alpha" })));
@@ -150,7 +150,7 @@ test("attachment read wrapper filters names separately and preserves access bind
 
 test("attachment wrapping preserves existing read behavior and rejects malformed or unversioned references", async () => {
 	let calls = 0;
-	const base: Tools = { definitions: [{ type: "function", function: { name: "read", description: "Existing read" } }],
+	const base: Tools = { definitions: [{ name: "read", description: "Existing read" }],
 		execute: async () => { calls++; return { ok: true, result: "existing" }; } };
 	const access: AttachmentAccess = { list: async () => [], read: async () => { throw new Error("Must not run"); } };
 	const tools = withAttachments(base, access);
@@ -200,8 +200,8 @@ test("context omission preserves exact attachment versions and rereading still c
 		const read = await tools.execute("read", args);
 		const messages: Message[] = [
 			{ role: "user", content: "Read the original evidence" },
-			{ role: "assistant", content: null, tool_calls: [{ id: "original", type: "function", function: { name: "read", arguments: args } }] },
-			{ role: "tool", tool_call_id: "original", content: JSON.stringify(read) },
+			{ role: "assistant", content: null, toolCalls: [{ id: "original", name: "read", arguments: args }] },
+			{ role: "tool", callId: "original", content: JSON.stringify(read) },
 			{ role: "assistant", content: `[Original evidence](${reference}#L3-L7)` },
 			{ role: "user", content: "A later task" },
 			{ role: "assistant", content: "Later answer" },
@@ -216,8 +216,8 @@ test("context omission preserves exact attachment versions and rereading still c
 		assert.equal(omitted.result.path, reference);
 		assert.equal(omitted.result.originalKind, query ? "search" : "file");
 		const call = projected.body.messages[1];
-		assert.ok(call?.role === "assistant" && call.tool_calls?.[0]?.type === "function");
-		const restoredArgs = call.tool_calls[0].function.arguments;
+		assert.ok(call?.role === "assistant" && call.toolCalls?.[0]);
+		const restoredArgs = call.toolCalls[0].arguments;
 		assert.equal(restoredArgs, args);
 		assert.deepEqual(await tools.execute("read", restoredArgs), read);
 		assert.ok(!JSON.stringify(read).includes("Different evidence"));

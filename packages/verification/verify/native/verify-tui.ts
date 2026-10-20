@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { checkCancellation } from "@fatcat/runtime/errors";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createTools } from "@fatcat/runtime/tools";
 import { TuiApp } from "@fatcat/tui/internal/app";
@@ -32,9 +32,8 @@ const model: Model = async (messages, signal, observe) => {
   if (prompt === "approval") {
     // Leave time to type a draft before the tool asks for a fresh approval answer.
     await delay(1500, undefined, { signal });
-    const toolCalls = [{ id: "write-fixture", type: "function" as const,
-      function: { name: "write", arguments: JSON.stringify({ path: "approved.txt", content: "terminal approval verified" }) } }];
-    return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+    const toolCalls = [{ id: "write-fixture", name: "write", arguments: JSON.stringify({ path: "approved.txt", content: "terminal approval verified" }) }];
+    return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
   }
   if (prompt === "cancel") {
     try {

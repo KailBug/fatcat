@@ -1,9 +1,9 @@
+import type { ChatMessage } from "../../tests/support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { runCli } from "@fatcat/cli";
-import type { Message } from "@fatcat/runtime/model";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 
@@ -38,7 +38,7 @@ try {
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     assert.equal(request.url, "https://api.deepseek.com/chat/completions");
-    const { messages } = await request.json() as { messages: Message[] };
+    const { messages } = await request.json() as { messages: ChatMessage[] };
     const last = messages.at(-1)!;
     if (last.role === "tool") return Response.json({ choices: [{ finish_reason: "stop",
       message: { role: "assistant", content: "CLI APPROVAL VERIFIED" } }] });

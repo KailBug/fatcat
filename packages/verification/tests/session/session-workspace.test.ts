@@ -5,7 +5,7 @@ import test from "node:test";
 import { runInteractiveCommand } from "@fatcat/commands";
 import { loadConfig } from "@fatcat/runtime/config";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";

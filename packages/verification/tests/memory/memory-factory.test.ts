@@ -1,9 +1,9 @@
+import type { ChatRequest } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import test from "node:test";
 import { loadConfig } from "@fatcat/runtime/config";
-import type { Message } from "@fatcat/runtime/model";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
@@ -13,10 +13,7 @@ import type { Tools } from "@fatcat/runtime/tools";
 import { workspaceAgentFactory } from "@fatcat/runtime/agent";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-interface ModelRequest {
-	messages: Message[];
-	tools?: Tools["definitions"];
-}
+type ModelRequest = ChatRequest;
 
 interface MemoryNotice {
 	manifest: Array<{ id: string; scope: string; revision: number; status: string }>;
@@ -116,7 +113,7 @@ for (const selection of ["manual", "read-only", "plan"] as const) {
 		const project = await store.projects.create("Dog project", workspace);
 		const other = await store.projects.create("Other project", workspace);
 		const now = new Date().toISOString();
-		const source = await store.save({ version: 2, id: randomUUID(), workspace, name: "Source", title: "Source",
+		const source = await store.save({ version: 4, id: randomUUID(), workspace, name: "Source", title: "Source",
 			location: { kind: "project", projectId: project.id }, locationRevision: 0,
 			projectName: project.name, projectRevision: project.revision, createdAt: now, updatedAt: now,
 			revision: 0, forkedFrom: null, attempt: null, history: [
@@ -159,7 +156,7 @@ for (const selection of ["manual", "read-only", "plan"] as const) {
 		assert.deepEqual(policy.snapshot(), initialPermissions);
 		for (const tools of rawTools) {
 			assert.deepEqual(tools.getWrites!(), []);
-			const properties = tools.definitions.find((tool) => tool.function.name === "write")!.function.parameters!.properties as Record<string, unknown>;
+			const properties = tools.definitions.find((tool) => tool.name === "write")!.parameters!.properties as Record<string, unknown>;
 			assert.equal(properties.memoryEvidence, undefined, "Session decoration must not contaminate the raw workspace cache");
 		}
 	});

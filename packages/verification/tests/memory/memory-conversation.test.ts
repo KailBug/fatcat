@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
@@ -5,14 +6,13 @@ import type { TestContext } from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
 import type { Config } from "@fatcat/runtime/config";
-import type { Message } from "@fatcat/runtime/model";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 interface ModelRequest {
-	messages: Message[];
+	messages: ChatMessage[];
 	tools?: { function: { name: string } }[];
 }
 

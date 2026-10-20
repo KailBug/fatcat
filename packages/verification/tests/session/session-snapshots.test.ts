@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, rmdir, stat, unlink, writeFile } from "node:f
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { SessionRecord } from "@fatcat/runtime/session/record";
+import { encodeSessionRecord, type SessionRecord } from "@fatcat/runtime/session/record";
 import { publishSessionSnapshot, readSessionSnapshot, sessionDirectory } from "@fatcat/runtime/internal/session/snapshots";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";
@@ -13,7 +13,7 @@ const code = (expected: string) => (error: unknown) => error instanceof HarnessE
 
 function draft(workspace: string): SessionRecord {
   const now = new Date().toISOString();
-  return { version: 2, id: randomUUID(), workspace, name: null, title: "New session",
+  return { version: 4, id: randomUUID(), workspace, name: null, title: "New session",
     createdAt: now, updatedAt: now, revision: 0, forkedFrom: null, history: [], attempt: null };
 }
 
@@ -48,25 +48,25 @@ describe("Session snapshots and storage coordination", () => {
     assert.deepEqual(await readFile(path), bytes);
   });
 
-  it("keeps missing stores absent and legacy reads byte-for-byte unchanged", async (t) => {
+  it("keeps missing stores absent and snapshot reads byte-for-byte unchanged", async (t) => {
     const { base, workspace } = await temporaryWorkspace(t);
     const store = new SessionStore({ root: join(base, "sessions") });
-    const legacy = { ...draft(workspace), version: 1, revision: 1 };
+    const record = { ...draft(workspace), revision: 1 };
     assert.deepEqual(await store.listAll(), []);
-    await assert.rejects(store.loadAny(legacy.id), code("SESSION_NOT_FOUND"));
+    await assert.rejects(store.loadAny(record.id), code("SESSION_NOT_FOUND"));
     await assert.rejects(stat(store.root), { code: "ENOENT" });
 
     const directory = sessionDirectory(store.root, workspace);
     await mkdir(directory, { recursive: true });
-    const path = join(directory, `${legacy.id}.json`);
-    const json = JSON.stringify(legacy, null, 2) + "\n";
+    const path = join(directory, `${record.id}.json`);
+    const json = JSON.stringify(encodeSessionRecord(record), null, 2) + "\n";
     await writeFile(path, json);
-    assert.equal((await readSessionSnapshot(store.root, directory, legacy.id)).version, 1);
-    const loaded = await store.load(workspace, legacy.id);
-    assert.equal(loaded.version, 1);
+    assert.equal((await readSessionSnapshot(store.root, directory, record.id)).version, 4);
+    const loaded = await store.load(workspace, record.id);
+    assert.equal(loaded.version, 4);
     assert.deepEqual(loaded.location, { kind: "standalone", workspace });
     assert.equal(await readFile(path, "utf8"), json);
-    assert.deepEqual(await readdir(directory), [`${legacy.id}.json`]);
+    assert.deepEqual(await readdir(directory), [`${record.id}.json`]);
   });
 
   it("rejects snapshots in the wrong bucket without making discovery a permissive project scan", async (t) => {

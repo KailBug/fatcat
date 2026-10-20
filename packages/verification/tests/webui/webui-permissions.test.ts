@@ -7,7 +7,7 @@ import type { TestContext } from "node:test";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { createTools } from "@fatcat/runtime/tools";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { WebUiController } from "@fatcat/webui/internal/controller";
 import type { WebUiState } from "@fatcat/webui/internal/types";
 import { startWebUiServer } from "@fatcat/webui/internal/server";
@@ -22,9 +22,8 @@ async function until(predicate: () => boolean): Promise<void> {
 }
 
 function call(name: string, args: unknown): ModelTurn {
-  const toolCalls = [{ id: "permission-fixture", type: "function" as const,
-    function: { name, arguments: JSON.stringify(args) } }];
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = [{ id: "permission-fixture", name, arguments: JSON.stringify(args) }];
+  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
 }
 
 const model: Model = async (messages) => {

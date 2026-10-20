@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { chromium } from "playwright";
 import type { Browser, Page } from "playwright";
-import type { Model } from "@fatcat/runtime/model";
+import type { Model } from "@fatcat/runtime/model-types";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
@@ -52,9 +52,8 @@ try {
       });
     }
     if (prompt === "Propose a file" && messages.at(-1)?.role === "user") {
-      const tool = { id: "design-write", type: "function" as const,
-        function: { name: "write", arguments: JSON.stringify({ path: "approved.txt", content: "Approved fixture\n" }) } };
-      return { message: { role: "assistant", content: null, tool_calls: [tool] }, toolCalls: [tool] };
+      const tool = { id: "design-write", name: "write", arguments: JSON.stringify({ path: "approved.txt", content: "Approved fixture\n" }) };
+      return { message: { role: "assistant", content: null, toolCalls: [tool] }, toolCalls: [tool] };
     }
     return { toolCalls: [], message: { role: "assistant", content: [
       "## A clear starting point", "This is an **injected UI fixture**, with a short plan and code to check the conversation layout.",

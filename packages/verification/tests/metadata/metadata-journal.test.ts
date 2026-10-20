@@ -16,7 +16,7 @@ describe("metadata journal boundaries", () => {
 		const { workspace, outside } = await temporaryWorkspace(t);
 		const projectId = randomUUID();
 		const now = new Date().toISOString();
-		const session: SessionRecord = { version: 2, id: randomUUID(), workspace: outside, storageWorkspace: workspace,
+		const session: SessionRecord = { version: 4, id: randomUUID(), workspace: outside, storageWorkspace: workspace,
 			location: { kind: "project", projectId }, projectRevision: 7, locationRevision: 1,
 			name: null, title: "Joined", createdAt: now, updatedAt: now, revision: 2, forkedFrom: null, history: [], attempt: null };
 		const catalog = emptyAttachmentCatalog();

@@ -8,7 +8,7 @@ import { isMemoryCommand, runMemoryCommand } from "@fatcat/commands/memory";
 import type { MemoryRecord } from "@fatcat/runtime/memory/record";
 import { withMemories, withMemoryContext } from "@fatcat/runtime/internal/memory/tools";
 import type { MemoryAccess } from "@fatcat/runtime/internal/memory/tools";
-import type { Message, Model, ModelObservation } from "@fatcat/runtime/model";
+import type { Message, Model, ModelObservation } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
@@ -74,7 +74,7 @@ test("memory read composes with existing tools, permissions, journals, and turn 
 		execute: async (_name, _args, _signal, id) => { callId = id; return { ok: true, result: "passthrough" }; },
 		forTurn: (_onEvent, context) => { turns++; observedContext = context; return defaultTools; } };
 	const tools = withMemories(base, access);
-	assert.deepEqual(tools.definitions.map((item) => item.function.name), ["sum", "read"]);
+	assert.deepEqual(tools.definitions.map((item) => item.name), ["sum", "read"]);
 	assert.equal(tools.workspaceRoot, base.workspaceRoot);
 	assert.equal(tools.getWrites, writes);
 	assert.equal(tools.getCommands, commands);
@@ -153,7 +153,7 @@ test("memory list pagination is stable, bounded, and searches case-sensitive lit
 test("invalid memory arguments fail before access and ordinary paths retain the existing read", async () => {
 	let calls = 0;
 	let baseCalls = 0;
-	const base: Tools = { definitions: [{ type: "function", function: { name: "read", description: "Existing read" } }],
+	const base: Tools = { definitions: [{ name: "read", description: "Existing read" }],
 		execute: async () => { baseCalls++; return { ok: true, result: "existing" }; } };
 	const tools = withMemories(base, { list: async () => { calls++; return []; } });
 	for (const path of ["workspace.md", "attachment:list", "skill://test/SKILL.md"]) {
@@ -161,8 +161,8 @@ test("invalid memory arguments fail before access and ordinary paths retain the 
 	}
 	assert.equal(baseCalls, 3);
 	assert.equal(tools.definitions.length, 1);
-	assert.match(tools.definitions[0]!.function.description!, /Existing read/);
-	assert.match(tools.definitions[0]!.function.description!, /memory:list/);
+	assert.match(tools.definitions[0]!.description!, /Existing read/);
+	assert.match(tools.definitions[0]!.description!, /memory:list/);
 	for (const args of [
 		{ path: "memory:list", limit: 65 }, { path: "memory:list", limit: 0 }, { path: "memory:list", limit: 1.1 },
 		{ path: "memory:list", offset: -1 }, { path: "memory:list", offset: null }, { path: "memory:list", offset: 1.1 },
@@ -277,8 +277,8 @@ test("older memory reads are preserved through request omission without becoming
 	const result = await tools.execute("read", args);
 	const messages: Message[] = [
 		{ role: "user", content: "Read the memory" },
-		{ role: "assistant", content: null, tool_calls: [{ id: "memory-read", type: "function", function: { name: "read", arguments: args } }] },
-		{ role: "tool", tool_call_id: "memory-read", content: JSON.stringify(result) },
+		{ role: "assistant", content: null, toolCalls: [{ id: "memory-read", name: "read", arguments: args }] },
+		{ role: "tool", callId: "memory-read", content: JSON.stringify(result) },
 		{ role: "assistant", content: "Read the memory" },
 		{ role: "user", content: "Previous task" }, { role: "assistant", content: "Previous answer" },
 		{ role: "user", content: "Current task" },

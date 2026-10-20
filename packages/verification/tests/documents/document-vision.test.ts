@@ -1,9 +1,10 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfig, type Config } from "@fatcat/runtime/config";
 import { createDocumentVision, type DocumentVisionImage } from "@fatcat/runtime/internal/documents/vision";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Message, ModelObservation } from "@fatcat/runtime/model";
+import type { ModelObservation } from "@fatcat/runtime/model-types";
 import { getModelInputCapabilities } from "@fatcat/runtime/model-catalog";
 
 const image: DocumentVisionImage = {
@@ -45,7 +46,7 @@ for (const item of [
       const request = new Request(input, init);
       assert.equal(request.url, item.endpoint);
       assert.equal(request.headers.get("authorization"), `Bearer offline-${item.provider}`);
-      const body = await request.json() as { model: string; messages: Message[] } & Record<string, unknown>;
+      const body = await request.json() as { model: string; messages: ChatMessage[] } & Record<string, unknown>;
       assert.equal(body.model, item.model);
       assert.equal(body.stream, false);
       assert.ok(!("tools" in body));
@@ -121,7 +122,7 @@ test("vision capabilities require exact adapted models and never imply native PD
 test("transcription and description have distinct instructions and provenance", async () => {
   let calls = 0;
   const vision = createDocumentVision(config(), async (input, init) => {
-    const body = await new Request(input, init).json() as { messages: Message[] };
+    const body = await new Request(input, init).json() as { messages: ChatMessage[] };
     const instruction = String(body.messages[0]?.content);
     if (++calls === 1) {
       assert.match(instruction, /Transcribe all legible text/);

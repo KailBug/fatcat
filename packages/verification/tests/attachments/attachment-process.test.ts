@@ -39,7 +39,7 @@ test("another process cannot expose half-published sharing, and readers recover 
 	const { base, workspace, outside } = await temporaryWorkspace(t);
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const now = new Date().toISOString();
-	const session = await store.save({ version: 2, id: randomUUID(), workspace, name: null, title: "Original",
+	const session = await store.save({ version: 4, id: randomUUID(), workspace, name: null, title: "Original",
 		createdAt: now, updatedAt: now, revision: 0, forkedFrom: null, history: [], attempt: null }, 0);
 	const project = await store.projects.create("Shared", outside);
 	const uploadId = randomUUID();
@@ -84,7 +84,7 @@ test("cross-process upload ownership prevents duplicate staging and old cleanup 
 	const { base, workspace } = await temporaryWorkspace(t);
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const now = new Date().toISOString();
-	const session = await store.save({ version: 2, id: randomUUID(), workspace, name: null, title: "Original",
+	const session = await store.save({ version: 4, id: randomUUID(), workspace, name: null, title: "Original",
 		createdAt: now, updatedAt: now, revision: 0, forkedFrom: null, history: [], attempt: null }, 0);
 	const uploadId = randomUUID();
 	const fixture = fileURLToPath(new URL("./support/attachment-upload-process.js", import.meta.url));

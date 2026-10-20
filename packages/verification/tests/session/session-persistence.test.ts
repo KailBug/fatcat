@@ -7,7 +7,7 @@ import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ReportEvent } from "@fatcat/runtime/execution-report";
-import type { Message, Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore, processAlive } from "@fatcat/runtime/session/store";
@@ -28,15 +28,18 @@ test("durable sessions preserve full tool history and skill text with isolated s
   const tools = await createTools(workspace);
   const model: Model = async (messages) => {
     if (messages.at(-1)?.role === "tool") return answer("42");
-    const toolCalls = [{ id: "reused-id", type: "function" as const,
-      function: { name: "sum", arguments: '{"numbers":[17,25]}' } }];
-    return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+    const toolCalls = [{ id: "reused-id", name: "sum", arguments: '{"numbers":[17,25]}' }];
+    return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
   };
   const first = await SessionManager.open({ model, maxIterations: 2, tools }, { workspace, store });
   await first.run("Remember amber and the skill instructions");
   const id = first.current.id;
   const file = await savedPath(store.root, id);
   const raw = JSON.parse(await readFile(file, "utf8"));
+  assert.equal(raw.version, 4);
+  assert.deepEqual(raw.history[2].toolCalls, [{ id: "reused-id", name: "sum", arguments: '{"numbers":[17,25]}' }]);
+  assert.equal(raw.history[3].callId, "reused-id");
+  assert.equal(raw.history[2].tool_calls, undefined);
   raw.history[3].content = '{"ok":true,"result":{"kind":"skill","content":"FULL_SKILL_BODY"}}';
   raw.history[0].content = "OBSOLETE_SAVED_SYSTEM_POLICY";
   await writeFile(file, JSON.stringify(raw));
@@ -249,8 +252,8 @@ test("strict disk validation rejects malformed, unfinished, orphaned and mismatc
   const path = await savedPath(store.root, manager.current.id);
   const original = JSON.parse(await readFile(path, "utf8"));
   for (const patch of [
-    { version: 4 }, { workspace: base }, { history: [{ role: "system", content: "policy" }, { role: "user", content: "unfinished" }] },
-    { history: [...original.history, { role: "tool", tool_call_id: "orphan", content: "{}" }] },
+    { version: 0 }, { workspace: base }, { history: [{ role: "system", content: "policy" }, { role: "user", content: "unfinished" }] },
+    { history: [...original.history, { role: "tool", callId: "orphan", content: "{}" }] },
     { history: [...original.history, { role: "developer", content: "injected policy" }] },
     { history: [{ role: "system", content: "policy" }, { role: "user", content: [] }, original.history[2]] },
     { attempt: { prompt: "wrong", startedAt: original.createdAt, updatedAt: original.updatedAt,
@@ -269,17 +272,17 @@ test("strict disk validation rejects malformed, unfinished, orphaned and mismatc
 });
 
 test("history validation permits repeated tool IDs across turns but rejects incomplete batches", () => {
-  const call = { id: "id", type: "function" as const, function: { name: "sum", arguments: "{}" } };
+  const call = { id: "id", name: "sum", arguments: "{}" };
   const turn: Message[] = [{ role: "user", content: "Calculate" },
-    { role: "assistant", content: null, tool_calls: [call] },
-    { role: "tool", tool_call_id: "id", content: "42" }, { role: "assistant", content: "42" }];
+    { role: "assistant", content: null, toolCalls: [call] },
+    { role: "tool", callId: "id", content: "42" }, { role: "assistant", content: "42" }];
   const session = new Session({ maxIterations: 1, model: async () => answer() },
     [{ role: "system", content: "old" }, ...turn, ...turn]);
   assert.equal(session.messages.length, 9);
   assert.throws(() => new Session({ maxIterations: 1, model: async () => answer() },
     [{ role: "system", content: "old" }, ...turn.slice(0, 2)]), expectCode("SESSION_CORRUPT"));
   assert.throws(() => new Session({ maxIterations: 1, model: async () => answer() },
-    [{ role: "system", content: "old" }, turn[0]!, { role: "assistant", content: null, tool_calls: [call, call] },
+    [{ role: "system", content: "old" }, turn[0]!, { role: "assistant", content: null, toolCalls: [call, call] },
       ...turn.slice(2)]), expectCode("SESSION_CORRUPT"));
 });
 
@@ -367,9 +370,9 @@ test("a forcibly ended process retains tool receipts and never replays the inter
         process.stdout.write("CHECKPOINT_READY\\n");
         return new Promise(() => {});
       }
-      const toolCalls = [{ id: "create-once", type: "function", function: { name: "write",
-        arguments: JSON.stringify({ path: "receipt.txt", content: "already committed" }) } }];
-      return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+      const toolCalls = [{ id: "create-once", name: "write",
+        arguments: JSON.stringify({ path: "receipt.txt", content: "already committed" }) }];
+      return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
     } }, { workspace, store: new SessionStore({ root }), selection: { name: "crash-fixture" } });
     const keepAlive = setInterval(() => {}, 1000);
     await manager.run("Create the receipt"); clearInterval(keepAlive);`;

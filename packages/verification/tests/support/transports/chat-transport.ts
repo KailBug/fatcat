@@ -1,11 +1,11 @@
+import type { ChatMessage } from "../chat-protocol.js";
 import assert from "node:assert/strict";
-import type { Message } from "@fatcat/runtime/model";
 
 // Loaded only by CLI tests through Node's --import flag. No request reaches a network.
 globalThis.fetch = async (input, init) => {
   const request = new Request(input, init);
   assert.equal(request.url, "https://api.deepseek.com/chat/completions");
-  const { messages, tools } = await request.json() as { messages: Message[]; tools: { function: { name: string; description: string } }[] };
+  const { messages, tools } = await request.json() as { messages: ChatMessage[]; tools: { function: { name: string; description: string } }[] };
   const webPrompt = messages.findLast((message) => message.role === "user")?.content;
   if (webPrompt === "web permission" || webPrompt === "web denied") {
     const web = tools.find((tool) => tool.function.name === "web");

@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import type { LoopEvent } from "@fatcat/runtime/loop";
-import type { Message, Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 
 function answer(content = "Ready"): ModelTurn {
   return { message: { role: "assistant", content }, toolCalls: [] };
 }
 function sum(id = "sum_call"): ModelTurn {
-  const toolCalls = [{ id, type: "function" as const, function: { name: "sum", arguments: '{"numbers":[17,25]}' } }];
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = [{ id, name: "sum", arguments: '{"numbers":[17,25]}' }];
+  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
 }
 
 test("a session keeps successful turns without sharing mutable model references", async () => {
@@ -54,7 +54,7 @@ test("tool history stays complete across turns with a fresh iteration budget and
     assert.equal(await session.run(prompt, { onEvent: (event) => events.push(event) }), "42");
   }
   assert.deepEqual(requests[2]?.map((message) => message.role), ["system", "user", "assistant", "tool", "assistant", "user"]);
-  assert.deepEqual(requests[2]?.[3], { role: "tool", tool_call_id: "sum_call", content: '{"ok":true,"result":42}' });
+  assert.deepEqual(requests[2]?.[3], { role: "tool", callId: "sum_call", content: '{"ok":true,"result":42}' });
   assert.deepEqual(events.filter((event) => event.type === "model_request").map((event) => event.iteration), [1, 2, 1, 2]);
 });
 

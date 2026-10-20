@@ -1,9 +1,10 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import { attachmentReference } from "@fatcat/runtime/attachments/record";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
@@ -19,8 +20,8 @@ import { temporaryWorkspace } from "../support/workspace.js";
 const reference = `attachment:${randomUUID()}@${"a".repeat(64)}`;
 
 function readMessages(result: unknown, name = "read"): Message[] {
-	return [{ role: "assistant", content: null, tool_calls: [{ id: "source-read", type: "function", function: { name, arguments: "{}" } }] },
-		{ role: "tool", tool_call_id: "source-read", content: JSON.stringify({ ok: true, result }) }];
+	return [{ role: "assistant", content: null, toolCalls: [{ id: "source-read", name, arguments: "{}" }] },
+		{ role: "tool", callId: "source-read", content: JSON.stringify({ ok: true, result }) }];
 }
 
 test("document citation parsing preserves exact parse versions and rejects ambiguous locations", () => {
@@ -68,10 +69,10 @@ test("source evidence ignores unrelated, failed and malformed tool data and boun
 	const result = { kind: "file", path: reference, name: "evidence.md", startLine: 1, endLine: 2, totalLines: 20,
 		citation: `${reference}#L1-L2`, coverage: { complete: false } };
 	assert.deepEqual(attachmentEvidence(readMessages(result, "shell")).reads, []);
-	assert.deepEqual(attachmentEvidence([{ role: "tool", tool_call_id: "source-read", content: JSON.stringify({ ok: true, result }) }]).reads, []);
+	assert.deepEqual(attachmentEvidence([{ role: "tool", callId: "source-read", content: JSON.stringify({ ok: true, result }) }]).reads, []);
 	assert.deepEqual(attachmentEvidence(readMessages({ ...result, path: "file:///C:/private" })).reads, []);
 	const failed = readMessages(result);
-	failed[1] = { role: "tool", tool_call_id: "source-read", content: '{"ok":false,"error":{"message":"Failed"}}' };
+	failed[1] = { role: "tool", callId: "source-read", content: '{"ok":false,"error":{"message":"Failed"}}' };
 	assert.deepEqual(attachmentEvidence(failed).reads, []);
 	const many = attachmentEvidence(readMessages({ kind: "document", path: reference, name: "notes.docx",
 		units: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, location: { paragraph: index + 1 },
@@ -101,7 +102,7 @@ test("Web UI restores real delegated reads from the executing project's saved to
 	let source = "";
 	const config = loadConfig({ DEEPSEEK_API_KEY: "offline-child-source", HARNESS_MAX_ITERATIONS: "4" });
 	const factory = async (root: string) => createAgent(config, await createTools(root), async (input, init) => {
-		const body = await new Request(input, init).json() as { tools?: { function: { name: string } }[]; messages: Message[] };
+		const body = await new Request(input, init).json() as { tools?: { function: { name: string } }[]; messages: ChatMessage[] };
 		const parent = body.tools?.some((tool) => tool.function.name === "delegate_task");
 		if (body.messages.at(-1)?.role === "user") {
 			const call = { id: parent ? "delegate" : "child-read", type: "function", function: {

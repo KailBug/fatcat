@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { ModelTurn } from "@fatcat/runtime/model";
+import type { ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";

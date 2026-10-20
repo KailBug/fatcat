@@ -3,17 +3,15 @@ import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { runAgent, runAgentTurn } from "@fatcat/runtime/loop";
 import type { LoopEvent } from "@fatcat/runtime/loop";
-import type { Message, Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 
 function finalAnswer(content: string): ModelTurn {
   return { message: { role: "assistant", content }, toolCalls: [] };
 }
 
 function requestTools(...calls: { id: string; name: string; args: string }[]): ModelTurn {
-  const toolCalls = calls.map(({ id, name, args }) => ({
-    id, type: "function" as const, function: { name, arguments: args },
-  }));
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = calls.map(({ id, name, args }) => ({ id, name, arguments: args }));
+  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
 }
 
 test("direct answers finish after one request with fresh history per run", async () => {
@@ -40,12 +38,12 @@ test("multiple tools and subsequent turns preserve call/result association", asy
     if (requests === 2) {
       assert.equal(messages[2]?.role, "assistant");
       assert.deepEqual(messages.slice(3), [
-        { role: "tool", tool_call_id: "a", content: '{"ok":true,"result":42}' },
-        { role: "tool", tool_call_id: "b", content: '{"ok":true,"result":3}' },
+        { role: "tool", callId: "a", content: '{"ok":true,"result":42}' },
+        { role: "tool", callId: "b", content: '{"ok":true,"result":3}' },
       ]);
       return requestTools({ id: "c", name: "sum", args: '{"numbers":[42,3]}' });
     }
-    assert.deepEqual(messages.at(-1), { role: "tool", tool_call_id: "c", content: '{"ok":true,"result":45}' });
+    assert.deepEqual(messages.at(-1), { role: "tool", callId: "c", content: '{"ok":true,"result":45}' });
     return finalAnswer("45");
   };
   assert.equal(await runAgent("Add these numbers", { model, maxIterations: 3 }), "45");

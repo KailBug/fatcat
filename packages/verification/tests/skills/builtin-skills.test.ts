@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdir, readFile, rename, symlink, writeFile } from "node:fs/promises";
@@ -6,7 +7,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
-import type { Message } from "@fatcat/runtime/model";
 import { Session } from "@fatcat/runtime/session/session";
 import { discoverSkills, withSkills } from "@fatcat/runtime/skills";
 import { defaultTools } from "@fatcat/runtime/tools";
@@ -55,7 +55,7 @@ test("built-in skills ship with the build and add only catalogued reads without 
   assert.equal(catalog.warnings.length, 0);
   assert.equal(catalog.skills.length, bundled.length);
   const tools = withSkills(defaultTools, catalog);
-  assert.deepEqual(tools.definitions.map((entry) => entry.function.name), ["sum", "read"]);
+  assert.deepEqual(tools.definitions.map((entry) => entry.name), ["sum", "read"]);
   for (const expected of bundled) {
     const descriptor = catalog.skills.find((entry) => entry.name === expected.name);
     assert.ok(descriptor, expected.name);
@@ -222,7 +222,7 @@ test("an actual built-in skill loads through the SDK, persists in Session and lo
   const config = loadConfig({ DEEPSEEK_API_KEY: "offline-builtin-only", HARNESS_MAX_ITERATIONS: "4" });
   let parentReads = 0;
   let childReads = 0;
-  function hasInstructions(messages: Message[]) {
+  function hasInstructions(messages: ChatMessage[]) {
     return messages.some((message) => {
       if (message.role !== "tool") return false;
       const result = JSON.parse(String(message.content)) as ToolResult;
@@ -235,7 +235,7 @@ test("an actual built-in skill loads through the SDK, persists in Session and lo
     role: "assistant", content: null, tool_calls: [{ type: "function", id, function: { name, arguments: JSON.stringify(args) } }],
   } }] });
   const agent = createAgent(config, defaultTools, async (input, init) => {
-    const { messages, tools } = await new Request(input, init).json() as { messages: Message[]; tools: { function: { name: string } }[] };
+    const { messages, tools } = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
     const system = String(messages[0]?.content);
     for (const descriptor of catalog.skills) assert.ok(system.includes(descriptor.uri));
     assert.ok(!system.includes(source));

@@ -7,7 +7,7 @@ import { loadConfig } from "@fatcat/runtime/config";
 import { defaultModelSelection } from "@fatcat/runtime/model-catalog";
 import { ModelConnections } from "@fatcat/runtime/model-connections";
 import { createModel } from "@fatcat/runtime/model";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import { prepareCompaction } from "@fatcat/runtime/context/compaction";
 import { validateHistory } from "@fatcat/runtime/internal/session/history";
 import { systemPrompt } from "@fatcat/runtime/internal/system-prompt";
@@ -51,7 +51,7 @@ describe("session-owned model selection", () => {
 		assert.equal(requests.at(-1)?.model, kimi.model);
 		assert.equal(requests.at(-1)?.reasoning_effort, "max");
 		const disk = await readFile(join(store.root, workspaceKey(workspace), `${first}.json`), "utf8");
-		assert.equal(JSON.parse(disk).version, 3);
+		assert.equal(JSON.parse(disk).version, 4);
 		assert.ok(!disk.includes("offline-kimi"));
 		await manager.fork("alternative");
 		assert.deepEqual(manager.current.modelSelection, kimi);
@@ -135,20 +135,20 @@ describe("session-owned model selection", () => {
 		assert.equal(calls, 2);
 	});
 
-	it("adopts the startup identity for legacy records without rewriting on read", async (t) => {
+	it("adopts the startup identity for injected sessions without rewriting on read", async (t) => {
 		const { base, workspace } = await temporaryWorkspace(t);
 		const store = new SessionStore({ root: join(base, "sessions") });
-		const legacy = await SessionManager.open({ model: async () => ({ message: { role: "assistant", content: "Old" }, toolCalls: [] }),
+		const injected = await SessionManager.open({ model: async () => ({ message: { role: "assistant", content: "Ready" }, toolCalls: [] }),
 			maxIterations: 1 }, { workspace, store });
-		const path = join(store.root, workspaceKey(workspace), `${legacy.current.id}.json`);
+		const path = join(store.root, workspaceKey(workspace), `${injected.current.id}.json`);
 		const before = await readFile(path, "utf8");
-		assert.equal(JSON.parse(before).version, 2);
+		assert.equal(JSON.parse(before).version, 4);
 		const manager = await SessionManager.open(createAgent(config, await createTools(workspace), async () => response()),
-			{ workspace, store, selection: { resume: legacy.current.id } });
+			{ workspace, store, selection: { resume: injected.current.id } });
 		assert.deepEqual(manager.current.modelSelection, defaultModelSelection("deepseek"));
 		assert.equal(await readFile(path, "utf8"), before);
-		await manager.run("Upgrade on write");
-		assert.equal(JSON.parse(await readFile(path, "utf8")).version, 3);
+		await manager.run("Save identity");
+		assert.deepEqual(JSON.parse(await readFile(path, "utf8")).modelSelection, defaultModelSelection("deepseek"));
 	});
 });
 
@@ -195,12 +195,14 @@ describe("provider reasoning history projection", () => {
 		const selection = { ...defaultModelSelection("deepseek"), thinking: "high" as const };
 		const first = await createModel({ ...config, ...selection }, async () => response(raw))([{ role: "user", content: "Add" }]);
 		const history: Message[] = [{ role: "system", content: systemPrompt }, { role: "user", content: "Add" }, first.message,
-			{ role: "tool", tool_call_id: "sum-call", content: "3" }, { role: "assistant", content: "3" }];
+			{ role: "tool", callId: "sum-call", content: "3" }, { role: "assistant", content: "3" }];
 		assert.deepEqual(validateHistory(history), history);
 		const invalid = structuredClone(history);
 		const assistant = invalid[2];
 		if (assistant?.role !== "assistant") throw new Error("Missing fixture assistant");
-		assistant.modelContext!.message.tool_calls![0]!.id = "changed";
+		const rawCalls = assistant.modelContext!.message.tool_calls;
+		assert.ok(Array.isArray(rawCalls));
+		rawCalls[0].id = "changed";
 		assert.throws(() => validateHistory(invalid), { code: "SESSION_CORRUPT" });
 		let calls = 0;
 		let inputBytes = 0;

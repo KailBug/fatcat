@@ -13,7 +13,7 @@
     "typecheck": "pnpm run check:boundaries && pnpm --filter \"./packages/*\" -r build && tsc --noEmit",
     "build": "pnpm run check:boundaries && pnpm --filter \"./packages/*\" -r build && tsc",
     "start": "pnpm run build && node --env-file-if-exists=.env dist/scripts/start.js",
-    "test": "pnpm run build && node packages/verification/dist/scripts/test.js",
+    "test": "pnpm run build && pnpm --filter @fatcat/eval --filter @fatcat/verification -r --workspace-concurrency=1 test",
     "verify:tui": "pnpm run build && node packages/verification/dist/verify/native/verify-tui.js",
     "verify:cli": "pnpm run build && node packages/verification/dist/verify/native/verify-cli.js",
     "verify:delegation": "pnpm run build && node --env-file-if-exists=.env packages/verification/dist/verify/live/verify-delegation.js",
@@ -36,6 +36,7 @@
     "check:boundaries": "node scripts/check-packages.mjs"
   },
   "devDependencies": {
+    "@fatcat/eval": "workspace:*",
     "@types/node": "24.13.5",
     "typescript": "7.0.2",
     "@fatcat/verification": "workspace:*"

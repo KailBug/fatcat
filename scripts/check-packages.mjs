@@ -3,13 +3,15 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const packages = ["runtime", "commands", "tui", "webui", "cli", "verification"].map((name) => ({
-	source: resolve(root, `packages/${name}${name === "verification" ? "" : "/src"}`),
-	directories: (name === "verification" ? ["tests", "verify", "scripts"] : ["src"])
+const developmentPackages = new Set(["@fatcat/verification", "@fatcat/eval"]);
+const packages = ["runtime", "commands", "tui", "webui", "cli", "verification", "eval"].map((name) => ({
+	source: resolve(root, `packages/${name}${developmentPackages.has(`@fatcat/${name}`) ? "" : "/src"}`),
+	directories: (name === "verification" ? ["tests", "verify", "scripts"] : name === "eval" ? ["src", "tests", "scripts"] : ["src"])
 		.map((directory) => resolve(root, `packages/${name}/${directory}`)),
 	manifest: JSON.parse(readFileSync(resolve(root, `packages/${name}/package.json`), "utf8")),
 }));
 const allowed = {
+	"@fatcat/eval": [],
 	"@fatcat/verification": ["@fatcat/runtime", "@fatcat/commands", "@fatcat/tui", "@fatcat/webui", "@fatcat/cli"],
 	"@fatcat/cli": ["@fatcat/runtime", "@fatcat/commands", "@fatcat/tui", "@fatcat/webui"],
 	"@fatcat/runtime": [],
@@ -44,6 +46,7 @@ for (const directory of [...packages.flatMap((entry) => entry.directories), reso
 	for (const file of files(directory, ".ts")) {
 		const owner = packages.find((entry) => inside(entry.source, file));
 		const verification = owner?.manifest.name === "@fatcat/verification";
+		const development = developmentPackages.has(owner?.manifest.name);
 		for (const specifier of imports(readFileSync(file, "utf8"))) {
 			const fail = (reason) => failures.push(`${relative(root, file)}: ${reason} (${specifier})`);
 			if (specifier.startsWith("node:")) continue;
@@ -55,7 +58,7 @@ for (const directory of [...packages.flatMap((entry) => entry.directories), reso
 			}
 			const name = specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0];
 			const dependencies = owner
-				? { ...owner.manifest.dependencies, ...(verification ? owner.manifest.devDependencies : {}) }
+				? { ...owner.manifest.dependencies, ...(development ? owner.manifest.devDependencies : {}) }
 				: { ...host.dependencies, ...host.devDependencies };
 			if (!Object.hasOwn(dependencies, name)) fail("Import requires a direct dependency declaration");
 			const target = packages.find((entry) => entry.manifest.name === name);

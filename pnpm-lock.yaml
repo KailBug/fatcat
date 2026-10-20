@@ -15,6 +15,9 @@ importers:
         specifier: workspace:*
         version: link:packages/runtime
     devDependencies:
+      '@fatcat/eval':
+        specifier: workspace:*
+        version: link:packages/eval
       '@fatcat/verification':
         specifier: workspace:*
         version: link:packages/verification
@@ -52,6 +55,15 @@ importers:
       '@fatcat/runtime':
         specifier: workspace:*
         version: link:../runtime
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.5
+        version: 24.13.5
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
+  packages/eval:
     devDependencies:
       '@types/node':
         specifier: 24.13.5

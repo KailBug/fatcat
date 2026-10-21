@@ -14,10 +14,10 @@ import type { CommandEventRecord } from "@fatcat/runtime/tools/shell";
 import type { WriteRecord } from "@fatcat/runtime/tools/write";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content } });
 function call(id: string, name: string, args: unknown): ModelTurn {
   const toolCalls = [{ id, name, arguments: JSON.stringify(args) }];
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 function capture() {
   const events: ReportEvent[] = [];

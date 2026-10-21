@@ -8,7 +8,7 @@ import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Ready" }, toolCalls: [] });
+const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Ready" } });
 const task = { action: "create", prompt: "Review changes", trigger: { type: "interval", seconds: 60 }, maxRuns: 3 };
 
 async function fixture(t: TestContext, background: boolean, model: Model = async () => answer()) {

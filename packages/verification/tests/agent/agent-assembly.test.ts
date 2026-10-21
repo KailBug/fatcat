@@ -61,7 +61,7 @@ describe("createAgent session binding", () => {
 		const requests: Parameters<Model>[] = [];
 		const customModel: Model = async (...args) => {
 			requests.push(args);
-			return { message: { role: "assistant", content: "Custom answer" }, toolCalls: [] };
+			return { message: { role: "assistant", content: "Custom answer" } };
 		};
 		const current: SessionAgentOptions = { ...agent, tools: customTools, model: customModel,
 			maxIterations: 7, maxRequestBytes: 12345, autoCompaction: false, compactionModel: customModel };

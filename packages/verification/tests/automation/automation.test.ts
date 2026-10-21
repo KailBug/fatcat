@@ -15,7 +15,7 @@ import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const start = Date.parse("2026-10-02T00:00:00Z");
-const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Checked" }, toolCalls: [] });
+const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Checked" } });
 const interval = { type: "interval", seconds: 60 };
 const makeConfig = (trigger: unknown = interval, overrides: Record<string, unknown> = {}) => parseAutomationConfig({
   version: 1, tasks: [{ id: "check", prompt: "Inspect current state", trigger }], ...overrides,
@@ -175,7 +175,7 @@ test("activations use fresh persistent sessions, normal tool permissions, report
     const toolCalls = [{ id: "write", name: "write", arguments: JSON.stringify({
       operation: "create", path: "denied.txt", content: "denied",
     }) }];
-    return { message: { role: "assistant" as const, content: null, toolCalls: toolCalls }, toolCalls };
+    return { message: { role: "assistant" as const, content: null, toolCalls } };
   } };
   for (let i = 0; i < 2; i++) await executeActivation({ task, scheduledAt: start }, agent, options);
   assert.deepEqual(requests.filter((messages) => messages.at(-1)?.role === "user").map((messages) => messages.length), [2, 2]);

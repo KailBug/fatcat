@@ -38,7 +38,7 @@ test("skills lists local metadata without model calls or history changes and rej
     const prompt = String(messages.at(-1)?.content);
     prompts.push(prompt);
     assert.ok(!JSON.stringify(messages).includes("/skills"));
-    return { message: { role: "assistant", content: "Done" }, toolCalls: [] };
+    return { message: { role: "assistant", content: "Done" } };
   } });
   await session.run("First");
   const saved = session.messages;
@@ -76,7 +76,7 @@ test("queued input survives a slow turn and failures allow later lines through E
     await new Promise((resolve) => setImmediate(resolve));
     if (prompt === "Fail") throw new Error("private provider information");
     assert.ok(!JSON.stringify(messages).includes("Fail"));
-    return { message: { role: "assistant", content: "Done" }, toolCalls: [] };
+    return { message: { role: "assistant", content: "Done" } };
   };
   const output = capture();
   const error = capture();

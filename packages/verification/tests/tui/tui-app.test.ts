@@ -50,7 +50,7 @@ const settings = {
     maxIterations: 8, requestTimeoutMs: 60000, maxRequestBytes: 262144 },
   workspace: "D:\\fixture", permission: "ask" as const, shellPermission: "ask" as const, skills: 4,
 };
-const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content }, toolCalls: [] });
+const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content } });
 
 describe("TUI turn feedback boundaries", () => {
   it("deduplicates parent and child records, displays updates and resets eligibility for the next turn", async (t) => {
@@ -244,7 +244,7 @@ test("TUI cron creates a bound task, shows its marker and appends the triggered 
       const toolCalls = [{ id: "create", name: "automation", arguments: JSON.stringify({
         action: "create", prompt: "Scheduled review", trigger: { type: "at", time: new Date(Date.now() + 2200).toISOString() }, maxRuns: 1,
       }) }];
-      return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+      return { message: { role: "assistant", content: null, toolCalls } };
     }
     return answer(latest?.role === "tool" ? "Schedule created" : "Scheduled review finished");
   } }, { workspace, store: new SessionStore({ root: join(base, "sessions") }) });
@@ -447,7 +447,7 @@ test("a real child write waits for approval and appears once in the shared execu
   const app = new TuiApp({ ...settings, workspace, terminal, color: false });
   const call = (name: string, args: unknown) => {
     const toolCalls = [{ id: name, name, arguments: JSON.stringify(args) }];
-    return { message: { role: "assistant" as const, content: null, toolCalls: toolCalls }, toolCalls };
+    return { message: { role: "assistant" as const, content: null, toolCalls } };
   };
   let childRequests = 0;
   let parentRequests = 0;

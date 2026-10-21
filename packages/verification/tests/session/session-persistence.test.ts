@@ -15,7 +15,7 @@ import { systemPrompt } from "@fatcat/runtime/internal/system-prompt";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content } });
 const expectCode = (code: string) => (error: unknown) => error instanceof HarnessError && error.code === code;
 async function savedPath(root: string, id: string): Promise<string> {
   const directories = await readdir(root);
@@ -29,7 +29,7 @@ test("durable sessions preserve full tool history and skill text with isolated s
   const model: Model = async (messages) => {
     if (messages.at(-1)?.role === "tool") return answer("42");
     const toolCalls = [{ id: "reused-id", name: "sum", arguments: '{"numbers":[17,25]}' }];
-    return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+    return { message: { role: "assistant", content: null, toolCalls } };
   };
   const first = await SessionManager.open({ model, maxIterations: 2, tools }, { workspace, store });
   await first.run("Remember amber and the skill instructions");
@@ -372,7 +372,7 @@ test("a forcibly ended process retains tool receipts and never replays the inter
       }
       const toolCalls = [{ id: "create-once", name: "write",
         arguments: JSON.stringify({ path: "receipt.txt", content: "already committed" }) }];
-      return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+      return { message: { role: "assistant", content: null, toolCalls } };
     } }, { workspace, store: new SessionStore({ root }), selection: { name: "crash-fixture" } });
     const keepAlive = setInterval(() => {}, 1000);
     await manager.run("Create the receipt"); clearInterval(keepAlive);`;

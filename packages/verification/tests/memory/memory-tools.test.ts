@@ -20,7 +20,7 @@ async function managedFixture(t: TestContext) {
 	const { base, workspace } = await temporaryWorkspace(t);
 	let requests = 0;
 	const agent = { maxIterations: 1, tools: defaultTools,
-		model: async () => { requests++; return { message: { role: "assistant" as const, content: "Answer" }, toolCalls: [] }; } };
+		model: async () => { requests++; return { message: { role: "assistant" as const, content: "Answer" } }; } };
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const session = await SessionManager.open(agent, { workspace, store });
 	return { session, store, agent, workspace, requests: () => requests };
@@ -205,7 +205,7 @@ test("memory request context refreshes every call without persisting snapshots o
 		assert.equal(receivedObserver, observe);
 		assert.equal(receivedOptions, options);
 		requests.push(structuredClone(messages));
-		return { message: { role: "assistant", content: "Answer" }, toolCalls: [] };
+		return { message: { role: "assistant", content: "Answer" } };
 	};
 	const model = withMemoryContext(base, { list: async () => { lists++; return current; } });
 	const messages: Message[] = [{ role: "system", content: "Base rules" }, { role: "user", content: "Use my preferences" }];
@@ -241,7 +241,7 @@ test("memory request notices enumerate every visible entry within complete JSON 
 	let captured: Message[] = [];
 	const model = withMemoryContext(async (messages) => {
 		captured = messages;
-		return { message: { role: "assistant", content: "Answer" }, toolCalls: [] };
+		return { message: { role: "assistant", content: "Answer" } };
 	}, { list: async () => records });
 	await model([{ role: "user", content: "Relevant task" }]);
 	const notice = captured[0]!;
@@ -259,7 +259,7 @@ test("memory request notices enumerate every visible entry within complete JSON 
 
 test("memory request context fails closed on oversized manifests or cancellation without sending the model request", async () => {
 	let requests = 0;
-	const base: Model = async () => { requests++; return { message: { role: "assistant", content: "Answer" }, toolCalls: [] }; };
+	const base: Model = async () => { requests++; return { message: { role: "assistant", content: "Answer" } }; };
 	const records = Array.from({ length: 193 }, () => memory());
 	const access = { list: async () => records };
 	await assert.rejects(withMemoryContext(base, access)([]), { code: "MEMORY_LIMIT" });
@@ -291,7 +291,7 @@ test("older memory reads are preserved through request omission without becoming
 		assert.deepEqual(request.slice(1), saved);
 		assert.equal(noticeData(request).manifest[0]!.status, "deleted");
 		assert.deepEqual(noticeData(request).contents, []);
-		return { message: { role: "assistant", content: "Answer" }, toolCalls: [] };
+		return { message: { role: "assistant", content: "Answer" } };
 	}, { list: async () => [{ ...record, status: "deleted", revision: 2 }] });
 	await model(messages);
 	assert.deepEqual(messages, saved);
@@ -299,7 +299,7 @@ test("older memory reads are preserved through request omission without becoming
 
 test("memory commands remain host operations and require a managed conversation", async () => {
 	const session = new Session({ maxIterations: 1,
-		model: async () => ({ message: { role: "assistant", content: "Answer" }, toolCalls: [] }) });
+		model: async () => ({ message: { role: "assistant", content: "Answer" } }) });
 	assert.equal(isMemoryCommand("/memory"), true);
 	assert.equal(isMemoryCommand("/memory add global preference"), true);
 	assert.equal(isMemoryCommand("/memoryless"), false);

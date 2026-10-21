@@ -31,7 +31,7 @@ try {
   const observations: Record<string, any>[] = [];
   function call(name: string, args: unknown): ModelTurn {
     const tool = { id: `fixture-${phase}`, name, arguments: JSON.stringify(args) };
-    return { message: { role: "assistant", content: null, toolCalls: [tool] }, toolCalls: [tool] };
+    return { message: { role: "assistant", content: null, toolCalls: [tool] } };
   }
   const model: Model = async (messages) => {
     phase++;
@@ -52,7 +52,7 @@ try {
     assert.equal(observations[1]!.completedSteps, 3);
     assert.equal(observations[1]!.diagnostics.filter((item: { kind: string }) => item.kind === "pageerror").length, 0);
     assert.ok(observations[1]!.snapshot.text.includes("Welcome, Ada"));
-    return { message: { role: "assistant", content: "The injected repair scenario passed its DOM and runtime assertions. Screenshots are saved for user review." }, toolCalls: [] };
+    return { message: { role: "assistant", content: "The injected repair scenario passed its DOM and runtime assertions. Screenshots are saved for user review." } };
   };
   let report: ExecutionReport | undefined;
   await runAgent("Verify and repair the fixture", { model, tools, maxIterations: 6,

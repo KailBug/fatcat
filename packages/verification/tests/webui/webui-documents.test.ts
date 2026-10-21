@@ -145,7 +145,7 @@ test("document source HTTP preserves parse locations, rechecks scope and never t
 	let modelRequests = 0;
 	const factory = async (root: string) => ({ tools: await createTools(root), maxIterations: 1, model: async () => {
 		modelRequests++;
-		return { toolCalls: [], message: { role: "assistant" as const, content: "Offline answer" } };
+		return { message: { role: "assistant" as const, content: "Offline answer" } };
 	} });
 	const manager = await SessionManager.open(await factory(workspace), { workspace,
 		store: new SessionStore({ root: join(base, "sessions") }), agentForWorkspace: factory });

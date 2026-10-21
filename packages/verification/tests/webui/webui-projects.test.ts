@@ -19,7 +19,7 @@ const info = { provider: "deepseek", model: "offline", permission: "read-only", 
 
 async function factory(workspace: string) {
 	const tools = await createTools(workspace);
-	return { tools, maxIterations: 1, model: async () => ({ toolCalls: [], message: { role: "assistant" as const,
+	return { tools, maxIterations: 1, model: async () => ({ message: { role: "assistant" as const,
 		content: JSON.stringify(await tools.execute("read", '{"path":"marker.txt"}')) } }) };
 }
 
@@ -156,7 +156,7 @@ test("project preview refuses active turns and stop invalidates existing approva
 	const tools = await createTools(workspace, "ask", (request, signal) => controller!.requestApproval("write", request, signal));
 	const call = { id: "project-write", name: "write", arguments: '{"path":"pending.txt","content":"blocked"}' };
 	const manager = await SessionManager.open({ tools, maxIterations: 2,
-		model: async () => ({ message: { role: "assistant", content: null, toolCalls: [call] }, toolCalls: [call] }) },
+		model: async () => ({ message: { role: "assistant", content: null, toolCalls: [call] } }) },
 		{ workspace, store: new SessionStore({ root: join(base, "sessions") }) });
 	const project = await manager.createProject("Shared", outside);
 	controller = await WebUiController.create({ ...info, workspace }, manager);

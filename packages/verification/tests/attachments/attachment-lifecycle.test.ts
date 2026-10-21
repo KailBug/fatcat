@@ -12,7 +12,7 @@ import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const agent = { model: async () => ({ message: { role: "assistant" as const, content: "Done" }, toolCalls: [] }), maxIterations: 4 };
+const agent = { model: async () => ({ message: { role: "assistant" as const, content: "Done" } }), maxIterations: 4 };
 async function upload(session: SessionManager, name: string, content: string) {
 	const bytes = Buffer.from(content);
 	const target = await session.beginAttachmentUpload(session.current.id, name, bytes.length);
@@ -97,7 +97,7 @@ test("completed bytes wait for the active turn before publishing without replaci
 	const session = await SessionManager.open({ ...agent, model: async () => {
 		entered();
 		await gate;
-		return { message: { role: "assistant" as const, content: "Preserved answer" }, toolCalls: [] };
+		return { message: { role: "assistant" as const, content: "Preserved answer" } };
 	} }, { workspace, store: new SessionStore({ root: join(base, "sessions") }), deferEmptySessions: true });
 	const target = await session.beginAttachmentUpload(session.current.id, "late.txt", 4);
 	const turn = session.run("Preserve my turn");

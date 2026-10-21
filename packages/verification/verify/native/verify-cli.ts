@@ -60,7 +60,7 @@ try {
   };
   const store = new SessionStore({ root: environment.FATCAT_SESSION_DIR });
   const seed = await SessionManager.open({ maxIterations: 1, model: async () => ({
-    message: { role: "assistant", content: "Seed answer" }, toolCalls: [],
+    message: { role: "assistant", content: "Seed answer" },
   }) }, { workspace, store, selection: { name: "native-cli" } });
   await seed.run("Seed terminal session");
 

@@ -9,11 +9,11 @@ import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
 import { defaultTools } from "@fatcat/runtime/tools";
 
 function answer(content: string): ModelTurn {
-  return { message: { role: "assistant", content }, toolCalls: [] };
+  return { message: { role: "assistant", content } };
 }
 function calls(name: string, args: string, ...ids: string[]): ModelTurn {
   const toolCalls = ids.map((id) => ({ id, name, arguments: args }));
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 test("delegation isolates child history, correlates events, and returns only the final answer", async () => {

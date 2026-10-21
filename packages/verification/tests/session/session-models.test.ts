@@ -63,7 +63,7 @@ describe("session-owned model selection", () => {
 		await reopened.run("Continue");
 		assert.equal(requests.at(-1)?.model, kimi.model);
 		assert.equal(reopened.current.turnCount, 2);
-		assert.ok(!JSON.stringify(requests).includes("modelContext"));
+		assert.ok(!JSON.stringify(requests).includes("providerReplay"));
 		const copy = reopened.current.modelSelection!;
 		copy.model = "mutated";
 		assert.equal(reopened.current.modelSelection?.model, kimi.model);
@@ -138,7 +138,7 @@ describe("session-owned model selection", () => {
 	it("adopts the startup identity for injected sessions without rewriting on read", async (t) => {
 		const { base, workspace } = await temporaryWorkspace(t);
 		const store = new SessionStore({ root: join(base, "sessions") });
-		const injected = await SessionManager.open({ model: async () => ({ message: { role: "assistant", content: "Ready" }, toolCalls: [] }),
+		const injected = await SessionManager.open({ model: async () => ({ message: { role: "assistant", content: "Ready" } }),
 			maxIterations: 1 }, { workspace, store });
 		const path = join(store.root, workspaceKey(workspace), `${injected.current.id}.json`);
 		const before = await readFile(path, "utf8");
@@ -173,7 +173,7 @@ describe("provider reasoning history projection", () => {
 		const resumed = await SessionManager.open(agent, { workspace, store, selection: { resume: manager.current.id } });
 		await resumed.run("Continue");
 		assert.deepEqual(bodies[2]!.messages.find((message) => message.role === "assistant"), raw);
-		assert.ok(!JSON.stringify(bodies).includes("modelContext"));
+		assert.ok(!JSON.stringify(bodies).includes("providerReplay"));
 		const plan = prepareCompaction(resumed.history, undefined);
 		assert.ok(!plan.chunks.join("").includes("PRIVATE_"));
 		assert.ok(!plan.chunks.join("").includes("opaque_state"));
@@ -184,7 +184,7 @@ describe("provider reasoning history projection", () => {
 				const body = await new Request(input, init).text();
 				assert.ok(!body.includes("PRIVATE_"));
 				assert.ok(!body.includes("opaque_state"));
-				assert.ok(!body.includes("modelContext"));
+				assert.ok(!body.includes("providerReplay"));
 				assert.ok(body.includes("sum-call"));
 				return response();
 			})(resumed.history);
@@ -197,10 +197,21 @@ describe("provider reasoning history projection", () => {
 		const history: Message[] = [{ role: "system", content: systemPrompt }, { role: "user", content: "Add" }, first.message,
 			{ role: "tool", callId: "sum-call", content: "3" }, { role: "assistant", content: "3" }];
 		assert.deepEqual(validateHistory(history), history);
+		assert.equal(first.message.providerReplay?.api, "chat-completions");
+		for (const replacement of [
+			{ ...first.message.providerReplay, api: "responses" },
+			{ ...first.message.providerReplay, api: undefined },
+			{ ...first.message.providerReplay, message: { ...raw, content: "Changed answer" } },
+			{ ...first.message.providerReplay, message: { ...raw, reasoning_content: { invalid: true } } },
+		]) {
+			const altered = structuredClone(history);
+			Object.assign(altered[2]!, { providerReplay: replacement });
+			assert.throws(() => validateHistory(altered), { code: "SESSION_CORRUPT" });
+		}
 		const invalid = structuredClone(history);
 		const assistant = invalid[2];
 		if (assistant?.role !== "assistant") throw new Error("Missing fixture assistant");
-		const rawCalls = assistant.modelContext!.message.tool_calls;
+		const rawCalls = assistant.providerReplay!.message.tool_calls;
 		assert.ok(Array.isArray(rawCalls));
 		rawCalls[0].id = "changed";
 		assert.throws(() => validateHistory(invalid), { code: "SESSION_CORRUPT" });
@@ -210,7 +221,7 @@ describe("provider reasoning history projection", () => {
 			const text = await new Request(input, init).text();
 			assert.equal(Buffer.byteLength(text), inputBytes);
 			assert.equal(text.includes("PRIVATE_REASONING"), calls++ === 0);
-			assert.ok(!text.includes("modelContext"));
+			assert.ok(!text.includes("providerReplay"));
 			return response();
 		});
 		const observe = (event: { type: string; bytes?: number }) => { if (event.type === "model_input") inputBytes = event.bytes!; };

@@ -19,12 +19,12 @@ const image = { data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
 const definition: Tools["definitions"][number] = { name: "read", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } };
 
 function answer(content: string): ModelTurn {
-  return { message: { role: "assistant", content }, toolCalls: [] };
+  return { message: { role: "assistant", content } };
 }
 
 function calls(name: string, args: string, ...ids: string[]): ModelTurn {
   const toolCalls = ids.map((id) => ({ id, name, arguments: args }));
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 function observation(observe?: (event: ModelObservation) => void): void {

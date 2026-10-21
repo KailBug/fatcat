@@ -9,7 +9,7 @@ import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (content = "Done"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Done"): ModelTurn => ({ message: { role: "assistant", content } });
 const agent = { model: async () => answer(), maxIterations: 4 };
 
 async function upload(session: SessionManager, content: string) {

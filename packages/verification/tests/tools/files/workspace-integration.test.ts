@@ -50,10 +50,10 @@ test("each Session keeps its own workspace, including after reset", async (t) =>
   const model: Model = async (messages) => {
     if (messages.at(-1)?.role === "user") {
       const toolCalls = [{ id: "read", name: "read", arguments: '{"path":"notes.txt"}' }];
-      return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+      return { message: { role: "assistant", content: null, toolCalls } };
     }
     const result = JSON.parse(String(messages.at(-1)?.content)) as { result: { content: string } };
-    return { message: { role: "assistant", content: result.result.content }, toolCalls: [] };
+    return { message: { role: "assistant", content: result.result.content } };
   };
   const first = new Session({ model, tools: await createTools(workspace), maxIterations: 2 });
   const second = new Session({ model, tools: await createTools(outside), maxIterations: 2 });

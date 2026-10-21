@@ -38,7 +38,7 @@ const model: Model = async (messages) => {
 		const toolCalls = [{ id: "remember-user-preference", name: "write", arguments: JSON.stringify({ path: prompt === remember ? "memory:new" : `memory:${memoryId}@${prompt === correction ? 1 : 2}`,
 				content: prompt === remember ? "Dog likes CSGO best" : prompt === correction ? "Dog prefers chess" : "",
 				memoryEvidence: prompt }) }];
-		return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+		return { message: { role: "assistant", content: null, toolCalls } };
 	}
 	if (last.role === "tool") assert.equal(JSON.parse(String(last.content)).ok, true, String(last.content));
 	const notice = JSON.parse(system.split("\n").find((line) => line.startsWith('{"manifest":'))!) as {
@@ -60,7 +60,7 @@ const model: Model = async (messages) => {
 		assert.equal(content?.content, expectedContent);
 		assert.equal(content?.revision, expectedRevision);
 	}
-	return { toolCalls: [], message: { role: "assistant", content: expectedContent === undefined
+	return { message: { role: "assistant", content: expectedContent === undefined
 		? "No active game preference." : `Current memory: ${expectedContent}.` } };
 };
 

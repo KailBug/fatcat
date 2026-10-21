@@ -6,11 +6,11 @@ import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 
 function answer(content = "Ready"): ModelTurn {
-  return { message: { role: "assistant", content }, toolCalls: [] };
+  return { message: { role: "assistant", content } };
 }
 function sum(id = "sum_call"): ModelTurn {
   const toolCalls = [{ id, name: "sum", arguments: '{"numbers":[17,25]}' }];
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 test("a session keeps successful turns without sharing mutable model references", async () => {

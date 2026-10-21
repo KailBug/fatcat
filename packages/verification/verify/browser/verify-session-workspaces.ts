@@ -29,11 +29,11 @@ const factory = async (root: string) => {
       observe?.({ type: "model_input", bytes: 300000, limitBytes: 262144, accepted: false });
       throw new HarnessError("MODEL_CONTEXT_LIMIT", "Injected local request limit");
     }
-    return { toolCalls: [], message: { role: "assistant",
+    return { message: { role: "assistant",
       content: JSON.stringify(await tools.execute("read", '{"path":"marker.txt"}')) } };
   };
   return { tools, maxIterations: 8, model,
-    compactionModel: async () => ({ toolCalls: [], message: { role: "assistant" as const,
+    compactionModel: async () => ({ message: { role: "assistant" as const,
       content: "Keep the workspace marker requirement. Inspect current marker.txt before reporting its content." } }) };
 };
 const store = new SessionStore({ root: join(base, "sessions") });

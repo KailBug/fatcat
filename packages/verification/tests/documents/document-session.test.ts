@@ -13,7 +13,7 @@ import { createTools } from "@fatcat/runtime/tools";
 import { officeFixture, imageFixture } from "../fixtures/document-fixtures.js";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const agent = { model: async () => ({ message: { role: "assistant" as const, content: "Done" }, toolCalls: [] }), maxIterations: 4 };
+const agent = { model: async () => ({ message: { role: "assistant" as const, content: "Done" } }), maxIterations: 4 };
 
 for (const cached of [false, true]) {
 	test(`revoking an attachment during a ${cached ? "cached" : "new"} document read rejects subsequent cache access`, async (t) => {

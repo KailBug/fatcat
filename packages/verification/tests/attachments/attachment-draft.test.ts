@@ -10,7 +10,7 @@ import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const agent = { maxIterations: 4, model: async (): Promise<ModelTurn> => ({
-	message: { role: "assistant", content: "Done" }, toolCalls: [],
+	message: { role: "assistant", content: "Done" },
 }) };
 const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
 

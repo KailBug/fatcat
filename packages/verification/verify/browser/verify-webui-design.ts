@@ -53,9 +53,9 @@ try {
     }
     if (prompt === "Propose a file" && messages.at(-1)?.role === "user") {
       const tool = { id: "design-write", name: "write", arguments: JSON.stringify({ path: "approved.txt", content: "Approved fixture\n" }) };
-      return { message: { role: "assistant", content: null, toolCalls: [tool] }, toolCalls: [tool] };
+      return { message: { role: "assistant", content: null, toolCalls: [tool] } };
     }
-    return { toolCalls: [], message: { role: "assistant", content: [
+    return { message: { role: "assistant", content: [
       "## A clear starting point", "This is an **injected UI fixture**, with a short plan and code to check the conversation layout.",
       "- Read the entry points.\n- Make a focused change.\n- Run the relevant checks.",
       "```typescript\nconst workspace = 'a-long-workspace-path/with-several/nested/directories';\nconsole.log(workspace);\n```",

@@ -24,10 +24,10 @@ import { temporaryWorkspace } from "../support/workspace.js";
 
 const info: WebUiInfo = { provider: "deepseek", model: "offline", workspace: "fixture", permission: "ask",
   shellPermission: "ask", webPermission: "deny", maxIterations: 4, maxRequestBytes: 262144, skills: 0, warnings: [] };
-const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content } });
 function tool(name: string, args: unknown): ModelTurn {
   const toolCalls = [{ id: "call-fixture", name, arguments: JSON.stringify(args) }];
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 async function until(predicate: () => boolean | Promise<boolean>): Promise<void> {
   // Scheduled turns and multi-request session checkpoints can exceed five seconds on CI.
@@ -127,7 +127,7 @@ test("Web UI saves a budget-limited answer after a rejected path and a committed
     const next = requests <= 2
       ? tool("write", { path: requests === 1 ? join(workspace, "animation.html") : "animation.html", content })
       : tool("read", { path: "animation.html" });
-    next.toolCalls[0]!.id = `budget-call-${requests}`;
+    next.message.toolCalls![0]!.id = `budget-call-${requests}`;
     return Response.json({ choices: [{ finish_reason: "tool_calls", message: chatMessage(next.message) }] });
   });
   const store = new SessionStore({ root: join(base, "sessions") });

@@ -22,7 +22,7 @@ async function setup(t: TestContext) {
 	const fixture = await temporaryWorkspace(t);
 	const { base, workspace } = fixture;
 	const factory = async (root: string) => ({ tools: await createTools(root), maxIterations: 1,
-		model: async () => ({ toolCalls: [], message: { role: "assistant" as const, content: "Offline answer" } }) });
+		model: async () => ({ message: { role: "assistant" as const, content: "Offline answer" } }) });
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const manager = await SessionManager.open(await factory(workspace), { workspace, store,
 		deferEmptySessions: true, agentForWorkspace: factory });

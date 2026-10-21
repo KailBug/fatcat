@@ -15,7 +15,7 @@ import { temporaryWorkspace } from "../support/workspace.js";
 
 const info: WebUiInfo = { provider: "deepseek", model: "deepseek-flash", workspace: "fixture", permission: "ask",
   shellPermission: "deny", webPermission: "deny", maxIterations: 3, maxRequestBytes: 12_345, skills: 0, warnings: [] };
-const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Done" }, toolCalls: [] });
+const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Done" } });
 const usage = (promptTokens: number) => ({ promptTokens, completionTokens: 5, totalTokens: promptTokens + 5 });
 
 async function finished(controller: WebUiController): Promise<void> {
@@ -52,7 +52,7 @@ test("Web UI keeps reported main input, cumulative usage and current estimates s
     if (requests === 1) {
       observe?.({ type: "model_usage", usage: usage(90) });
       const toolCalls = [{ id: "child", name: "fixture", arguments: "{}" }];
-      return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+      return { message: { role: "assistant", content: null, toolCalls } };
     }
     if (requests === 3) throw new HarnessError("MODEL_CONNECTION", "Fixture transport failed.");
     if (requests === 4) { observe?.({ type: "model_usage", usage: null }); return answer(); }

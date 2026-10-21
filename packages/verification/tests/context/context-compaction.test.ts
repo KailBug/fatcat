@@ -21,7 +21,7 @@ import { WebUiController } from "@fatcat/webui/internal/controller";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const answer = (content = "Retain the amber requirement; inspect src/cart.ts before editing."): ModelTurn => ({
-	message: { role: "assistant", content }, toolCalls: [],
+	message: { role: "assistant", content },
 });
 const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
 function history(size = 6000): Message[] {
@@ -113,7 +113,7 @@ test("invalid, ineffective, failed and cancelled summaries retain prior context 
 			if (failure === "oversize") return answer("x".repeat(8193));
 			if (failure === "tools") {
 				const call = { id: "bad", name: "shell", arguments: "{}" };
-				return { message: { role: "assistant", content: null, toolCalls: [call] }, toolCalls: [call] };
+				return { message: { role: "assistant", content: null, toolCalls: [call] } };
 			}
 			return answer();
 		} }, history());

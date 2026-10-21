@@ -12,9 +12,9 @@ import { temporaryWorkspace } from "../../support/workspace.js";
 
 function call(name: string, args: unknown, id = "call-1"): ModelTurn {
   const toolCalls = [{ id, name, arguments: JSON.stringify(args) }];
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
-const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content } });
 
 test("failed, cancelled and exhausted turns retain writes without keeping broken tool history", async (t) => {
   for (const failureCode of ["MODEL_HTTP", "CANCELLED", "MAX_ITERATIONS"]) {

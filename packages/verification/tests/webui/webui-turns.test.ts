@@ -20,7 +20,7 @@ async function setup(t: TestContext) {
         modelSelection: defaultModelSelection("deepseek"),
 		model: async (_messages, _signal, observe) => {
 			observe?.({ type: "model_usage", usage: { promptTokens: 42, completionTokens: 1, totalTokens: 43 } });
-			return { message: { role: "assistant", content: "Done" }, toolCalls: [] };
+			return { message: { role: "assistant", content: "Done" } };
 		},
 		maxIterations: 1,
 	}, { workspace, store: new SessionStore({ root: join(base, "sessions") }) });

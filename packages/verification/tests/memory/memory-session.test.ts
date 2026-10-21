@@ -16,7 +16,7 @@ import { createTools } from "@fatcat/runtime/tools";
 import { WebUiController } from "@fatcat/webui/internal/controller";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = { message: { role: "assistant" as const, content: "Done" }, toolCalls: [] };
+const answer = { message: { role: "assistant" as const, content: "Done" } };
 const agent = { model: async () => answer, maxIterations: 4 };
 
 test("explicit Memory commands preserve provenance and revisions without model requests or history changes", async (t) => {

@@ -64,7 +64,7 @@ describe("current provider protocol contracts", () => {
 				return response();
 			});
 			const turn = await client(messages);
-			assert.deepEqual(turn.message.modelContext?.selection, selection);
+			assert.deepEqual(turn.message.providerReplay?.selection, selection);
 			assert.equal(calls, 1);
 			await client(messages, undefined, undefined, { toolChoice: "none", purpose: "document" });
 			assert.equal(calls, 2);

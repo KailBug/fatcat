@@ -24,10 +24,10 @@ function terminalFixture(interactive = true, env: NodeJS.ProcessEnv = {}) {
   }
   return { input, error, terminal, text: () => text, waitFor };
 }
-const final = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const final = (content: string): ModelTurn => ({ message: { role: "assistant", content } });
 function toolCall(name: string, args: unknown): ModelTurn {
   const toolCalls = [{ id: "write-call", name, arguments: JSON.stringify(args) }];
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 test("chat approves one edit without sending the confirmation to the model", async (t) => {

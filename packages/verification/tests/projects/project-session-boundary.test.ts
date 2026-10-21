@@ -9,7 +9,7 @@ import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const agent: SessionAgentOptions = { maxIterations: 1, model: async () => ({
-	message: { role: "assistant", content: "Done" }, toolCalls: [],
+	message: { role: "assistant", content: "Done" },
 }) };
 
 async function fixture(t: TestContext) {

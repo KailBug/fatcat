@@ -8,7 +8,7 @@ import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Saved answer" }, toolCalls: [] });
+const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Saved answer" } });
 
 for (const persistence of [true, false]) {
   test(`deferred sessions avoid empty entries across new, restart and deletion (persistent=${persistence})`, async (t) => {

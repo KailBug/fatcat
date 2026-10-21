@@ -9,7 +9,7 @@ import { pickWorkspaceDirectory } from "@fatcat/webui/internal/folder-picker";
 import { startWebUiServer } from "@fatcat/webui/internal/server";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const agent = { maxIterations: 1, model: async () => ({ toolCalls: [], message: { role: "assistant" as const, content: "Ready" } }) };
+const agent = { maxIterations: 1, model: async () => ({ message: { role: "assistant" as const, content: "Ready" } }) };
 const info = { provider: "deepseek", model: "offline", permission: "read-only", shellPermission: "deny", webPermission: "deny",
   maxIterations: 1, maxRequestBytes: 262144, skills: 0, warnings: [] };
 

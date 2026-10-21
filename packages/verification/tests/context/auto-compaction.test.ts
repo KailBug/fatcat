@@ -19,7 +19,7 @@ import { WebUiController } from "@fatcat/webui/internal/controller";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 function answer(content = "Keep amber. Verify current files."): ModelTurn {
-	return { message: { role: "assistant", content }, toolCalls: [] };
+	return { message: { role: "assistant", content } };
 }
 
 function history(size = 10000): Message[] {
@@ -108,7 +108,7 @@ test("mid-turn recovery retains tool batches and never replays an executed opera
 		definitions: [], execute: async () => { executions++; return { ok: true, result: "effect recorded" }; },
 	}, compactionModel: async () => answer(), model: async (messages, _signal, observe, options) => {
 		calls++;
-		if (calls === 1) return { message: { role: "assistant", content: null, toolCalls: [call] }, toolCalls: [call] };
+		if (calls === 1) return { message: { role: "assistant", content: null, toolCalls: [call] } };
 		if (calls === 2) return rejectRequest(observe);
 		assert.equal(options?.toolChoice, "none");
 		assert.match(String(messages[0]?.content), /request 4 of 4/);

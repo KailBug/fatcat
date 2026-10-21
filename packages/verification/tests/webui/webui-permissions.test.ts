@@ -23,7 +23,7 @@ async function until(predicate: () => boolean): Promise<void> {
 
 function call(name: string, args: unknown): ModelTurn {
   const toolCalls = [{ id: "permission-fixture", name, arguments: JSON.stringify(args) }];
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 const model: Model = async (messages) => {
@@ -33,7 +33,7 @@ const model: Model = async (messages) => {
     if (last.content === "shell") return call("shell", { command: "'PERMISSION_FIXTURE'" });
     return call("read", { path: "notes.txt" });
   }
-  return { message: { role: "assistant", content: String(last.content) }, toolCalls: [] };
+  return { message: { role: "assistant", content: String(last.content) } };
 };
 
 async function setup(t: TestContext, policy = new PermissionPolicy("default", { webDenied: true }), webPermission: "allow" | "deny" = "deny") {

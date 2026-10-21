@@ -8,11 +8,11 @@ import { SessionStore } from "@fatcat/runtime/session/store";
 import { executionIdentity } from "@fatcat/runtime/internal/session/execution";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer: ModelTurn = { message: { role: "assistant", content: "Done" }, toolCalls: [] };
+const answer: ModelTurn = { message: { role: "assistant", content: "Done" } };
 
 function writes(items: { content: string; evidence: string }[]): ModelTurn {
 	const toolCalls = items.map((item, index) => ({ id: `memory-${index}`, name: "write", arguments: JSON.stringify({ path: "memory:new", content: item.content, memoryEvidence: item.evidence }) }));
-	return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+	return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 test("Memory rejects evidence from older user or external messages and retains bounded provenance for a long current request", async (t) => {

@@ -13,7 +13,7 @@ import { Session } from "@fatcat/runtime/session/session";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = () => ({ message: { role: "assistant" as const, content: "Saved answer" }, toolCalls: [] });
+const answer = () => ({ message: { role: "assistant" as const, content: "Saved answer" } });
 
 function confirmation(text: string): string {
 	const token = /Confirm with \/project confirm ([a-f0-9-]+)/.exec(text)?.[1];
@@ -146,7 +146,7 @@ test("project switches preserve an injected parent model and rebind delegated id
 		parentScopes.push(scope(messages));
 		if (messages.at(-1)?.role !== "user") return answer();
 		const toolCalls = [{ id: "child", name: "delegate_task", arguments: JSON.stringify({ task: "Report the current scope" }) }];
-		return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+		return { message: { role: "assistant", content: null, toolCalls } };
 	};
 	const session = await SessionManager.open({ ...runtime, model, maxIterations: 2 },
 		{ workspace, store: new SessionStore({ root: join(base, "sessions") }) });

@@ -14,7 +14,7 @@ import { WebUiController } from "@fatcat/webui/internal/controller";
 import { startWebUiServer } from "@fatcat/webui/internal/server";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content } });
 const agent = { maxIterations: 1, model: async () => answer() };
 const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
 

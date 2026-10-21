@@ -11,10 +11,10 @@ import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../../support/workspace.js";
 
 const windows = { skip: process.platform !== "win32" };
-const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content } });
 function call(name: string, args: unknown): ModelTurn {
   const toolCalls = [{ id: "execute-1", name, arguments: JSON.stringify(args) }];
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 test("shell facts survive failed turns and reset while logs omit command and output", windows, async (t) => {

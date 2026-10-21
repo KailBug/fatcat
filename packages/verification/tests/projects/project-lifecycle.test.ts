@@ -13,7 +13,7 @@ import { workspaceKey } from "@fatcat/runtime/session/record";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (content = "Done"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Done"): ModelTurn => ({ message: { role: "assistant", content } });
 const agent = { model: async () => answer(), maxIterations: 4 };
 const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
 

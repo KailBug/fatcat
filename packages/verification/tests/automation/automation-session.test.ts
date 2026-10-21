@@ -16,10 +16,10 @@ import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content } });
 function tool(args: unknown): ModelTurn {
   const toolCalls = [{ id: "schedule", name: "automation", arguments: JSON.stringify(args) }];
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 const task = { prompt: "Review changes", trigger: { type: "interval", seconds: 60 }, maxRuns: 3 };
 
@@ -35,7 +35,7 @@ test("SDK scheduling tool binds to current saved session and recurring turns ret
       const latest = body.messages.at(-1);
       const response = latest?.role === "user" && latest.content === "Check every minute"
         ? tool({ action: "create", ...task }) : answer();
-      return Response.json({ choices: [{ finish_reason: response.toolCalls.length ? "tool_calls" : "stop", message: chatMessage(response.message) }] });
+      return Response.json({ choices: [{ finish_reason: response.message.toolCalls?.length ? "tool_calls" : "stop", message: chatMessage(response.message) }] });
     });
   const session = await SessionManager.open(agent, { workspace, store });
   const id = session.current.id;

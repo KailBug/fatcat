@@ -6,12 +6,12 @@ import type { LoopEvent } from "@fatcat/runtime/loop";
 import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 
 function finalAnswer(content: string): ModelTurn {
-  return { message: { role: "assistant", content }, toolCalls: [] };
+  return { message: { role: "assistant", content } };
 }
 
 function requestTools(...calls: { id: string; name: string; args: string }[]): ModelTurn {
   const toolCalls = calls.map(({ id, name, args }) => ({ id, name, arguments: args }));
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 test("direct answers finish after one request with fresh history per run", async () => {
@@ -36,7 +36,10 @@ test("multiple tools and subsequent turns preserve call/result association", asy
       { id: "b", name: "sum", args: '{"numbers":[1,2]}' },
     );
     if (requests === 2) {
-      assert.equal(messages[2]?.role, "assistant");
+      assert.deepEqual(messages[2], { role: "assistant", content: null, toolCalls: [
+        { id: "a", name: "sum", arguments: '{"numbers":[17,25]}' },
+        { id: "b", name: "sum", arguments: '{"numbers":[1,2]}' },
+      ] });
       assert.deepEqual(messages.slice(3), [
         { role: "tool", callId: "a", content: '{"ok":true,"result":42}' },
         { role: "tool", callId: "b", content: '{"ok":true,"result":3}' },

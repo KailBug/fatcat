@@ -18,7 +18,7 @@ const initialInterruptListeners = process.listenerCount("SIGINT");
 const prompts: string[] = [];
 let cancelled = false;
 let summaries = 0;
-const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content } });
 const app = new TuiApp({
   config: { provider: "deepseek", region: "global", model: "injected-terminal-model", maxIterations: 3,
     requestTimeoutMs: 60000, maxRequestBytes: 262144 },
@@ -33,7 +33,7 @@ const model: Model = async (messages, signal, observe) => {
     // Leave time to type a draft before the tool asks for a fresh approval answer.
     await delay(1500, undefined, { signal });
     const toolCalls = [{ id: "write-fixture", name: "write", arguments: JSON.stringify({ path: "approved.txt", content: "terminal approval verified" }) }];
-    return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+    return { message: { role: "assistant", content: null, toolCalls } };
   }
   if (prompt === "cancel") {
     try {

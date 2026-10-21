@@ -16,10 +16,10 @@ import type { Tools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const windows = { skip: process.platform !== "win32" };
-const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content } });
 function calls(prefix: string, operations: [string, unknown][]): ModelTurn {
   const toolCalls = operations.map(([name, args], index) => ({ id: `${prefix}-${index}`, name, arguments: JSON.stringify(args) }));
-  return { message: { role: "assistant", content: null, toolCalls: toolCalls }, toolCalls };
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 const fixedReceipt = initialFiles["src/receipt.mjs"]!.replace("Math.floor(", "Math.round(");

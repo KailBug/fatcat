@@ -153,7 +153,7 @@ test("browser records survive failed model turns and child journal duplicates ar
   const model = async () => {
     if (++calls === 1) {
       const call = { id: "browser-call", name: "browser", arguments: '{"path":"demo.html"}' };
-      return { message: { role: "assistant" as const, content: null, toolCalls: [call] }, toolCalls: [call] };
+      return { message: { role: "assistant" as const, content: null, toolCalls: [call] } };
     }
     throw new Error("Injected model failure");
   };

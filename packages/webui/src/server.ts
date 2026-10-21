@@ -78,12 +78,12 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 }
 
 /** Bind only to loopback. The fragment capability is never included in HTTP URLs. */
-export async function startWebUiServer(controller: WebUiController, port = 3210, picker: WorkspacePicker = pickWorkspaceDirectory) {
+export async function startWebUiServer(controller: WebUiController, port = 3210,
+  selectWorkspace: WorkspacePicker = (path, signal, ownerId) => pickWorkspaceDirectory(path, signal, ownerId ? { ownerId } : {})) {
   const token = randomBytes(32).toString("hex");
   const previews = await createPreviewStore(() => controller.fileWorkspace);
   const shutdown = new AbortController();
   const attachmentHttp = new AttachmentHttp(controller.attachments, shutdown.signal);
-  const projectHttp = new ProjectManagementHttp(controller, picker, shutdown.signal);
   let origin = "";
   const server = createServer({ requestTimeout: 120_000, headersTimeout: 10_000, maxHeaderSize: 8192 }, (request, response) => {
     response.setHeader("Cache-Control", "no-store");
@@ -129,6 +129,12 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
     }
     if (!path.startsWith("/api/")) throw new HttpError(404, "Not found.");
     if (request.headers.authorization !== `Bearer ${token}`) throw new HttpError(401, "Open the authenticated URL printed by pnpm start --webui.");
+    const ownerId = request.headers["x-fatcat-picker"];
+    if (ownerId !== undefined && (typeof ownerId !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(ownerId))) {
+      throw new HttpError(400, "Invalid workspace picker owner.");
+    }
+    const picker: WorkspacePicker = (initial, signal) => selectWorkspace(initial, signal, ownerId);
+    const projectHttp = new ProjectManagementHttp(controller, picker, shutdown.signal);
     const evidence = /^\/api\/browser-evidence\/([a-f0-9]{32})\/(report|screenshot)$/.exec(path);
     if (request.method === "GET" && evidence) {
       try {

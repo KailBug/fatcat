@@ -4,7 +4,7 @@
 
 Session 系统区分成功对话、当前持久记录、宿主选择和存储。工作区文件与工具副作用不属于会话事务。
 
-内存与磁盘历史直接使用 Fatcat 自有消息类型，assistant 的工具调用为 `toolCalls`，结果关联为 `callId`。`session/history.ts` 统一校验成功 history 和未完成 attempt.messages，不维护 Chat Completions 历史转换层。校验完整回合、工具结果关联和历史前缀，厂商私有 providerReplay 仍须与当前消息一致；这些是当前数据正确性的约束。系统提示由当前运行时提供，读取、fork 或恢复均不执行历史调用，也不恢复旧授权。API 编码见 [模型边界](PROVIDERS.md#内部消息与-api-边界)。
+内存与磁盘历史直接使用 Fatcat 自有消息类型，assistant 的工具调用为 `toolCalls`，结果关联为 `callId`。`session/history.ts` 统一校验成功 history 和未完成 attempt.messages，不维护 Chat Completions 历史转换层。校验完整回合、工具结果关联和历史前缀，厂商私有 providerReplay 须通过格式、规范字段隔离和工具调用 ID 关联校验；这些是当前数据正确性的约束。系统提示由当前运行时提供，读取、fork 或恢复均不执行历史调用，也不恢复旧授权。API 编码见 [模型边界](PROVIDERS.md#内部消息与-api-边界)。
 
 ## 状态所有者
 
@@ -100,7 +100,7 @@ Project 接入规则集中在 `session/projects.ts`：迁入预览和确认每�
 
 `createAgent.forModel` 按显式连接快照重建父模型、委派子模型、摘要模型和图片适配；目录级工具和执行日志保持原对象。`forSession` 再绑定实际执行会话、附件与 Memory。调用者替换的 model/tools 不擅自覆盖，未提供切换实现的注入 Agent 明确拒绝。后台任务从自己的持久会话恢复选择。
 
-思考响应保存在 assistant.providerReplay，包含 API 标识、来源身份和完整厂商 assistant message；通用回传解码入口检查 API 和来源，再由对应 API 适配器核对角色、内容及工具事实与规范历史一致。模型请求只在身份匹配且当前协议允许时回传私有数据，跨模型保留普通文本和工具事实。摘要输入剥离该字段；记录仍受既有大小和历史校验约束。该字段不授予权限、恢复审批或重放工具。具体协议见 [Providers](PROVIDERS.md)。
+思考响应保存在 assistant.providerReplay，包含 API 标识、来源身份和厂商附加数据，不重复保存回答或工具参数；通用回传解码入口检查 API 和来源，再由对应 API 适配器检查附加数据格式、禁止覆盖规范字段并校验工具调用 ID 关联。模型请求只在身份匹配且当前协议允许时回传私有数据，跨模型保留普通文本和工具事实。摘要输入剥离该字段；记录仍受既有大小和历史校验约束。该字段不授予权限、恢复审批或重放工具。具体协议见 [Providers](PROVIDERS.md)。
 
 runtime API 与恢复后的客户端模型标签同步已实现。只读请求预览及消费/实测/估算分离见 [Context](CONTEXT.md#当前输入估算第三阶段已实现的-runtime-接口)；第四阶段的模型菜单、思考滑条、Web 切换路由和圆环/详情已接入同一 Manager，交互与注入 Edge 验证范围见 [Web UI](WEBUI.md#模型思考与上下文控件)。
 

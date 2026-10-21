@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HarnessError, checkCancellation } from "../errors.js";
 import type { LoopEvent, LoopOptions } from "../loop.js";
-import type { Message } from "../model.js";
+import type { Message } from "../model-types.js";
 import type { SkillCatalog } from "../skills.js";
 import type { SessionAutomation } from "../automation/tasks.js";
 import { withAutomationTool } from "../automation/tool.js";
@@ -24,7 +24,7 @@ import { maxMemoryRequestBytes } from "../memory/record.js";
 import type { ModelSelection } from "../model-catalog.js";
 import type { ModelChoice } from "../model-connections.js";
 import { mapModelMessages } from "../model-preparation.js";
-import type { Model } from "../model.js";
+import type { Model } from "../model-types.js";
 import { defaultTools } from "../tools.js";
 import { prepareTurnMessages } from "../context/turn-request.js";
 import { estimateRequest, pendingEstimate } from "../context/estimate.js";
@@ -69,7 +69,7 @@ export interface AgentSessionOptions {
 
 function recoveryNotice(attempt: SessionAttempt): string {
 	const tools = attempt.messages.filter((message) => message.role === "tool").slice(-20).map((message) => ({
-		callId: message.tool_call_id, recordedResult: String(message.content).slice(0, 2000),
+		callId: message.callId, recordedResult: String(message.content).slice(0, 2000),
 	}));
 	return "Harness session recovery notice. A previous turn did not commit a successful conversation. "
 		+ "Files, commands, network requests, and model charges may already have taken effect; nothing was rolled back. "

@@ -3,16 +3,13 @@ import type { Tool } from "./types.js";
 
 export const sumTool: Tool = {
   definition: {
-    type: "function",
-    function: {
-      name: "sum",
-      description: "Add 2 to 32 finite numbers. Use this tool for arithmetic addition.",
-      parameters: {
-        type: "object",
-        properties: { numbers: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 32 } },
-        required: ["numbers"],
-        additionalProperties: false,
-      },
+    name: "sum",
+    description: "Add 2 to 32 finite numbers. Use this tool for arithmetic addition.",
+    parameters: {
+      type: "object",
+      properties: { numbers: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 32 } },
+      required: ["numbers"],
+      additionalProperties: false,
     },
   },
   execute(args) {

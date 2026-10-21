@@ -1,4 +1,4 @@
-import type { Message, Model } from "../model.js";
+import type { Message, Model } from "../model-types.js";
 import { projectIdOf } from "./record.js";
 import type { SessionRecord } from "./record.js";
 import { mapModelMessages } from "../model-preparation.js";

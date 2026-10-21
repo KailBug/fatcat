@@ -1,5 +1,5 @@
 import { HarnessError } from "../errors.js";
-import type { Message } from "../model.js";
+import type { Message } from "../model-types.js";
 
 export interface CompactionState {
 	version: 1;
@@ -34,7 +34,7 @@ export function decodeCompaction(value: unknown, history: readonly Message[]): C
 		|| history[Number(boundary)]?.role !== "user"
 		|| typeof raw.createdAt !== "string" || !Number.isFinite(Date.parse(raw.createdAt))) return invalidCompaction();
 	const previous = history[Number(boundary) - 1];
-	if (previous?.role !== "assistant" || previous.tool_calls?.length) return invalidCompaction();
+	if (previous?.role !== "assistant" || previous.toolCalls?.length) return invalidCompaction();
 	return { version: 1, summary: raw.summary, firstKeptMessage: Number(boundary), createdAt: raw.createdAt };
 }
 

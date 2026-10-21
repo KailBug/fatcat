@@ -1,7 +1,7 @@
 import { HarnessError, checkCancellation } from "../errors.js";
 import { runAgentTurn } from "../loop.js";
 import type { LoopOptions } from "../loop.js";
-import type { Message, Model } from "../model.js";
+import type { Message, Model } from "../model-types.js";
 import { compactContext, prepareCompaction } from "../context/compaction.js";
 import type { CompactionOptions, CompactionResult } from "../context/compaction.js";
 import { decodeCompaction, inspectContext } from "../context/manager.js";

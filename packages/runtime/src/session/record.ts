@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { HarnessError } from "../errors.js";
-import type { Message } from "../model.js";
+import type { Message } from "../model-types.js";
 import { decodeBoundTasks } from "../automation/tasks.js";
 import type { BoundTask } from "../automation/tasks.js";
 import { decodeCompaction } from "../context/manager.js";
@@ -27,7 +27,7 @@ export interface SessionAttempt {
 export interface SessionRecord {
 	consumption?: SessionConsumption;
 	lastReportedInput?: ContextObservation;
-	version: 1 | 2 | 3;
+	version: 4;
 	modelSelection?: ModelSelection;
 	id: string;
 	/** Resolved execution directory. Project sessions never persist this projection. */
@@ -129,22 +129,14 @@ function isDate(value: unknown): value is string {
 	return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value));
 }
 export function decodeSessionRecord(value: unknown, workspace: string, id: string): SessionRecord {
-	if (!isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3) || value.id !== id || !sessionIdPattern.test(id)
-		|| (value.storageWorkspace !== undefined && (typeof value.storageWorkspace !== "string" || !isAbsolute(value.storageWorkspace)))
-		|| workspaceKey(String(value.storageWorkspace ?? value.workspace)) !== workspaceKey(workspace)
+	if (!isRecord(value) || value.version !== 4 || value.id !== id || !sessionIdPattern.test(id)
+		|| typeof value.storageWorkspace !== "string" || !isAbsolute(value.storageWorkspace) || value.workspace !== undefined
+		|| workspaceKey(value.storageWorkspace) !== workspaceKey(workspace)
 		|| (value.name !== null && typeof value.name !== "string")
 		|| typeof value.title !== "string" || value.title.length > 120 || /[\x00-\x1f\x7f]/.test(value.title)
 		|| !isDate(value.createdAt) || !isDate(value.updatedAt) || !Number.isSafeInteger(value.revision)
 		|| Number(value.revision) < 1 || (value.forkedFrom !== null && (typeof value.forkedFrom !== "string" || !sessionIdPattern.test(value.forkedFrom)))) return invalidSession();
-	let location: SessionLocation;
-	if (value.version !== 3 && (value.consumption !== undefined || value.lastReportedInput !== undefined)) return invalidSession();
-	if (value.version === 1) {
-		if (typeof value.workspace !== "string" || !isAbsolute(value.workspace)) return invalidSession();
-		location = { kind: "standalone", workspace: value.workspace };
-	} else {
-		if (typeof value.storageWorkspace !== "string" || value.workspace !== undefined) return invalidSession();
-		location = decodeLocation(value.location);
-	}
+	const location = decodeLocation(value.location);
 	if (value.locationRevision !== undefined && (!Number.isSafeInteger(value.locationRevision) || Number(value.locationRevision) < 0)) return invalidSession();
 	const locationChanges = value.locationChanges === undefined ? undefined : decodeLocationChanges(value.locationChanges);
 	const activeOperation = value.activeOperation === undefined ? undefined : decodeActiveOperation(value.activeOperation);
@@ -158,7 +150,6 @@ export function decodeSessionRecord(value: unknown, workspace: string, id: strin
 	const history = validateHistory(value.history);
 	let modelSelection: ModelSelection | undefined;
 	if (value.modelSelection !== undefined) {
-		if (value.version !== 3) return invalidSession();
 		try { modelSelection = decodeModelSelection(value.modelSelection); } catch { return invalidSession(); }
 	}
 	const compaction = value.compaction === undefined ? undefined : decodeCompaction(value.compaction, history);
@@ -181,8 +172,6 @@ export function decodeSessionRecord(value: unknown, workspace: string, id: strin
 			code: raw.code as string | null, messages };
 	}
 	if (activeOperation && attempt?.status === "running") return invalidSession();
-	if (value.version !== 3 && [...history, ...(attempt?.messages ?? [])]
-		.some((message) => message.role === "assistant" && message.modelContext !== undefined)) return invalidSession();
 	return { version: value.version, id, workspace: location.kind === "standalone" ? location.workspace : "",
 		...(value.consumption === undefined ? {} : { consumption: decodeConsumption(value.consumption) }),
 		...(value.lastReportedInput === undefined ? {} : { lastReportedInput: decodeObservation(value.lastReportedInput) }),
@@ -190,7 +179,7 @@ export function decodeSessionRecord(value: unknown, workspace: string, id: strin
 		location, locationRevision: Number(value.locationRevision ?? 0), name, title: value.title, createdAt: value.createdAt,
 		...(locationChanges ? { locationChanges } : {}), ...(activeOperation ? { activeOperation } : {}),
 		...(compaction ? { compaction } : {}),
-		...(value.storageWorkspace === undefined ? {} : { storageWorkspace: String(value.storageWorkspace) }),
+		storageWorkspace: value.storageWorkspace,
 		updatedAt: value.updatedAt, revision: Number(value.revision), forkedFrom: value.forkedFrom as string | null,
 		history, attempt, ...(value.automations === undefined ? {} : { automations: decodeBoundTasks(value.automations) }) };
 }
@@ -226,9 +215,7 @@ function decodeActiveOperation(value: unknown): SessionActiveOperation {
 
 /** Explicit disk shape excludes credentials, projections and unknown fields. */
 export function encodeSessionRecord(record: SessionRecord): Record<string, unknown> {
-	const modelHistory = [...record.history, ...(record.attempt?.messages ?? [])]
-		.some((message) => message.role === "assistant" && message.modelContext !== undefined);
-	return { version: record.version === 3 || record.modelSelection || modelHistory || record.consumption || record.lastReportedInput ? 3 : 2,
+	return { version: 4,
 		...(record.modelSelection ? { modelSelection: decodeModelSelection(record.modelSelection) } : {}),
 		...(record.consumption ? { consumption: decodeConsumption(record.consumption) } : {}),
 		...(record.lastReportedInput ? { lastReportedInput: decodeObservation(record.lastReportedInput) } : {}),

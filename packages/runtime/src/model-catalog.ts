@@ -15,6 +15,12 @@ export interface ModelSelection {
 	thinking: ThinkingLevel;
 }
 
+/** Replay and model switching compare connection identity independently of thinking level. */
+export function sameModel(left: ModelSelection, right: ModelSelection): boolean {
+	return left.provider === right.provider && left.region === right.region && left.workspaceId === right.workspaceId
+		&& left.model === right.model;
+}
+
 export interface ModelDescriptor {
 	provider: Provider;
 	model: string;

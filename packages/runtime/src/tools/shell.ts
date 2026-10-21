@@ -95,7 +95,7 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
   }
 
   const tool: Tool = {
-    definition: { type: "function", function: {
+    definition: {
       name: "shell",
       description: "Run a foreground command in Windows PowerShell (not Bash), in a fresh non-interactive process. cwd defaults to the workspace root. Requires separate command authorization. No OS sandbox: commands can access files and network with current-user permissions. Do not launch background processes or interactive programs. Output is capped at 16 KiB combined; exceeding it stops the process tree. Check success, exitCode, status and truncated before claiming verification passed. Earlier side effects are never rolled back. Native nonzero exit codes and PowerShell errors are failures."
         + (policy ? " Current permission is supplied in request guidance and checked at execution." : ""),
@@ -107,8 +107,7 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
           timeoutMs: { type: "integer", minimum: 100, maximum: 120000 },
         },
         required: ["command"],
-        additionalProperties: false },
-    } },
+        additionalProperties: false } },
     execute,
   };
   return { tool, getCommands: (): CommandRecord[] => structuredClone(records) };

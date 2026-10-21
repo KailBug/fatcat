@@ -1,7 +1,7 @@
 import { HarnessError, checkCancellation } from "../errors.js";
 import type { LoopEvent } from "../loop.js";
-import type { Message, Model } from "../model.js";
-import { conversationMessage } from "../model-history.js";
+import type { Message, Model } from "../model-types.js";
+import { conversationMessage } from "../provider-replay.js";
 import { contextBytes, projectHistory } from "./manager.js";
 import type { CompactionState, ContextStatus } from "./manager.js";
 
@@ -92,7 +92,7 @@ export async function compactContext(model: Model, history: readonly Message[], 
 		const response = await model(summaryMessages(summary, fragment, plan.instructions, plan.summaryBytes), options.signal,
 			(event) => options.onEvent?.({ ...event, iteration }), { toolChoice: "none", purpose: "compaction" });
 		checkCancellation(options.signal);
-		if (response.toolCalls.length || response.message.tool_calls?.length || typeof response.message.content !== "string"
+		if (response.message.toolCalls?.length || typeof response.message.content !== "string"
 			|| !response.message.content.trim() || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(response.message.content)
 			|| Buffer.byteLength(response.message.content) > plan.summaryBytes) {
 			throw new HarnessError("CONTEXT_COMPACTION_RESPONSE", "Compaction requires a non-empty bounded text summary without tool calls. Existing context was retained.");

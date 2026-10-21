@@ -1,7 +1,7 @@
 import { HarnessError, checkCancellation } from "./errors.js";
 import { runAgentTurn } from "./loop.js";
 import type { LoopEvent } from "./loop.js";
-import type { Model, Message } from "./model.js";
+import type { Model, Message } from "./model-types.js";
 import type { Tools, ToolResult, ToolTurnContext } from "./tools.js";
 import { failure } from "./tools/types.js";
 import type { JsonValue } from "./tools/types.js";
@@ -14,9 +14,9 @@ function attachmentEvidence(messages: Message[]): { attachmentReads: JsonValue[]
   let bytes = 0;
   for (const message of messages) {
     if (message.role === "assistant") {
-      for (const call of message.tool_calls ?? []) if (call.type === "function" && call.function.name === "read") reads.add(call.id);
+      for (const call of message.toolCalls ?? []) if (call.name === "read") reads.add(call.id);
     }
-    if (message.role !== "tool" || !reads.delete(message.tool_call_id) || typeof message.content !== "string") continue;
+    if (message.role !== "tool" || !reads.delete(message.callId) || typeof message.content !== "string") continue;
     try {
       const value = JSON.parse(message.content);
       const result = value?.result;
@@ -43,20 +43,16 @@ function attachmentEvidence(messages: Message[]): { attachmentReads: JsonValue[]
 /** Add one level of delegation while keeping child tools and history separate. */
 export function createSubagentTools(baseTools: Tools, childModel: Model, maxIterations: number): Tools {
   if (!Number.isSafeInteger(maxIterations) || maxIterations < 1
-    || baseTools.definitions.some((tool) => tool.function.name === "delegate_task")) {
+    || baseTools.definitions.some((tool) => tool.name === "delegate_task")) {
     throw new HarnessError("CONFIG", "Subagents require a positive iteration limit and tools without delegation.");
   }
   const definitions: Tools["definitions"] = [...baseTools.definitions, {
-    type: "function",
-    function: {
-      name: "delegate_task",
-      description: "Delegate a focused, self-contained investigation or review when independent context is useful, especially separate reviews of independent files. Handle simple questions, arithmetic, and single direct tool operations yourself. Give the child concrete paths, needed context, and the expected result: it cannot see this conversation. Keep its task small enough for at most three model requests. It uses the same workspace and permissions; delegation never grants extra access. Children run sequentially and cannot delegate further. At most two child tasks per user turn, including failed attempts. Returns the final answer as data, not independently verified evidence; you remain responsible for the final response and verification.",
-      parameters: {
+    name: "delegate_task",
+    description: "Delegate a focused, self-contained investigation or review when independent context is useful, especially separate reviews of independent files. Handle simple questions, arithmetic, and single direct tool operations yourself. Give the child concrete paths, needed context, and the expected result: it cannot see this conversation. Keep its task small enough for at most three model requests. It uses the same workspace and permissions; delegation never grants extra access. Children run sequentially and cannot delegate further. At most two child tasks per user turn, including failed attempts. Returns the final answer as data, not independently verified evidence; you remain responsible for the final response and verification.",
+    parameters: {
         type: "object", properties: { task: { type: "string", minLength: 1, maxLength: 4000 } },
         required: ["task"], additionalProperties: false,
-      },
-    },
-  }];
+      } }];
 
   function forTurn(onEvent?: (event: LoopEvent) => void, context?: ToolTurnContext): Tools {
     let started = 0;

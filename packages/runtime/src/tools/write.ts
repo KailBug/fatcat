@@ -195,7 +195,7 @@ export function createWriteTool(
   }
 
   const tool: Tool = {
-    definition: { type: "function", function: {
+    definition: {
       name: "write",
       description: "Create a new UTF-8 text file with path and content (never overwrites), or edit an existing file with path, oldText and newText. Current permission guidance defines whether paths must stay inside the workspace or may be absolute/outside it. Read first; oldText must match exactly once, including whitespace and line endings. Existing content outside the fragment and the UTF-8 BOM are preserved. Parent directories must exist. Maximum file size is 1 MiB. Requires user approval or preauthorized file-write permission. Errors do not imply rollback; inspect write records and read current content before retrying."
         + (permissionPolicy ? " Current permission is supplied in request guidance and checked at execution." : ""),
@@ -206,8 +206,7 @@ export function createWriteTool(
           oldText: { type: "string", minLength: 1, maxLength: maxFileBytes },
           newText: { type: "string", maxLength: maxFileBytes },
         }, required: ["path"], additionalProperties: false,
-      },
-    } }, execute,
+      } }, execute,
   };
   return { tool, getWrites: (): WriteRecord[] => structuredClone(records) };
 }

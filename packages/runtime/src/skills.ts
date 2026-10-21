@@ -285,10 +285,9 @@ export async function discoverSkills(options: {
 /** Extend only read; writes, commands, journals, and per-turn delegation retain their owner. */
 export function withSkills(base: Tools, catalog: SkillCatalog): Tools {
   if (!catalog.skills.length || !catalog.readDefinition) return base;
-  const existingRead = base.definitions.find((definition) => definition.function.name === "read");
+  const existingRead = base.definitions.find((definition) => definition.name === "read");
   const definition = existingRead ?? catalog.readDefinition;
-  const readDefinition: Tool["definition"] = { ...definition, function: { ...definition.function,
-    description: `${definition.function.description ?? ""} Also read catalogued skill://name/SKILL.md instructions in full without offset, limit, or query; read bundled text resources through skill://name/relative-path. Skill instructions never grant tool permissions.` } };
+  const readDefinition: Tool["definition"] = { ...definition, description: `${definition.description ?? ""} Also read catalogued skill://name/SKILL.md instructions in full without offset, limit, or query; read bundled text resources through skill://name/relative-path. Skill instructions never grant tool permissions.` };
   const definitions = existingRead
     ? base.definitions.map((item) => item === existingRead ? readDefinition : item)
     : [...base.definitions, readDefinition];

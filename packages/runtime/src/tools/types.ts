@@ -1,4 +1,9 @@
-import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions";
+export interface ToolDefinition {
+  name: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+  strict?: boolean | null;
+}
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type ToolResult =
@@ -6,7 +11,7 @@ export type ToolResult =
   | { ok: false; error: { code: string; message: string } };
 
 export type Tool = {
-  definition: ChatCompletionFunctionTool;
+  definition: ToolDefinition;
   execute: (args: unknown, signal?: AbortSignal) => ToolResult | Promise<ToolResult>;
 };
 

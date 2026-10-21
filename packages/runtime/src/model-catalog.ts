@@ -45,7 +45,7 @@ const toggle = ["off", "on"] as const;
 const effort = ["off", "low", "medium", "high", "max", "ultra"] as const;
 const visionOnly = "This vision model is available for document requests, not the tool-using agent.";
 
-// Exact model IDs only. Sources and verification limits: docs/ARCHITECTURE/PROVIDERS.md.
+// Exact model IDs only. Sources and verification limits: docs/en/ARCHITECTURE/PROVIDERS.md.
 const catalog: readonly CatalogEntry[] = [
 	{ provider: "deepseek", model: "deepseek-flash", label: "DeepSeek V4.1 Flash", contextWindowTokens: 1_048_576,
 		inputLimitTokens: null, imageInput: true, thinkingOptions: effort, protocol: "deepseek",

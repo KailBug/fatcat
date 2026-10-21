@@ -66,16 +66,17 @@ Inside chat/TUI:
   /exit                           End the conversation
 
 Configuration and details:
-  Before chatting, configure a provider key: docs/QUICK_START.md.
+  Before chatting, configure a provider key: docs/en/QUICK_START.md.
   HARNESS_PROVIDER: deepseek (default), kimi, mimo, qwen.
   FATCAT_SESSION_DIR: session store (default: ~/.fatcat/sessions).
   Read file/skill content is sent to the provider; saved history is local plaintext.
   Delegation: up to two child tasks per turn, three model requests each; no nesting.
   Task output: answer on stdout; logs and execution_report on stderr. Ctrl+C cancels.
 
-  docs/REFERENCE/COMMANDS.md      Full syntax, combinations and conversation commands
-  docs/REFERENCE/CONFIGURATION.md Provider settings, limits and environment variables
-  docs/GUIDES/                    Session, project, skill and automation workflows`;
+  docs/README.md                    Documentation language selection
+  docs/en/REFERENCE/COMMANDS.md      Full syntax, combinations and conversation commands
+  docs/en/REFERENCE/CONFIGURATION.md Provider settings, limits and environment variables
+  docs/en/GUIDES/                    Session, project, skill and automation workflows`;
 
 /** Parse syntax and option combinations without starting a host or reading configuration. */
 export function parseCliOptions(args: string[]) {

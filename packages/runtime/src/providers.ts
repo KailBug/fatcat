@@ -13,7 +13,7 @@ type ProviderProfile = {
     endpoints: Partial<Record<ProviderRegion, string>>;
 };
 
-// Protocol sources and scope are recorded in docs/ARCHITECTURE/PROVIDERS.md.
+// Protocol sources and scope are recorded in docs/en/ARCHITECTURE/PROVIDERS.md.
 // These are API platforms, not subscription/coding-plan endpoints.
 const profiles: Record<Provider, ProviderProfile> = {
     deepseek: {

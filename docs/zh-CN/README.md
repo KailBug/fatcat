@@ -1,0 +1,77 @@
+
+
+<a id="fatcat-documentation"></a>
+
+# Fatcat 文档
+
+[English](../en/README.md) | 简体中文
+
+Fatcat 是原生运行于 Windows 的 TypeScript Agent Harness，用于本地编码任务，支持配置 DeepSeek、Kimi、MiMo 和 Qwen。通过 CLI 对话、TUI 或本地 Web UI 检查工作区、受控修改文件并运行验证；各入口共用持久会话、工具与权限边界。
+
+文档面向使用者、开发者与 Agent，描述当前源码树。项目仍处于早期 demo 阶段，具体操作、支持范围与验证限制见各专题。
+
+<a id="quick-start"></a>
+
+## 快速开始
+
+[Windows 快速开始](QUICK_START.md)：安装、配置模型、收到首次回复，再选择 CLI、TUI 或 Web UI。本地配置检查不请求模型，不能代替实际连通性验证。
+
+<a id="guides"></a>
+
+## 操作指南
+
+| 要完成的任务 | 阅读位置 |
+| --- | --- |
+| 查找代码、修改文件、运行检查并核对结果 | [编码任务与执行证据](GUIDES/CODING.md) |
+| 恢复会话、切换目录、组织项目或压缩上下文 | [会话、项目与上下文](GUIDES/SESSIONS.md) |
+| 上传资料、阅读文档或跨对话保存事实 | [附件、文档与 Memory](GUIDES/MATERIALS.md) |
+| 发现、使用或添加任务指导 | [本地 Skills](GUIDES/SKILLS.md) |
+| 安排定时任务或文件变化任务 | [自动任务](GUIDES/AUTOMATION.md) |
+| 操作终端、浏览器界面或预览文件 | [CLI、chat、TUI 与 Web UI](GUIDES/INTERFACES.md) |
+
+<a id="command-and-configuration-reference"></a>
+
+## 命令与配置参考
+
+- [命令参考](REFERENCE/COMMANDS.md)：启动参数、组合限制、权限模式、交互命令和退出码。
+- [配置参考](REFERENCE/CONFIGURATION.md)：供应商、环境变量、默认值、请求预算和本地存储。
+
+<a id="development-and-verification"></a>
+
+## 开发与验证
+
+| 需要了解什么 | 阅读位置 |
+| --- | --- |
+| 项目目标、原则与非目标 | [项目说明](PROJECT.md) |
+| 仓库协作、工程与 Git 规则 | [AGENTS.md](../../AGENTS.md) |
+| 安装、构建、测试目录与归属规范、离线检查及专项验证 | [开发与验证](DEVELOPMENT.md) |
+| Workspace 包归属、runtime 导出、依赖与资源构建规则 | [Package 边界](DEVELOPMENT.md#workspace-package-boundaries) |
+| 模块职责、状态所有权、数据流与专题设计 | [架构总览](ARCHITECTURE/README.md) |
+| 实验配置、结果格式、统计口径与评测实现边界 | [Eval 协议](ARCHITECTURE/EVAL.md) |
+
+<a id="documentation-responsibilities"></a>
+
+## 文档职责
+
+| 位置 | 维护内容 |
+| --- | --- |
+| 根 README | 项目简介、平台和阅读入口 |
+| `docs/README.md` | 双语文档入口 |
+| 本页 | 项目简介与按任务导航，不复制功能细节 |
+| QUICK_START | 从安装到首次运行的最短路径 |
+| GUIDES | 按任务说明操作、结果与常见限制 |
+| REFERENCE | 集中查命令、配置、默认值与组合约束 |
+| DEVELOPMENT | 开发检查方法、验证环境和证据要求，不累加历次通过记录 |
+| PROJECT | 稳定定位、原则和非目标 |
+| ARCHITECTURE | 当前模块与接口、状态归属、持久设计决策，以及明确标为未实现的相关方案 |
+| AGENTS | 协作与工程规则，不重复维护操作手册 |
+
+每项事实在对应文档维护，其他位置通过链接引用。实际执行结果在任务交接中报告，重要验证限制留在公开专题。`docs/PROGRESS.md` 是受 Git 忽略的本地交接记录，缺失不影响阅读或开发；公开页面不依赖它提供事实。
+
+具体开发顺序由当前任务确定，历史方案与交付过程通过 Git 和 PR 追溯，不另建阶段路线图或历史归档目录。架构总览维护调用链和状态归属，专题维护各模块契约、设计决策、验证限制与未实现方案；历史测试结果不能代替当前改动的验证。
+
+<a id="bilingual-maintenance"></a>
+
+## 双语维护
+
+`docs/en/` 和 `docs/zh-CN/` 使用相同相对路径与英文文件名。各页顶部链接到对应译文，普通文档链接留在当前语言内。命令、API 名称、路径和配置键保持原样，说明文字自然翻译。行为变化时在同一变更中同步两种语言，使其描述相同契约。根目录只维护一份英文 `AGENTS.md`。两种语言使用稳定的英文标题锚点。迁移或翻译后检查页面配对、相对链接和标题锚点。

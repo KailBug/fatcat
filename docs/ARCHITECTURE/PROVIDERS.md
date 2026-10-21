@@ -9,13 +9,13 @@
 | 源码 | 职责 |
 | --- | --- |
 | `packages/runtime/src/providers.ts` | 供应商配置描述、固定服务域名及 Qwen 业务空间 endpoint |
-| `packages/runtime/src/model-catalog.ts` | 精确模型能力、ModelSelection 解码与能力校验 |
+| `packages/runtime/src/model-catalog.ts` | 精确模型能力、ModelSelection 解码、模型身份比较与能力校验 |
 | `packages/runtime/src/model-protocol.ts` | 按模型和请求目的映射思考参数、生成预留与历史回传规则 |
 | `packages/runtime/src/model-connections.ts` | 主机侧凭据隔离、公开选择目录及按供应商/区域/业务空间解析凭据 |
-| `packages/runtime/src/model-history.ts` | 私有助手消息解码与来源校验、模型身份比较及摘要剥离 |
+| `packages/runtime/src/provider-replay.ts` | 回传数据的 API 标识与来源校验、分派给对应适配器及摘要剥离 |
 | `packages/runtime/src/config.ts` | 所选凭据/模型/区域与共享预算校验 |
 | `packages/runtime/src/model-types.ts` | 自有 Message、ToolCall、ModelTurn、Model 及观察事件契约，不导入模型 SDK |
-| `packages/runtime/src/chat-completions.ts` | 内部消息/工具到 Chat Completions 的编码、响应校验和工具调用解码 |
+| `packages/runtime/src/chat-completions.ts` | 内部消息/工具编码、响应与工具调用解码、Chat Completions 回传消息校验 |
 | `packages/runtime/src/model.ts` | createModel、完整请求准备、SDK、期限和安全错误 |
 | `packages/runtime/src/model-usage.ts` | token 与缓存计数合法性 |
 | `packages/runtime/src/documents/vision.ts` | 已获准图片的临时辅助请求 |
@@ -29,7 +29,9 @@
 
 arguments 仍为原始 JSON 字符串：工具层继续负责 JSON 解析和参数校验，非法 JSON 仍成为关联的 INVALID_ARGUMENTS 工具结果，不提前升级为模型协议失败。图片在内部表示为 `{type:"image",url,detail?}`，编码器转成现有 image_url；图片仍只用于临时辅助请求，不扩大持久历史支持范围。
 
-`chat-completions.ts` 编码请求消息与工具，解码模型返回的工具调用；`model-history.ts` 继续验证当前厂商 replay 数据与规范事实一致，来源身份和跨模型剥离规则不变。`ModelContext.message` 是受校验的私有数据，不是 Loop 可执行的调用。当前仍只有 Chat Completions 接入，没有新增 Responses、Anthropic、流式事件或动态协议注册器。
+`ModelTurn` 只包含 `message`；工具调用只保存在 `AssistantMessage.toolCalls`，Loop 从该消息读取并执行，摘要和图片辅助请求也检查同一字段，不维护第二份调用列表。
+
+`AssistantMessage.providerReplay` 使用 `ProviderReplayData = {api,selection,message}`，管理模型返回、后续请求可能还需要带回去的附加信息，例如 `reasoning_content`。当前 API 标识只有 `chat-completions`。`provider-replay.ts` 校验 API 标识和来源选择，并交给 `chat-completions.ts` 的 `decodeChatReplayMessage` 检查 JSON、角色、文本、工具事实及推理字段；Session 只调用通用入口，不解释 API 私有字段。编码时也由该适配器检查回传消息。`ProviderReplayData.message` 是受校验的私有数据，不是 Loop 可执行的调用。没有旧字段迁移或转导出模块；当前仍只有 Chat Completions 接入，没有新增 Responses、Anthropic、流式事件或动态协议注册器。
 
 `Model.prepare` 返回确切序列化请求 `json` 和字节/裁剪统计，不暴露 SDK body 类型。请求裁剪操作内部消息，并用当前编码器测量最终完整 JSON；实际发送与预览共用该准备过程。DeepSeek 本地近似仍只解释已知 Chat Completions JSON，不能把这个近似套用到未来协议。Session 直接保存内部消息，当前只支持 v4，不维护旧会话格式转换；见 [Session](SESSION.md)。
 
@@ -86,7 +88,7 @@ Qwen 的可选 QWEN_WORKSPACE_ID 只允许安全的单个 DNS label；不接受�
 
 共享目录的默认思考策略为：该型号支持 medium 时优先 medium；仅支持 off/on 的型号默认 on；其他采用目录内明确默认档位（K3 为 max、K2.7 Code 为 on）；未知或未接入思考的型号仍为 off。这影响使用启动默认的新会话和直接模型客户端，显式 Config.thinking 及保存的会话选择仍优先，不迁移已有 off 记录。Web 选择器只提供该型号已开启的思考档位，详见 [Web UI](WEBUI.md#模型思考与上下文控件)。
 
-思考响应在规范助手消息旁保存 modelContext 来源与完整厂商消息，读取时核对角色、文本和工具调用事实。只有 provider、region、workspaceId、model 全部匹配且当前协议允许回传时才使用私有消息；思考档位可以在同一模型内改变，但 off 会剥离私有历史。跨模型、跨区域和跨业务空间只发送规范文本与工具事实，内部 modelContext 永不直接上网。DeepSeek 在启用思考且请求带工具定义时回传；Kimi/MiMo/新版 Qwen 按上表处理，旧 Qwen 不回传。摘要序列化也剥离私有数据。该投影先于最终 JSON 字节检查和旧读裁剪，不重复加入规范消息。
+思考响应在规范助手消息旁保存 providerReplay 来源与完整厂商消息，读取时核对角色、文本和工具调用事实。只有 API 标识以及 provider、region、workspaceId、model 全部匹配且当前协议允许回传时才使用私有消息；思考档位可以在同一模型内改变，但 off 会剥离私有历史。跨模型、跨区域和跨业务空间只发送规范文本与工具事实，内部 providerReplay 永不直接上网。DeepSeek 在启用思考且请求带工具定义时回传；Kimi/MiMo/新版 Qwen 按上表处理，旧 Qwen 不回传。摘要序列化也剥离私有数据。该投影先于最终 JSON 字节检查和旧读裁剪，不重复加入规范消息。
 
 ThinkingLevel 保留 medium/ultra，增加 Qwen 原生 xhigh；它是应用层选项集合，不是所有模型通用的档位。wire reasoning_effort 从 SDK 的请求类型派生，只写入归一化后的合法值。model.ts 原 TS2375 的根因是把 ultra 放入所有供应商共用的 wire 联合类型，赋给 SDK 不接受 ultra 的 ReasoningEffort；exactOptionalPropertyTypes 出现在诊断中，但不是关闭该检查或加类型断言的理由。Kimi/Qwen 不接受的档位显式拒绝，不跨供应商猜测 ultra 的含义。
 

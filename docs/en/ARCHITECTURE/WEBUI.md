@@ -30,7 +30,7 @@ Former root webui/ and scripts/copy-webui.ts are removed without forwarding. Tes
 | `packages/webui/src/projects.ts`, `project-http.ts`, `project-management.ts` | Preview/confirmation entries, persistence delegated to Manager |
 | `packages/webui/src/attachments.ts`, `attachment-http.ts`, `attachment-evidence.ts` | Upload, current scope and actual provenance display |
 | `packages/webui/src/preview.ts`, `client/preview.ts` | Single-file snapshots and isolated previews |
-| `packages/webui/src/folder-picker.ts`, `native-folder-dialog.ps1` | Bounded native directory selection, not a model tool |
+| `packages/webui/src/folder-picker.ts`, `native-folder-host.ts`, `native-folder-dialog.ps1` | Bounded native directory selection and cancellation host, not a model tool |
 | `packages/webui/src/client/model-controls.ts` | Temporary model/thinking forms and context ring/details from runtime |
 | `packages/webui/src/client/cron.ts`, `permission-menu.ts`, `browser-evidence.ts` | Scheduling, mode and evidence operations on shared server |
 
@@ -110,7 +110,9 @@ Preview uses strict UTF-8 1 MiB limits, four concurrent reads/eight snapshots. S
 
 ## Native bridges and interaction constraints
 
-Directory helper uses system PowerShell/.NET, STA IFileDialog, fixed execFile arguments, shell=false, environment paths and 32 KiB output. Five-minute deadline, disconnect/shutdown cancellation and hidden owner bound lifecycle; PerMonitorV2/TOOLWINDOW avoid extra taskbar windows. Manager still validates selection; no permissions are granted.
+Directory helper uses system PowerShell/.NET, STA IFileDialog, fixed spawn arguments, shell=false, environment paths and 32 KiB output. The page temporarily marks its title with a random request ID and sends it in the authenticated X-Fatcat-Picker header. The helper matches a visible Chromium/Firefox window to that ID and uses the browser HWND as its modal owner; it never guesses from the foreground window or falls back to an unowned dialog. Selection stays above that browser and blocks its input until dismissal, with PerMonitorV2 and no extra taskbar window. The title is restored after success, cancellation or failure. Browser file inputs cannot supply the absolute workspace path, so attachment upload and workspace selection keep their respective browser/native bridges. Manager still validates selection; no permissions are granted.
+
+The five-minute deadline, disconnect, shutdown and output overflow close helper stdin. A detached Node host keeps PowerShell outside the server's kill-on-exit job while preserving its hidden console and pipes; abrupt server exit also closes stdin instead of killing the modal loop. The host drains output and waits for PowerShell to exit, then exits itself. The helper's reader asks the STA loop to close; an independent finally restores the surviving browser even if COM cleanup fails, checking its process/thread identity first. Do not terminate the helper on ordinary cancellation, which can strand the browser disabled. Busy still serializes management, but only runningSessionId drives execution status and Send/Stop presentation. Opening a picker or management dialog preserves the page layout, draft and unstarted context display.
 
 Opener uses a hidden helper/environment URL and five-second deadline. Failure leaves the private terminal link while server runs. Exit cancels pending helpers without closing user browsers.
 
@@ -136,7 +138,7 @@ View changes require DOM reuse/replacement, expansion, captured identity and liv
 
 Layout probes cover long drafts, short windows, drawer/preview breakpoint sides, light/dark, alignment, hit-testing, width-driven input height, local code scrolling and polling-preserved reading. Synthetic IME events check guards, not full physical IME; screenshots still need human visual review.
 
-Native Windows helper has real selection/cancel/abort/timeout evidence including 192 DPI PerMonitorV2, hidden owner, no extra taskbar window and cleanup. Helper-driven real dialogs do not establish every Windows/DPI setup. Non-Windows, physical phones and other browsers remain unverified.
+Native Windows verification covers selection/cancel/abort/timeout in real Edge at 192 DPI: PerMonitorV2, a disabled browser owner, picker above its owner even after attempted browser activation, browser re-enablement, no extra taskbar window and cleanup. Real HTTP fixtures also close the requesting tab, close the browser, shut down the server and forcibly terminate the isolated server process; they check surviving browser input and exit of both helper processes. Offline launcher tests cover EOF cleanup before settlement, output overflow and launch failure. The session Edge runner separately checks delayed injected selection, unchanged composer/welcome geometry, draft and title restoration, and cancellation/error recovery. These checks do not verify audible system notifications, forced termination of the helper itself or every Windows/DPI setup. Non-Windows, physical phones and other browsers remain unverified.
 
 verify:webui-models uses real Edge/SDK assembly with injected transport/local counters for choices/aliases, unavailable models, error retry, drafts, busy rejection, three metric types, answer/tool/compact refresh, old observations, unknowns, reload/resume, light/dark, 1440/390/320px, short viewports, icons, focus/reduced motion. Offline HTTP adds auth/origin/strict fields/stale session/revision/choice rejection and credential-free snapshots. Injected counts do not prove provider token precision; no real requests run.
 

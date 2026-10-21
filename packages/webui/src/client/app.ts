@@ -136,8 +136,9 @@ function controls(): void {
   filePreview.update(connected && !state?.current.projectError);
   const busy = Boolean(state?.busy);
   prompt.disabled = !connected;
-  send.hidden = busy; stop.hidden = !busy;
-  send.disabled = !connected || sending || !prompt.value.trim() || Boolean(state?.current.projectError);
+  const running = state?.runningSessionId != null;
+  send.hidden = running; stop.hidden = !running;
+  send.disabled = !connected || sending || busy || !prompt.value.trim() || Boolean(state?.current.projectError);
   stop.disabled = !connected || sending;
   newChat.disabled = !connected || sending || busy;
   home.setAttribute("aria-disabled", String(newChat.disabled));
@@ -171,14 +172,18 @@ async function api(path: string, body: unknown, timeout = 15_000): Promise<boole
 }
 async function request<T>(path: string, body: unknown, timeout = 15_000): Promise<T> {
   if (sending) throw new Error("Wait for the current request to finish.");
+  const pickerId = ["session/choose-workspace", "project/create", "project/workspace-preview"].includes(path) ? crypto.randomUUID() : undefined;
+  const title = document.title;
+  if (pickerId) document.title = `Fatcat workspace ${pickerId}`;
   sending = true; controls(); notice.hidden = true;
   try {
-    const response = await fetch(`/api/${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
+    const response = await fetch(`/api/${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+      ...(pickerId ? { "X-Fatcat-Picker": pickerId } : {}) }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
     if (!response.ok) throw new Error((await response.json() as { error: string }).error);
     const result = await response.json() as T;
     await refresh(true);
     return result;
-  } finally { sending = false; controls(); }
+  } finally { if (pickerId) document.title = title; sending = false; controls(); }
 }
 async function refresh(force = false): Promise<void> {
   try {
@@ -256,9 +261,9 @@ function render(next: WebUiState): void {
   element("workspace-picker").title = next.current.projectId ? "This chat uses its project folder. Use the project menu to change it for every project chat." : "Change workspace";
   renderSessionList();
   const warning = element("session-warning");
-  warning.hidden = (!next.current.interrupted && !next.current.projectError) || next.busy;
+  warning.hidden = (!next.current.interrupted && !next.current.projectError) || next.runningSessionId !== null;
   warning.textContent = next.current.projectError ?? "A turn in this session was interrupted. Model history contains only successful turns. Check current files and commands before retrying; completed operations were not undone.";
-  element("run-status").textContent = next.busy ? next.status : next.automationNotice;
+  element("run-status").textContent = next.runningSessionId !== null ? next.status : next.automationNotice;
   transcript.update(next.turns, next.current.id, next.info.workspace);
   renderApproval(next.approval);
   renderDetails(next);

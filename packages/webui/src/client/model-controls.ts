@@ -193,7 +193,7 @@ export class ModelControls {
   private renderContext(state: WebUiState | undefined): void {
     const usage = state?.contextUsage;
     const estimate = usage?.estimate;
-    const notStarted = Boolean(state && state.current.turnCount === 0 && !state.turns.length && !state.busy
+    const notStarted = Boolean(state && state.current.turnCount === 0 && !state.turns.length && state.runningSessionId === null
       && usage?.consumption.requests === 0);
     const input = !notStarted && estimate?.status === "ready" ? estimate.inputTokens : null;
     const capacity = usage?.windowCapacityTokens ?? null;

@@ -3,17 +3,17 @@ import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { runAgent } from "@fatcat/runtime/loop";
 import type { LoopEvent } from "@fatcat/runtime/loop";
-import type { Message, Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
 import { defaultTools } from "@fatcat/runtime/tools";
 
 function answer(content: string): ModelTurn {
-  return { message: { role: "assistant", content }, toolCalls: [] };
+  return { message: { role: "assistant", content } };
 }
 function calls(name: string, args: string, ...ids: string[]): ModelTurn {
-  const toolCalls = ids.map((id) => ({ id, type: "function" as const, function: { name, arguments: args } }));
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = ids.map((id) => ({ id, name, arguments: args }));
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 test("delegation isolates child history, correlates events, and returns only the final answer", async () => {
@@ -27,7 +27,7 @@ test("delegation isolates child history, correlates events, and returns only the
   let parentRequests = 0;
   const parent: Model = async (messages) => {
     if (++parentRequests === 1) return calls("delegate_task", '{"task":"Add 17 and 25"}', "parent-delegate");
-    assert.deepEqual(messages.at(-1), { role: "tool", tool_call_id: "parent-delegate", content: '{"ok":true,"result":{"answer":"42"}}' });
+    assert.deepEqual(messages.at(-1), { role: "tool", callId: "parent-delegate", content: '{"ok":true,"result":{"answer":"42"}}' });
     assert.ok(!JSON.stringify(messages).includes("child-sum"));
     return answer("42");
   };
@@ -36,7 +36,7 @@ test("delegation isolates child history, correlates events, and returns only the
   assert.equal(childRequests[0]?.[1]?.content, "Add 17 and 25");
   assert.ok(!JSON.stringify(childRequests).includes("Parent-only context"));
   assert.ok(events.some((event) => event.type === "subagent_event" && event.callId === "parent-delegate" && event.event.type === "tool_result"));
-  assert.equal(defaultTools.definitions.some((tool) => tool.function.name === "delegate_task"), false);
+  assert.equal(defaultTools.definitions.some((tool) => tool.name === "delegate_task"), false);
 });
 
 test("invalid tasks do not start children or consume the two-task allowance", async () => {

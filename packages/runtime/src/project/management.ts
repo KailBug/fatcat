@@ -53,7 +53,7 @@ export function movedProjectSession(record: SessionRecord, move: ProjectSessionM
 	const changes = (record.locationChanges ?? []).filter((change) => !change.acknowledged);
 	if (changes.length >= 100) throw new HarnessError("SESSION_LIMIT", "A project session has too many unacknowledged directory changes. Continue it before changing the project directory.");
 	const location = { kind: "project" as const, projectId: move.projectId };
-	return { ...record, version: 2, workspace: move.toWorkspace, location,
+	return { ...record, workspace: move.toWorkspace, location,
 		storageWorkspace: move.storageWorkspace, revision: move.expectedRevision + 1,
 		locationRevision: move.locationRevision + 1, updatedAt: move.changedAt,
 		locationChanges: [...changes, { id: move.changeId, from: location, to: location,

@@ -21,7 +21,7 @@ const code = (expected: string) => (error: unknown) => error instanceof HarnessE
 
 function draft(workspace: string, project?: ProjectRecord): SessionRecord {
 	const now = new Date().toISOString();
-	return { version: 2, id: randomUUID(), workspace: project?.workspace ?? workspace, name: null, title: "New session",
+	return { version: 4, id: randomUUID(), workspace: project?.workspace ?? workspace, name: null, title: "New session",
 		createdAt: now, updatedAt: now, revision: 0, forkedFrom: null, history: [], attempt: null,
 		...(project ? { location: { kind: "project", projectId: project.id }, projectRevision: project.revision } : {}) };
 }

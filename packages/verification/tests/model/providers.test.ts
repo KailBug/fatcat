@@ -1,10 +1,11 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfig } from "@fatcat/runtime/config";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { runAgent } from "@fatcat/runtime/loop";
 import { createDeepSeekModel, createModel } from "@fatcat/runtime/model";
-import type { Message, ModelObservation } from "@fatcat/runtime/model";
+import type { Message, ModelObservation } from "@fatcat/runtime/model-types";
 
 const cases = [
   { provider: "deepseek", key: "DEEPSEEK_API_KEY", label: "DeepSeek", model: "deepseek-flash",
@@ -40,7 +41,7 @@ for (const item of cases) {
       const request = new Request(input, init);
       assert.equal(request.url, item.endpoint);
       assert.equal(request.headers.get("authorization"), `Bearer offline-${item.provider}`);
-      const body = await request.json() as Record<string, unknown> & { messages: Message[] };
+      const body = await request.json() as Record<string, unknown> & { messages: ChatMessage[] };
       assert.equal(body.model, item.model);
       assert.equal(body.stream, false);
       if (calls === 1 && item.provider === "mimo") {

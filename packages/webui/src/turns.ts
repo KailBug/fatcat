@@ -1,5 +1,5 @@
 import type { ReportEvent } from "@fatcat/runtime/execution-report";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import { attachmentEvidence } from "./attachment-evidence.js";
 import type { WebTurn } from "./types.js";
 
@@ -38,7 +38,7 @@ export function restoredTurns(history: readonly Message[], sessionId: string): W
 			prompt = message.content;
 			start = index;
 		}
-		if (message.role === "assistant" && !message.tool_calls?.length && typeof message.content === "string" && prompt !== undefined) {
+		if (message.role === "assistant" && !message.toolCalls?.length && typeof message.content === "string" && prompt !== undefined) {
 			turns.push({
 				id: `${sessionId}:${turns.length}`,
 				prompt,

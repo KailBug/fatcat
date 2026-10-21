@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../../tests/support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, realpath, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,7 +10,7 @@ import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import { createTools } from "@fatcat/runtime/tools";
 import { officeFixture, pdfFixture, imageFixture } from "../../tests/fixtures/document-fixtures.js";
 import { WebUiController } from "@fatcat/webui/internal/controller";
@@ -28,7 +29,7 @@ const transport: typeof fetch = async (input, init) => {
 	modelRequests++;
 	const request = new Request(input, init);
 	assert.equal(request.url, "https://api.moonshot.cn/v1/chat/completions");
-	const body = await request.json() as { messages: Message[]; model: string; tools?: { function: { name: string } }[] };
+	const body = await request.json() as { messages: ChatMessage[]; model: string; tools?: { function: { name: string } }[] };
 	const messages = body.messages;
 	assert.equal(body.model, "kimi-k2.6");
 	const respond = (message: unknown, reason = "stop", promptTokens = 20) => Response.json({

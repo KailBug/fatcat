@@ -1,7 +1,7 @@
 import { delegationPolicy, automationGuidance, browserGuidance, attachmentGuidance, workspaceGuidance, permissionGuidance } from "./system-prompt.js";
 import type { Config } from "./config.js";
 import { createModel } from "./model.js";
-import type { Model } from "./model.js";
+import type { Model } from "./model-types.js";
 import { createSubagentTools } from "./subagent.js";
 import { defaultTools } from "./tools.js";
 import type { Tools } from "./tools.js";
@@ -93,7 +93,7 @@ function sharedAgentGuidance(tools: Tools, skillGuidance: string, attachments?: 
     workspaceGuidance(tools.workspaceRoot, permissions),
     skillGuidance,
     permissionGuidance(permissions),
-    tools.definitions.some((tool) => tool.function.name === "browser") ? browserGuidance : "",
+    tools.definitions.some((tool) => tool.name === "browser") ? browserGuidance : "",
     attachments ? attachmentGuidance : "",
   ].filter(Boolean).join("\n\n");
 }

@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { access, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -6,14 +7,13 @@ import { createAgent } from "@fatcat/runtime/agent";
 import { attachmentReference, parseAttachmentReference } from "@fatcat/runtime/attachments/record";
 import { loadConfig } from "@fatcat/runtime/config";
 import { documentParserVersion } from "@fatcat/runtime/documents/types";
-import type { Message } from "@fatcat/runtime/model";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { officeFixture, imageFixture } from "../fixtures/document-fixtures.js";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const agent = { model: async () => ({ message: { role: "assistant" as const, content: "Done" }, toolCalls: [] }), maxIterations: 4 };
+const agent = { model: async () => ({ message: { role: "assistant" as const, content: "Done" } }), maxIterations: 4 };
 
 for (const cached of [false, true]) {
 	test(`revoking an attachment during a ${cached ? "cached" : "new"} document read rejects subsequent cache access`, async (t) => {
@@ -99,7 +99,7 @@ test("an executing agent analyzes authorized images with its current model and a
 	let imageRequests = 0;
 	let parentRequests = 0;
 	const transport: typeof fetch = async (_input, init) => {
-		const body = JSON.parse(String(init?.body)) as { messages: Message[]; tools?: unknown; tool_choice?: string };
+		const body = JSON.parse(String(init?.body)) as { messages: ChatMessage[]; tools?: unknown; tool_choice?: string };
 		if (body.messages.some((message) => Array.isArray(message.content))) {
 			imageRequests++;
 			assert.equal(body.tools, undefined);

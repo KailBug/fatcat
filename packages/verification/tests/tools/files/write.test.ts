@@ -19,7 +19,7 @@ const digest = (content: string | Buffer) => createHash("sha256").update(content
 test("write is discoverable but read-only permission prevents all file changes", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
   const tools = await createTools(workspace);
-  assert.ok(tools.definitions.some((tool) => tool.function.name === "write"));
+  assert.ok(tools.definitions.some((tool) => tool.name === "write"));
   code(await tools.execute("write", '{"path":"new.txt","content":"private"}'), "PERMISSION_DENIED");
   assert.deepEqual(await readdir(workspace), []);
   assert.deepEqual(tools.getWrites!(), []);

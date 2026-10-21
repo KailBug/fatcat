@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
@@ -8,7 +9,7 @@ import { loadConfig } from "@fatcat/runtime/config";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ReportEvent } from "@fatcat/runtime/execution-report";
-import type { Message, Model, ModelObservation, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, Model, ModelObservation, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
@@ -18,7 +19,7 @@ import { WebUiController } from "@fatcat/webui/internal/controller";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 function answer(content = "Keep amber. Verify current files."): ModelTurn {
-	return { message: { role: "assistant", content }, toolCalls: [] };
+	return { message: { role: "assistant", content } };
 }
 
 function history(size = 10000): Message[] {
@@ -44,7 +45,7 @@ for (const [provider, key] of [["deepseek", "DEEPSEEK_API_KEY"], ["kimi", "MOONS
 		const agent = createAgent(config, undefined, async (input, init) => {
 			const request = await new Request(input, init).text();
 			assert.ok(Buffer.byteLength(request) <= config.maxRequestBytes);
-			const body = JSON.parse(request) as { messages: Message[]; tools?: unknown[] };
+			const body = JSON.parse(request) as { messages: ChatMessage[]; tools?: unknown[] };
 			const summary = String(body.messages[0]?.content).startsWith("Summarize historical");
 			if (summary) {
 				summaries++;
@@ -102,12 +103,12 @@ test("mid-turn recovery retains tool batches and never replays an executed opera
 	let calls = 0;
 	let executions = 0;
 	const checkpoints: Message[][] = [];
-	const call = { id: "effect", type: "function" as const, function: { name: "write", arguments: "{}" } };
+	const call = { id: "effect", name: "write", arguments: "{}" };
 	const session = new Session({ maxIterations: 4, tools: {
 		definitions: [], execute: async () => { executions++; return { ok: true, result: "effect recorded" }; },
 	}, compactionModel: async () => answer(), model: async (messages, _signal, observe, options) => {
 		calls++;
-		if (calls === 1) return { message: { role: "assistant", content: null, tool_calls: [call] }, toolCalls: [call] };
+		if (calls === 1) return { message: { role: "assistant", content: null, toolCalls: [call] } };
 		if (calls === 2) return rejectRequest(observe);
 		assert.equal(options?.toolChoice, "none");
 		assert.match(String(messages[0]?.content), /request 4 of 4/);

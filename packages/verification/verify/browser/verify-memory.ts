@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { chromium } from "playwright";
 import type { Browser, Page } from "playwright";
-import type { Model } from "@fatcat/runtime/model";
+import type { Model } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
@@ -35,11 +35,10 @@ const model: Model = async (messages) => {
 	const prompt = String(messages.findLast((message) => message.role === "user")?.content);
 	const last = messages.at(-1)!;
 	if (last.role === "user" && [remember, correction, deletion].includes(prompt)) {
-		const toolCalls = [{ id: "remember-user-preference", type: "function" as const, function: { name: "write",
-			arguments: JSON.stringify({ path: prompt === remember ? "memory:new" : `memory:${memoryId}@${prompt === correction ? 1 : 2}`,
+		const toolCalls = [{ id: "remember-user-preference", name: "write", arguments: JSON.stringify({ path: prompt === remember ? "memory:new" : `memory:${memoryId}@${prompt === correction ? 1 : 2}`,
 				content: prompt === remember ? "Dog likes CSGO best" : prompt === correction ? "Dog prefers chess" : "",
-				memoryEvidence: prompt }) } }];
-		return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+				memoryEvidence: prompt }) }];
+		return { message: { role: "assistant", content: null, toolCalls } };
 	}
 	if (last.role === "tool") assert.equal(JSON.parse(String(last.content)).ok, true, String(last.content));
 	const notice = JSON.parse(system.split("\n").find((line) => line.startsWith('{"manifest":'))!) as {
@@ -61,7 +60,7 @@ const model: Model = async (messages) => {
 		assert.equal(content?.content, expectedContent);
 		assert.equal(content?.revision, expectedRevision);
 	}
-	return { toolCalls: [], message: { role: "assistant", content: expectedContent === undefined
+	return { message: { role: "assistant", content: expectedContent === undefined
 		? "No active game preference." : `Current memory: ${expectedContent}.` } };
 };
 

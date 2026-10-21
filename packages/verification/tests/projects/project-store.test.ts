@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
@@ -15,7 +15,7 @@ const expectCode = (code: string) => (error: unknown) => error instanceof Harnes
 
 function draft(workspace: string): SessionRecord {
 	const now = new Date().toISOString();
-	return { version: 1, id: randomUUID(), workspace, name: null, title: "New session",
+	return { version: 4, id: randomUUID(), workspace, name: null, title: "New session",
 		createdAt: now, updatedAt: now, revision: 0, forkedFrom: null, history: [], attempt: null };
 }
 
@@ -40,41 +40,6 @@ test("projects persist distinct identities even when they share a canonical dire
 	await assert.rejects(store.create("Bad", join(base, "missing")), expectCode("PROJECT_WORKSPACE"));
 	await assert.rejects(store.create("\n", workspace), expectCode("PROJECT_NAME"));
 	assert.equal((await store.list()).length, 2);
-});
-
-test("legacy snapshots are read without writes and atomically upgrade in their original bucket", async (t) => {
-	const { base, workspace, outside } = await temporaryWorkspace(t);
-	const store = new SessionStore({ root: join(base, "sessions") });
-	const legacy = { ...draft(outside), storageWorkspace: workspace, revision: 7,
-		history: [{ role: "system", content: systemPrompt }, { role: "user", content: "Old request" },
-			{ role: "assistant", content: "Old answer" }, { role: "user", content: "Recent request" },
-			{ role: "assistant", content: "Recent answer" }],
-		compaction: { version: 1, summary: "Old summary", firstKeptMessage: 3, createdAt: new Date().toISOString() },
-		automations: [], attempt: { prompt: "Interrupted", ownerPid: process.pid, status: "failed",
-			code: "MODEL", messages: [], startedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } };
-	const path = join(store.root, workspaceKey(workspace), `${legacy.id}.json`);
-	await mkdir(join(store.root, workspaceKey(workspace)), { recursive: true });
-	const original = JSON.stringify(legacy);
-	await writeFile(path, original);
-	const loaded = await store.loadAny(legacy.id);
-	assert.equal(loaded.version, 1);
-	assert.equal(projectIdOf(loaded), undefined);
-	assert.deepEqual(loaded.location, { kind: "standalone", workspace: outside });
-	await store.listAll();
-	assert.equal(await readFile(path, "utf8"), original);
-	const saved = await store.save({ ...loaded, title: "Updated" }, loaded.revision);
-	const disk = JSON.parse(await readFile(path, "utf8"));
-	assert.equal(saved.version, 2);
-	assert.equal(saved.revision, 8);
-	assert.equal(disk.version, 2);
-	assert.equal(disk.workspace, undefined);
-	assert.equal(disk.storageWorkspace, workspace);
-	assert.deepEqual(disk.location, { kind: "standalone", workspace: outside });
-	assert.deepEqual(disk.history, legacy.history);
-	assert.deepEqual(disk.attempt, legacy.attempt);
-	assert.deepEqual(disk.compaction, legacy.compaction);
-	assert.deepEqual(disk.automations, []);
-	assert.deepEqual((await readdir(store.root)).sort(), [workspaceKey(workspace)]);
 });
 
 test("project snapshots persist only their association and resolve their workspace from the project", async (t) => {

@@ -1,4 +1,4 @@
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 
 export interface AttachmentReadEvidence {
 	origin: "parent" | "subagent";
@@ -90,13 +90,13 @@ export function attachmentEvidence(messages: readonly Message[]): AttachmentEvid
 		else omittedReads++;
 	};
 	for (const message of messages) {
-		if (message.role === "assistant") for (const call of message.tool_calls ?? []) {
-			if (call.type === "function" && (call.function.name === "read" || call.function.name === "delegate_task")) calls.set(call.id, call.function.name);
+		if (message.role === "assistant") for (const call of message.toolCalls ?? []) {
+			if ((call.name === "read" || call.name === "delegate_task")) calls.set(call.id, call.name);
 		}
 		if (message.role !== "tool" || typeof message.content !== "string") continue;
-		const name = calls.get(message.tool_call_id);
+		const name = calls.get(message.callId);
 		if (!name) continue;
-		calls.delete(message.tool_call_id);
+		calls.delete(message.callId);
 		try {
 			const value = object(JSON.parse(message.content));
 			if (value?.ok !== true) continue;

@@ -27,7 +27,7 @@ await writeFile(cancelPath, "This original should never be accepted.");
 await writeFile(pdfPath, "%PDF-1.7\nUnparsed fixture");
 let citation = "";
 const factory = async (root: string) => ({ tools: await createTools(root), maxIterations: 1,
-	model: async () => ({ toolCalls: [], message: { role: "assistant" as const,
+	model: async () => ({ message: { role: "assistant" as const,
 		content: `Offline source-link fixture: [Selected evidence](${citation}#L2-L3).` } }) });
 const store = new SessionStore({ root: join(base, "sessions") });
 const manager = await SessionManager.open(await factory(workspace), { workspace, store,

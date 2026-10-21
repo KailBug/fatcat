@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,7 +6,7 @@ import test from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
 import { prepareRequestContext } from "@fatcat/runtime/internal/context/request";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { discoverSkills } from "@fatcat/runtime/skills";
 import { createTools } from "@fatcat/runtime/tools";
@@ -21,8 +22,8 @@ function call(name: string, args: unknown, id = "skill-call") {
     tool_calls: [{ type: "function", id, function: { name, arguments: JSON.stringify(args) } }],
   } }] });
 }
-type Body = { messages: Message[]; tools: { function: { name: string } }[] };
-const loaded = (messages: Message[]) => messages.some((message) => message.role === "tool"
+type Body = { messages: ChatMessage[]; tools: { function: { name: string } }[] };
+const loaded = (messages: readonly { role: string; content: unknown }[]) => messages.some((message) => message.role === "tool"
   && String(message.content).includes("SKILL_PRIVATE_INSTRUCTION"));
 
 async function fixture(workspace: string, userHome: string) {
@@ -36,7 +37,7 @@ async function fixture(workspace: string, userHome: string) {
 test("skill activation follows successful Session history, failure isolation and reset", async (t) => {
   const { workspace, outside } = await temporaryWorkspace(t);
   const catalog = await fixture(workspace, outside);
-  let latest: Message[] = [];
+  let latest: ChatMessage[] = [];
   const agent = createAgent(config, await createTools(workspace), async (input, init) => {
     const { messages } = await new Request(input, init).json() as Body;
     latest = structuredClone(messages);
@@ -91,12 +92,12 @@ test("delegated skills load independently and allowed-tools cannot authorize she
 
 test("loaded skill instructions survive old-read projection but still count toward request limits", () => {
   const messages: Message[] = [{ role: "system", content: "Base role" }, { role: "user", content: "Load skill and file" },
-    { role: "assistant", content: null, tool_calls: [
-      { type: "function", id: "skill", function: { name: "read", arguments: '{"path":"skill://review-fixture/SKILL.md"}' } },
-      { type: "function", id: "file", function: { name: "read", arguments: '{"path":"notes.txt"}' } },
+    { role: "assistant", content: null, toolCalls: [
+      { id: "skill", name: "read", arguments: '{"path":"skill://review-fixture/SKILL.md"}' },
+      { id: "file", name: "read", arguments: '{"path":"notes.txt"}' },
     ] },
-    { role: "tool", tool_call_id: "skill", content: JSON.stringify({ ok: true, result: { kind: "skill", path: "skill://review-fixture/SKILL.md", content: skillBody } }) },
-    { role: "tool", tool_call_id: "file", content: JSON.stringify({ ok: true, result: { kind: "file", path: "notes.txt", content: "x".repeat(10000) } }) },
+    { role: "tool", callId: "skill", content: JSON.stringify({ ok: true, result: { kind: "skill", path: "skill://review-fixture/SKILL.md", content: skillBody } }) },
+    { role: "tool", callId: "file", content: JSON.stringify({ ok: true, result: { kind: "file", path: "notes.txt", content: "x".repeat(10000) } }) },
     { role: "assistant", content: "Loaded" }, { role: "user", content: "Second turn" },
     { role: "assistant", content: "Ready" }, { role: "user", content: "Continue" }];
   const snapshot = structuredClone(messages);

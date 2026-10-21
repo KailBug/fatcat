@@ -4,17 +4,17 @@ import { join } from "node:path";
 import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import type { LoopEvent } from "@fatcat/runtime/loop";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../../support/workspace.js";
 
 function call(name: string, args: unknown, id = "call-1"): ModelTurn {
-  const toolCalls = [{ id, type: "function" as const, function: { name, arguments: JSON.stringify(args) } }];
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = [{ id, name, arguments: JSON.stringify(args) }];
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
-const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content } });
 
 test("failed, cancelled and exhausted turns retain writes without keeping broken tool history", async (t) => {
   for (const failureCode of ["MODEL_HTTP", "CANCELLED", "MAX_ITERATIONS"]) {

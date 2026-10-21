@@ -4,13 +4,13 @@ import { join } from "node:path";
 import test from "node:test";
 import { attachmentReference } from "@fatcat/runtime/attachments/record";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { ModelTurn } from "@fatcat/runtime/model";
+import type { ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const agent = { maxIterations: 4, model: async (): Promise<ModelTurn> => ({
-	message: { role: "assistant", content: "Done" }, toolCalls: [],
+	message: { role: "assistant", content: "Done" },
 }) };
 const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
 

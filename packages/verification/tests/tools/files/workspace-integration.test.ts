@@ -1,10 +1,11 @@
+import type { ChatMessage } from "../../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { loadConfig } from "@fatcat/runtime/config";
 import { createDeepSeekModel } from "@fatcat/runtime/model";
-import type { Message, Model } from "@fatcat/runtime/model";
+import type { Model } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../../support/workspace.js";
@@ -15,8 +16,8 @@ test("SDK and Session return correlated workspace errors, recover, and retain fi
   const tools = await createTools(workspace);
   let requests = 0;
   const model = createDeepSeekModel(loadConfig({ DEEPSEEK_API_KEY: "offline-only" }), async (input, init) => {
-    const body = await new Request(input, init).json() as { messages: Message[]; tools: unknown[] };
-    assert.deepEqual(body.tools, tools.definitions);
+    const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools: unknown[] };
+    assert.deepEqual(body.tools, tools.definitions.map((definition) => ({ type: "function", function: definition })));
     requests++;
     if (requests === 2) {
       assert.deepEqual(body.messages.at(-1), { role: "tool", tool_call_id: "read-1", content: JSON.stringify({
@@ -48,11 +49,11 @@ test("each Session keeps its own workspace, including after reset", async (t) =>
   await writeFile(join(outside, "notes.txt"), "second");
   const model: Model = async (messages) => {
     if (messages.at(-1)?.role === "user") {
-      const toolCalls = [{ id: "read", type: "function" as const, function: { name: "read", arguments: '{"path":"notes.txt"}' } }];
-      return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+      const toolCalls = [{ id: "read", name: "read", arguments: '{"path":"notes.txt"}' }];
+      return { message: { role: "assistant", content: null, toolCalls } };
     }
     const result = JSON.parse(String(messages.at(-1)?.content)) as { result: { content: string } };
-    return { message: { role: "assistant", content: result.result.content }, toolCalls: [] };
+    return { message: { role: "assistant", content: result.result.content } };
   };
   const first = new Session({ model, tools: await createTools(workspace), maxIterations: 2 });
   const second = new Session({ model, tools: await createTools(outside), maxIterations: 2 });
@@ -68,8 +69,8 @@ test("SDK and Session follow read continuations and preserve every correlated pa
   const tools = await createTools(workspace);
   let requests = 0;
   const model = createDeepSeekModel(loadConfig({ DEEPSEEK_API_KEY: "offline-only" }), async (input, init) => {
-    const body = await new Request(input, init).json() as { messages: Message[]; tools: unknown[] };
-    assert.deepEqual(body.tools, tools.definitions);
+    const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools: unknown[] };
+    assert.deepEqual(body.tools, tools.definitions.map((definition) => ({ type: "function", function: definition })));
     requests++;
     const pages = body.messages.filter((message) => message.role === "tool").map((message) => {
       assert.equal(message.role, "tool");

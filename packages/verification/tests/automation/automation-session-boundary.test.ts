@@ -3,12 +3,12 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { TestContext } from "node:test";
 import { checkCancellation } from "@fatcat/runtime/errors";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Ready" }, toolCalls: [] });
+const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Ready" } });
 const task = { action: "create", prompt: "Review changes", trigger: { type: "interval", seconds: 60 }, maxRuns: 3 };
 
 async function fixture(t: TestContext, background: boolean, model: Model = async () => answer()) {

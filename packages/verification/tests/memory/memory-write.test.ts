@@ -61,7 +61,7 @@ test("generic memory write routes local, explicit global, correction, and deleti
 test("memory writer preserves ordinary tool and file arguments without bypassing existing execution", async () => {
 	const received: unknown[][] = [];
 	let memories = 0;
-	const base: Tools = { definitions: [{ type: "function", function: { name: "write", description: "Existing write" } }],
+	const base: Tools = { definitions: [{ name: "write", description: "Existing write" }],
 		execute: async (...args) => { received.push(args); return { ok: true, result: "existing" }; } };
 	const tools = withMemoryWriter(base, async () => { memories++; return record(); });
 	const controller = new AbortController();
@@ -170,12 +170,11 @@ test("memory writer extends existing write definitions and preserves original cr
 	const create = { required: ["path", "content"] };
 	const edit = { required: ["path", "oldText", "newText"] };
 	const properties = { path: { type: "string" }, content: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } };
-	const definition = { type: "function" as const, function: { name: "write", description: "Existing file semantics.",
-		parameters: { type: "object", properties, required: ["path"], additionalProperties: false, oneOf: [create, edit] } } };
+	const definition = { name: "write", description: "Existing file semantics.", parameters: { type: "object", properties, required: ["path"], additionalProperties: false, oneOf: [create, edit] } };
 	const original = structuredClone(definition);
 	const tools = withMemoryWriter({ ...defaultTools, definitions: [definition] }, async () => record());
 	assert.equal(tools.definitions.length, 1);
-	const extended = tools.definitions[0]!.function;
+	const extended = tools.definitions[0]!;
 	assert.match(extended.description!, /Existing file semantics/);
 	assert.match(extended.description!, /do not require a \/memory command/);
 	assert.equal(extended.name, "write");
@@ -191,8 +190,8 @@ test("memory writer extends existing write definitions and preserves original cr
 	assert.deepEqual(alternatives[1]!.allOf, [edit, { not: { required: ["memoryEvidence"] } }]);
 	assert.deepEqual(alternatives[2]!.required, ["path", "content", "memoryEvidence"]);
 	assert.deepEqual(definition, original);
-	assert.deepEqual(withMemoryWriter().definitions.map((item) => item.function.name), ["sum", "write"]);
-	assert.doesNotMatch(withMemoryWriter().definitions.at(-1)!.function.description!, /persistence is unavailable/);
+	assert.deepEqual(withMemoryWriter().definitions.map((item) => item.name), ["sum", "write"]);
+	assert.doesNotMatch(withMemoryWriter().definitions.at(-1)!.description!, /persistence is unavailable/);
 	assert.match(memoryWriteGuidance, /exact excerpt/);
 	assert.match(memoryWriteGuidance, /Never persist inferred facts/);
 });

@@ -184,7 +184,7 @@ test("only Session resolution commits a successful conversation turn, including 
   const controller = new AbortController();
   const session = new Session({ maxIterations: 1, model: async (_messages, _signal, observe) => {
     observe?.({ type: "model_usage", usage: basic });
-    return { message: { role: "assistant", content: "Ready" }, toolCalls: [] };
+    return { message: { role: "assistant", content: "Ready" } };
   } });
   telemetry.beginTurn();
   await assert.rejects(session.run("Task", { signal: controller.signal, onEvent(event) {

@@ -4,7 +4,7 @@ import { defaultTools } from "../tools.js";
 import type { Tool, JsonValue } from "../tools/types.js";
 import { failure } from "../tools/types.js";
 
-export const automationDefinition: Tool["definition"] = { type: "function", function: {
+export const automationDefinition: Tool["definition"] = {
   name: "automation",
   description: "Manage scheduled or file-change tasks bound to this conversation. Use only for explicit user automation requests. Later runs continue this session with current permissions. Do not claim creation before success. Process must remain open; no offline catch-up. Default 20 runs / 24 hours. Ask about unclear timing. Automated turns cannot create or change tasks. list returns current time and tasks.",
   parameters: { type: "object", properties: {
@@ -22,14 +22,13 @@ export const automationDefinition: Tool["definition"] = { type: "function", func
     }, required: ["type"], additionalProperties: false },
     maxRuns: { type: "integer", minimum: 1, maximum: 1000 },
     maxRuntimeSeconds: { type: "integer", minimum: 1, maximum: 604800 },
-  }, required: ["action"], additionalProperties: false },
-} };
+  }, required: ["action"], additionalProperties: false } };
 
 /** Parent-only schema; SessionManager binds execution to the actual target session. */
 export function withAutomationTool(base: Tools = defaultTools,
   execute?: (args: unknown, signal?: AbortSignal) => Promise<unknown>): Tools {
   return { ...base,
-    definitions: [...base.definitions.filter((tool) => tool.function.name !== "automation"), automationDefinition],
+    definitions: [...base.definitions.filter((tool) => tool.name !== "automation"), automationDefinition],
     forTurn: (event, context) => withAutomationTool(base.forTurn?.(event, context) ?? base, execute),
     execute: async (name, json, signal, callId) => {
       if (name !== "automation") return base.execute(name, json, signal, callId);

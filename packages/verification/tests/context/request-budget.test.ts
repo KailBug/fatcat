@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,7 +9,7 @@ import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport, ReportEvent } from "@fatcat/runtime/execution-report";
 import { runAgent } from "@fatcat/runtime/loop";
 import { createDeepSeekModel } from "@fatcat/runtime/model";
-import type { Message, ModelObservation } from "@fatcat/runtime/model";
+import type { Message, ModelObservation } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createTools } from "@fatcat/runtime/tools";
 import type { Tools } from "@fatcat/runtime/tools";
@@ -104,7 +105,7 @@ test("received usage survives invalid and truncated responses and cancellation a
 
 test("parent and child usage stays separate and guidance plus delegate schema enter the budget", async () => {
   const agent = createAgent(config, await createTools(), async (input, init) => {
-    const body = await new Request(input, init).json() as { messages: Message[]; tools: { function: { name: string } }[] };
+    const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
     const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
     if (parent && body.messages.at(-1)?.role === "user") return Response.json(call("delegate_task", { task: "Independent check" }));
     return Response.json(response("Ready", parent ? usage : { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }));
@@ -147,7 +148,7 @@ test("budget failure after a committed edit keeps execution facts across reset w
   } };
   let sent = 0;
   const model = createDeepSeekModel({ ...config, maxRequestBytes: 18000 }, async (input, init) => {
-    const body = await new Request(input, init).json() as { messages: Message[] };
+    const body = await new Request(input, init).json() as { messages: ChatMessage[] };
     if (++sent === 1) return Response.json(call("write", { path: "code.ts", oldText: "before", newText: "after" }));
     assert.ok(JSON.stringify(body.messages).includes("Harness workspace write records"));
     assert.ok(!JSON.stringify(body.messages).includes("large-result-"));
@@ -172,7 +173,7 @@ test("budget failure after a committed edit keeps execution facts across reset w
 test("a blocked follow-up preserves successful history and reset explicitly starts a smaller request", async () => {
   let sent = 0;
   const model = createDeepSeekModel({ ...config, maxRequestBytes: 14000 }, async (input, init) => {
-    const body = await new Request(input, init).json() as { messages: Message[] };
+    const body = await new Request(input, init).json() as { messages: ChatMessage[] };
     sent++;
     const last = body.messages.at(-1)!.content;
     if (last === "history") assert.ok(JSON.stringify(body.messages).includes("remember-me"));
@@ -209,7 +210,7 @@ test("child request overflow becomes a bounded tool failure and cannot send the 
   const tools: Tools = { ...base, async execute() { return { ok: true, result: "x".repeat(30000) }; } };
   const agent = createAgent({ ...config, maxRequestBytes: 14000 }, tools, async (input, init) => {
     sent++;
-    const body = await new Request(input, init).json() as { messages: Message[]; tools: { function: { name: string } }[] };
+    const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
     const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
     if (!parent) return Response.json(call("sum", { numbers: [2, 3] }));
     if (body.messages.at(-1)?.role === "user") return Response.json(call("delegate_task", { task: "Add two numbers" }));

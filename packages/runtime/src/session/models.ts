@@ -1,7 +1,6 @@
 import { HarnessError } from "../errors.js";
-import { decodeModelSelection } from "../model-catalog.js";
+import { decodeModelSelection, sameModel } from "../model-catalog.js";
 import type { ModelSelection } from "../model-catalog.js";
-import { sameModel } from "../model-history.js";
 import type { SessionAgentOptions } from "./agent-session.js";
 
 /** Restore permits reading an unavailable model's transcript, but never substitutes a model. */

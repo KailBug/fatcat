@@ -5,7 +5,7 @@ import test from "node:test";
 import { runInteractiveCommand } from "@fatcat/commands";
 import { loadConfig } from "@fatcat/runtime/config";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
@@ -14,7 +14,7 @@ import { WebUiController } from "@fatcat/webui/internal/controller";
 import { startWebUiServer } from "@fatcat/webui/internal/server";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content } });
 const agent = { maxIterations: 1, model: async () => answer() };
 const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { HarnessError, checkCancellation } from "../errors.js";
-import type { Message } from "../model.js";
+import type { Message } from "../model-types.js";
 import { AgentSession } from "./agent-session.js";
 import type { SessionAgentOptions, SessionRunOptions, SessionTurnResult } from "./agent-session.js";
 import { SessionStore, canonicalWorkspace, processAlive } from "./store.js";
@@ -765,7 +765,7 @@ export class SessionManager {
 		const validated = name === undefined ? null : sessionName(name);
 		const location = project ? { kind: "project" as const, projectId: project.id }
 			: { kind: "standalone" as const, workspace };
-		return { version: 2, id: randomUUID(), workspace, location, locationRevision: 0, name: validated,
+		return { version: 4, id: randomUUID(), workspace, location, locationRevision: 0, name: validated,
 			...(this.agent.modelSelection ? { modelSelection: structuredClone(this.agent.modelSelection) } : {}),
 			...(project ? { projectName: project.name, projectRevision: project.revision } : {}),
 			title: validated ?? "New session", createdAt: now, updatedAt: now, revision: 0,

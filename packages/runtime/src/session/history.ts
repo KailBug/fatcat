@@ -1,7 +1,7 @@
 import { HarnessError } from "../errors.js";
-import type { Message } from "../model.js";
+import type { Message } from "../model-types.js";
 import { systemPrompt } from "../system-prompt.js";
-import { decodeModelContext } from "../model-history.js";
+import { decodeProviderReplayData } from "../provider-replay.js";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -35,31 +35,30 @@ export function validateHistory(value: unknown, complete = true): Message[] {
       state = "assistant";
     } else if (raw.role === "assistant") {
       if (state !== "assistant" || (raw.content !== null && typeof raw.content !== "string")) return invalidSession();
-      const calls = raw.tool_calls;
+      const calls = raw.toolCalls;
       if (calls !== undefined && (!Array.isArray(calls) || !calls.length)) return invalidSession();
-      const toolCalls: NonNullable<Extract<Message, { role: "assistant" }>["tool_calls"]> = [];
+      const toolCalls: NonNullable<Extract<Message, { role: "assistant" }>["toolCalls"]> = [];
       for (const call of (calls ?? []) as unknown[]) {
-        if (!isRecord(call) || call.type !== "function" || typeof call.id !== "string" || !call.id.trim()
-          || used.has(call.id) || !isRecord(call.function) || typeof call.function.name !== "string"
-          || !call.function.name.trim() || typeof call.function.arguments !== "string") return invalidSession();
+        if (!isRecord(call) || typeof call.id !== "string" || !call.id.trim()
+          || used.has(call.id) || typeof call.name !== "string"
+          || !call.name.trim() || typeof call.arguments !== "string") return invalidSession();
         used.add(call.id);
         pending.add(call.id);
-        toolCalls.push({ type: "function", id: call.id, function: {
-          name: call.function.name, arguments: call.function.arguments,
-        } });
+        toolCalls.push({ id: call.id, name: call.name, arguments: call.arguments });
       }
       if (!toolCalls.length && (typeof raw.content !== "string" || !raw.content.trim())) return invalidSession();
       const message: Extract<Message, { role: "assistant" }> = { role: "assistant", content: raw.content as string | null,
-        ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
-      if (raw.modelContext !== undefined) {
-        try { message.modelContext = decodeModelContext(raw.modelContext, message); } catch { return invalidSession(); }
+        ...(toolCalls.length ? { toolCalls } : {}) };
+      if (raw.providerReplay !== undefined) {
+        try { message.providerReplay = decodeProviderReplayData(raw.providerReplay, message); } catch { return invalidSession(); }
       }
       messages.push(message);
       state = toolCalls.length ? "tools" : "user";
     } else if (raw.role === "tool") {
-      if (state !== "tools" || typeof raw.tool_call_id !== "string" || !pending.delete(raw.tool_call_id)
+      const callId = raw.callId;
+      if (state !== "tools" || typeof callId !== "string" || !pending.delete(callId)
         || typeof raw.content !== "string") return invalidSession();
-      messages.push({ role: "tool", content: raw.content, tool_call_id: raw.tool_call_id });
+      messages.push({ role: "tool", content: raw.content, callId });
       if (!pending.size) state = "assistant";
     } else return invalidSession();
   }

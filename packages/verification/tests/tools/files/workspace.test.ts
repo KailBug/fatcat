@@ -14,11 +14,11 @@ function hasCode(result: ToolResult, code: string) {
 
 test("only an explicit valid workspace enables filesystem definitions and execution", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
-  assert.deepEqual(defaultTools.definitions.map((tool) => tool.function.name), ["sum"]);
+  assert.deepEqual(defaultTools.definitions.map((tool) => tool.name), ["sum"]);
   hasCode(await call(defaultTools, "read", "notes.txt"), "UNKNOWN_TOOL");
   hasCode(await defaultTools.execute("__proto__", "{}"), "UNKNOWN_TOOL");
   const tools = await createTools(workspace);
-  assert.deepEqual(tools.definitions.map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
+  assert.deepEqual(tools.definitions.map((tool) => tool.name), ["sum", "read", "write", "shell"]);
   for (const oldName of ["list_directory", "read_file"]) hasCode(await call(tools, oldName, "."), "UNKNOWN_TOOL");
   await assert.rejects(createTools(join(workspace, "missing")), /existing accessible directory/);
   await assert.rejects(createTools(" "), /existing accessible directory/);
@@ -224,7 +224,7 @@ test("pagination validates optional fields strictly before accessing the path", 
     { offset: -1 }, { offset: 0.5 }, { offset: "1" }, { offset: null }, { offset: Number.MAX_SAFE_INTEGER + 1 },
     { limit: 0 }, { limit: 201 }, { limit: 1.5 }, { limit: "1" }, { limit: null }, { extra: 1 },
   ]) hasCode(await tools.execute("read", JSON.stringify({ path: "missing.txt", ...args })), "INVALID_ARGUMENTS");
-  const definition = tools.definitions.find((tool) => tool.function.name === "read")!.function.parameters!;
+  const definition = tools.definitions.find((tool) => tool.name === "read")!.parameters!;
   assert.equal(definition.additionalProperties, false);
   assert.deepEqual(definition.required, ["path"]);
 });

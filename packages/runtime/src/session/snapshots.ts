@@ -43,8 +43,8 @@ export async function readSessionSnapshot(root: string, directory: string, id: s
     if (!Buffer.from(json, "utf8").equals(bytes.subarray(0, count))) return invalidSession();
     let parsed: unknown;
     try { parsed = JSON.parse(json); } catch { return invalidSession(); }
-    if (!isRecord(parsed) || (parsed.version === 1 ? typeof parsed.workspace !== "string" : typeof parsed.storageWorkspace !== "string")) return invalidSession();
-    const storageWorkspace = String(parsed.storageWorkspace ?? parsed.workspace);
+    if (!isRecord(parsed) || typeof parsed.storageWorkspace !== "string") return invalidSession();
+    const storageWorkspace = parsed.storageWorkspace;
     if (sessionDirectory(root, storageWorkspace) !== directory) return invalidSession();
     return decodeSessionRecord(parsed, storageWorkspace, id);
   } catch (error) {

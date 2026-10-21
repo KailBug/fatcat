@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { describe, it } from "node:test";
 import { createAgent, workspaceAgentFactory } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
-import type { Message, Model } from "@fatcat/runtime/model";
+import type { Message, Model } from "@fatcat/runtime/model-types";
 import type { SessionAgentOptions } from "@fatcat/runtime/session/agent-session";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
@@ -61,7 +61,7 @@ describe("createAgent session binding", () => {
 		const requests: Parameters<Model>[] = [];
 		const customModel: Model = async (...args) => {
 			requests.push(args);
-			return { message: { role: "assistant", content: "Custom answer" }, toolCalls: [] };
+			return { message: { role: "assistant", content: "Custom answer" } };
 		};
 		const current: SessionAgentOptions = { ...agent, tools: customTools, model: customModel,
 			maxIterations: 7, maxRequestBytes: 12345, autoCompaction: false, compactionModel: customModel };

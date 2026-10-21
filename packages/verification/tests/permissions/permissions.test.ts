@@ -73,7 +73,7 @@ test("shared tools switch live write authorization without rebuilding journals o
   let approvals = 0;
   const tools = await createTools(workspace, "ask", async () => { approvals++; return true; },
     { permission: "ask", approve: async () => true }, undefined, policy);
-  const delegated = createSubagentTools(tools, async () => ({ message: { role: "assistant", content: "Done" }, toolCalls: [] }), 2);
+  const delegated = createSubagentTools(tools, async () => ({ message: { role: "assistant", content: "Done" } }), 2);
   const turnTools = delegated.forTurn!();
   assert.equal((await turnTools.execute("write", '{"path":"manual.txt","content":"one"}')).ok, true);
   assert.equal(approvals, 1);

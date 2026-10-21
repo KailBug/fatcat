@@ -13,7 +13,7 @@ const code = (expected: string) => (error: unknown) => error instanceof HarnessE
 
 function draft(workspace: string): SessionRecord {
 	const now = new Date().toISOString();
-	return { version: 2, id: randomUUID(), workspace, name: null, title: "New session", createdAt: now,
+	return { version: 4, id: randomUUID(), workspace, name: null, title: "New session", createdAt: now,
 		updatedAt: now, revision: 0, forkedFrom: null, history: [], attempt: null };
 }
 

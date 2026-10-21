@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import type { Tools } from "@fatcat/runtime/tools";
@@ -15,7 +15,7 @@ import { temporaryWorkspace } from "../support/workspace.js";
 
 const info: WebUiInfo = { provider: "deepseek", model: "deepseek-flash", workspace: "fixture", permission: "ask",
   shellPermission: "deny", webPermission: "deny", maxIterations: 3, maxRequestBytes: 12_345, skills: 0, warnings: [] };
-const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Done" }, toolCalls: [] });
+const answer = (): ModelTurn => ({ message: { role: "assistant", content: "Done" } });
 const usage = (promptTokens: number) => ({ promptTokens, completionTokens: 5, totalTokens: promptTokens + 5 });
 
 async function finished(controller: WebUiController): Promise<void> {
@@ -51,8 +51,8 @@ test("Web UI keeps reported main input, cumulative usage and current estimates s
     assert.equal(controller.snapshot().contextUsage?.estimate.status, "pending");
     if (requests === 1) {
       observe?.({ type: "model_usage", usage: usage(90) });
-      const toolCalls = [{ id: "child", type: "function" as const, function: { name: "fixture", arguments: "{}" } }];
-      return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+      const toolCalls = [{ id: "child", name: "fixture", arguments: "{}" }];
+      return { message: { role: "assistant", content: null, toolCalls } };
     }
     if (requests === 3) throw new HarnessError("MODEL_CONNECTION", "Fixture transport failed.");
     if (requests === 4) { observe?.({ type: "model_usage", usage: null }); return answer(); }

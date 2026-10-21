@@ -9,20 +9,17 @@ import {
 import type { WorkflowEvidence } from "../support/coding-workflow.js";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport } from "@fatcat/runtime/execution-report";
-import type { Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createTools } from "@fatcat/runtime/tools";
 import type { Tools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const windows = { skip: process.platform !== "win32" };
-const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content: string): ModelTurn => ({ message: { role: "assistant", content } });
 function calls(prefix: string, operations: [string, unknown][]): ModelTurn {
-  const toolCalls = operations.map(([name, args], index) => ({
-    id: `${prefix}-${index}`, type: "function" as const,
-    function: { name, arguments: JSON.stringify(args) },
-  }));
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = operations.map(([name, args], index) => ({ id: `${prefix}-${index}`, name, arguments: JSON.stringify(args) }));
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 const fixedReceipt = initialFiles["src/receipt.mjs"]!.replace("Math.floor(", "Math.round(");

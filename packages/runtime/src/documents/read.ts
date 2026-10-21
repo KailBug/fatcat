@@ -4,7 +4,7 @@ import { attachmentPage, attachmentReadOptions, readAttachmentContent } from "..
 import type { AttachmentReadOptions, AttachmentReadResult } from "../attachments/read.js";
 import { attachmentReference } from "../attachments/record.js";
 import type { AttachmentInfo } from "../attachments/record.js";
-import type { ModelObservation } from "../model.js";
+import type { ModelObservation } from "../model-types.js";
 import type { ToolTurnContext } from "../tools.js";
 import { derivedSnapshot, documentSnapshot, splitSourceText } from "./cache.js";
 import type { DocumentCache, DocumentSnapshot, SourceUnit } from "./cache.js";

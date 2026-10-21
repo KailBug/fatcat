@@ -1,5 +1,5 @@
 import type { LoopEvent } from "./loop.js";
-import type { ModelObservation } from "./model.js";
+import type { ModelObservation } from "./model-types.js";
 import { HarnessError, checkCancellation } from "./errors.js";
 import { sumTool } from "./tools/sum.js";
 import { createWorkspace } from "./permissions/workspace.js";
@@ -37,7 +37,7 @@ export type Tools = {
 };
 
 function collectTools(tools: Tool[]) {
-  const byName = new Map(tools.map((tool) => [tool.definition.function.name, tool]));
+  const byName = new Map(tools.map((tool) => [tool.definition.name, tool]));
 
   async function execute(name: string, argumentsJson: string, signal?: AbortSignal): Promise<ToolResult> {
     checkCancellation(signal);

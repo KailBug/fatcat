@@ -28,10 +28,10 @@ const memoryProperties = {
 	content: { type: "string", maxLength: maxMemoryContentBytes },
 	memoryEvidence: memoryEvidenceProperty,
 };
-const fallbackWrite: Tool["definition"] = { type: "function", function: {
+const fallbackWrite: Tool["definition"] = {
 	name: "write", description: memoryWriteGuidance,
 	parameters: { type: "object", properties: memoryProperties, required: ["path", "content"], additionalProperties: false },
-} };
+};
 const referencePattern = /^memory:([^@]+)@([1-9][0-9]*)$/;
 
 function writeArguments(args: object): MemoryWriteRequest {
@@ -62,7 +62,7 @@ function isUnicode(value: string): boolean {
 	return Buffer.from(value, "utf8").toString("utf8") === value;
 }
 
-function parametersWithEvidence(parameters: Tool["definition"]["function"]["parameters"]): NonNullable<Tool["definition"]["function"]["parameters"]> {
+function parametersWithEvidence(parameters: Tool["definition"]["parameters"]): NonNullable<Tool["definition"]["parameters"]> {
 	const result = { ...parameters, properties: {
 		...(parameters?.properties as Record<string, unknown> ?? {}), memoryEvidence: memoryEvidenceProperty,
 	} };
@@ -77,11 +77,11 @@ function parametersWithEvidence(parameters: Tool["definition"]["function"]["para
 /** Extend generic write while leaving workspace permissions, journals, and child bindings with their existing owners. */
 export function withMemoryWriter(base: Tools = defaultTools,
 	writeMemory?: (request: MemoryWriteRequest, signal?: AbortSignal, callId?: string) => Promise<MemoryRecord>): Tools {
-	const existing = base.definitions.find((definition) => definition.function.name === "write");
+	const existing = base.definitions.find((definition) => definition.name === "write");
 	const definition = existing ?? fallbackWrite;
-	const writeDefinition: Tool["definition"] = { ...definition, function: { ...definition.function,
-		description: existing ? `${existing.function.description ?? ""} ${memoryWriteGuidance}` : memoryWriteGuidance,
-		parameters: parametersWithEvidence(definition.function.parameters) } };
+	const writeDefinition: Tool["definition"] = { ...definition,
+		description: existing ? `${existing.description ?? ""} ${memoryWriteGuidance}` : memoryWriteGuidance,
+		parameters: parametersWithEvidence(definition.parameters) };
 	const definitions = existing ? base.definitions.map((item) => item === existing ? writeDefinition : item)
 		: [...base.definitions, writeDefinition];
 	async function execute(name: string, argumentsJson: string, signal?: AbortSignal, callId?: string): Promise<ToolResult> {

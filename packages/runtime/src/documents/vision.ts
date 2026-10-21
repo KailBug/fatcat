@@ -1,7 +1,8 @@
-import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
+import type { TextContent, ImageContent } from "../model-types.js";
 import type { Config } from "../config.js";
 import { checkCancellation, HarnessError } from "../errors.js";
-import { createModel, type ModelObservation } from "../model.js";
+import { createModel } from "../model.js";
+import type { ModelObservation } from "../model-types.js";
 import type { Provider } from "../providers.js";
 import { getModelInputCapabilities } from "../model-catalog.js";
 import type { DocumentImage } from "./types.js";
@@ -105,11 +106,11 @@ export function createDocumentVision(config: Config, transport?: typeof fetch): 
       checkCancellation(options.signal);
       if (!capability.supported) throw new HarnessError("DOCUMENT_VISION_UNAVAILABLE", capability.reason);
       validateInput(images, options);
-      const content: ChatCompletionContentPart[] = [{ type: "text", text: options.question?.trim()
+      const content: (TextContent | ImageContent)[] = [{ type: "text", text: options.question?.trim()
         || (options.mode === "transcribe" ? "Transcribe the supplied image text." : "Describe the supplied images.") }];
       for (const [index, image] of images.entries()) {
         content.push({ type: "text", text: `Source image ${index + 1}${image.page === undefined ? "" : `, page ${image.page}`} (${image.width} x ${image.height} pixels).` });
-        content.push({ type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data.toString("base64")}` } });
+        content.push({ type: "image", url: `data:${image.mimeType};base64,${image.data.toString("base64")}` });
       }
       checkCancellation(options.signal);
       // The caller reserves the shared turn request allowance, including byte-rejected attempts.
@@ -118,7 +119,7 @@ export function createDocumentVision(config: Config, transport?: typeof fetch): 
         { role: "system", content: visionInstruction(options.mode) },
         { role: "user", content },
       ], options.signal, options.observe, { toolChoice: "none", purpose: "document" });
-      if (turn.toolCalls.length || typeof turn.message.content !== "string" || !turn.message.content.trim()) {
+      if (turn.message.toolCalls?.length || typeof turn.message.content !== "string" || !turn.message.content.trim()) {
         throw new HarnessError("MODEL_RESPONSE", "Document analysis returned unsupported content or tool calls.");
       }
       if (Buffer.byteLength(turn.message.content) > maxOutputBytes) {

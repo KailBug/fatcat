@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
@@ -11,7 +12,7 @@ import { contextBytes, decodeCompaction, projectHistory } from "@fatcat/runtime/
 import { HarnessError } from "@fatcat/runtime/errors";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ReportEvent } from "@fatcat/runtime/execution-report";
-import type { Message, Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
@@ -20,16 +21,15 @@ import { WebUiController } from "@fatcat/webui/internal/controller";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const answer = (content = "Retain the amber requirement; inspect src/cart.ts before editing."): ModelTurn => ({
-	message: { role: "assistant", content }, toolCalls: [],
+	message: { role: "assistant", content },
 });
 const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
 function history(size = 6000): Message[] {
 	return [
 		{ role: "system", content: systemPrompt },
 		{ role: "user", content: "Keep amber. " + "historical ".repeat(size / 10) },
-		{ role: "assistant", content: null, tool_calls: [{ id: "read-1", type: "function",
-			function: { name: "read", arguments: '{"path":"src/cart.ts"}' } }] },
-		{ role: "tool", tool_call_id: "read-1", content: '{"ok":true,"result":{"kind":"skill","content":"Preserve user edits"}}' },
+		{ role: "assistant", content: null, toolCalls: [{ id: "read-1", name: "read", arguments: '{"path":"src/cart.ts"}' }] },
+		{ role: "tool", callId: "read-1", content: '{"ok":true,"result":{"kind":"skill","content":"Preserve user edits"}}' },
 		{ role: "assistant", content: "Old work completed" },
 		{ role: "user", content: "Recent request" },
 		{ role: "assistant", content: "Recent answer" },
@@ -112,8 +112,8 @@ test("invalid, ineffective, failed and cancelled summaries retain prior context 
 			if (failure === "empty") return answer(" ");
 			if (failure === "oversize") return answer("x".repeat(8193));
 			if (failure === "tools") {
-				const call = { id: "bad", type: "function" as const, function: { name: "shell", arguments: "{}" } };
-				return { message: { role: "assistant", content: null, tool_calls: [call] }, toolCalls: [call] };
+				const call = { id: "bad", name: "shell", arguments: "{}" };
+				return { message: { role: "assistant", content: null, toolCalls: [call] } };
 			}
 			return answer();
 		} }, history());
@@ -305,7 +305,7 @@ test("manual compaction lets an over-budget conversation continue through the SD
 	let summaries = 0;
 	let ordinary = 0;
 	const agent = createAgent(config, undefined, async (input, init) => {
-		const body = await new Request(input, init).json() as { messages: Message[]; tools?: unknown[] };
+		const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools?: unknown[] };
 		if (!body.tools) {
 			summaries++;
 			return Response.json({ choices: [{ finish_reason: "stop", message: answer().message }] });

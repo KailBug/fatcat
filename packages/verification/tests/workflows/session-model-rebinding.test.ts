@@ -1,3 +1,4 @@
+import { preparedChatRequest } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
@@ -48,7 +49,7 @@ test("session switching rebinds parent, child, image and summary requests across
 	const factory = async (root: string) => ({ ...await baseFactory(root), inputCounter: {
 		supports: () => true,
 		count: async (request: import("@fatcat/runtime/internal/model-preparation").PreparedModelRequest) => {
-			projection = JSON.stringify(request.body.messages);
+			projection = JSON.stringify(preparedChatRequest(request).messages);
 			return { inputTokens: projection.length, method: "fixture", approximate: true, limitations: [] };
 		},
 	} });

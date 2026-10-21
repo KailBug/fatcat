@@ -44,8 +44,12 @@ function approximateDeepSeek(request: PreparedModelRequest) {
 	if (request.selection.provider !== "deepseek" || getModelDescriptor("deepseek", request.selection.model).contextWindowTokens === null) return undefined;
 	// Official rough text guidance, not a tokenizer or a chat-template measurement:
 	// https://api-docs.deepseek.com/quick_start/token_usage/
-	if (request.body.messages.some((message) => Array.isArray(message.content))) return undefined;
-	const text = JSON.stringify({ messages: request.body.messages, tools: request.body.tools });
+	// This heuristic understands only the current DeepSeek Chat Completions payload.
+	const body: unknown = JSON.parse(request.json);
+	if (!body || typeof body !== "object" || !("messages" in body) || !Array.isArray(body.messages)
+		|| body.messages.some((message: unknown) => !message || typeof message !== "object"
+			|| !("content" in message) || Array.isArray(message.content))) return undefined;
+	const text = JSON.stringify({ messages: body.messages, ...("tools" in body ? { tools: body.tools } : {}) });
 	let tenths = 0;
 	let unicodeFallback = false;
 	for (const character of text) {

@@ -1,10 +1,10 @@
+import type { ChatMessage } from "../../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ReportEvent } from "@fatcat/runtime/execution-report";
-import type { Message } from "@fatcat/runtime/model";
 import { Session } from "@fatcat/runtime/session/session";
 import { discoverSkills } from "@fatcat/runtime/skills";
 import { createTools } from "@fatcat/runtime/tools";
@@ -30,7 +30,7 @@ test("SDK and Session load the actual weather Skill, retrieve data, cite it and 
   const skills = await discoverSkills({ workspace, userHome });
   let requests = 0;
   const agent = createAgent(config, base, async (input, init) => {
-    const { messages, tools } = await new Request(input, init).json() as { messages: Message[]; tools: { function: { name: string } }[] };
+    const { messages, tools } = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
     assert.ok(tools.some((tool) => tool.function.name === "web"));
     assert.match(String(messages[0]?.content), /skill:\/\/weather-lookup\/SKILL.md/);
     requests++;
@@ -66,7 +66,7 @@ test("children share web permission and network denial cannot be elevated by del
       transport: async () => { requests++; return new Response("Public source", { headers: { "content-type": "text/plain" } }); },
     });
     const agent = createAgent(config, base, async (input, init) => {
-      const { messages, tools } = await new Request(input, init).json() as { messages: Message[]; tools: { function: { name: string } }[] };
+      const { messages, tools } = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
       assert.ok(tools.some((tool) => tool.function.name === "web"));
       const parent = tools.some((tool) => tool.function.name === "delegate_task");
       if (messages.at(-1)?.role === "user") return parent

@@ -3,14 +3,14 @@ import { join } from "node:path";
 import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import type { LoopEvent } from "@fatcat/runtime/loop";
-import type { Message, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import type { SessionRecord } from "@fatcat/runtime/session/record";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 function answer(): ModelTurn {
-	return { message: { role: "assistant", content: "Ready" }, toolCalls: [] };
+	return { message: { role: "assistant", content: "Ready" } };
 }
 
 test("completion observers see an idle durable session and cannot undo its commit", async (t) => {
@@ -47,11 +47,8 @@ test("a schedule created by a failed turn survives checkpoints and recovery stay
 	const manager = await SessionManager.open({ maxIterations: 2, model: async (messages) => {
 		requests.push(structuredClone(messages));
 		if (messages.at(-1)?.content === "Schedule then fail") {
-			const toolCalls = [{ id: "schedule", type: "function" as const, function: {
-				name: "automation",
-				arguments: JSON.stringify({ action: "create", prompt: "Review changes", trigger: { type: "interval", seconds: 60 } }),
-			} }];
-			return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+			const toolCalls = [{ id: "schedule", name: "automation", arguments: JSON.stringify({ action: "create", prompt: "Review changes", trigger: { type: "interval", seconds: 60 } }) }];
+			return { message: { role: "assistant", content: null, toolCalls } };
 		}
 		if (messages.at(-1)?.role === "tool") {
 			throw new HarnessError("MODEL_HTTP", "Injected failure after a saved schedule.");

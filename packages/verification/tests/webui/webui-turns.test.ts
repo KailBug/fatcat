@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { describe, it } from "node:test";
 import type { TestContext } from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import type { SessionRunOptions } from "@fatcat/runtime/session/agent-session";
 import { defaultModelSelection } from "@fatcat/runtime/model-catalog";
 import { SessionManager } from "@fatcat/runtime/session/manager";
@@ -20,7 +20,7 @@ async function setup(t: TestContext) {
         modelSelection: defaultModelSelection("deepseek"),
 		model: async (_messages, _signal, observe) => {
 			observe?.({ type: "model_usage", usage: { promptTokens: 42, completionTokens: 1, totalTokens: 43 } });
-			return { message: { role: "assistant", content: "Done" }, toolCalls: [] };
+			return { message: { role: "assistant", content: "Done" } };
 		},
 		maxIterations: 1,
 	}, { workspace, store: new SessionStore({ root: join(base, "sessions") }) });
@@ -133,19 +133,19 @@ describe("Web UI turn and display boundaries", () => {
 
 	it("restores only completed text turns with per-turn sources and fresh display telemetry", () => {
 		const reference = `attachment:${randomUUID()}@${"a".repeat(64)}`;
-		const call = { id: "reused-call", type: "function" as const, function: { name: "read", arguments: "{}" } };
+		const call = { id: "reused-call", name: "read", arguments: "{}" };
 		const history: Message[] = [
 			{ role: "assistant", content: "Orphan answer" },
 			{ role: "user", content: "Read source" },
-			{ role: "assistant", content: "Reading", tool_calls: [call] },
-			{ role: "tool", tool_call_id: call.id, content: JSON.stringify({ ok: true, result: {
+			{ role: "assistant", content: "Reading", toolCalls: [call] },
+			{ role: "tool", callId: call.id, content: JSON.stringify({ ok: true, result: {
 				kind: "file", name: "source.txt", path: reference, startLine: 1, endLine: 1, totalLines: 1,
 				citation: `${reference}#L1-L1`, coverage: { complete: true },
 			} }) },
 			{ role: "assistant", content: "Source answer" },
 			{ role: "user", content: "Read again" },
-			{ role: "assistant", content: null, tool_calls: [call] },
-			{ role: "tool", tool_call_id: call.id, content: JSON.stringify({ ok: false, error: "Unavailable" }) },
+			{ role: "assistant", content: null, toolCalls: [call] },
+			{ role: "tool", callId: call.id, content: JSON.stringify({ ok: false, error: "Unavailable" }) },
 			{ role: "assistant", content: "No source" },
 			{ role: "user", content: "Unfinished" },
 		];

@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,14 +6,14 @@ import test from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Message, Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { workspaceKey } from "@fatcat/runtime/session/record";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (content = "Done"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Done"): ModelTurn => ({ message: { role: "assistant", content } });
 const agent = { model: async () => answer(), maxIterations: 4 };
 const code = (expected: string) => (error: unknown) => error instanceof HarnessError && error.code === expected;
 
@@ -190,10 +191,10 @@ test("migration pauses tasks and invalidates queued activations even after expli
 test("same-directory background delegation uses the target project and never the selected session", async (t) => {
 	const { base, workspace } = await temporaryWorkspace(t);
 	const store = new SessionStore({ root: join(base, "sessions") });
-	const seen: { messages: Message[]; child: boolean }[] = [];
+	const seen: { messages: ChatMessage[]; child: boolean }[] = [];
 	const config = loadConfig({ DEEPSEEK_API_KEY: "offline-project-fixture", HARNESS_MAX_ITERATIONS: "3" });
 	const runtime = createAgent(config, undefined, async (input, init) => {
-		const body = await new Request(input, init).json() as { messages: Message[]; tools: { function: { name: string } }[] };
+		const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
 		const child = !body.tools.some((tool) => tool.function.name === "delegate_task");
 		seen.push({ messages: body.messages, child });
 		const message = !child && body.messages.at(-1)?.role === "user"

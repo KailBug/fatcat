@@ -61,7 +61,6 @@ export function joinedProjectRecord(record: SessionRecord, project: ProjectRecor
 	const location = { kind: "project" as const, projectId: project.id };
 	return {
 		...record,
-		version: 2,
 		location,
 		workspace: project.workspace,
 		projectName: project.name,

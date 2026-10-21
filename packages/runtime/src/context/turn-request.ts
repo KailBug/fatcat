@@ -1,4 +1,4 @@
-import type { Message } from "../model.js";
+import type { Message } from "../model-types.js";
 import type { Tools } from "../tools.js";
 import { systemPrompt } from "../system-prompt.js";
 import { projectHistory } from "./manager.js";

@@ -21,7 +21,7 @@ await writeFile(join(workspace, "marker.txt"), "Independent marker");
 await writeFile(join(projectWorkspace, "marker.txt"), "Project marker");
 const factory = async (root: string) => {
 	const tools = await createTools(root);
-	return { tools, maxIterations: 2, model: async () => ({ toolCalls: [], message: { role: "assistant" as const,
+	return { tools, maxIterations: 2, model: async () => ({ message: { role: "assistant" as const,
 		content: JSON.stringify(await tools.execute("read", '{"path":"marker.txt"}')) } }) };
 };
 const store = new SessionStore({ root: join(base, "sessions") });

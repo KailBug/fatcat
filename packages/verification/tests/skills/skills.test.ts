@@ -78,7 +78,7 @@ test("skills require explicit workspace discovery and leave empty tool sets unch
   const catalog = await discoverSkills({ userHome });
   assert.deepEqual(catalog.skills.map((skill) => skill.name), ["personal-only"]);
   const tools = withSkills(defaultTools, catalog);
-  assert.deepEqual(tools.definitions.map((tool) => tool.function.name), ["sum", "read"]);
+  assert.deepEqual(tools.definitions.map((tool) => tool.name), ["sum", "read"]);
   hasCode(await read(tools, join(workspace, "notes.txt")), "PATH_NOT_ALLOWED");
   hasCode(await read(tools, "notes.txt"), "PATH_NOT_ALLOWED");
   hasCode(await tools.execute("write", "{}"), "UNKNOWN_TOOL");
@@ -287,7 +287,7 @@ test("skills do not raise write or command permissions and preserve journals and
   const catalog = await discoverSkills({ workspace, userHome });
   const base = await createTools(workspace, "read-only");
   const tools = withSkills(base, catalog);
-  assert.deepEqual(tools.definitions.map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
+  assert.deepEqual(tools.definitions.map((tool) => tool.name), ["sum", "read", "write", "shell"]);
   assert.equal(tools.getWrites, base.getWrites);
   assert.equal(tools.getCommands, base.getCommands);
   assert.equal(resultObject(await read(tools, "note.txt")).content, "original");

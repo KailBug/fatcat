@@ -1,3 +1,5 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
+import { chatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,32 +10,32 @@ import { loadConfig } from "@fatcat/runtime/config";
 import { runInteractiveCommand } from "@fatcat/commands";
 import { automationCommandPrompt } from "@fatcat/commands/automation";
 import { ConversationAutomations } from "@fatcat/runtime/automation/conversations";
-import type { Message, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, ModelTurn } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content } });
 function tool(args: unknown): ModelTurn {
-  const toolCalls = [{ id: "schedule", type: "function" as const, function: { name: "automation", arguments: JSON.stringify(args) } }];
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = [{ id: "schedule", name: "automation", arguments: JSON.stringify(args) }];
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 const task = { prompt: "Review changes", trigger: { type: "interval", seconds: 60 }, maxRuns: 3 };
 
 test("SDK scheduling tool binds to current saved session and recurring turns retain that history", async (t) => {
   const { base, workspace } = await temporaryWorkspace(t);
   const store = new SessionStore({ root: join(base, "sessions") });
-  const seen: Message[][] = [];
+  const seen: ChatMessage[][] = [];
   const agent = createAgent(loadConfig({ DEEPSEEK_API_KEY: "offline-schedule-only", HARNESS_MAX_ITERATIONS: "3" }),
     await createTools(workspace), async (input, init) => {
-      const body = await new Request(input, init).json() as { messages: Message[]; tools: { function: { name: string } }[] };
+      const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
       seen.push(body.messages);
       assert.ok(body.tools.some((item) => item.function.name === "automation"));
       const latest = body.messages.at(-1);
       const response = latest?.role === "user" && latest.content === "Check every minute"
         ? tool({ action: "create", ...task }) : answer();
-      return Response.json({ choices: [{ finish_reason: response.toolCalls.length ? "tool_calls" : "stop", message: response.message }] });
+      return Response.json({ choices: [{ finish_reason: response.message.toolCalls?.length ? "tool_calls" : "stop", message: chatMessage(response.message) }] });
     });
   const session = await SessionManager.open(agent, { workspace, store });
   const id = session.current.id;

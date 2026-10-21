@@ -1,3 +1,5 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
+import { chatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,7 +10,7 @@ import { prepareRequestContext } from "@fatcat/runtime/internal/context/request"
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport, ReportEvent } from "@fatcat/runtime/execution-report";
 import { createDeepSeekModel } from "@fatcat/runtime/model";
-import type { Message, ModelObservation } from "@fatcat/runtime/model";
+import type { Message, ModelObservation } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
@@ -16,12 +18,12 @@ import { temporaryWorkspace } from "../support/workspace.js";
 const user = (content: string): Message => ({ role: "user", content });
 const answer = (content = "Done"): Message => ({ role: "assistant", content });
 function call(id: string, name = "read", args = { path: "notes.txt" }): Message {
-  return { role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] };
+  return { role: "assistant", content: null, toolCalls: [{ id, name, arguments: JSON.stringify(args) }] };
 }
-const result = (id: string, value: unknown): Message => ({ role: "tool", tool_call_id: id, content: JSON.stringify(value) });
+const result = (id: string, value: unknown): Message => ({ role: "tool", callId: id, content: JSON.stringify(value) });
 const file = (text: string) => ({ ok: true, result: { kind: "file", path: "notes.txt", content: text,
   offset: 0, totalLines: 1, startLine: 1, endLine: 1, truncated: false, nextOffset: null } });
-const hasOmission = (messages: Message[]) => messages.some((message) => message.role === "tool"
+const hasOmission = (messages: readonly { role: string; content: unknown }[]) => messages.some((message) => message.role === "tool"
   && typeof message.content === "string" && JSON.parse(message.content)?.result?.kind === "context_omitted");
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 function history(): Message[] {
@@ -41,7 +43,7 @@ function capture() {
 const config = loadConfig({ DEEPSEEK_API_KEY: "offline-context-only" });
 const response = (content = "Done") => Response.json({ choices: [{ finish_reason: "stop", message: answer(content) }] });
 const responseCall = (id: string, args: { path: string; offset?: number; limit?: number }) =>
-  Response.json({ choices: [{ finish_reason: "tool_calls", message: call(id, "read", args) }] });
+  Response.json({ choices: [{ finish_reason: "tool_calls", message: chatMessage(call(id, "read", args)) }] });
 
 test("under-budget bodies keep exact content and references without unnecessary reduction", () => {
   const body = { model: "fixture", messages: history(), tools: [{ definition: "x".repeat(500) }] };
@@ -67,7 +69,7 @@ test("over-budget projection preserves requirements, recent/current turns and ca
   assert.deepEqual(body, snapshot);
   assert.deepEqual(prepared.body.messages.filter((message) => message.role !== "tool"), body.messages.filter((message) => message.role !== "tool"));
   const outputs = prepared.body.messages.filter((message) => message.role === "tool");
-  assert.deepEqual(outputs.map((message) => message.tool_call_id), ["repeat", "repeat", "current"]);
+  assert.deepEqual(outputs.map((message) => message.callId), ["repeat", "repeat", "current"]);
   assert.match(String(outputs[0]!.content), /context_omitted/);
   assert.ok(!String(outputs[0]!.content).includes("old-private-text"));
   assert.equal(outputs[1], body.messages[7]);
@@ -169,7 +171,7 @@ test("a multi-turn session rereads changed content after omission and reset remo
   const agent = createAgent({ ...config, maxRequestBytes: 28000 }, tools, async (input, init) => {
     const payload = await new Request(input, init).text();
     assert.ok(Buffer.byteLength(payload) <= 28000);
-    const body = JSON.parse(payload) as { messages: Message[] };
+    const body = JSON.parse(payload) as { messages: ChatMessage[] };
     const prompt = String(body.messages.findLast((message) => message.role === "user")?.content);
     const last = body.messages.at(-1)!;
     if (prompt === "first") return last.role === "user" ? responseCall("shared-id", { path: "notes.txt" }) : response("Loaded");
@@ -209,7 +211,7 @@ test("failed requests cannot persist omitted markers into later session history"
   await writeFile(join(workspace, "notes.txt"), "original-body\n" + "x".repeat(12000));
   let fail = false;
   const agent = createAgent({ ...config, maxRequestBytes: 28000 }, await createTools(workspace), async (input, init) => {
-    const body = await new Request(input, init).json() as { messages: Message[] };
+    const body = await new Request(input, init).json() as { messages: ChatMessage[] };
     const prompt = String(body.messages.findLast((message) => message.role === "user")?.content);
     if (fail) {
       assert.equal(hasOmission(body.messages), true);

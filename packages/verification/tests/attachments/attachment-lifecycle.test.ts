@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,14 +6,13 @@ import test from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { attachmentReference } from "@fatcat/runtime/attachments/record";
 import { loadConfig } from "@fatcat/runtime/config";
-import type { Message } from "@fatcat/runtime/model";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const agent = { model: async () => ({ message: { role: "assistant" as const, content: "Done" }, toolCalls: [] }), maxIterations: 4 };
+const agent = { model: async () => ({ message: { role: "assistant" as const, content: "Done" } }), maxIterations: 4 };
 async function upload(session: SessionManager, name: string, content: string) {
 	const bytes = Buffer.from(content);
 	const target = await session.beginAttachmentUpload(session.current.id, name, bytes.length);
@@ -97,7 +97,7 @@ test("completed bytes wait for the active turn before publishing without replaci
 	const session = await SessionManager.open({ ...agent, model: async () => {
 		entered();
 		await gate;
-		return { message: { role: "assistant" as const, content: "Preserved answer" }, toolCalls: [] };
+		return { message: { role: "assistant" as const, content: "Preserved answer" } };
 	} }, { workspace, store: new SessionStore({ root: join(base, "sessions") }), deferEmptySessions: true });
 	const target = await session.beginAttachmentUpload(session.current.id, "late.txt", 4);
 	const turn = session.run("Preserve my turn");
@@ -165,7 +165,7 @@ test("fork associations and retained model reads prevent permanent deletion, whi
 	const tools = await createTools(workspace);
 	let ref = "";
 	const runtime = createAgent(loadConfig({ DEEPSEEK_API_KEY: "offline-attachments" }), tools, async (input, init) => {
-		const body = await new Request(input, init).json() as { messages: Message[] };
+		const body = await new Request(input, init).json() as { messages: ChatMessage[] };
 		const message = body.messages.at(-1)?.role === "user"
 			? { role: "assistant", content: null, tool_calls: [{ id: "read-original", type: "function", function: { name: "read", arguments: JSON.stringify({ path: ref }) } }] }
 			: { role: "assistant", content: `Evidence [source](${ref}#L1-L1)` };
@@ -216,7 +216,7 @@ test("background parent and child read their actual project originals while anot
 	let childRead = false;
 	const tools = await createTools(workspace);
 	const runtime = createAgent(loadConfig({ DEEPSEEK_API_KEY: "offline-attachment-delegation", HARNESS_MAX_ITERATIONS: "4" }), tools, async (input, init) => {
-		const body = await new Request(input, init).json() as { messages: Message[]; tools: { function: { name: string } }[] };
+		const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
 		const child = !body.tools.some((tool) => tool.function.name === "delegate_task");
 		let message: unknown;
 		if (body.messages.at(-1)?.role === "user") {

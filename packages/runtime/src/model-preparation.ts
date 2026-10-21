@@ -1,5 +1,4 @@
-import type { Model, Message } from "./model.js";
-import type { ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
+import type { Model, Message } from "./model-types.js";
 import type { ModelSelection } from "./model-catalog.js";
 
 export interface ModelRequestOptions {
@@ -11,7 +10,8 @@ export interface ModelRequestOptions {
 
 export interface PreparedModelRequest {
 	selection: ModelSelection;
-	body: ChatCompletionCreateParamsNonStreaming;
+	/** Exact serialized provider request, shared by preview and byte accounting. */
+	json: string;
 	bytes: number;
 	beforeBytes: number;
 	omittedReadResults: number;
@@ -19,13 +19,14 @@ export interface PreparedModelRequest {
 }
 
 /** Share request-only transforms without ever invoking the generation function for preview. */
-export function mapModelMessages(model: Model,
-	transform: (messages: Message[], signal?: AbortSignal) => Message[] | Promise<Message[]>,
+export function mapModelMessages(model: Model, transform: (messages: Message[], signal?: AbortSignal) => Message[] | Promise<Message[]>,
 	previewTransform = transform): Model {
-	const wrapped: Model = async (messages, signal, observe, options) => model(await transform(messages, signal), signal, observe, options);
+	const wrapped: Model = async (messages, signal, observe, options
+                            ) => model(await transform(messages, signal), signal, observe, options);
 	if (model.prepare) {
 		const prepare = model.prepare;
-		wrapped.prepare = async (messages, signal, options) => prepare(await previewTransform(messages, signal), signal, options);
+		wrapped.prepare = async (messages, signal, options
+                            ) => prepare(await previewTransform(messages, signal), signal, options);
 	}
 	return wrapped;
 }

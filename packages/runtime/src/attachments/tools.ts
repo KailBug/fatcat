@@ -30,7 +30,7 @@ const documentProperties = {
 	mode: { type: "string", enum: ["text", "visual", "transcribe"] }, question: { type: "string", maxLength: 2000 },
 };
 
-const fallbackRead: Tool["definition"] = { type: "function", function: {
+const fallbackRead: Tool["definition"] = {
 	name: "read", description,
 	parameters: { type: "object", properties: {
 		path: { type: "string", minLength: 1, maxLength: 1024 },
@@ -38,7 +38,7 @@ const fallbackRead: Tool["definition"] = { type: "function", function: {
 		limit: { type: "integer", minimum: 1, maximum: 200 },
 		query: { type: "string", minLength: 1, maxLength: 512 },
 	}, required: ["path"], additionalProperties: false },
-} };
+};
 
 function readArguments(args: object): AttachmentReadOptions {
 	if (Array.isArray(args) || Object.keys(args).some((key) => !["path", "offset", "limit", "query", ...Object.keys(documentProperties)].includes(key))) {
@@ -68,14 +68,14 @@ async function listAttachments(access: AttachmentAccess, options: AttachmentRead
 
 /** Extend read while preserving workspace operations, journals, permissions, and turn lifetimes. */
 export function withAttachments(base: Tools, access: AttachmentAccess, vision?: DocumentVision, turn?: ToolTurnContext): Tools {
-	const existing = base.definitions.find((definition) => definition.function.name === "read");
+	const existing = base.definitions.find((definition) => definition.name === "read");
 	const definition = existing ?? fallbackRead;
-	const readDefinition: Tool["definition"] = { ...definition, function: { ...definition.function,
-		description: (existing ? `${existing.function.description ?? ""} ${description}` : description)
+	const readDefinition: Tool["definition"] = { ...definition,
+		description: (existing ? `${existing.description ?? ""} ${description}` : description)
 			+ (vision ? ` Current model image input: ${vision.capability.supported ? "supported" : "unavailable"}. ${vision.capability.reason}` : ""),
-		parameters: { ...definition.function.parameters, properties: {
-			...(definition.function.parameters?.properties as Record<string, unknown> ?? {}), ...documentProperties,
-		} } } };
+		parameters: { ...definition.parameters, properties: {
+			...(definition.parameters?.properties as Record<string, unknown> ?? {}), ...documentProperties,
+		} } };
 	const definitions = existing ? base.definitions.map((item) => item === existing ? readDefinition : item)
 		: [...base.definitions, readDefinition];
 	async function execute(name: string, argumentsJson: string, signal?: AbortSignal, callId?: string): Promise<ToolResult> {

@@ -20,7 +20,7 @@ async function setup(t: TestContext, picker?: WorkspacePicker) {
 	await writeFile(join(workspace, "marker.txt"), "Original workspace files");
 	await writeFile(join(outside, "marker.txt"), "Destination workspace files");
 	const factory = async (path: string) => ({ tools: await createTools(path), maxIterations: 1,
-		model: async () => ({ toolCalls: [], message: { role: "assistant" as const, content: "Offline answer" } }) });
+		model: async () => ({ message: { role: "assistant" as const, content: "Offline answer" } }) });
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const manager = await SessionManager.open(await factory(workspace), { workspace, store,
 		deferEmptySessions: true, agentForWorkspace: factory });
@@ -179,10 +179,9 @@ test("project management refuses pending approvals and old confirmations after t
 	const { base, workspace, outside } = await temporaryWorkspace(t);
 	let controller!: WebUiController;
 	const tools = await createTools(workspace, "ask", (request, signal) => controller.requestApproval("write", request, signal));
-	const call = { id: "pending-project-write", type: "function" as const,
-		function: { name: "write", arguments: '{"path":"pending.txt","content":"approval required"}' } };
+	const call = { id: "pending-project-write", name: "write", arguments: '{"path":"pending.txt","content":"approval required"}' };
 	const manager = await SessionManager.open({ tools, maxIterations: 2,
-		model: async () => ({ message: { role: "assistant", content: null, tool_calls: [call] }, toolCalls: [call] }) },
+		model: async () => ({ message: { role: "assistant", content: null, toolCalls: [call] } }) },
 	{ workspace, store: new SessionStore({ root: join(base, "sessions") }) });
 	const project = await manager.createProject("Guarded", workspace);
 	await manager.newSession("Guarded session", project.id);

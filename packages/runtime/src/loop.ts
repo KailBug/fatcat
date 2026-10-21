@@ -1,4 +1,4 @@
-import type { Model, Message, ModelObservation, ModelTurn } from "./model.js";
+import type { Model, Message, ModelObservation, ModelTurn } from "./model-types.js";
 import { HarnessError, checkCancellation } from "./errors.js";
 import { systemPrompt } from "./system-prompt.js";
 import { defaultTools } from "./tools.js";
@@ -127,7 +127,8 @@ export async function runAgentTurn(
       checkCancellation(signal);
       messages.push(turn.message);
       if (options.onCheckpoint) await options.onCheckpoint(structuredClone(messages));
-      if (!turn.toolCalls.length) {
+      const toolCalls = turn.message.toolCalls ?? [];
+      if (!toolCalls.length) {
         const content = turn.message.content;
         if (typeof content !== "string" || !content.trim()) {
           throw new HarnessError("MODEL_RESPONSE", "The model did not return a final answer.");
@@ -137,20 +138,20 @@ export async function runAgentTurn(
       }
       // A tool needs a following model turn; do not execute it when no turn remains.
       if (iteration === maxIterations) break;
-      for (const call of turn.toolCalls) {
+      for (const call of toolCalls) {
         if (seenCallIds.has(call.id)) {
           throw new HarnessError("MODEL_RESPONSE", "The model reused a tool call ID.");
         }
         seenCallIds.add(call.id);
       }
-      for (const call of turn.toolCalls) {
+      for (const call of toolCalls) {
         checkCancellation(signal);
-        const result = await turnTools.execute(call.function.name, call.function.arguments, signal, call.id);
+        const result = await turnTools.execute(call.name, call.arguments, signal, call.id);
         reportExecutionRecords();
         checkCancellation(signal);
-        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+        messages.push({ role: "tool", callId: call.id, content: JSON.stringify(result) });
         if (options.onCheckpoint) await options.onCheckpoint(structuredClone(messages));
-        onEvent?.({ type: "tool_result", iteration, callId: call.id, tool: call.function.name, ok: result.ok });
+        onEvent?.({ type: "tool_result", iteration, callId: call.id, tool: call.name, ok: result.ok });
       }
     }
     throw new HarnessError("MAX_ITERATIONS", `The model still requested tools on the final request (${maxIterations}/${maxIterations}) instead of returning an answer. Check completed operations before retrying with a smaller task or increasing HARNESS_MAX_ITERATIONS.`);

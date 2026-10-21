@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import test from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { runInteractiveCommand } from "@fatcat/commands";
 import { loadConfig } from "@fatcat/runtime/config";
-import type { Message, Model } from "@fatcat/runtime/model";
+import type { Message, Model } from "@fatcat/runtime/model-types";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { executionIdentity } from "@fatcat/runtime/internal/session/execution";
@@ -15,7 +16,7 @@ import { createTools } from "@fatcat/runtime/tools";
 import { WebUiController } from "@fatcat/webui/internal/controller";
 import { temporaryWorkspace } from "../support/workspace.js";
 
-const answer = { message: { role: "assistant" as const, content: "Done" }, toolCalls: [] };
+const answer = { message: { role: "assistant" as const, content: "Done" } };
 const agent = { model: async () => answer, maxIterations: 4 };
 
 test("explicit Memory commands preserve provenance and revisions without model requests or history changes", async (t) => {
@@ -98,7 +99,7 @@ test("a captured draft identity cannot read Memory after that session was saved 
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const manager = await SessionManager.open(agent, { workspace, store, deferEmptySessions: true });
 	const current = manager.current;
-	const draft: SessionRecord = { version: 2, id: current.id, workspace: current.workspace,
+	const draft: SessionRecord = { version: 4, id: current.id, workspace: current.workspace,
 		location: { kind: "standalone", workspace: current.workspace }, locationRevision: 0, revision: 0,
 		name: null, title: "New session", createdAt: current.createdAt, updatedAt: current.updatedAt,
 		forkedFrom: null, history: [], attempt: null };
@@ -152,7 +153,7 @@ test("Memory uses the SDK request budget without changing tool permissions", asy
 	const { base, workspace } = await temporaryWorkspace(t);
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const config = loadConfig({ DEEPSEEK_API_KEY: "fake-key", HARNESS_MAX_ITERATIONS: "4" });
-	const bodies: { messages: Message[]; tools: { function: { name: string } }[] }[] = [];
+	const bodies: { messages: ChatMessage[]; tools: { function: { name: string } }[] }[] = [];
 	const transport: typeof fetch = async (_input, init) => {
 		const body = JSON.parse(String(init?.body)) as typeof bodies[number];
 		bodies.push(body);
@@ -178,7 +179,7 @@ test("delegated requests use project Memory while a later independent session ca
 	let reference = "";
 	let requests = 0;
 	const transport: typeof fetch = async (_input, init) => {
-		const body = JSON.parse(String(init?.body)) as { messages: Message[]; tools: { function: { name: string } }[] };
+		const body = JSON.parse(String(init?.body)) as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
 		requests++;
 		const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
 		const last = body.messages.at(-1)!;

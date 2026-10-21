@@ -15,7 +15,7 @@ async function fixture(t: TestContext) {
 	const { base, workspace, outside } = await temporaryWorkspace(t);
 	let requests = 0;
 	const agent = { maxIterations: 1, tools: await createTools(workspace),
-		model: async () => { requests++; return { message: { role: "assistant" as const, content: "Answer" }, toolCalls: [] }; } };
+		model: async () => { requests++; return { message: { role: "assistant" as const, content: "Answer" } }; } };
 	const store = new SessionStore({ root: join(base, "sessions") });
 	const session = await SessionManager.open(agent, { workspace, store });
 	return { workspace, outside, session, store, agent, requests: () => requests };
@@ -112,6 +112,6 @@ test("malformed attachment commands do not alter saved files or become model pro
 	assert.deepEqual(await session.listAttachments(), []);
 	assert.deepEqual(session.history, []);
 	assert.equal(requests(), 0);
-	const plain = new Session({ maxIterations: 1, model: async () => ({ message: { role: "assistant", content: "unused" }, toolCalls: [] }) });
+	const plain = new Session({ maxIterations: 1, model: async () => ({ message: { role: "assistant", content: "unused" } }) });
 	await assert.rejects(runInteractiveCommand(plain, "/attachments"), { code: "USAGE" });
 });

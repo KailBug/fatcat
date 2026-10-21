@@ -1,5 +1,5 @@
 import { checkCancellation } from "../errors.js";
-import type { Message } from "../model.js";
+import type { Message } from "../model-types.js";
 
 function omission(content: Message["content"]): string | undefined {
   if (typeof content !== "string") return;
@@ -24,9 +24,9 @@ function omission(content: Message["content"]): string | undefined {
 }
 
 /** Project older successful reads into explicit markers; never mutate the saved conversation. */
-export function prepareRequestContext<T extends { messages: Message[] }>(body: T, limitBytes: number, signal?: AbortSignal, protectedTurns = 2) {
+export function prepareRequestContext<T extends { messages: Message[] }>(body: T, limitBytes: number, signal?: AbortSignal, protectedTurns = 2, encode: (body: T) => unknown = (value) => value) {
   checkCancellation(signal);
-  const beforeBytes = Buffer.byteLength(JSON.stringify(body));
+  const beforeBytes = Buffer.byteLength(JSON.stringify(encode(body)));
   let bytes = beforeBytes;
   let omittedReadResults = 0;
   const unchanged = { body, beforeBytes, bytes, omittedReadResults };
@@ -41,7 +41,7 @@ export function prepareRequestContext<T extends { messages: Message[] }>(body: T
     if (body.messages[index]!.role === "user" && ++users === protectedTurns) { protectedFrom = index; break; }
   }
   const previous = body.messages[protectedFrom - 1];
-  if (previous?.role !== "assistant" || previous.tool_calls?.length
+  if (previous?.role !== "assistant" || previous.toolCalls?.length
     || typeof previous.content !== "string" || !previous.content.trim()) return unchanged;
 
   const messages = [...body.messages];
@@ -51,14 +51,14 @@ export function prepareRequestContext<T extends { messages: Message[] }>(body: T
     const message = messages[index]!;
     if (message.role === "assistant") {
       pending.clear();
-      for (const call of message.tool_calls ?? []) {
-        if (call.type === "function") pending.set(call.id, call.function.name);
+      for (const call of message.toolCalls ?? []) {
+        pending.set(call.id, call.name);
       }
     } else if (message.role === "user" || message.role === "system" || message.role === "developer") {
       pending.clear();
     } else if (message.role === "tool") {
-      const name = pending.get(message.tool_call_id);
-      pending.delete(message.tool_call_id);
+      const name = pending.get(message.callId);
+      pending.delete(message.callId);
       if (name !== "read") continue;
       const content = omission(message.content);
       if (content === undefined) continue;
@@ -66,7 +66,7 @@ export function prepareRequestContext<T extends { messages: Message[] }>(body: T
       const saved = Buffer.byteLength(JSON.stringify(message)) - Buffer.byteLength(JSON.stringify(replacement));
       if (saved <= 0) continue;
       messages[index] = replacement;
-      bytes -= saved;
+      bytes = Buffer.byteLength(JSON.stringify(encode({ ...body, messages })));
       omittedReadResults++;
     }
   }
@@ -74,5 +74,5 @@ export function prepareRequestContext<T extends { messages: Message[] }>(body: T
   if (!omittedReadResults) return unchanged;
   const prepared = { ...body, messages };
   // Recheck the complete body rather than relying solely on per-message deltas.
-  return { body: prepared, beforeBytes, bytes: Buffer.byteLength(JSON.stringify(prepared)), omittedReadResults };
+  return { body: prepared, beforeBytes, bytes: Buffer.byteLength(JSON.stringify(encode(prepared))), omittedReadResults };
 }

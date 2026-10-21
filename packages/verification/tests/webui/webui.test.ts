@@ -1,3 +1,5 @@
+import type { ChatMessage } from "../support/chat-protocol.js";
+import { chatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -10,7 +12,7 @@ import type { TestContext } from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
-import type { Message, Model, ModelTurn } from "@fatcat/runtime/model";
+import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 import type { LoopOptions } from "@fatcat/runtime/loop";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
@@ -22,10 +24,10 @@ import { temporaryWorkspace } from "../support/workspace.js";
 
 const info: WebUiInfo = { provider: "deepseek", model: "offline", workspace: "fixture", permission: "ask",
   shellPermission: "ask", webPermission: "deny", maxIterations: 4, maxRequestBytes: 262144, skills: 0, warnings: [] };
-const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content }, toolCalls: [] });
+const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content } });
 function tool(name: string, args: unknown): ModelTurn {
-  const toolCalls = [{ id: "call-fixture", type: "function" as const, function: { name, arguments: JSON.stringify(args) } }];
-  return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+  const toolCalls = [{ id: "call-fixture", name, arguments: JSON.stringify(args) }];
+  return { message: { role: "assistant", content: null, toolCalls } };
 }
 async function until(predicate: () => boolean | Promise<boolean>): Promise<void> {
   // Scheduled turns and multi-request session checkpoints can exceed five seconds on CI.
@@ -108,7 +110,7 @@ test("Web UI saves a budget-limited answer after a rejected path and a committed
   const content = '<!doctype html><svg xmlns="http://www.w3.org/2000/svg"><circle r="10"/></svg>';
   let requests = 0;
   const agent = createAgent(config, tools, async (input, init) => {
-    const body = await new Request(input, init).json() as { messages: Message[]; tool_choice: string };
+    const body = await new Request(input, init).json() as { messages: ChatMessage[]; tool_choice: string };
     requests++;
     if (requests === 33) {
       assert.equal(body.tool_choice, "auto");
@@ -125,8 +127,8 @@ test("Web UI saves a budget-limited answer after a rejected path and a committed
     const next = requests <= 2
       ? tool("write", { path: requests === 1 ? join(workspace, "animation.html") : "animation.html", content })
       : tool("read", { path: "animation.html" });
-    next.toolCalls[0]!.id = `budget-call-${requests}`;
-    return Response.json({ choices: [{ finish_reason: "tool_calls", message: next.message }] });
+    next.message.toolCalls![0]!.id = `budget-call-${requests}`;
+    return Response.json({ choices: [{ finish_reason: "tool_calls", message: chatMessage(next.message) }] });
   });
   const store = new SessionStore({ root: join(base, "sessions") });
   const manager = await SessionManager.open(agent, { workspace, store });

@@ -1,3 +1,4 @@
+import { preparedChatRequest } from "../../tests/support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -147,7 +148,7 @@ try {
 	}, undefined, undefined, undefined, undefined, connections), inputCounter: {
 		supports: (selection: { provider: string }) => selection.provider === "deepseek",
 		count: async (request: import("@fatcat/runtime/internal/model-preparation").PreparedModelRequest) => {
-			const projection = JSON.stringify(request.body.messages); projections.push(projection);
+			const projection = JSON.stringify(preparedChatRequest(request).messages); projections.push(projection);
 			return { inputTokens: projection.includes("Compact summary") ? 50_000 : projection.includes("Verified answer") ? 200_000 : 100_000,
 				method: "injected Edge fixture counter", approximate: true, limitations: ["Fixture counts are not production token measurements."] };
 		},

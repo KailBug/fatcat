@@ -1,10 +1,10 @@
+import type { ChatMessage } from "../../tests/support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { HarnessError, checkCancellation } from "@fatcat/runtime/errors";
 import type { LoopEvent } from "@fatcat/runtime/loop";
-import type { Message } from "@fatcat/runtime/model";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { systemPrompt } from "@fatcat/runtime/internal/system-prompt";
@@ -56,7 +56,7 @@ try {
 		checkCancellation(overall);
 		if (requests >= maxRequests) throw new HarnessError("LIVE_REQUEST_LIMIT", "The fixed live Memory request allowance is exhausted.");
 		const request = new Request(input, init);
-		const body = await request.clone().json() as { messages: Message[]; tools?: { function: { name: string; parameters?: { properties?: Record<string, unknown> } } }[] };
+		const body = await request.clone().json() as { messages: ChatMessage[]; tools?: { function: { name: string; parameters?: { properties?: Record<string, unknown> } } }[] };
 		const system = String(body.messages[0]?.content);
 		const noticeLine = system.split("\n").find((line) => line.startsWith('{"manifest":'));
 		const notice = noticeLine ? JSON.parse(noticeLine) as { contents: { content: string }[] } : undefined;

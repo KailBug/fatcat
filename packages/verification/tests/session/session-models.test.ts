@@ -7,7 +7,7 @@ import { loadConfig } from "@fatcat/runtime/config";
 import { defaultModelSelection } from "@fatcat/runtime/model-catalog";
 import { ModelConnections } from "@fatcat/runtime/model-connections";
 import { createModel } from "@fatcat/runtime/model";
-import type { Message } from "@fatcat/runtime/model";
+import type { Message } from "@fatcat/runtime/model-types";
 import { prepareCompaction } from "@fatcat/runtime/context/compaction";
 import { validateHistory } from "@fatcat/runtime/internal/session/history";
 import { systemPrompt } from "@fatcat/runtime/internal/system-prompt";
@@ -51,7 +51,7 @@ describe("session-owned model selection", () => {
 		assert.equal(requests.at(-1)?.model, kimi.model);
 		assert.equal(requests.at(-1)?.reasoning_effort, "max");
 		const disk = await readFile(join(store.root, workspaceKey(workspace), `${first}.json`), "utf8");
-		assert.equal(JSON.parse(disk).version, 3);
+		assert.equal(JSON.parse(disk).version, 4);
 		assert.ok(!disk.includes("offline-kimi"));
 		await manager.fork("alternative");
 		assert.deepEqual(manager.current.modelSelection, kimi);
@@ -63,7 +63,7 @@ describe("session-owned model selection", () => {
 		await reopened.run("Continue");
 		assert.equal(requests.at(-1)?.model, kimi.model);
 		assert.equal(reopened.current.turnCount, 2);
-		assert.ok(!JSON.stringify(requests).includes("modelContext"));
+		assert.ok(!JSON.stringify(requests).includes("providerReplay"));
 		const copy = reopened.current.modelSelection!;
 		copy.model = "mutated";
 		assert.equal(reopened.current.modelSelection?.model, kimi.model);
@@ -135,25 +135,26 @@ describe("session-owned model selection", () => {
 		assert.equal(calls, 2);
 	});
 
-	it("adopts the startup identity for legacy records without rewriting on read", async (t) => {
+	it("adopts the startup identity for injected sessions without rewriting on read", async (t) => {
 		const { base, workspace } = await temporaryWorkspace(t);
 		const store = new SessionStore({ root: join(base, "sessions") });
-		const legacy = await SessionManager.open({ model: async () => ({ message: { role: "assistant", content: "Old" }, toolCalls: [] }),
+		const injected = await SessionManager.open({ model: async () => ({ message: { role: "assistant", content: "Ready" } }),
 			maxIterations: 1 }, { workspace, store });
-		const path = join(store.root, workspaceKey(workspace), `${legacy.current.id}.json`);
+		const path = join(store.root, workspaceKey(workspace), `${injected.current.id}.json`);
 		const before = await readFile(path, "utf8");
-		assert.equal(JSON.parse(before).version, 2);
+		assert.equal(JSON.parse(before).version, 4);
 		const manager = await SessionManager.open(createAgent(config, await createTools(workspace), async () => response()),
-			{ workspace, store, selection: { resume: legacy.current.id } });
+			{ workspace, store, selection: { resume: injected.current.id } });
 		assert.deepEqual(manager.current.modelSelection, defaultModelSelection("deepseek"));
 		assert.equal(await readFile(path, "utf8"), before);
-		await manager.run("Upgrade on write");
-		assert.equal(JSON.parse(await readFile(path, "utf8")).version, 3);
+		await manager.run("Save identity");
+		assert.deepEqual(JSON.parse(await readFile(path, "utf8")).modelSelection, defaultModelSelection("deepseek"));
 	});
 });
 
 describe("provider reasoning history projection", () => {
-	const tool = { id: "sum-call", type: "function", function: { name: "sum", arguments: '{"numbers":[1,2]}', provider_tag: "preserve" } };
+	const tool = { id: "sum-call", type: "function", provider_signature: "call-signature",
+		function: { name: "sum", arguments: '{"numbers":[1,2]}', provider_tag: "preserve" } };
 	const raw = { role: "assistant", content: null, reasoning_content: "PRIVATE_REASONING", tool_calls: [tool], opaque_state: { signature: "opaque" } };
 
 	it("round trips the full K3 assistant through tools and persistence, but isolates foreign models and summaries", async (t) => {
@@ -171,9 +172,15 @@ describe("provider reasoning history projection", () => {
 		assert.deepEqual(bodies[1]!.messages.find((message) => message.role === "assistant"), raw);
 		assert.equal(bodies[1]!.messages.at(-1)?.role, "tool");
 		const resumed = await SessionManager.open(agent, { workspace, store, selection: { resume: manager.current.id } });
+		const saved = resumed.history.find((message) => message.role === "assistant");
+		assert.ok(saved?.role === "assistant");
+		assert.deepEqual(saved.providerReplay?.data, {
+			messageFields: { reasoning_content: "PRIVATE_REASONING", opaque_state: { signature: "opaque" } },
+			toolFields: [{ id: "sum-call", fields: { provider_signature: "call-signature" }, functionFields: { provider_tag: "preserve" } }],
+		});
 		await resumed.run("Continue");
 		assert.deepEqual(bodies[2]!.messages.find((message) => message.role === "assistant"), raw);
-		assert.ok(!JSON.stringify(bodies).includes("modelContext"));
+		assert.ok(!JSON.stringify(bodies).includes("providerReplay"));
 		const plan = prepareCompaction(resumed.history, undefined);
 		assert.ok(!plan.chunks.join("").includes("PRIVATE_"));
 		assert.ok(!plan.chunks.join("").includes("opaque_state"));
@@ -184,23 +191,39 @@ describe("provider reasoning history projection", () => {
 				const body = await new Request(input, init).text();
 				assert.ok(!body.includes("PRIVATE_"));
 				assert.ok(!body.includes("opaque_state"));
-				assert.ok(!body.includes("modelContext"));
+				assert.ok(!body.includes("providerReplay"));
 				assert.ok(body.includes("sum-call"));
 				return response();
 			})(resumed.history);
 		}
 	});
 
-	it("removes reasoning when disabled or auxiliary, includes its real wire bytes when enabled, and rejects altered tool facts", async () => {
+	it("isolates replay, measures wire bytes, and rejects invalid extras or tool associations", async () => {
 		const selection = { ...defaultModelSelection("deepseek"), thinking: "high" as const };
 		const first = await createModel({ ...config, ...selection }, async () => response(raw))([{ role: "user", content: "Add" }]);
 		const history: Message[] = [{ role: "system", content: systemPrompt }, { role: "user", content: "Add" }, first.message,
-			{ role: "tool", tool_call_id: "sum-call", content: "3" }, { role: "assistant", content: "3" }];
+			{ role: "tool", callId: "sum-call", content: "3" }, { role: "assistant", content: "3" }];
 		assert.deepEqual(validateHistory(history), history);
+		assert.equal(first.message.providerReplay?.api, "chat-completions");
+		for (const replacement of [
+			{ ...first.message.providerReplay, api: "responses" },
+			{ ...first.message.providerReplay, api: undefined },
+			{ ...first.message.providerReplay, data: { messageFields: { content: "Changed answer" } } },
+			{ ...first.message.providerReplay, data: { messageFields: { reasoning_content: { invalid: true } } } },
+			{ ...first.message.providerReplay, data: { messageFields: {}, toolFields: [
+				{ id: "sum-call", fields: {}, functionFields: { arguments: "{}" } },
+			] } },
+		]) {
+			const altered = structuredClone(history);
+			Object.assign(altered[2]!, { providerReplay: replacement });
+			assert.throws(() => validateHistory(altered), { code: "SESSION_CORRUPT" });
+		}
 		const invalid = structuredClone(history);
 		const assistant = invalid[2];
 		if (assistant?.role !== "assistant") throw new Error("Missing fixture assistant");
-		assistant.modelContext!.message.tool_calls![0]!.id = "changed";
+		const rawCalls = assistant.providerReplay!.data.toolFields;
+		assert.ok(Array.isArray(rawCalls));
+		rawCalls[0].id = "changed";
 		assert.throws(() => validateHistory(invalid), { code: "SESSION_CORRUPT" });
 		let calls = 0;
 		let inputBytes = 0;
@@ -208,7 +231,7 @@ describe("provider reasoning history projection", () => {
 			const text = await new Request(input, init).text();
 			assert.equal(Buffer.byteLength(text), inputBytes);
 			assert.equal(text.includes("PRIVATE_REASONING"), calls++ === 0);
-			assert.ok(!text.includes("modelContext"));
+			assert.ok(!text.includes("providerReplay"));
 			return response();
 		});
 		const observe = (event: { type: string; bytes?: number }) => { if (event.type === "model_input") inputBytes = event.bytes!; };

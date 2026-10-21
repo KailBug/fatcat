@@ -5,7 +5,7 @@ import test, { describe, it } from "node:test";
 import type { Terminal } from "@earendil-works/pi-tui";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { HarnessError } from "@fatcat/runtime/errors";
-import type { Model, Message } from "@fatcat/runtime/model";
+import type { Model, Message } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
@@ -50,7 +50,7 @@ const settings = {
     maxIterations: 8, requestTimeoutMs: 60000, maxRequestBytes: 262144 },
   workspace: "D:\\fixture", permission: "ask" as const, shellPermission: "ask" as const, skills: 4,
 };
-const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content }, toolCalls: [] });
+const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content } });
 
 describe("TUI turn feedback boundaries", () => {
   it("deduplicates parent and child records, displays updates and resets eligibility for the next turn", async (t) => {
@@ -241,10 +241,10 @@ test("TUI cron creates a bound task, shows its marker and appends the triggered 
   const session = await SessionManager.open({ maxIterations: 2, model: async (messages) => {
     const latest = messages.at(-1);
     if (latest?.role === "user" && String(latest.content).startsWith("Schedule in this conversation:")) {
-      const toolCalls = [{ id: "create", type: "function" as const, function: { name: "automation", arguments: JSON.stringify({
+      const toolCalls = [{ id: "create", name: "automation", arguments: JSON.stringify({
         action: "create", prompt: "Scheduled review", trigger: { type: "at", time: new Date(Date.now() + 2200).toISOString() }, maxRuns: 1,
-      }) } }];
-      return { message: { role: "assistant", content: null, tool_calls: toolCalls }, toolCalls };
+      }) }];
+      return { message: { role: "assistant", content: null, toolCalls } };
     }
     return answer(latest?.role === "tool" ? "Schedule created" : "Scheduled review finished");
   } }, { workspace, store: new SessionStore({ root: join(base, "sessions") }) });
@@ -446,8 +446,8 @@ test("a real child write waits for approval and appears once in the shared execu
   terminal.rows = 60;
   const app = new TuiApp({ ...settings, workspace, terminal, color: false });
   const call = (name: string, args: unknown) => {
-    const toolCalls = [{ id: name, type: "function" as const, function: { name, arguments: JSON.stringify(args) } }];
-    return { message: { role: "assistant" as const, content: null, tool_calls: toolCalls }, toolCalls };
+    const toolCalls = [{ id: name, name, arguments: JSON.stringify(args) }];
+    return { message: { role: "assistant" as const, content: null, toolCalls } };
   };
   let childRequests = 0;
   let parentRequests = 0;

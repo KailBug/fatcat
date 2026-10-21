@@ -85,3 +85,29 @@ test("canonical image parts retain their exact data URL and detail at the Chat C
 	] }]);
 	assert.equal(JSON.parse(prepared.json).tools, undefined);
 });
+
+test("replay extras follow call IDs while outgoing text and arguments come only from canonical messages", async () => {
+	const thinkingConfig = { ...config, thinking: "high" as const };
+	const raw = { role: "assistant", content: "Original", reasoning_content: "Reasoning", opaque_state: { signature: "message" },
+		tool_calls: ["a", "b"].map((id) => ({ id, type: "function", signature: `call-${id}`,
+			function: { name: "sum", arguments: '{"numbers":[1,2]}', signature: `function-${id}` } })) };
+	const model = createModel(thinkingConfig, async () => Response.json({ choices: [{ finish_reason: "tool_calls", message: raw }] }));
+	const { message } = await model([{ role: "user", content: "Add" }]);
+	message.content = "Current";
+	message.toolCalls!.reverse();
+	message.toolCalls![0]!.arguments = '{"numbers":[3,4]}';
+	const before = structuredClone(message);
+	const prepared = await model.prepare!([message]);
+	assert.deepEqual(JSON.parse(prepared.json).messages, [{ ...raw, content: "Current", tool_calls: [
+		{ ...raw.tool_calls[1], function: { ...raw.tool_calls[1]!.function, arguments: '{"numbers":[3,4]}' } },
+		raw.tool_calls[0],
+	] }]);
+	assert.deepEqual(message, before);
+	assert.ok(!JSON.stringify(message.providerReplay).includes('"arguments"'));
+	assert.ok(!JSON.stringify(message.providerReplay).includes('"Original"'));
+	const off = await createModel(config).prepare!([message]);
+	assert.deepEqual(JSON.parse(off.json).messages, [{ role: "assistant", content: "Current", tool_calls: [
+		{ id: "b", type: "function", function: { name: "sum", arguments: '{"numbers":[3,4]}' } },
+		{ id: "a", type: "function", function: { name: "sum", arguments: '{"numbers":[1,2]}' } },
+	] }]);
+});

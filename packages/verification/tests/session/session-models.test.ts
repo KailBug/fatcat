@@ -153,7 +153,8 @@ describe("session-owned model selection", () => {
 });
 
 describe("provider reasoning history projection", () => {
-	const tool = { id: "sum-call", type: "function", function: { name: "sum", arguments: '{"numbers":[1,2]}', provider_tag: "preserve" } };
+	const tool = { id: "sum-call", type: "function", provider_signature: "call-signature",
+		function: { name: "sum", arguments: '{"numbers":[1,2]}', provider_tag: "preserve" } };
 	const raw = { role: "assistant", content: null, reasoning_content: "PRIVATE_REASONING", tool_calls: [tool], opaque_state: { signature: "opaque" } };
 
 	it("round trips the full K3 assistant through tools and persistence, but isolates foreign models and summaries", async (t) => {
@@ -171,6 +172,12 @@ describe("provider reasoning history projection", () => {
 		assert.deepEqual(bodies[1]!.messages.find((message) => message.role === "assistant"), raw);
 		assert.equal(bodies[1]!.messages.at(-1)?.role, "tool");
 		const resumed = await SessionManager.open(agent, { workspace, store, selection: { resume: manager.current.id } });
+		const saved = resumed.history.find((message) => message.role === "assistant");
+		assert.ok(saved?.role === "assistant");
+		assert.deepEqual(saved.providerReplay?.data, {
+			messageFields: { reasoning_content: "PRIVATE_REASONING", opaque_state: { signature: "opaque" } },
+			toolFields: [{ id: "sum-call", fields: { provider_signature: "call-signature" }, functionFields: { provider_tag: "preserve" } }],
+		});
 		await resumed.run("Continue");
 		assert.deepEqual(bodies[2]!.messages.find((message) => message.role === "assistant"), raw);
 		assert.ok(!JSON.stringify(bodies).includes("providerReplay"));
@@ -191,7 +198,7 @@ describe("provider reasoning history projection", () => {
 		}
 	});
 
-	it("removes reasoning when disabled or auxiliary, includes its real wire bytes when enabled, and rejects altered tool facts", async () => {
+	it("isolates replay, measures wire bytes, and rejects invalid extras or tool associations", async () => {
 		const selection = { ...defaultModelSelection("deepseek"), thinking: "high" as const };
 		const first = await createModel({ ...config, ...selection }, async () => response(raw))([{ role: "user", content: "Add" }]);
 		const history: Message[] = [{ role: "system", content: systemPrompt }, { role: "user", content: "Add" }, first.message,
@@ -201,8 +208,11 @@ describe("provider reasoning history projection", () => {
 		for (const replacement of [
 			{ ...first.message.providerReplay, api: "responses" },
 			{ ...first.message.providerReplay, api: undefined },
-			{ ...first.message.providerReplay, message: { ...raw, content: "Changed answer" } },
-			{ ...first.message.providerReplay, message: { ...raw, reasoning_content: { invalid: true } } },
+			{ ...first.message.providerReplay, data: { messageFields: { content: "Changed answer" } } },
+			{ ...first.message.providerReplay, data: { messageFields: { reasoning_content: { invalid: true } } } },
+			{ ...first.message.providerReplay, data: { messageFields: {}, toolFields: [
+				{ id: "sum-call", fields: {}, functionFields: { arguments: "{}" } },
+			] } },
 		]) {
 			const altered = structuredClone(history);
 			Object.assign(altered[2]!, { providerReplay: replacement });
@@ -211,7 +221,7 @@ describe("provider reasoning history projection", () => {
 		const invalid = structuredClone(history);
 		const assistant = invalid[2];
 		if (assistant?.role !== "assistant") throw new Error("Missing fixture assistant");
-		const rawCalls = assistant.providerReplay!.message.tool_calls;
+		const rawCalls = assistant.providerReplay!.data.toolFields;
 		assert.ok(Array.isArray(rawCalls));
 		rawCalls[0].id = "changed";
 		assert.throws(() => validateHistory(invalid), { code: "SESSION_CORRUPT" });

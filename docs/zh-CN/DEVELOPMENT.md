@@ -295,11 +295,11 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 | `pnpm run verify:web` | 五个固定公开搜索、页面、天气检查，需要网络 |
 | `pnpm run verify:browser` | 临时本地页面的受控执行与证据 |
 | `pnpm run verify:webui` | 响应式、居中设置弹窗关闭/焦点、草稿详情/内嵌键盘滚动、紧凑证据、主题持久、断连恢复、单行控件、空闲折叠及指针/焦点/草稿保护、键盘唤醒、首页/忙碌排除、减少动态效果、长草稿/短窗口、对齐/调整大小、并排/覆盖预览模态隔离和 iframe 键盘返回、代码/回答复制及拒绝重试、回底部、键盘、弹窗、审批、取消和 Cron |
-| `pnpm run verify:sessions` | 保存会话与工作区切换 |
+| `pnpm run verify:sessions` | 保存会话、工作区切换，注入选择器延迟期间的稳定布局与草稿、owner 身份以及取消/错误恢复 |
 | `pnpm run verify:webui-models` | 圆角可用模型列表/键盘、medium 默认/保存 off、强制思考、别名、错误/忙碌冲突、草稿、紧凑摘要/runtime usage 与 estimate 分离、工具/回答/压缩刷新、身份/未知、重载/恢复、焦点不裁切、圆角悬停、图标及响应式双主题 |
 | `pnpm run verify:projects` | 分组/折叠/紧凑间距、浏览器/服务重启恢复、存储不可用回退、聚焦标签间距、固定目录和确认迁入（含陈旧/取消） |
 | `pnpm run verify:project-management` | 重命名、改目录、删除 |
-| `pnpm run verify:folder-picker` | 真实 Windows 目录选择器，交互桌面，helper 驱动选择/取消 |
+| `pnpm run verify:folder-picker` | 归属于 Edge 的真实 Windows 目录选择器，需要 Edge 和交互桌面；检查模态归属、层级、DPI，以及选择、取消、中止、超时、关闭标签页/浏览器、正常关服和强制结束隔离测试服务后的浏览器恢复与 helper/托管进程退出 |
 | `pnpm run verify:attachments` | 上传、共享、来源与生命周期 |
 | `pnpm run verify:documents` | 本地解析、来源证据与注入视觉接入 |
 | `pnpm run verify:memory` | 注入模型下作用域交互与管理 |

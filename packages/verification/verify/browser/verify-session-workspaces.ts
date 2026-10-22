@@ -44,7 +44,17 @@ const controller = await WebUiController.create({ workspace, provider: "deepseek
   shellPermission: "deny", webPermission: "deny", maxIterations: 8, maxRequestBytes: 262144, skills: 0, warnings: [] }, session);
 const selections = [workspace, outside, null];
 const initialPaths: string[] = [];
-const server = await startWebUiServer(controller, 0, async (initialPath) => {
+let holdPicker = false;
+let settlePicker: ((value: string | null) => void) | undefined;
+let rejectPicker: ((reason: Error) => void) | undefined;
+let pickerOwner: string | undefined;
+function finishPicker(): void { assert.ok(settlePicker); settlePicker(null); }
+const server = await startWebUiServer(controller, 0, async (initialPath, signal, ownerId) => {
+  pickerOwner = ownerId;
+  if (holdPicker) return new Promise<string | null>((resolve, reject) => {
+    settlePicker = resolve; rejectPicker = reject;
+    signal.addEventListener("abort", () => resolve(null), { once: true });
+  });
   initialPaths.push(initialPath);
   return selections.shift() ?? null;
 });
@@ -62,6 +72,38 @@ try {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(server.url);
+  await page.locator("#workspace-picker").waitFor({ state: "visible" });
+  await page.waitForFunction(() => !(document.getElementById("workspace-picker") as HTMLButtonElement).disabled);
+  await page.locator("#welcome").evaluate(async (element) => { await Promise.all(element.getAnimations().map((animation) => animation.finished)); });
+  const originalTitle = await page.title();
+  for (const outcome of ["cancel", "error"] as const) {
+    holdPicker = true;
+    settlePicker = undefined;
+    await page.locator("#prompt").fill("Keep this draft while choosing");
+    const before = await page.locator("#composer").boundingBox();
+    const welcome = await page.locator("#welcome").boundingBox();
+    const context = await page.locator("#context-usage").getAttribute("title");
+    await page.locator("#workspace-picker").click();
+    for (let i = 0; !settlePicker && i < 200; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.ok(settlePicker);
+    assert.match(pickerOwner!, /^[a-f0-9-]{36}$/);
+    assert.equal(await page.title(), `Fatcat workspace ${pickerOwner}`);
+    await page.waitForTimeout(1000); // Observe at least one state poll while the picker remains open.
+    assert.equal(await page.locator("#run-status").textContent(), "");
+    assert.equal(await page.locator("#stop").isVisible(), false);
+    assert.equal(await page.locator("#send").isVisible(), true);
+    assert.equal(await page.locator("#send").isDisabled(), true);
+    assert.deepEqual(await page.locator("#composer").boundingBox(), before);
+    assert.deepEqual(await page.locator("#welcome").boundingBox(), welcome);
+    assert.equal(await page.locator("#context-usage").getAttribute("title"), context);
+    assert.equal(await page.locator("#prompt").inputValue(), "Keep this draft while choosing");
+    if (outcome === "cancel") finishPicker();
+    else rejectPicker!(new HarnessError("INPUT", "Injected picker failure"));
+    await page.waitForFunction((title) => document.title === title, originalTitle);
+    await page.waitForFunction(() => !(document.getElementById("workspace-picker") as HTMLButtonElement).disabled);
+    assert.equal(await page.locator("#prompt").inputValue(), "Keep this draft while choosing");
+  }
+  holdPicker = false;
   await page.locator(`[data-session-id="${other.current.id}"]`).click();
   await page.waitForFunction((expected) => document.getElementById("workspace")?.textContent === expected, outside);
   await page.locator("#workspace-picker").click();
@@ -122,7 +164,7 @@ try {
   assert.equal((await store.loadAny(session.current.id)).compaction?.firstKeptMessage, 9);
   if (process.env.FATCAT_VERIFY_SCREENSHOT) await page.screenshot({ path: resolve(process.env.FATCAT_VERIFY_SCREENSHOT) });
   assert.deepEqual(errors, []);
-  console.log("Verified real Edge with injected models and a native picker: global sessions, workspace selection/read, manual and automatic compaction, context status, preserved history, saved summary, session menus and no page errors.");
+  console.log("Verified real Edge with injected models and picker results: stable picker layout and drafts, cancellation/error recovery and owner identity, global sessions, workspace selection/read, manual and automatic compaction, context status, preserved history, saved summary, session menus and no page errors.");
 } finally {
   await browser?.close();
   await server.close();

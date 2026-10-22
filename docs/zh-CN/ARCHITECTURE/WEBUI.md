@@ -36,7 +36,7 @@ Web UI 是本机单用户入口。浏览器持有草稿、菜单与显示快照�
 | `packages/webui/src/projects.ts`、`project-http.ts`、`project-management.ts` | 项目预览与确认入口，持久语义委托 Manager |
 | `packages/webui/src/attachments.ts`、`attachment-http.ts`、`attachment-evidence.ts` | 上传、当前作用域与实际来源呈现 |
 | `packages/webui/src/preview.ts`、`client/preview.ts` | 单文件快照与隔离预览 |
-| `packages/webui/src/folder-picker.ts`、`native-folder-dialog.ps1` | 有界原生目录选择，不是模型工具 |
+| `packages/webui/src/folder-picker.ts`、`native-folder-host.ts`、`native-folder-dialog.ps1` | 有界原生目录选择及取消托管进程，不是模型工具 |
 | `packages/webui/src/client/model-controls.ts` | 模型/思考临时表单、上下文圆环与详情展示，数据来自 runtime 快照 |
 | `packages/webui/src/client/cron.ts`、`permission-menu.ts`、`browser-evidence.ts` | 对共享服务的调度、模式和证据操作 |
 
@@ -128,7 +128,9 @@ ModelControls 只保存 DOM、显示签名与打开时的临时表单，app.ts �
 
 ## 原生桥接与交互约束
 
-目录 helper 使用系统 PowerShell/.NET、STA 的 IFileDialog，固定 execFile 参数、shell=false，路径经环境传递，输出最多 32 KiB。五分钟期限、断连/关服取消与隐藏 owner 保证有界生命周期；使用 PerMonitorV2 和 TOOLWINDOW 避免多余任务栏窗口。选择结果仍由 Manager 验证，不授予文件/命令权限。
+目录 helper 使用系统 PowerShell/.NET、STA 的 IFileDialog，固定 spawn 参数、shell=false，路径经环境传递，输出最多 32 KiB。页面临时在标题中标记随机请求 ID，并通过已认证请求的 X-Fatcat-Picker 头传递。helper 按 ID 查找可见的 Chromium/Firefox 窗口，以浏览器 HWND 作为模态 owner；不根据前台窗口猜测，也不退回无归属弹窗。选择器始终位于该浏览器上方，关闭前阻止浏览器输入，保留 PerMonitorV2 且不增加任务栏窗口。成功、取消或失败后恢复页面标题。浏览器文件输入无法提供工作目录的绝对路径，因此附件上传和工作目录选择分别保留浏览器/原生桥接。选择结果仍由 Manager 验证，不授予文件/命令权限。
+
+五分钟期限、断连、关服和输出超限通过关闭 helper stdin 取消选择。独立 Node 托管进程将 PowerShell 隔离于服务退出即终止子进程的作业，同时保留隐藏控制台和管道；服务突然退出也只会关闭 stdin，不会杀掉模态循环。托管进程排空输出并等待 PowerShell 退出，然后自行退出。helper 读取线程通知 STA 循环关闭；独立 finally 先核对窗口进程/线程身份，再恢复仍存在的浏览器，即使 COM 清理失败也不跳过恢复。正常取消不能直接终止 helper，否则可能让浏览器保持禁用。busy 继续串行化管理操作，只有 runningSessionId 驱动执行状态和发送/停止按钮展示。打开选择器或管理弹窗时保留页面布局、草稿和未开始的上下文展示。
 
 打开器使用隐藏 helper 与环境传递 URL，五秒期限；失败保留终端私有链接，服务继续。退出取消未完成 helper，不关闭用户浏览器。
 
@@ -156,7 +158,7 @@ ModelControls 只保存 DOM、显示签名与打开时的临时表单，app.ts �
 
 `verify:webui` 的布局辅助检查还覆盖长草稿、短窗口、抽屉和预览断点两侧、浅深主题、消息与输入框对齐、关键控件命中测试、草稿随宽度变化自动增高、代码块局部滚动及轮询保留阅读位置。IME 合成事件验证提交防护，不代表实体输入法的完整实机测试；截图仍需人工检查视觉层级。
 
-原生 Windows helper 已通过实际目录窗口的选择、取消、中止与超时检查，包含 192 DPI 下的 PerMonitorV2、隐藏 owner、无额外任务栏窗口及退出清理。该检查由验证 helper 驱动真实窗口，不代表所有 Windows/DPI 配置；非 Windows、实体手机和其他浏览器仍未完成实机验证。
+原生 Windows 验证在真实 Edge、192 DPI 下覆盖选择、取消、中止和超时：PerMonitorV2、浏览器 owner 禁用、尝试激活浏览器后选择器仍在其上方、浏览器重新启用、无额外任务栏窗口及退出清理。真实 HTTP 夹具另行关闭发起标签页、关闭浏览器、正常关服和强制终止隔离的服务进程，检查仍存在的浏览器输入及两个 helper 进程均已退出。离线启动器测试覆盖结算前完成 EOF 清理、输出超限和启动失败。会话 Edge 脚本另行检查延迟注入选择、输入框/欢迎区尺寸位置不变、草稿与标题恢复，以及取消/错误恢复。这些检查不验证系统提示音、强制终止 helper 自身，也不代表所有 Windows/DPI 配置；非 Windows、实体手机和其他浏览器仍未完成实机验证。
 
 `verify:webui-models` 使用真实 Edge、SDK 组装、注入传输和本地计数器，覆盖模型/思考选择和协议别名、不可用项、错误重试、草稿保留、忙碌拒绝、三种指标隔离、回答/工具/压缩刷新、模型切换后的旧观察、未知值、重载/恢复、浅深主题与 1440/390/320px 布局、短视口、图标对齐及焦点/减少动态效果。离线 HTTP 检查额外覆盖认证、来源、严格字段、旧会话/revision/选择拒绝及快照不泄漏凭据。注入计量不证明供应商 token 精度，不执行真实模型请求。
 

@@ -1,17 +1,44 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { WebUiController } from "@fatcat/webui/internal/controller";
-import { pickWorkspaceDirectory } from "@fatcat/webui/internal/folder-picker";
+import { launchWorkspacePicker, pickWorkspaceDirectory } from "@fatcat/webui/internal/folder-picker";
 import { startWebUiServer } from "@fatcat/webui/internal/server";
 import { temporaryWorkspace } from "../support/workspace.js";
 
 const agent = { maxIterations: 1, model: async () => ({ message: { role: "assistant" as const, content: "Ready" } }) };
 const info = { provider: "deepseek", model: "offline", permission: "read-only", shellPermission: "deny", webPermission: "deny",
   maxIterations: 1, maxRequestBytes: 262144, skills: 0, warnings: [] };
+
+test("picker launcher waits for EOF cleanup on cancellation, timeout and output overflow", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  for (const reason of ["abort", "timeout", "overflow"] as const) {
+    const controller = new AbortController();
+    const marker = join(workspace, `${reason}.txt`);
+    const script = `const { writeFileSync } = require('node:fs');
+      process.stdin.resume();
+      process.stdin.on('end', () => setTimeout(() => {
+        writeFileSync(process.env.FATCAT_TEST_MARKER, 'restored'); process.exit(0);
+      }, 50));
+      if (process.env.FATCAT_TEST_OVERFLOW) process.stdout.write('x'.repeat(1024));`;
+    const pending = launchWorkspacePicker(process.execPath, ["-e", script], {
+      env: { ...process.env, FATCAT_TEST_MARKER: marker, FATCAT_TEST_OVERFLOW: reason === "overflow" ? "1" : "" },
+      signal: controller.signal, timeout: reason === "timeout" ? 500 : 5000, maxBuffer: 64,
+      encoding: "utf8", windowsHide: true, shell: false,
+    });
+    if (reason === "abort") { controller.abort(); assert.equal(await pending, ""); }
+    else await assert.rejects(pending, reason === "timeout" ? /timed out/ : /output exceeded/);
+    assert.equal(await readFile(marker, "utf8"), "restored", "Settlement must wait for cleanup, not kill the child");
+  }
+  await assert.rejects(launchWorkspacePicker(join(workspace, "missing.exe"), [], {
+    env: process.env, signal: new AbortController().signal, timeout: 5000, maxBuffer: 64,
+    encoding: "utf8", windowsHide: true, shell: false,
+  }), /process failed/);
+});
 
 test("native picker passes paths as data, bounds its helper and sanitizes failures", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
@@ -25,6 +52,7 @@ test("native picker passes paths as data, bounds its helper and sanitizes failur
     assert.ok(!args.includes(initial));
     assert.match(args.at(-1)!, /native-folder-dialog\.ps1$/);
     assert.equal(options.env.FATCAT_WORKSPACE_DIRECTORY, initial);
+    assert.equal(options.env.FATCAT_PICKER_OWNER, "");
     assert.equal(options.shell, false);
     assert.equal(options.windowsHide, true);
     assert.equal(options.signal, signal);
@@ -33,6 +61,11 @@ test("native picker passes paths as data, bounds its helper and sanitizes failur
     return JSON.stringify({ path: workspace });
   } });
   assert.equal(selected, workspace);
+  const ownerId = "cfc1c742-3655-485d-a3d8-892bdff1ec24";
+  await pickWorkspaceDirectory(initial, signal, { platform: "win32", ownerId, launch: async (_file, _args, options) => {
+    assert.equal(options.env.FATCAT_PICKER_OWNER, ownerId);
+    return '{"path":null}';
+  } });
   assert.equal(await pickWorkspaceDirectory(initial, signal, { platform: "win32", launch: async () => '{"path":null}' }), null);
   for (const output of ['{"path":"relative/path"}', '{"path":42}', '{}', 'invalid']) {
     await assert.rejects(pickWorkspaceDirectory(initial, signal, { platform: "win32", launch: async () => output }), /Could not open the Windows folder picker/);
@@ -61,8 +94,10 @@ test("native selection authenticates, serializes and preserves cancellation, dra
   const controller = await WebUiController.create({ ...info, workspace }, manager);
   const calls: string[] = [];
   let finish: ((path: string | null) => void) | undefined;
-  const server = await startWebUiServer(controller, 0, (initial, signal) => {
+  const owners: (string | undefined)[] = [];
+  const server = await startWebUiServer(controller, 0, (initial, signal, ownerId) => {
     calls.push(initial);
+    owners.push(ownerId);
     return new Promise((resolve) => {
       finish = resolve;
       signal.addEventListener("abort", () => resolve(null), { once: true });
@@ -83,10 +118,14 @@ test("native selection authenticates, serializes and preserves cancellation, dra
   assert.equal((await post({ id }, { ...headers, Origin: "https://example.com" } as typeof headers)).status, 403);
   assert.equal((await post({ id, extra: true })).status, 400);
   assert.equal((await post({ id: "missing" })).status, 400);
+  assert.equal((await post({ id }, { ...headers, "X-Fatcat-Picker": "arbitrary window title" } as typeof headers)).status, 400);
   assert.equal(calls.length, 0);
-  const choosing = post({ id });
+  const ownerId = "cfc1c742-3655-485d-a3d8-892bdff1ec24";
+  const choosing = post({ id }, { ...headers, "X-Fatcat-Picker": ownerId } as typeof headers);
   await waitForPicker();
   assert.equal(controller.snapshot().busy, true);
+  assert.equal(controller.snapshot().runningSessionId, null, "Directory selection must not present a running turn");
+  assert.deepEqual(owners, [ownerId]);
   assert.equal((await post({ id })).status, 409);
   assert.throws(() => controller.submit("Do not run while choosing"), /Stop or finish/);
   finish!(outside);

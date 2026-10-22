@@ -8,7 +8,7 @@
 
 [架构总览](README.md) · [开发检查与证据要求](../DEVELOPMENT.md#evaluation-evidence-requirements)
 
-`packages/eval` 是独立开发包，管理实验定义、注入模型的 Session 执行、结果记录和统计。它通过现有包导出调用 runtime 的 Session、Loop、Context、工具及存储，所有权仍在 runtime。产品包不依赖它；它与 verification 互不依赖。真实模型执行、公开数据下载、整轮预算调度和评测 CLI 尚未实现。
+`packages/eval` 是独立开发包，管理实验定义、注入模型的 Session 执行、结果记录和统计。它通过现有包导出调用 runtime 的 Session、Loop、Context、工具及存储，所有权仍在 runtime。产品包不依赖它；它与 verification 互不依赖。真实模型执行、自动数据集下载管理、整轮预算调度和通用实验 CLI 尚未实现；下述注入无界面入口已可用于固定的 Linux 任务环境。
 
 <a id="modules-and-references"></a>
 
@@ -25,6 +25,8 @@
 | `src/session-runner.ts` | 经 runtime 执行一次隔离尝试；事件、用量、取消、证据、清理与独立评分 |
 | `src/promptfoo-provider.ts` | 将样本／次数交给 runner，返回输出及结果元数据的薄 provider |
 | `src/harbor-result.ts` | 离线读取绑定哈希的 Harbor 单步骤 trial 结果；保留 reward、异常和可空用量，不另行评分 |
+| `src/headless.ts`、`scripts/headless.ts` | 注入模型的任务目录 Session 执行、明确限制／策略、持久证据与入口信号生命周期 |
+| `harbor/`、`scripts/verify-linux.ts` | 固定官方任务／控制端依赖、Oracle／镜像元数据和真实 Linux 验收 |
 | `tests/`、`scripts/test.ts` | 本包合成数据、文件往返、统计与包集成回归；源码清单驱动的离线入口 |
 
 组织方式参考 Maka `packages/eval` 的实验／结果分离及严格解码（参考提交 `8686793e5d051018c61e53350e542992d19d5311`）；类型和显式函数结构参考 pi `usage-totals.ts`（参考提交 `3daa20280f6a7c7cbe0935680c9a38fdc3863005`）及其 SDK 的显式依赖装配。这是针对 Fatcat 契约的独立实现，没有迁入 Maka 的 Harbor、Fleet、代理网络或重试选择机制。Eval 声明 `@fatcat/runtime` 依赖，并将开发依赖 `promptfoo` 固定为 `0.124.1`，用于真实 provider 加载器集成。Provider 仅从 `promptfoo/contracts` 导入类型，避开根类型入口无关的数据库驱动声明，不放宽 TypeScript 检查。Workspace 允许 esbuild 必需的安装构建。
@@ -129,66 +131,46 @@
 | Issue | 当前职责与依赖 |
 | --- | --- |
 | [KAI-18](https://linear.app/kailtian/issue/KAI-18) | 用 Fatcat + DeepSeek V4.1 Flash 跑一道 Terminal-Bench 4.0 任务并保留官方评分；有效零分也可完成接入里程碑 |
-| [KAI-21](https://linear.app/kailtian/issue/KAI-21)、[KAI-22](https://linear.app/kailtian/issue/KAI-22) | 已有协议及注入 Session／promptfoo 基础；KAI-22 已在本地实现，等待审阅发布，不是 Harbor 必经层 |
-| [KAI-43](https://linear.app/kailtian/issue/KAI-43) | Linux 任务环境与核心无界面执行；下述规划尚未实施 |
+| [KAI-21](https://linear.app/kailtian/issue/KAI-21)、[KAI-22](https://linear.app/kailtian/issue/KAI-22) | 已有协议及注入 Session／promptfoo 基础；KAI-22 已实现并发布待审，不是 Harbor 必经层 |
+| [KAI-43](https://linear.app/kailtian/issue/KAI-43) | 固定 Linux 任务环境与注入模型的核心无界面执行；实现与复跑方式见下文 |
 | [KAI-44](https://linear.app/kailtian/issue/KAI-44) | KAI-43 之后直接接入 Harbor，先注入验证，再运行一次明确授权的 DeepSeek 单题尝试并保存官方证据 |
 
-本次新增代码仅为上述离线 Harbor 结果读取器，不完成 KAI-43 或 KAI-44。Windows 原生仍是产品路径，Linux／容器作为新增评测路径。本增量不包含 TUI／Web UI 移植、新沙盒、本地替代题库或 Context／RAG 重构。
+KAI-43 新增 Linux 执行与注入模型的无界面入口；KAI-44 的 Harbor installed agent 和真实模型评分仍单独实施。Windows 原生仍是产品路径，Linux／容器作为新增评测路径。本增量不包含 TUI／Web UI 移植、新沙盒、本地替代题库或 Context／RAG 重构。
 
 <a id="kai-43-execution-plan"></a>
 
 ## KAI-43 执行规划
 
-本节是提案，不是已实现的 Linux 支持或成功执行记录。规划基于当前 checkout，包括尚未提交的 KAI-22 工作。后续实施前先审阅已有工作并固定实际代码提交；脏工作区只能作为诊断证据。
+环境优先的规划已推进至注入模型的 Linux 执行阶段。此前 KAI-22／规划增量的提交为 `89b8581c0ae87b91a69016cb1d28e99277e532c0`，已发布到 [PR #115](https://github.com/KailBug/fatcat/pull/115)。当前增量增加评估路径，不移植 Linux UI。安装、准确命令、失败情况与验证边界见 [Linux 评估](../GUIDES/LINUX_EVAL.md)。
 
 <a id="source-audit-and-intended-boundaries"></a>
 
 ### 源码检查与拟定边界
 
-| 当前源码或行为 | 拟改动及所属模块 |
-| --- | --- |
-| `runtime/src/tools/shell.ts` 拒绝非 Windows 平台，工具描述写死 PowerShell | runtime 选择具体平台执行器及准确描述；保留 shell 授权、操作锁、cwd 重检、命令日志和清理失败后的禁用状态 |
-| `runtime/src/permissions/process.ts` 编码 PowerShell，筛选 Windows 环境变量并调用 `taskkill` | 保留 Windows 路径；新增遵循相同 `ProcessResult` 契约的 Bash 执行器，显式环境白名单、输出上限、截止时间和有界进程组取消 |
-| `runtime/src/system-prompt.ts` 声称 shell 是 PowerShell；`permissions/command-risk.ts` 分析 PowerShell 语法 | 提供符合平台的提示，不将 PowerShell 风险分类直接用于 Bash，也不让 Free to go 静默自动批准 Bash。首个无界面入口采用显式限定的任务策略；不支持的审批直接失败，不等待终端 |
-| `permissions/workspace.ts` 检查普通可移植名称与链接；`agent.ts`、`session/record.ts` 只在 Windows 折叠大小写 | 验证 Linux 大小写敏感、任务绝对 cwd、路径穿越、符号链接和文件身份。保留 Windows 规则，仅调整所选任务证明确有冲突的限制；文件工具内不做宿主机／容器路径映射 |
-| KAI-22 `session-runner.ts` 创建临时夹具工作区、禁用 shell，并做 exact-match 评分 | 保留夹具 runner。单独的 eval 无界面 driver 在 Harbor 的真实任务 cwd 中调用 runtime 公共导出，将私有临时 Session 存储放在任务输入之外；不得把任务复制到另一个工作区 |
-| runtime 拥有 Session、Loop、Context、模型 SDK 和委派 | 复用 `createAgent`／`SessionManager`／`SessionStore` 及其取消／预算契约。题目选择、安装、日志和 Harbor 胶水代码归 eval；产品回归归 verification，两个开发包互不导入 |
-
-实施前参考 pi 的 `core/tools/bash.ts`、`utils/shell.ts` 和显式 SDK 组装，版本为 `3daa20280f6a7c7cbe0935680c9a38fdc3863005`。采用具体函数与依赖，保留 Fatcat 契约，不引入通用执行器插件系统。进程组是清理机制，不是沙盒；逃逸后代仍须 Harbor 环境销毁兜底，无法确认清理时必须如实记录。
+- `runtime/src/tools/shell/bash.ts` 使用现有 ProcessResult 协议实现 Linux 前台执行；`tools/shell.ts` 选择 Bash 或原生 PowerShell。权限操作锁、cwd 复查、journal 和清理失败禁用仍归共享 shell 工具。平台指导准确，Bash 不进入 PowerShell 风险分类器。见 [Tools](TOOLS.md#shell-execution-boundaries) 与 [Permissions](PERMISSIONS.md#free-to-go-command-risk-classification)。
+- 检查的 pi 参考仍为提交 `3daa20280f6a7c7cbe0935680c9a38fdc3863005` 的 `core/tools/bash.ts` 与 `utils/shell.ts`。立即对组发送 SIGKILL，替代原定的延迟 TERM 升级，以终止忽略 TERM 的后代并避免组长退出后延迟发送信号。逃逸进程组的后代仍需容器销毁，不宣称沙箱保证。
+- `eval/src/headless.ts` 直接通过公开的 `createAgent`、`createTools`、`SessionManager` 和 `SessionStore` 导出，在实际任务 cwd 执行；不复制任务，也不改变 Session／Loop／Context／模型 SDK 的职责。KAI-22 的夹具工作区、promptfoo provider 和 exact-match grader 保持不变。
+- `eval/scripts/headless.ts` 负责 argv、受信任注入模块加载及 SIGINT／SIGTERM；库导入不启动宿主操作。新的私有 Session 目录位于任务外；收尾后先写证据，再删除仅属于该次执行的目录。该驱动从不删除任务工作区。
 
 <a id="ordered-implementation-and-acceptance"></a>
 
 ### 实施顺序与验收
 
-1. **先固定官方环境，再开始适配。** 使用数据集 `terminal-bench/terminal-bench@4.0.0`。Harbor 从已检查的 0.23.0 源码版本开始评估，记录实际安装版本／提交和解析后的依赖锁，不预设它一定兼容所选任务。读取官方清单及一道题的配置、环境、参考解答和 verifier。只选一道 CPU、单步骤任务；固定名称／版本／校验值、镜像摘要、CPU／内存／磁盘、网络需求和超时。具体 CPU 题和镜像须等这一步检查后确定，本规划没有下载或认证任何任务。声明子集／全集覆盖前核对完整清单。
-2. **确定资源，再建立 Oracle 对照证据。** 安装或执行前确认本地 Docker 可用性和资源，或明确批准云端选择、额度与费用。保留原生 Windows 开发，普通使用不要求 WSL／Docker。对固定任务运行一次官方 Oracle 与 verifier，并发为一、重试为零；保留配置、reward、验收日志和环境身份。环境／验收失败或 Oracle 结果异常时先停下来定位，不能归因于 Fatcat。完整基准包含 GPU 题，单道 CPU 题不验证全量运行基础设施。
-3. **实现最小 runtime 平台支持。** Bash 执行和平台提示放在 runtime，保留 Windows 执行器及权限语义。以前台、无用户 profile、无交互 stdin 的方式启动 Bash，筛选环境变量，传递退出状态，限制输出，处理启动失败、超时和取消。对所属进程组发送终止信号，有界等待后升级终止，等待进程／流收束，如实报告无法确认的清理。文件和 shell 操作共享同一任务环境与 cwd。检查 Linux 下子进程入口／资源和依赖安装，不仅为评测更换模型 SDK。
-4. **增加 eval 无界面入口，先走注入执行。** 显式接收任务 cwd、指令输入、结果目录、权限策略、请求数和时间限制；导入不得产生宿主副作用。创建真实隔离 Session，通过注入传输复用现有模型适配器，不经过 promptfoo 或答案评分器。入口负责信号处理，将 abort 向下传递，等待 Session／工具收束，保存观察到的请求／历史／用量，再清理自己拥有的 Session 资源。不得删除 Harbor 任务工作区。验收器／参考答案不进入模型输入；缺少审批或配置明确失败。委派工作遵循相同权限和取消规则。
-5. **验证两个操作系统并记录复跑方法。** 在真实 Linux 任务容器内，注入模型必须读取、新建、修改、重读文件，以 Bash 操作同一文件，报告命令非零退出，并取消一个带子进程的长时间命令。同时检查超时、输出溢出、权限拒绝、仅大小写不同的路径、符号链接逃逸、带空格路径和预先取消输入。核实父子进程终止、中断证据持久化及收束后无自有临时状态遗留。Windows 执行类型检查、包边界和完整离线测试；若修改入口／输入／生命周期，再运行注入模型的 Windows 终端检查。保存命令与本次日志，区分 Linux 和模型质量证据。
-6. **将固定任务交给 KAI-44。** 优先使用 Harbor installed agent，使 Fatcat 及全部工具均在任务环境内运行。Harbor 拥有环境创建／销毁和官方 verifier。其 installed-agent API 可能需要一层薄 Python 集成，但不能重新实现 Session／Loop，也不引入第二套 TypeScript 模型客户端。具体打包和 runtime 导出需求在 KAI-44 按实际消费者审查。先注入验证，随后才确定 `deepseek-flash` 的单题／单次授权、请求数／超时及 API／云端额度。记录实际模型版本、思考配置、日期与代码／任务身份，不只保存可能变动的别名。模型未执行或缺少官方评分不能通过验收。
+1. **固定官方源码与资源。** `harbor/terminal-bench-4.0.json` 记录版本 `terminal-bench/terminal-bench@4.0.0`、提交 `452bf305c6daa62fc59061d22133a7cbc7c1572e`、单道 CPU 题 `terminal-bench/sound-change-cascade`、全部 18 个源码文件 SHA-256 及资源／时限。该版本包含 66 个任务清单，只选择此题。执行前检查了本机 Docker，未启动云资源。
+2. **官方 Oracle 对照。** Harbor 0.23.0，并发一、单次尝试、零自动重试，得到 reward `1.0`，官方 verifier 七项测试通过。`harbor/oracle-control.json` 记录 trial、源码／镜像身份及证据哈希；前期环境失败均保留。这是 Oracle 分数，不是 Fatcat 分数。
+3. **运行时与无界面执行。** Windows 保留 PowerShell，Linux 使用 Bash。无界面入口要求任务／结果绝对路径、明确的文件与 shell 策略、指令文本、1–32 次请求和 100–120000 毫秒时限。只接受 read-only/deny，或 workspace-write 配 allow/deny；缺失或交互审批显式失败。现有运行时及取消信号落实请求／时间限制，也覆盖委派工作。
+4. **真实注入验收。** 官方任务环境中使用 Node 24.19.0 和 pnpm 11.21.0 的固定锁文件依赖，文件工具与 Bash 均在 `/app` 执行。检查读／建／改／重读、非零退出、超时、输出上限、拒绝、大小写不同文件、空格路径、符号链接逃逸、预先取消、父子进程取消及中断持久化／清理。可执行入口的 SIGTERM 路径也收尾并以 130 退出。运行采用 `--network none`，未产生供应商请求或官方 Fatcat 分数。
+5. **Windows 回归与交接。** 新鲜类型检查、包边界／构建和离线完整测试证据与 Linux 日志分别保存。CLI／TUI／Web UI 的入口和输入代码不变。KAI-44 负责 installed Harbor agent、Fatcat 官方验收接线及另外明确授权的真实 DeepSeek 执行；KAI-43 不自动进入这些活动。
 
 <a id="proposed-rerun-commands-and-exit-criteria"></a>
 
 ### 拟定复跑命令与完成条件
 
-以下命令是后续获授权环境执行的准备模板，本次没有执行。Python／uv 属于外部 Harbor harness，Fatcat 的 JavaScript 依赖继续全部使用 pnpm。检查固定版本 CLI、选定任务后才能替换占位符；只有确定云端方案后，才将 Docker 换成获批云端环境。
+原模板已替换为 [Linux 评估](../GUIDES/LINUX_EVAL.md) 中的具体命令。`scripts/verify-linux.ts` 验证真实任务目录集成；产品进程／路径合同仍放 verification，评估编排合同仍放 eval，两个开发包互不导入。独立 Python 依赖快照用于 Windows Harbor 控制端；Fatcat JavaScript 依赖仍全部使用 pnpm 和现有锁文件。
 
-```text
-uv tool install "harbor==0.23.0"
-harbor --version
-harbor run --help
-harbor run -d terminal-bench/terminal-bench@4.0.0 -i "<EXACT_CPU_TASK_NAME>" -l 1 -a oracle -e docker -k 1 -n 1 -r 0 -o "<LOCAL_RESULTS>" --job-name kai43-oracle
-pnpm install --frozen-lockfile
-pnpm --filter @fatcat/runtime --filter @fatcat/eval -r build
-pnpm run typecheck
-pnpm test
-```
+无界面证据包含已准备的请求正文（不含 SDK headers）、事件、当前 Session 历史／中断、用量消费、写入、命令结果、平台及临时状态位置；`result.json` 记录最终状态与清理。这些是注入集成证据，不是通用 EvalResult 判分或 Harbor reward。证据可能包含任务文本，需私密处理。发布或磁盘失败可能留下不完整产物／私有状态；没有覆盖、自动恢复、沙箱、token／金额上限或全实验预算，完整预算合同仍归 KAI-23。
 
-执行前检查并保存 Harbor 解析后的配置，必须只包含预期的那一道题。本规划不授权 `--upload`、完整基准、真实模型或云端启动。无界面入口实际存在后，补充最终注入命令，并在任务容器内复跑；不能把拟定文件名或占位符写成现有可执行命令。依赖安装失败、无法获得不可变任务／版本属于准备阻塞，不能静默换用其他 benchmark 发布版本。
-
-KAI-43 只有在 CPU 题和环境固定、Oracle／verifier 对照成功、同一环境内真实注入读写／Bash／取消通过、Windows 回归通过且安装／复跑方法可重复时才完成。本次不宣称上述任何 Linux／环境验收已经满足。KAI-44 另须真实获授权的模型执行、正常结束的官方验收、数值 reward（包括零）、日志／轨迹及可得用量／费用。保留全部尝试和失败，只报告所选单题结果。
-
-参考：[Terminal-Bench 运行说明](https://www.tbench.ai/run)、[Harbor 自定义 Agent](https://docs.harborframework.com/agents/custom-agents)、[Harbor job 命令](https://docs.harborframework.com/jobs/run-a-job)、[任务配置](https://docs.harborframework.com/tasks/configuration)。于 2026-10-22 核对，执行前仍须复核固定版本实现。
+KAI-44 必须真实运行获授权的模型，正常完成官方 verifier，并保留数值 reward（有效零分也可）、轨迹及可用用量／费用。环境失败、未执行或缺少评分都不能满足该里程碑。源码／镜像／版本身份和每次失败尝试必须与所选任务的有效结果区分。
 
 <a id="future-work-boundaries"></a>
 

@@ -36,6 +36,7 @@ These documents describe the current source tree for users, contributors and age
 | Workspace ownership, runtime exports, dependencies and resource builds | [Package boundaries](DEVELOPMENT.md#workspace-package-boundaries) |
 | Module responsibilities, state ownership, data flow and topic designs | [Architecture](ARCHITECTURE/README.md) |
 | Experiment configuration, result format, statistics and evaluation implementation boundaries | [Eval protocol](ARCHITECTURE/EVAL.md) |
+| Pinned CPU task, Oracle control and injected Linux execution | [Linux evaluation](GUIDES/LINUX_EVAL.md) |
 
 ## Documentation responsibilities
 

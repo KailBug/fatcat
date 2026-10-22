@@ -6,7 +6,7 @@ import test from "node:test";
 import { ApprovalCoordinator } from "@fatcat/runtime/permissions/approval";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import type { ShellRequest } from "@fatcat/runtime/permissions/types";
-import type { ProcessResult } from "@fatcat/runtime/internal/permissions/process";
+import type { ProcessResult } from "@fatcat/runtime/internal/tools/shell/types";
 import { createWorkspace } from "@fatcat/runtime/permissions/workspace";
 import { createShellTool } from "@fatcat/runtime/tools/shell";
 import { temporaryWorkspace } from "../support/workspace.js";

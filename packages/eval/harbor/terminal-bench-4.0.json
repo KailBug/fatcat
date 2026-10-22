@@ -1,0 +1,49 @@
+{
+  "dataset": "terminal-bench/terminal-bench@4.0.0",
+  "repository": "https://github.com/harbor-framework/terminal-bench",
+  "revision": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+  "taskPath": "tasks/sound-change-cascade",
+  "taskName": "terminal-bench/sound-change-cascade",
+  "taskTree": "5877c6223ff66f53cf2f8eb6899392e206c7c3b6",
+  "releaseTaskCount": 66,
+  "harborVersion": "0.23.0",
+  "uvVersion": "0.9.7",
+  "resources": {
+    "cpus": 2,
+    "memoryMb": 4096,
+    "storageMb": 10240,
+    "gpus": 0
+  },
+  "timeoutsSeconds": {
+    "build": 600,
+    "agent": 28800,
+    "verifier": 300
+  },
+  "verifierEnvironment": "separate",
+  "oracle": {
+    "concurrency": 1,
+    "attempts": 1,
+    "retries": 0
+  },
+  "sourceArchiveSha256": "ba18d9cb0377782f52504f748e4db0997de886474de4c59ee01afee9301bd0da",
+  "fileSha256": {
+    "README.md": "b1065668931961176a91621bfefd6af6bff8759a3ef29dfedb0f9dbce18f5cd7",
+    "environment/Dockerfile": "1d8b38cd4b4b32d3830966bd0651810955136b3c2c742e673b26fe4c6a21bd9e",
+    "environment/data/train.tsv": "261f825d9bb42c202840dcf7256998f2103ba4511bbbb6a6dca3af99af057b3d",
+    "environment/engine/apply.py": "edde5b508f9a631885ed84b9de5738ba55be8ca4311586cef62a2e51d1911465",
+    "environment/engine/example_rules.json": "ace3e6524914e18aa33dc5aee31ba6c70232616f89cfd8958aad6ec4ac385f4a",
+    "instruction.md": "3f4f415d6057a4b802ffdf2fdbb106b7865dd7a50aaf7ff2b6150a14bfc70b34",
+    "solution/solve.py": "c685ed8357bfe5701b41a38ed7a16c1c97009fc3d28bc5ac9ff4cb1ff29cf3b1",
+    "solution/solve.sh": "7601c5e18f50b4e77cf534a1efed4a2bdf4e60635e27757551196185722ba496",
+    "task.toml": "68676db0911b9ca6613ba601da5a2150fbbb1b48e4f7a1c727b7132e0e6aa8c5",
+    "tests/Dockerfile": "79c096020755b2373a61fcfa58fc5721a98bb2f030c9a1c512572ebf945fa93a",
+    "tests/apply.py": "edde5b508f9a631885ed84b9de5738ba55be8ca4311586cef62a2e51d1911465",
+    "tests/ground_truth_ordering.txt": "6ec7dbaad2cb45ba1331edf3c2be7751a5903eb032bf77f49b484a285585a7dd",
+    "tests/ground_truth_rules.json": "48d8d77a53375981217957bfd053c91a0491037c3632666850201b3e9094de63",
+    "tests/hidden_test.tsv": "b03c76f8dafebf9c6c4e8d5f2fcc87033dabe577400317fbbc64a05c866ba264",
+    "tests/test.sh": "97ea83517b48edeeea5a5b36864700dcd4ef56c289e4622ad0a07dc0b8aaf7a8",
+    "tests/test_state.py": "ad673ddd631953c28581fef0d8479e0593e9891c3b2a315d68bfab9ff2f39d8d",
+    "tests/train.tsv": "261f825d9bb42c202840dcf7256998f2103ba4511bbbb6a6dca3af99af057b3d",
+    "tests/verify.py": "f55af359ff5a60c7f09a8b54e73455bc15490a751cf4b6e1e025d7d9f8b5eeab"
+  }
+}

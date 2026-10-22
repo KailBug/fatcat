@@ -15,7 +15,10 @@ Definitions use Fatcat's `ToolDefinition` with direct name, description, paramet
 | `packages/runtime/src/tools.ts`, `packages/runtime/src/tools/types.ts` | Collection assembly, common results, cancellation and forTurn wrappers |
 | `packages/runtime/src/tools/read.ts`, `search.ts` | File/directory paging and literal queries |
 | `packages/runtime/src/tools/write.ts` | Exact text creation/replacement, publication protocol and write journal |
-| `packages/runtime/src/tools/shell.ts` | Command protocol, authorization and command journal; process lifecycle delegates to permissions/process |
+| `packages/runtime/src/tools/shell.ts` | Command protocol, authorization, cwd rechecks and command journal |
+| `packages/runtime/src/tools/shell/powershell.ts` | Windows PowerShell environment, process execution and cleanup |
+| `packages/runtime/src/tools/shell/bash.ts` | Linux Bash environment, process-group execution and cleanup |
+| `packages/runtime/src/tools/shell/types.ts` | Shared ProcessResult contract and combined output limit |
 | `packages/runtime/src/tools/sum.ts` | Side-effect-free arithmetic |
 | `packages/runtime/src/tools/web.ts`, `browser.ts` | [HTTP research](WEB.md) and [local browser](BROWSER.md) entries |
 
@@ -57,11 +60,17 @@ This avoids partial in-place writes; it is neither a multi-file transaction nor 
 
 ## shell execution boundaries
 
+`tools/shell.ts` coordinates permission snapshots, approval, cwd validation, command records and cleanup-failure lockout. The platform executors in `tools/shell/` only receive the command, cwd, timeout and cancellation signal; they own process lifecycle and return `ProcessResult`. They do not read permission policy or request approval. Policy, approval coordination and command-risk classification remain in `permissions/`.
+
 Input is command with optional cwd and timeoutMs. Commands allow 4000 UTF-16 code units; timeout defaults to 30 seconds and accepts 100–120000 ms. Approval shows the complete command, canonical directory and deadline; cwd is rechecked afterward. File-write authorization is not command authorization.
 
 Each call launches a fresh hidden Windows PowerShell without profile or interactive stdin, using an argument array and EncodedCommand. Working directories do not persist across calls. Only allowlisted runtime environment variables are inherited, excluding model keys and NODE_OPTIONS. PATH/PSModulePath remain trusted host configuration; filtering cannot isolate disk credentials readable by the account.
 
+The additional Linux evaluation path uses `/bin/bash --noprofile --norc -c` in a new process group, with no stdin and no persistent shell state. `tools/shell/bash.ts` retains the same ProcessResult contract and an explicit Linux environment allowlist; BASH_ENV, ENV, SHELLOPTS, loader hooks and provider credentials are not inherited. Tool descriptions and system guidance select the actual platform. Other platforms remain unsupported by shell. Linux does not use the PowerShell risk classifier: every Free to go Bash command requires approval. A headless task must select an explicit workspace-write/shell-allow policy or deny shell.
+
 Combined stdout/stderr is limited to 16 KiB raw bytes. Overflow, timeout and cancellation trigger bounded process-tree cleanup. Cleanup does not target the old PID after parent exit; detached descendants may survive. Unconfirmed cleanup records unconfirmed and blocks further commands on the same Tools instance. There is no Job Object guarantee, background-service or interactive-command support.
+
+Linux sends SIGKILL immediately to the owned process group, following the inspected pi executor, and waits up to five seconds for stream/process settlement. This deliberately replaces the earlier proposed TERM/grace escalation: a delayed signal after the leader exits can target a reused identifier or miss a TERM-ignoring child. A stopped zombie can still await init reaping. Processes that escape the group need container teardown; `tree-killed` confirms group termination/settlement, not isolation. Both native executors reject already-aborted launches before spawning.
 
 Results reflect PowerShell errors and external exit codes. Chained native commands should check LASTEXITCODE individually. Tool ok is not command success; truncated output is not complete verification. cwd is only a launch location, not an OS sandbox.
 

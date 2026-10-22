@@ -21,7 +21,10 @@ Tools 提供模型可见定义、参数校验和异步执行。工具不自行�
 | `packages/runtime/src/tools.ts`、`packages/runtime/src/tools/types.ts` | 集合装配、统一结果、取消及 forTurn 包装 |
 | `packages/runtime/src/tools/read.ts`、`search.ts` | 文件/目录分页与字面查询 |
 | `packages/runtime/src/tools/write.ts` | 精确文本创建/替换、提交协议与写入 journal |
-| `packages/runtime/src/tools/shell.ts` | 命令协议、授权与命令 journal；进程生命周期委托 permissions/process |
+| `packages/runtime/src/tools/shell.ts` | 命令协议、授权、cwd 复查与命令 journal |
+| `packages/runtime/src/tools/shell/powershell.ts` | Windows PowerShell 环境、进程执行与清理 |
+| `packages/runtime/src/tools/shell/bash.ts` | Linux Bash 环境、进程组执行与清理 |
+| `packages/runtime/src/tools/shell/types.ts` | 共享 ProcessResult 协议与合并输出上限 |
 | `packages/runtime/src/tools/sum.ts` | 无副作用算术工具 |
 | `packages/runtime/src/tools/web.ts`、`browser.ts` | [HTTP 研究](WEB.md)与[本地浏览器](BROWSER.md)入口 |
 
@@ -69,11 +72,17 @@ query 是区分大小写的单行字面子串，不支持正则、glob 或跨行
 
 ## shell 的执行边界
 
+`tools/shell.ts` 协调权限快照、审批、cwd 校验、命令记录及清理失败后的禁用。`tools/shell/` 中的平台执行器只接收命令、cwd、超时与取消信号，负责进程生命周期并返回 `ProcessResult`，不读取权限策略或请求审批。策略、审批协调与命令风险分类仍归 `permissions/`。
+
 输入为 command、可选 cwd 与 timeoutMs。命令最多 4000 UTF-16 码元；默认 30 秒，允许 100–120000 毫秒。审批显示完整命令、规范目录和期限，批准后复核 cwd。文件写入授权不等于命令授权。
 
 每次启动新的无 profile、无交互 stdin、隐藏 Windows PowerShell，使用参数数组与 EncodedCommand，工作目录不跨调用保存。只继承列出的运行环境变量，不继承模型 Key 或 NODE_OPTIONS；PATH/PSModulePath 仍属受信任宿主环境，不能隔离账户可读取的磁盘凭据。
 
+新增 Linux 评估路径使用 `/bin/bash --noprofile --norc -c` 和独立进程组，无 stdin，不保存跨调用 shell 状态。`tools/shell/bash.ts` 保持相同 ProcessResult 协议及明确的 Linux 环境变量白名单，不继承 BASH_ENV、ENV、SHELLOPTS、加载器 hooks 或供应商凭据。工具描述与系统指导根据实际平台选择；shell 仍不支持其他平台。Linux 不使用 PowerShell 风险分类器：Free to go 下每条 Bash 命令都需审批；无界面任务必须明确选择 workspace-write/shell-allow 策略或禁止 shell。
+
 stdout/stderr 合计最多 16 KiB 原始字节；超限、超时和取消触发有界进程树清理。父进程退出后不再对旧 PID 执行清理；脱离后代未必结束。清理未确认时记录 unconfirmed，并阻止同一 Tools 再启动命令。没有 Job Object 级保证、后台服务或交互命令支持。
+
+Linux 参考已检查的 pi 执行器，立即向所拥有的进程组发送 SIGKILL，最多等待五秒让流与进程收尾。这明确替代原计划的 TERM/宽限期升级：组长退出后的延迟信号可能命中复用标识，或遗漏忽略 TERM 的子进程。已终止的僵尸进程仍可能等待 init 回收；脱离进程组的后代需要容器销毁处理，`tree-killed` 确认组终止与收尾，不代表隔离。两个原生执行器都会在启动前拒绝已取消的调用。
 
 PowerShell 错误与外部程序退出码反映到结果；串联多个 native 命令应逐个检查 LASTEXITCODE。工具 ok 不等于命令成功，截断输出不能作为完整验证。cwd 只是启动位置，shell 不是 OS 沙箱。
 

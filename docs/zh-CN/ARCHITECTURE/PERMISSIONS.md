@@ -21,10 +21,11 @@
 | `packages/cli/src/permissions/terminal.ts` | 审批适配与控制字符转义 |
 | `packages/runtime/src/permissions/workspace.ts`、`text-file.ts` | 规范路径、模式范围、文件身份和有界文本读取 |
 | `packages/runtime/src/permissions/command-risk.ts` | Free to go 的有界词法风险分类 |
-| `packages/runtime/src/permissions/process.ts` | PowerShell 环境、期限、输出及清理 |
 | `packages/runtime/src/permissions/web-request.ts`、`browser.ts` | HTTP 地址/下载防护与浏览器审批/本地资源校验 |
 
 工具协议和操作 journal 仍归 Tools，界面只提交模式选择或单次决定。
+
+Shell 进程执行归 `packages/runtime/src/tools/shell/`，包含独立的 Bash、PowerShell 执行器以及共享结果类型和输出上限。执行器不授权命令；`tools/shell.ts` 在调用前应用权限策略并完成审批。生命周期与清理的职责见 [shell 执行边界](TOOLS.md#shell-execution-boundaries)。
 
 <a id="policy-and-access-scope"></a>
 
@@ -53,6 +54,8 @@ ApprovalCoordinator 最多一个待批项。取消、EOF、停止或关闭拒绝
 ## Free to go 的命令风险判断
 
 分类器检查有界 PowerShell 词法、命令名、引号、管道及嵌套形式，不请求模型或外部服务。删除/格式化、危险 Git、存储/安全配置、下载后执行、嵌套解释器、编码/计算命令和未知脚本等要求单次审批。approvalReason 由工具产生，模型不能传入伪造。
+
+Linux 评估执行器不会把该分类器用于 Bash 语法。Free to go 下每条 Bash 命令都需要审批回调，没有回调则在启动前失败。显式 workspace-write/shell-allow 保留文件工具的工作区范围及独立 shell 授权。eval 无界面入口只接受明确的允许/拒绝策略，不等待交互审批；委派工作继承同一运行时策略。
 
 即使低层 shellPermission=allow，Free 的风险命令仍须回调批准；无交互不能自动通过。旧显式 shell-allow 保留兼容行为，不因此获得 Free 的文件/网络范围。
 

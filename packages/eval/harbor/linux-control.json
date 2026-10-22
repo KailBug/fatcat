@@ -1,0 +1,52 @@
+{
+  "evidence": "injected-linux-integration",
+  "sourceBaseCommit": "f825dcc6cda135bc7ef57840b537160df311dca0",
+  "sourceWorkingTree": "uncommitted shell executor layout at verification time; bundle digest is the SHA-256 of bundle-provenance.json binding every compiled file and manifest",
+  "compiledBundleSha256": "7f6c46e64f5698ef2eea375333b6bda08a25855e0d81a9042a84ee243bdbc69e",
+  "compiledBundleFiles": 1040,
+  "taskImageId": "sha256:94c6be44c4335eeae13b698b8f9358f54b3f8d0b03836a9084953df105b3e6bb",
+  "injectedImageId": "sha256:a0d1d15b4e9944527d80ddfd0d5d0c28853e9b1515ff80b1b8f6add702670e7b",
+  "node": "24.19.0",
+  "pnpm": "11.21.0",
+  "linuxContractTestsPassed": 10,
+  "network": "none",
+  "mounts": [],
+  "cpus": 2,
+  "memoryBytes": 4294967296,
+  "headless": {
+    "evidence": "injected",
+    "workspace": "/app",
+    "platform": "linux",
+    "node": "v24.19.0",
+    "files": "completed",
+    "cancellation": "cancelled",
+    "parentAndChildStopped": true,
+    "temporaryStateRemoved": true,
+    "officialScore": null,
+    "modelRequestsSentToNetwork": 0
+  },
+  "signalEntry": {
+    "signal": "SIGTERM",
+    "exitCode": 130,
+    "status": "cancelled"
+  },
+  "artifactSha256": {
+    "linux-shell-layout/contracts.log": "ee822e11ec388d7cb6efe6ab7198d27322c93c6c05969d48c9398822802a6838",
+    "linux-shell-layout/headless.log": "e8f61757ce83be0d970a9d5c58a1bc4c7ae92ab26f34a3ecbe742444916e986c",
+    "linux-shell-layout/bundle-check.log": "21b073f037eae0063a8b59633f345e7db7235be718050f32cbc31edb4353418d",
+    "linux-shell-layout/bundle-provenance.json": "7f6c46e64f5698ef2eea375333b6bda08a25855e0d81a9042a84ee243bdbc69e",
+    "linux-shell-layout/acceptance/summary.json": "d32449e81122befcc242a6c6666a31dad53bbac20f280ac14ea29daddba5bb7c",
+    "linux-shell-layout/acceptance/signal-console.txt": "19ab3ddd06ff410d4c980a127137efddfd0a2e3c74a60195fce2f8468099e2c1",
+    "linux-shell-layout/acceptance/files/evidence.json": "829670fe68f6c52d9cf2f54a781dd92ea6bafce7d16342f9315bbc08c06f0351",
+    "linux-shell-layout/acceptance/files/result.json": "de6e791d551922b9d7ac41b251286cac98f8e0b1421d0049eb83330c799ee0c8",
+    "linux-shell-layout/acceptance/cancel/evidence.json": "075eb8a4f19b0bd231629fdad643e7ec4eaecaf3c37215d1bb9247528035dcf1",
+    "linux-shell-layout/acceptance/cancel/result.json": "12979b3fc6e0aa02b6d2d2ce1e6f38d449fc9659abf42a61daf036c57d2a193e",
+    "linux-shell-layout/acceptance/signal/evidence.json": "8b1a44530f06a03454a483d3c59764395032df67b06eb96a69c9312c5151532b",
+    "linux-shell-layout/acceptance/signal/result.json": "a1d126d54c77a4b2e1f65ee0331df38ff4133d9bdf56f57cf8267621fefef260"
+  },
+  "limits": [
+    "This is integration evidence, not an official Fatcat or live-model score.",
+    "The injected overlay is built from the original official task source; it adds Node and frozen JavaScript dependencies outside /app.",
+    "Images use disabled dependency lifecycle scripts; document rendering, browsers and Linux UI are not certified."
+  ]
+}

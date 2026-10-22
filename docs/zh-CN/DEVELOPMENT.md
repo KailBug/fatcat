@@ -61,7 +61,7 @@ CLI 的 `@fatcat/cli` 导出可调用 runCli，`@fatcat/cli/entry` 为执行 arg
 
 产品离线测试集中在 `packages/verification/tests/`。harness/runtime-package.test.ts 覆盖包解析、公开/阻止路径和无关 cwd；commands-package.test.ts 检查导出及同一 Manager 跨入口确认失效；tui-package.test.ts 检查无副作用导入/私有路径；webui-package.test.ts 检查导入、私有路径、无关目录 HTTP/原生资源；cli-package.test.ts 检查可调用入口与私有路径，现有 CLI 子进程/Skills 检查覆盖入口资源。迁包后仅清理对应过时产物，核对源码/编译清单，运行 typecheck/离线测试，并用注入模型验证受影响原生终端和 Edge。公网/live 检查有独立范围。
 
-独立私有 `@fatcat/eval` 在 packages/eval/src 维护协议/统计，tests 维护测试/夹具，scripts 维护离线入口，编译至自身 dist，不产声明/公开导出。目前没有运行时依赖。产品不能依赖 eval（含 devDependencies）；eval 与 verification 互不依赖，eval 不允许消费产品 internal/*。未来 Session 适配器须声明实际 runtime 依赖并使用审阅导出。普通导入/构建/测试不加载凭据、不联系供应商、不启动实验。
+独立私有 `@fatcat/eval` 在 packages/eval/src 维护协议、注入模型的 Session 适配及统计，tests 维护测试/夹具，scripts 维护离线入口。TypeScript 编译至自身 dist 对应位置，不产声明/公开导出；promptfoo 集成子进程还读取本包 `.mjs` 源码夹具。Eval 声明 `@fatcat/runtime` 依赖并通过审阅过的公开子路径导入，固定 promptfoo 为开发依赖。产品不能依赖 eval（含 devDependencies）；eval 与 verification 互不依赖，eval 不允许消费产品 internal/*。普通导入/构建不执行实验；测试通过注入 transport 执行隔离 Session，不加载凭据、不联系模型供应商。
 
 Eval 已纳入 workspace glob、根依赖构建、锁文件和含测试/scripts 的边界扫描。其测试入口同样按当前源清单发现，缺编译输出或空清单即失败。不新增跨包 helper 或兼容 barrel。已实现契约和未实现执行见 [Eval](ARCHITECTURE/EVAL.md)。
 
@@ -337,7 +337,7 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 
 ## Eval 证据要求
 
-新实验使用版本化 [Eval 协议](ARCHITECTURE/EVAL.md)。实现独立于产品回归，位于 packages/eval。配置/序列化使用合成数据，不证明 Session 执行或模型质量。
+新实验使用版本化 [Eval 协议](ARCHITECTURE/EVAL.md)。实现独立于产品回归，位于 packages/eval。配置/序列化使用合成数据，不证明 Session 执行或模型质量。Session/promptfoo 集成测试使用注入 transport，执行真实 runtime 工具、持久化、取消与清理，证明这些集成契约，不证明模型质量。命令、材料、证据和限制见[注入模型的 Session 执行](ARCHITECTURE/EVAL.md#injected-session-execution)。
 
 | 改动 | 必需证据 |
 | --- | --- |
@@ -350,7 +350,7 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 
 运行前声明范围、样本、重复、代码/模型/数据/prompt/策略/grader 身份及预算。保留全部失败/超时/取消/基础设施错误。开发与留出 ID 固定且不相交；留出只验收，不迭代调优。缺记录即不完整，不缩分母或只挑最好。子集不等于全 benchmark，合成/注入不等于 live。Dirty 实验仅诊断，除非另有可复现快照机制，v1 没有。未知计数/价格保持 null（显示 unknown），部分 usage 标已知小计，不冒充总量。预算声明不实施限制或授权花费。
 
-真实模型仍需明确范围/预算授权。现有 DeepSeek live 不变；执行、预算实施、公开数据、成对报告及定时/手动质量命令是后续工作，协议本身未实现。
+真实模型仍需明确范围/预算授权。现有 DeepSeek live 不变；真实模型评测执行、完整预算实施、公开数据、成对报告及定时/手动质量命令是后续工作。注入执行目前接入单次请求额度和截止时间，token、金额及整轮限制尚未强制执行。
 
 <a id="version-and-badges"></a>
 

@@ -11,7 +11,7 @@ const packages = ["runtime", "commands", "tui", "webui", "cli", "verification", 
 	manifest: JSON.parse(readFileSync(resolve(root, `packages/${name}/package.json`), "utf8")),
 }));
 const allowed = {
-	"@fatcat/eval": [],
+	"@fatcat/eval": ["@fatcat/runtime"],
 	"@fatcat/verification": ["@fatcat/runtime", "@fatcat/commands", "@fatcat/tui", "@fatcat/webui", "@fatcat/cli"],
 	"@fatcat/cli": ["@fatcat/runtime", "@fatcat/commands", "@fatcat/tui", "@fatcat/webui"],
 	"@fatcat/runtime": [],

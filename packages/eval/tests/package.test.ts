@@ -55,7 +55,32 @@ describe("eval package integration", () => {
 		assert.equal(run("scripts/check-packages.mjs").status, 0);
 		await write("packages/runtime/package.json", JSON.stringify({ name: "@fatcat/runtime", exports: {}, devDependencies: { "@fatcat/eval": "workspace:*" } }));
 		assert.match(run("scripts/check-packages.mjs").stderr, /Workspace dependency direction/);
-		await write("packages/runtime/package.json", '{"name":"@fatcat/runtime","exports":{"./internal/*":{"types":"./dist/*.d.ts","import":"./dist/*.js"}}}');
+		await write("packages/runtime/package.json", JSON.stringify({
+			name: "@fatcat/runtime",
+			exports: {
+				"./session/manager": {
+					types: "./dist/session/manager.d.ts",
+					import: "./dist/session/manager.js",
+				},
+				"./internal/*": {
+					types: "./dist/*.d.ts",
+					import: "./dist/*.js",
+				},
+			},
+		}));
+		await write("packages/eval/package.json", JSON.stringify({
+			name: "@fatcat/eval",
+			exports: {},
+			dependencies: {
+				"@fatcat/runtime": "workspace:*",
+			},
+		}));
+		await write(
+			"packages/eval/tests/boundary.test.ts",
+			'import "@fatcat/runtime/session/manager";',
+		);
+		const publicImport = run("scripts/check-packages.mjs");
+		assert.equal(publicImport.status, 0, publicImport.stdout + publicImport.stderr);
 		await write("packages/eval/tests/boundary.test.ts", 'import "@fatcat/runtime/internal/model";');
 		assert.match(run("scripts/check-packages.mjs").stderr, /Internal package subpaths are for verification only/);
 		await write("packages/eval/tests/boundary.test.ts", 'import "undeclared-dependency";');

@@ -1,0 +1,13 @@
+ARG TASK_IMAGE=fatcat-kai43-task:452bf305
+FROM ${TASK_IMAGE}
+
+# The build context contains only explicit manifests, compiled packages and pinned tools.
+COPY node /usr/local/bin/node
+COPY pnpm /opt/pnpm
+RUN chmod +x /usr/local/bin/node
+ENV PATH="/usr/local/bin:/opt/pnpm/bin:${PATH}"
+WORKDIR /opt/fatcat
+COPY manifests/ ./
+RUN node /opt/pnpm/bin/pnpm.cjs install --frozen-lockfile --ignore-scripts --filter @fatcat/eval... --filter @fatcat/verification...
+COPY build/ ./
+WORKDIR /app

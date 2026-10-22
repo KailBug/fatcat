@@ -7,7 +7,7 @@ import { ApprovalCoordinator } from "@fatcat/runtime/permissions/approval";
 import { isPermissionMode, PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import type { PermissionMode } from "@fatcat/runtime/permissions/types";
 import { createWorkspace } from "@fatcat/runtime/permissions/workspace";
-import type { ProcessResult } from "@fatcat/runtime/internal/permissions/process";
+import type { ProcessResult } from "@fatcat/runtime/internal/tools/shell/types";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
 import { createTools } from "@fatcat/runtime/tools";
 import type { ToolResult } from "@fatcat/runtime/tools";

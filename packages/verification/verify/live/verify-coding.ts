@@ -10,7 +10,7 @@ import type { ExecutionReport } from "@fatcat/runtime/execution-report";
 import { createTools } from "@fatcat/runtime/tools";
 import type { Tools } from "@fatcat/runtime/tools";
 import { failure } from "@fatcat/runtime/internal/tools/types";
-import { runPowerShell } from "@fatcat/runtime/internal/permissions/process";
+import { runPowerShell } from "@fatcat/runtime/internal/tools/shell/powershell";
 
 const command = "node --test check.test.mjs";
 const sourcePath = "src/math/add.mjs";

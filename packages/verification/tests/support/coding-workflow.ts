@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExecutionReport } from "@fatcat/runtime/execution-report";
 import type { Tools } from "@fatcat/runtime/tools";
-import { runPowerShell } from "@fatcat/runtime/internal/permissions/process";
+import { runPowerShell } from "@fatcat/runtime/internal/tools/shell/powershell";
 
 export const workflowCommand = "node --test check.test.mjs";
 export const editablePaths = ["src/cart/subtotal.mjs", "src/receipt.mjs"] as const;

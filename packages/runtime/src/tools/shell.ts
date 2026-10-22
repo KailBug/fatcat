@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { HarnessError, checkCancellation } from "../errors.js";
-import { runPowerShell } from "../permissions/process.js";
-import type { ProcessResult } from "../permissions/process.js";
+import { runBash } from "./shell/bash.js";
+import { runPowerShell } from "./shell/powershell.js";
+import type { ProcessResult } from "./shell/types.js";
 import { shellDecision } from "../permissions/policy.js";
 import { classifyCommandRisk } from "../permissions/command-risk.js";
 import type { PermissionPolicy } from "../permissions/policy.js";
@@ -19,7 +20,7 @@ function parseArguments(args: unknown): ShellRequest {
     || !("command" in args) || typeof args.command !== "string" || !args.command.trim()
     || args.command.length > 4000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/.test(args.command)
     || Buffer.from(args.command, "utf8").toString("utf8") !== args.command) {
-    throw new HarnessError("INVALID_ARGUMENTS", "Expected a PowerShell command containing 1 to 4000 well-formed characters without control codes.");
+    throw new HarnessError("INVALID_ARGUMENTS", "Expected a shell command containing 1 to 4000 well-formed characters without control codes.");
   }
   const cwd = "cwd" in args ? args.cwd : ".";
   const timeoutMs = "timeoutMs" in args ? args.timeoutMs : 30000;
@@ -30,7 +31,8 @@ function parseArguments(args: unknown): ShellRequest {
   return { command: args.command, cwd, timeoutMs };
 }
 
-export function createShellTool(workspace: Workspace, options: ShellOptions = {}, runner = runPowerShell, policy?: PermissionPolicy) {
+export function createShellTool(workspace: Workspace, options: ShellOptions = {},
+  runner = process.platform === "linux" ? runBash : runPowerShell, policy?: PermissionPolicy) {
   const permission = options.permission ?? "deny";
   if (!["ask", "deny", "allow"].includes(permission)) throw new HarnessError("CONFIG", "Shell permission must be ask, deny, or allow.");
   const records: CommandRecord[] = [];
@@ -48,9 +50,13 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
     signal?: AbortSignal, freeToGo = false): Promise<ToolResult> {
     const decision = shellDecision(currentPermission, Boolean(options.approve));
     if (decision === "deny") throw new HarnessError("PERMISSION_DENIED", "Shell execution is denied for this run.");
-    if (process.platform !== "win32") throw new HarnessError("UNSUPPORTED_PLATFORM", "Shell execution currently requires native Windows PowerShell.");
+    if (process.platform !== "win32" && process.platform !== "linux") {
+      throw new HarnessError("UNSUPPORTED_PLATFORM", "Shell execution requires native Windows PowerShell or Linux Bash.");
+    }
     const request = parseArguments(args);
-    const approvalReason = freeToGo ? classifyCommandRisk(request.command) : null;
+    const approvalReason = freeToGo ? process.platform === "linux"
+      ? "Bash commands require approval in Free to go; the command-risk classifier supports PowerShell only."
+      : classifyCommandRisk(request.command) : null;
     if (approvalReason) request.approvalReason = approvalReason;
     if (busy) throw new HarnessError("SHELL_BUSY", "A shell request is already running or awaiting approval.");
     if (cleanupFailed) throw new HarnessError("SHELL_CLEANUP", "A prior process tree could not be confirmed stopped. Inspect it before starting a new run.");
@@ -97,7 +103,8 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
   const tool: Tool = {
     definition: {
       name: "shell",
-      description: "Run a foreground command in Windows PowerShell (not Bash), in a fresh non-interactive process. cwd defaults to the workspace root. Requires separate command authorization. No OS sandbox: commands can access files and network with current-user permissions. Do not launch background processes or interactive programs. Output is capped at 16 KiB combined; exceeding it stops the process tree. Check success, exitCode, status and truncated before claiming verification passed. Earlier side effects are never rolled back. Native nonzero exit codes and PowerShell errors are failures."
+      description: (process.platform === "linux" ? "Run a foreground command in Linux Bash" : "Run a foreground command in Windows PowerShell (not Bash)")
+        + ", in a fresh non-interactive process without profiles. cwd defaults to the workspace root. Requires separate command authorization. No OS sandbox: commands can access files and network with current-user permissions. Do not launch background processes or interactive programs. Output is capped at 16 KiB combined; exceeding it stops the process tree or Linux process group. Check success, exitCode, status and truncated before claiming verification passed. Earlier side effects are never rolled back. Check each command's exit status when chaining commands."
         + (policy ? " Current permission is supplied in request guidance and checked at execution." : ""),
       parameters: {
         type: "object",

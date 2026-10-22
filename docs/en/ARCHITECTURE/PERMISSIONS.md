@@ -15,10 +15,11 @@ Runtime enforces permissions; model guidance only explains available capabilitie
 | `packages/cli/src/permissions/terminal.ts` | Approval adapter and control-character escaping |
 | `packages/runtime/src/permissions/workspace.ts`, `text-file.ts` | Canonical paths, mode scope, file identity and bounded text reads |
 | `packages/runtime/src/permissions/command-risk.ts` | Bounded lexical risk classification for Free to go |
-| `packages/runtime/src/permissions/process.ts` | PowerShell environment, deadlines, output and cleanup |
 | `packages/runtime/src/permissions/web-request.ts`, `browser.ts` | HTTP address/download guards and browser approval/local-resource validation |
 
 Tools retain protocols and operation journals; interfaces only submit mode selections or one-time decisions.
+
+Shell process execution lives in `packages/runtime/src/tools/shell/`, with separate Bash and PowerShell executors and shared result types/output limits. These executors do not authorize commands; `tools/shell.ts` applies permission policy and approval before invoking them. See [shell execution boundaries](TOOLS.md#shell-execution-boundaries) for lifecycle and cleanup ownership.
 
 ## Policy and access scope
 
@@ -41,6 +42,8 @@ ApprovalCoordinator allows one pending item. Cancellation, EOF, stop or close de
 ## Free to go command-risk classification
 
 The classifier examines bounded PowerShell tokens, command names, quotes, pipelines and nesting without model or external-service requests. Deletion/formatting, dangerous Git operations, storage/security configuration, download-and-execute, nested interpreters, encoded/computed commands and unknown scripts require one-time approval. Tools generate approvalReason; the model cannot supply a forged reason.
+
+The Linux evaluation executor does not apply this classifier to Bash syntax. Every Bash command in Free to go requires an approval callback; without one it fails before launch. Explicit workspace-write/shell-allow retains workspace-scoped file tools and separate shell authorization. The eval headless entry accepts only explicit allow/deny policies and never waits for interactive approval; delegated work inherits the same runtime policy.
 
 Even with low-level shellPermission=allow, Free risk commands require callback approval; noninteractive execution cannot auto-approve. Legacy explicit shell-allow preserves its behavior without gaining Free file/network scope.
 

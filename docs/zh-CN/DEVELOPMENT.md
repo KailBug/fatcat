@@ -25,6 +25,8 @@ pnpm test
 
 普通测试使用假凭据和注入模型 transport，不加载 `.env` 或联系供应商，可使用真实临时文件与固定 PowerShell 命令，不启动 Edge。离线协议测试不验证凭据、连通性、模型质量或真实视觉行为。
 
+新增 Linux 评估路径有独立的[安装与复跑指南](GUIDES/LINUX_EVAL.md)。在固定任务容器中执行 `bash.test.js` 与 `headless.test.js`，Windows 完整测试跳过的 Linux 专属用例不算 Linux 证据。`packages/eval/dist/scripts/verify-linux.js` 检查真实 `/app` 任务 cwd 及已构建无界面入口的信号生命周期。Docker／Python 仍是评估依赖，不是原生 Windows 产品要求。
+
 模型契约位于 `@fatcat/runtime/model-types`，工具定义位于 runtime `tools/types.ts`。边界检查将 OpenAI SDK 导入限制在 `model.ts`、`model-adapters/chat-completions.ts`、`model-protocol.ts`。注入 Model 和持久历史使用规范消息；HTTP 夹具使用 verification `tests/support/chat-protocol.ts` 的独立 wire 类型。模型检查覆盖准备/发送的精确 JSON、完整编码字节、图片和可恢复非法参数。会话测试覆盖当前格式、持久工具历史、中断 attempt 和不重放的恢复；没有旧格式转换或兼容套件。
 
 Windows 上使用 OS 分配端口的 HTTP 夹具可能在发请求前偶发 Node fetch `bad port`。保留失败日志，重跑时区分它与路由/断言失败。重跑通过并不解决现有端口分配限制。

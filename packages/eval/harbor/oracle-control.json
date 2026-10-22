@@ -1,0 +1,30 @@
+{
+  "evidence": "official-oracle-control",
+  "harborVersion": "0.23.0",
+  "recordedAt": "2026-10-22T08:33:24.325115Z",
+  "trialName": "sound-change-cascade__fztNpeT",
+  "taskChecksum": "76f28b6db6767d19a1fb176db6f80dad5427cc3fa8a3dae8dea461d26d518b99",
+  "taskLockDigest": "sha256:ccebd444dfeeff8c76f76d381417d5994c02b05604f689c22ef6951d6f449dcb",
+  "reward": {
+    "reward": 1.0
+  },
+  "exception": null,
+  "verifierTestsPassed": 7,
+  "baseImage": "python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2",
+  "taskImageConfig": "sha256:29487d48e32047077876d948e3104f15845e7fd6b3f91e4998f4e4f1c37f80de",
+  "verifierImageConfig": "sha256:420d9f4fbc6dba450712cd87bf2ad5aa31041553cd09bd1dae5a626053f37a7b",
+  "artifactSha256": {
+    "result.json": "f879d9f4507d00117ce46518dad4363b964fc2a262bd36146350579afda903f4",
+    "lock.json": "0cff369e4fbdc75e77f8d2c49e052a589df79e34654f2bb1ebb9dab69e542dca",
+    "config.json": "8f54527bd9bb39497f1e9631ae548ba56771f66218fd2aa96f6dae41e4333f30",
+    "agent/oracle.txt": "54cde76e7e835c90ef3dd86ecbf3a61724cd8584338fa401f1e3b1072633e7be",
+    "verifier/test-stdout.txt": "4a0a76fa9612815cc496c5aa93fb66cfadc3d87af8a8b0a46c74b98229e92272",
+    "verifier/reward.txt": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "verifier/ctrf.json": "27d79fff62db3fd0a1a3792b57d180155b35a3ea5bb1e52daac857326d602fd2"
+  },
+  "limits": [
+    "Oracle is the reference agent; this is not a Fatcat or real-model score.",
+    "Official Dockerfiles have floating base tags and apt packages; rebuilding may produce different image identities.",
+    "Only one CPU task from the 66-task release was selected; GPU and full-suite execution were not tested."
+  ]
+}

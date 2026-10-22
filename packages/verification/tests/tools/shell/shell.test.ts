@@ -9,7 +9,8 @@ import { HarnessError } from "@fatcat/runtime/errors";
 import { createTools } from "@fatcat/runtime/tools";
 import { createShellTool } from "@fatcat/runtime/tools/shell";
 import { createWorkspace } from "@fatcat/runtime/permissions/workspace";
-import { commandEnvironment, runPowerShell, outputLimit } from "@fatcat/runtime/internal/permissions/process";
+import { commandEnvironment, runPowerShell } from "@fatcat/runtime/internal/tools/shell/powershell";
+import { outputLimit } from "@fatcat/runtime/internal/tools/shell/types";
 import { createTerminalInput } from "@fatcat/cli/internal/terminal";
 import { temporaryWorkspace } from "../../support/workspace.js";
 

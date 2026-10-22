@@ -9,7 +9,7 @@ import type { ExecutionReport } from "@fatcat/runtime/execution-report";
 import { Session } from "@fatcat/runtime/session/session";
 import { createTools } from "@fatcat/runtime/tools";
 import type { Tools } from "@fatcat/runtime/tools";
-import { runPowerShell } from "@fatcat/runtime/internal/permissions/process";
+import { runPowerShell } from "@fatcat/runtime/internal/tools/shell/powershell";
 import { assertWorkflowTurn, captureWorkflowStart, createWorkflowFixture, editablePaths,
   prepareWorkflowFollowup, workflowCommand } from "../../tests/support/coding-workflow.js";
 import type { WorkflowEvidence } from "../../tests/support/coding-workflow.js";

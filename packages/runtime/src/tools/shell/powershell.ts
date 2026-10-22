@@ -1,16 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-
-export type ProcessResult = {
-  status: "completed" | "timed_out" | "output_limit" | "cancelled" | "spawn_failed" | "termination_failed";
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-  truncated: boolean;
-  durationMs: number;
-  cleanup: "foreground-exited" | "tree-killed" | "not-started" | "unconfirmed";
-};
-export const outputLimit = 16 * 1024;
+import { outputLimit, type ProcessResult } from "./types.js";
 
 /** Limit command inheritance to runtime/OS settings, excluding provider credentials. */
 export function commandEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -38,6 +28,8 @@ async function terminateTree(pid: number): Promise<boolean> {
 /** No profile, no stdin, and no persistent shell state between tool calls. */
 export async function runPowerShell(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<ProcessResult> {
   const started = Date.now();
+  if (signal?.aborted) return { status: "cancelled", cleanup: "not-started", exitCode: null,
+    stdout: "", stderr: "", truncated: false, durationMs: 0 };
   const script = `$ErrorActionPreference = 'Stop'
                   $ProgressPreference = 'SilentlyContinue'
                   [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false

@@ -18,7 +18,7 @@ Fatcat 是面向本地编码任务的 TypeScript Agent Harness。CLI、chat、TU
 
 `packages/commands/src/` 持有共享命令、会话标签、参数工具和交互确认状态，通过 `@fatcat/commands` 及明确子路径导出。客户端可依赖 commands 与 runtime，commands 只依赖 runtime；runtime 不反向依赖命令。`packages/cli/src/` 持有 CLI/chat、终端输入与审批展示，以及应用版本读取；CLI 依赖共享核心、commands 和两个可选界面包，界面不反向依赖 CLI；`packages/tui/src/` 通过 `@fatcat/tui` 提供惰性启动入口，保留 App、视图、遥测和终端生命周期；`packages/webui/src/` 通过 `@fatcat/webui` 提供惰性启动入口，持有 HTTP、Controller、浏览器视图和资源；两个客户端包彼此独立。`packages/verification/tests/` 和 `packages/verification/verify/` 集中保留离线契约与环境验证，由 verification 包独立编译；根 `scripts/start.ts` 保留 pnpm 调用目录适配，根命令继续编排构建与验证。验证包只向产品包单向依赖，不暴露库接口，任何产品包都不能导入它。原运行核心路径已移除，不提供兼容转发；运行命令、持久格式、锁与状态所有权不变。构建、导出与依赖规则见[开发规范](../DEVELOPMENT.md#workspace-package-boundaries)。
 
-独立开发包 `@fatcat/eval` 在 `packages/eval/` 维护实验协议、结果校验、统计及自己的离线测试。产品包不得依赖 eval；eval 与 verification 互不依赖。当前 eval 没有产品依赖或公共导出，不执行 Session 或模型；后续适配保持产品运行状态所有权。详见 [Eval](EVAL.md)。
+独立开发包 `@fatcat/eval` 在 `packages/eval/` 维护实验协议、注入模型的 Session/promptfoo 适配、结果校验、统计及自己的离线测试。产品包不得依赖 eval；eval 与 verification 互不依赖。Eval 使用审阅过的 `@fatcat/runtime` 导出，自身没有公共导出；Session、Context、工具、权限和持久化所有权仍在 runtime。真实模型评测仍属独立范围。详见 [Eval](EVAL.md)。
 
 <a id="call-chain-and-state-ownership"></a>
 

@@ -14,8 +14,12 @@
     "build": "tsc",
     "test": "node dist/scripts/test.js"
   },
+  "dependencies": {
+    "@fatcat/runtime": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "24.13.5",
+    "promptfoo": "0.124.1",
     "typescript": "7.0.2"
   }
 }

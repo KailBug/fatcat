@@ -1,0 +1,7 @@
+ARG FATCAT_IMAGE=fatcat-kai43-injected:local
+FROM ${FATCAT_IMAGE}
+
+# Export the reviewed Linux build and dependencies, never /app or task answers.
+RUN mkdir /fatcat-export && cp /usr/local/bin/node /fatcat-export/node && \
+    tar --exclude='.env' --exclude='.env.*' --exclude='.git' \
+    -czf /fatcat.tar.gz -C /fatcat-export node -C /opt fatcat

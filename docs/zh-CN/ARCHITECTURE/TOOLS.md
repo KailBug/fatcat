@@ -51,7 +51,7 @@ query 是区分大小写的单行字面子串，不支持正则、glob 或跨行
 
 遍历超限失败并要求缩小范围；递归搜索可跳过超大/编码不支持的候选，返回 skippedFiles 与 complete=false。complete=true 只表示本次发现的候选没有这类跳过，不保证整个磁盘覆盖或扫描期间不变。每页重新遍历，不解析 .gitignore，也没有索引缓存。
 
-普通模式的名称、扩展名与链接规则由 Workspace/text-file 落实；Free to go 使用扩大的本地访问范围，仍保留编码、大小及身份检查。准确扩展名集合以 `packages/runtime/src/permissions/text-file.ts` 为准。读取内容进入模型及明文历史，不等于脱敏。
+普通模式的名称、扩展名与链接规则由 Workspace/text-file 落实；CSV 和 TSV 的读取、搜索、写入均使用相同的有界 UTF-8 文本访问。Free to go 使用扩大的本地访问范围，仍保留编码、大小及身份检查。准确扩展名集合以 `packages/runtime/src/permissions/text-file.ts` 为准。读取内容进入模型及明文历史，不等于脱敏。
 
 <a id="write-publication-protocol"></a>
 

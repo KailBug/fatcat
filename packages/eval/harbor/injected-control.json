@@ -1,0 +1,100 @@
+{
+  "evidence": "injected-harbor-integration",
+  "recordedAt": "2026-10-23T07:11:46.7476898Z",
+  "sourceBaseCommit": "0a77c01091181ab49f2de0165d621aeeb52a7845",
+  "sourceWorkingTree": "Uncommitted KAI-44 review increment; the bundle hash binds the Linux executable and all compiled packages. Adapter source is separately hashed.",
+  "task": "terminal-bench/sound-change-cascade",
+  "taskRevision": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+  "taskChecksum": "76f28b6db6767d19a1fb176db6f80dad5427cc3fa8a3dae8dea461d26d518b99",
+  "harborVersion": "0.23.0",
+  "nodeVersion": "24.19.0",
+  "pnpmVersion": "11.21.0",
+  "dockerVersion": "29.7.2",
+  "bundleSha256": "aae83c6a8402223889829ab309ad0333968b291a2ebf02a2a66c3af51393c39b",
+  "compiledFilesVerified": 1038,
+  "adapterSha256": "f7b50fd0d659c509dbe70fb6ff822a442feb12c0837645fa05985d2541f71ab0",
+  "bundleImageId": "sha256:d7928e1ce612002d1ef019cb3a9308ea2ae779801cedac70b874841f8ad8bdae",
+  "resources": {
+    "cloud": false,
+    "memoryMb": 4096,
+    "cpus": 2,
+    "agentNetwork": "none"
+  },
+  "perTrial": {
+    "requests": 8,
+    "retries": 0,
+    "attempts": 1,
+    "setupTimeoutSec": 180,
+    "concurrency": 1,
+    "durationMs": 30000,
+    "harborTimeoutSec": 60
+  },
+  "smoke": {
+    "trial": "sound-change-cascade__gmuvxA9",
+    "agentStatus": "completed",
+    "scoring": "scored",
+    "rewards": {
+      "reward": 0
+    },
+    "exceptionType": null,
+    "artifactSha256": {
+      "result.json": "376c73d342d588288386587d62487db77d63bd0f659992760bd953d8fa537bf0",
+      "agent/fatcat/result.json": "84ec940845438c61e84e1e1b3f0a75658479741d6b2eb86677d3a890272c7d18",
+      "agent/fatcat/evidence.json": "5752582085683bc514bba32baf87e0792cc9acf1551494cda014e77739d70702",
+      "verifier/reward.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "verifier/ctrf.json": "6f51a7730fa43d2e6dd97c52857acff90c029ba5fcbac1c50cee0d85c04685c5",
+      "verifier/test-stdout.txt": "b67a00c72f0513fa31cbb72e843711055e6f60883700df26b6d4aec1f0ab4c04",
+      "agent/console.txt": "f21bf4cc5974b8b1688154f65e11e13e082251d76bdb9373936a897ec138d537",
+      "agent/input.json": "ba53c9b90b29cb7d34bc9327c11f0e4960387ab895839b6070486c82f528cf2c",
+      "config.json": "679b19fa50d9f7dc754c22e06311f62a060b5c8d6a794e18a0d8e8c9efafe467",
+      "lock.json": "54fd6d1ae35bd33b44bde188d450717800580376bb13e6e3a81bc4fd6ee80d02"
+    }
+  },
+  "failure": {
+    "trial": "sound-change-cascade__JJVwGNz",
+    "agentStatus": "failed",
+    "scoring": "error",
+    "rewards": {
+      "reward": 0
+    },
+    "exceptionType": "NonZeroAgentExitCodeError",
+    "artifactSha256": {
+      "result.json": "1daff21a21d6195e6549e4fbd9c2852bf9a478100eeeef8a775118aa3cb28cdb",
+      "agent/fatcat/result.json": "03e2cfdd83a8c816fa775ee09cb33ac90ff599306938ef19ab4440dad39006a8",
+      "agent/fatcat/evidence.json": "cd1b88c4e491ad8b8ad04d0ea41f9ede79e0123ddea1dc876778cd75f4f9dd71",
+      "agent/console.txt": "3bd199160118a843906ebf355abbea0581833f4304f84e2c56f5cf54b464d87c",
+      "agent/input.json": "ba53c9b90b29cb7d34bc9327c11f0e4960387ab895839b6070486c82f528cf2c",
+      "config.json": "b8c3c80a5968d25788258cddfbc84ba03102f21ef5170d986f85d5c22de0c696",
+      "lock.json": "ca5220e043ef48521e9ee718c11bb81d66d10afe142aee9127e66e93f6d77b3e",
+      "verifier/reward.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "verifier/ctrf.json": "5efca66b1118d5fafedca51381b3481ca0a22c543255849059d2401b3eb7323b",
+      "verifier/test-stdout.txt": "88663ac92f2ef17d8bf93dcecb594be5551223c5828bd795ccc24a7c77129871"
+    }
+  },
+  "checks": {
+    "windowsLinuxSkipped": 4,
+    "windowsProductPassed": 835,
+    "windowsEvalPassed": 37,
+    "pythonAdapterPassed": 4,
+    "typecheck": "passed",
+    "linuxContractsPassed": 25
+  },
+  "preparationFailures": [
+    {
+      "trial": "sound-change-cascade__mbju7qM",
+      "job": "kai44-smoke-01",
+      "resultSha256": "f62a8ba341523afbefb4b12cbe80824e0506e9205fe6c5d93ccdec2cfc2dca3b",
+      "reason": "The official verifier image build failed on an HTTP 502 from the Debian package mirror; no valid score."
+    }
+  ],
+  "limits": [
+    "Injected integration only; neither a live DeepSeek run nor a task-solving quality result.",
+    "The smoke submission is intentionally incorrect. Reward zero with no exception confirms verifier wiring.",
+    "The failure trial also records reward zero, but its execution exception classifies it as error, not a valid scored attempt.",
+    "Real token usage and cost remain null. Native Session evidence is retained; ATIF export and live execution are not implemented.",
+    "Bundles are trusted local code. Linux UI, arbitrary tasks, full-suite results and cloud execution are not certified.",
+    "The verifier preparation image is recorded separately; final Harbor-managed image IDs were not retained after automatic teardown. Official Dockerfiles use floating base tags."
+  ],
+  "verifierPreparationImageId": "sha256:3dd190f629d8683f31e61776306ad288709591e670227e72232ebf20886f46b4",
+  "harborTrialImageIds": null
+}

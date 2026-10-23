@@ -1,0 +1,261 @@
+{
+  "evidence": "live-harbor-integration",
+  "recordedAt": "2026-10-23T08:17:29.819Z",
+  "accepted": true,
+  "sourceBaseCommit": "0a77c01091181ab49f2de0165d621aeeb52a7845",
+  "sourceWorkingTree": "Uncommitted review increment; source and compiled bundle digests identify each attempt separately.",
+  "task": "terminal-bench/sound-change-cascade",
+  "taskRevision": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+  "taskChecksum": "76f28b6db6767d19a1fb176db6f80dad5427cc3fa8a3dae8dea461d26d518b99",
+  "terminalBenchVersion": "4.0.0",
+  "harborVersion": "0.23.0",
+  "nodeVersion": "v24.19.0",
+  "pnpmVersion": "11.21.0",
+  "dockerVersion": "29.7.2",
+  "model": {
+    "requested": "deepseek-flash",
+    "thinking": "high",
+    "documentedVersion": "DeepSeek-V4.1-Flash-1017",
+    "responseModels": [
+      "deepseek-flash"
+    ],
+    "exactServerRevisionReturned": false,
+    "pricing": {
+      "checkedOn": "2026-10-23",
+      "source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/",
+      "model": "deepseek-flash",
+      "documentedVersion": "DeepSeek-V4.1-Flash-1017",
+      "contextTokens": 1048576,
+      "outputTokens": 16384,
+      "inputCnyPerMillion": 2,
+      "cachedInputCnyPerMillion": 0.04,
+      "outputCnyPerMillion": 8,
+      "maximumCny": 10
+    }
+  },
+  "authorization": {
+    "totalCny": 10,
+    "cloud": false,
+    "automaticRetries": 0,
+    "requestTimeoutMs": 180000,
+    "cumulativeCnyCeiling": 7.1813132,
+    "networkRequests": 64,
+    "costBasis": "Validated usage at official peak CNY rates; conservative ceiling, not an invoice. Unknown requests retain full reservations.",
+    "requestsPerAttemptMaximum": 32
+  },
+  "resources": {
+    "cpus": 2,
+    "memoryMb": 4096,
+    "declaredStorageMb": 10240,
+    "storageQuotaEnforced": false,
+    "agentNetwork": "public Docker network for official API"
+  },
+  "attempts": [
+    {
+      "evidence": "live",
+      "accepted": false,
+      "reason": "Local 256 KiB request envelope rejected request 27 before network dispatch.",
+      "trial": "sound-change-cascade__Zu3Rizh",
+      "scoring": "error",
+      "exceptionType": "NonZeroAgentExitCodeError",
+      "agentStatus": "failed",
+      "failureCode": "MODEL_CONTEXT_LIMIT",
+      "rewards": {
+        "reward": 0
+      },
+      "networkRequests": 26,
+      "usage": {
+        "inputTokens": null,
+        "cachedInputTokens": null,
+        "outputTokens": null,
+        "costUsd": null
+      },
+      "costCnyCeiling": 2.82046936,
+      "priorCostNanoCny": 2820469360,
+      "artifactSha256": {
+        "result.json": "64758545e980a29c0807e5cc7496eda56e32157c6d3e9e76fb88dd297a876b64",
+        "config.json": "9352ef7af6044c9cd2dd63e83ff46dabd405d2fbaa28b26552dd982b741679c3",
+        "lock.json": "982e6e32b5d8482b346f8f1821b93b20bb510426429ff144177f7a1b477ddd33",
+        "agent/input.json": "06bb6ff722eda4a71ec43e6c952fe6e6d3fe5f6a4d3e812a6c414b5d857ac41e",
+        "agent/console.txt": "2d1b10ad818d900be8b2b0d980dac1a9654b275745ee19e0751c23a047dd63bc",
+        "agent/fatcat/evidence.json": "614f7958ed8869150108230c4bc7636baa007bb8ac137c9ec5b69b235919d798",
+        "agent/fatcat/result.json": "8bb945422202c8ffb9061b18f58e6bf5121b5d42c482579931a384cdb08fbe4b",
+        "verifier/reward.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "verifier/ctrf.json": "beeea2dd51d62cd7a0eaff7f7fdb21efafa5ca55de20aa95f5fb52ae49f2d1ae",
+        "verifier/test-stdout.txt": "0551254201a3963238d522fbe625891b08b0599a56fdf2df9c63dcd643769aa1"
+      },
+      "credentialScan": {
+        "files": 13,
+        "match": false
+      },
+      "bundleSha256": "187329963b9670e968428862f92bcd21ee213aa4cb439f3b399da2bf0c002ec7",
+      "sourceSnapshotSha256": "8227b938d1d6cae6ee340204dd81e3afd353c475cd0f683478de4493d0b5d02c",
+      "agentImageIds": [
+        "sha256:1987ab41d32663506eeaad55f5c6e2d4011ae5c83e9b67c63262d62650f7da57"
+      ],
+      "maxRequestBytes": 262144,
+      "limits": {
+        "requests": 32,
+        "durationMs": 1800000,
+        "requestTimeoutMs": 180000,
+        "harborTimeoutSec": 1830
+      }
+    },
+    {
+      "trial": "sound-change-cascade__skdKawm",
+      "scoring": "error",
+      "agentStatus": "failed",
+      "failureCode": "MODEL_TRUNCATED",
+      "cleanup": "removed",
+      "rewards": {
+        "reward": 0
+      },
+      "exceptionType": "NonZeroAgentExitCodeError",
+      "startedAt": "2026-10-23T07:59:01.461Z",
+      "finishedAt": "2026-10-23T08:09:25.941Z",
+      "durationMs": 624503,
+      "networkRequests": 30,
+      "usage": {
+        "inputTokens": null,
+        "cachedInputTokens": null,
+        "outputTokens": null,
+        "costUsd": null
+      },
+      "usageComplete": true,
+      "costCnyCeiling": 4.22258008,
+      "priorCostNanoCny": 2820469360,
+      "bundleSha256": "208a496792131ad3a2cb53a578d6c3d7a2b502ae8a9f2d094d62fa7d4b435ea1",
+      "sourceSnapshotSha256": "1d1c50136f7581e98b626b809bd332e4cd49b8dac0a984a52f71a8745c6e7f53",
+      "adapterSha256": "d6900ace45634d297a2f2e6cd867b04df7f1e7bd20327711277f4e4ee35a465f",
+      "agentImageIds": [
+        "sha256:c92e4a9da026b948c2fe79f7870b360b0788726e126abe8f65807fa34240d21a"
+      ],
+      "maxRequestBytes": 1048576,
+      "verifierTests": {
+        "total": 7,
+        "passed": 0
+      },
+      "artifactSha256": {
+        "result.json": "0f808e4f31dcae0b870c3c3590ccc8bace25ef3d3753a5b8b3422741866eb294",
+        "config.json": "c534e4f1bfd7891c3ae63b11aa9ac5e5968631d15a25b165abb253c3b0a470f0",
+        "lock.json": "9a42529f5bab45b170792a374520fa762e5b333ccccf7ad4a77d43fd9b6564c1",
+        "agent/input.json": "06bb6ff722eda4a71ec43e6c952fe6e6d3fe5f6a4d3e812a6c414b5d857ac41e",
+        "agent/console.txt": "a98b81a8874234244f8aae6c60c314a72b1a3a4350e963734e8fe000610d91ab",
+        "agent/fatcat/evidence.json": "f2b84ae8b888f9cfbcdf9372b81c4a7bea66716a61fb600b18d2a5ba31be927b",
+        "agent/fatcat/result.json": "4ede1249a26d1c7059ab5d69da141e9d6065a0958c134b6b3184ac7fd7a6a7a1",
+        "verifier/reward.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "verifier/ctrf.json": "c20e4727535017bdc7a03a02ef15dc9435ec248aab2715a726f07720499b29dc",
+        "verifier/test-stdout.txt": "88663ac92f2ef17d8bf93dcecb594be5551223c5828bd795ccc24a7c77129871"
+      },
+      "credentialScan": {
+        "files": 13,
+        "match": false
+      },
+      "limits": {
+        "requests": 32,
+        "durationMs": 1800000,
+        "requestTimeoutMs": 180000,
+        "harborTimeoutSec": 1830
+      }
+    },
+    {
+      "trial": "sound-change-cascade__omAwvRj",
+      "scoring": "scored",
+      "agentStatus": "completed",
+      "failureCode": null,
+      "cleanup": "removed",
+      "rewards": {
+        "reward": 0
+      },
+      "exceptionType": null,
+      "startedAt": "2026-10-23T08:15:06.043Z",
+      "finishedAt": "2026-10-23T08:15:21.783Z",
+      "durationMs": 15742,
+      "limits": {
+        "requests": 8,
+        "durationMs": 600000,
+        "requestTimeoutMs": 180000,
+        "harborTimeoutSec": 630
+      },
+      "networkRequests": 8,
+      "usage": {
+        "inputTokens": null,
+        "cachedInputTokens": null,
+        "outputTokens": null,
+        "costUsd": null
+      },
+      "usageComplete": true,
+      "costCnyCeiling": 0.13826376,
+      "priorCostNanoCny": 7043049440,
+      "bundleSha256": "208a496792131ad3a2cb53a578d6c3d7a2b502ae8a9f2d094d62fa7d4b435ea1",
+      "sourceSnapshotSha256": "1d1c50136f7581e98b626b809bd332e4cd49b8dac0a984a52f71a8745c6e7f53",
+      "adapterSha256": "d6900ace45634d297a2f2e6cd867b04df7f1e7bd20327711277f4e4ee35a465f",
+      "agentImageIds": null,
+      "maxRequestBytes": 1048576,
+      "verifierTests": {
+        "total": 7,
+        "passed": 0
+      },
+      "taskCompletion": "Neither required submission file was produced. Fatcat reported the unfinished work. This is integration acceptance, not task success.",
+      "artifactSha256": {
+        "result.json": "ca98ced3fb39a67148d3915d6c0328d1f9558aac12b9bf389e63a7abc5a73f4e",
+        "agent/fatcat/result.json": "57d36ff2ef0b14b2700fb09bd83ca43649a2b3898269d499b479e836c34cff5f",
+        "agent/fatcat/evidence.json": "cac0f2f1aa07774e415047b6546c85ec92abfd4233387bde200c09fad3d47f42",
+        "verifier/reward.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "verifier/ctrf.json": "e0aaa8c080070e2c3fc8481b4c20869918c5160ca95e5d28300d28177422df92",
+        "verifier/test-stdout.txt": "0551254201a3963238d522fbe625891b08b0599a56fdf2df9c63dcd643769aa1",
+        "agent/console.txt": "e803c63949e889887fe5c232af3b06cb843551956be2a685c0595167d192249e",
+        "agent/input.json": "9f74e3c68c4609ba647489b121823d52e3361860cae8f11e2fbaeb0593859d8b",
+        "config.json": "b876a414a6441c11950d7db14bc3ecc9fc28e601fadac2a4d14a42c69fa39a37",
+        "lock.json": "d18d147e25e20d00ff7b26352003b75ccf7b174971921a757ddc939a52bc804a"
+      },
+      "credentialScan": {
+        "files": 13,
+        "match": false
+      }
+    }
+  ],
+  "currentInjectedPreflight": {
+    "evidence": "injected",
+    "expectation": "completed",
+    "trial": "sound-change-cascade__MffopHR",
+    "agentStatus": "completed",
+    "scoring": "scored",
+    "rewards": {
+      "reward": 0
+    },
+    "exception": null,
+    "modelRequestsSentToNetwork": 0,
+    "artifactSha256": {
+      "result.json": "6e964acfcfb192fa53a9b58e0ee01437479df81c45819ea44d316256de830747",
+      "agent/fatcat/result.json": "84ec940845438c61e84e1e1b3f0a75658479741d6b2eb86677d3a890272c7d18",
+      "agent/fatcat/evidence.json": "864983214159533d16c66b6f004e9e674fee5849842e1bde65e9895cd2f64266",
+      "verifier/reward.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "verifier/ctrf.json": "09406bca4493e375c602ec7bf5ad07651f990f7449ec0fcced21d5c099a4d354",
+      "verifier/test-stdout.txt": "ad1765d479d514b61e22483f48c164cdfe22a1cc527d6257c0b104ec79ba3278",
+      "agent/console.txt": "f21bf4cc5974b8b1688154f65e11e13e082251d76bdb9373936a897ec138d537",
+      "agent/input.json": "ba53c9b90b29cb7d34bc9327c11f0e4960387ab895839b6070486c82f528cf2c",
+      "config.json": "786e1a8affc369f08bf4aeced6e819465e788d1fb217692e376a4f42e232c9ea",
+      "lock.json": "0c452063ea8299ae74ce2e8a743217231fd6f9eecb4d40c2a08093e91ce190ab"
+    }
+  },
+  "checks": {
+    "evalPassed": 44,
+    "productPassed": 835,
+    "productLinuxOnlySkipped": 4,
+    "currentLinuxPassed": 32,
+    "pythonAdapterPassed": 6,
+    "compiledFilesVerified": 1053,
+    "typecheck": "passed",
+    "packageBoundaries": "passed"
+  },
+  "limits": [
+    "One selected official task; not a full-suite or leaderboard result.",
+    "Native trajectory, not an ATIF export. USD invoice cost remains unknown.",
+    "API responses identify the alias only; the dated official mapping supplies the documented revision.",
+    "Raw task data, credentials-free trajectories and failed jobs remain in ignored local storage; no result upload.",
+    "Official task Dockerfiles use floating base/package versions. Agent image IDs were captured for the first two attempts; the final short attempt and verifier images were removed by Harbor before identity capture. Bundle/source hashes remain available.",
+    "The two 32-request attempts failed (local 256 KiB envelope, then provider output truncation at 16,384 tokens). The accepted 8-request attempt has reward 0 and no completed submission. No long-task success is claimed."
+  ],
+  "acceptedTrial": "sound-change-cascade__omAwvRj"
+}

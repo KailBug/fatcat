@@ -358,7 +358,7 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 
 运行前声明范围、样本、重复、代码/模型/数据/prompt/策略/grader 身份及预算。保留全部失败/超时/取消/基础设施错误。开发与留出 ID 固定且不相交；留出只验收，不迭代调优。缺记录即不完整，不缩分母或只挑最好。子集不等于全 benchmark，合成/注入不等于 live。Dirty 实验仅诊断，除非另有可复现快照机制，v1 没有。未知计数/价格保持 null（显示 unknown），部分 usage 标已知小计，不冒充总量。预算声明不实施限制或授权花费。
 
-通用注入 runner 目前落实单次请求额度和截止时间，token、金额及整轮限制仍是声明。后续付费 Harbor／Terminal-Bench 执行按[当前策略](ARCHITECTURE/EVAL.md#current-evaluation-strategy)暂停；保留另行 review 的适配器／预算工作，但不将其视为完整实验预算实施。通用真实编排、成对质量报告和定时／手动质量命令继续后置。既有 DeepSeek 验证命令保持供应商约束及单独授权要求；历史预算不授权新的评测调用。
+通用注入 runner 目前落实单次请求额度和截止时间，token、金额及整轮限制仍是声明。保留的 [DeepSeek／Harbor 路径](ARCHITECTURE/EVAL.md#authorized-deepseek-attempt)有范围较窄的共享请求／人民币费用闸门，不等于完整实验预算实施；该路径及更大规模真实模型评测均按当前策略暂停。通用真实编排、成对质量报告和定时／手动质量命令继续后置。既有 DeepSeek 验证命令保持供应商约束及单独授权要求；历史预算不授权新的评测调用。
 
 <a id="version-and-badges"></a>
 

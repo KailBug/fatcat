@@ -8,7 +8,7 @@
 
 [架构总览](README.md) · [开发检查与证据要求](../DEVELOPMENT.md#evaluation-evidence-requirements)
 
-`packages/eval` 是独立开发包，管理实验定义、注入模型的 Session 执行、结果记录和统计。它通过现有包导出调用 runtime 的 Session、Loop、Context、工具及存储，所有权仍在 runtime。产品包不依赖它；它与 verification 互不依赖。真实模型执行、自动数据集下载管理、整轮预算调度和通用实验 CLI 尚未实现；下述注入无界面入口已可用于固定的 Linux 任务环境。
+`packages/eval` 是独立开发包，管理实验定义、注入模型的 Session 执行、结果记录和统计。它通过现有包导出调用 runtime 的 Session、Loop、Context、工具及存储，所有权仍在 runtime。产品包不依赖它；它与 verification 互不依赖。注入无界面入口和范围有限的 DeepSeek／Harbor 真实路径已可用于固定的 Linux 任务环境；自动数据集下载管理、整轮预算调度和通用实验 CLI 尚未实现。真实路径保留，但按下述策略暂停运行。
 
 <a id="current-evaluation-strategy"></a>
 
@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | 离线契约与故障夹具 | 受影响 runtime、产品及 eval 改动的默认验证 | 使用假凭据和确定性输入，检查解码、状态迁移、权限、请求计数、证据与清理 |
 | 注入 Session 与工具流程 | 执行或接入发生变化时的默认验证 | 用受信任的注入响应驱动真实 Session／Loop／Context、文件、shell 和持久化；按改动范围运行原生 Windows 或 Linux 检查 |
-| 本地注入 Linux 或 Harbor Oracle 对照 | 适配器、任务环境或官方评分接线变化时的专项检查 | 使用已有 headless 检查及官方 Oracle／verifier，不请求真实模型；Docker／镜像／下载是额外本地依赖，不要求每次修改都运行 |
+| 本地 Harbor 注入或 Oracle 对照 | 适配器、任务环境或官方评分接线变化时的专项检查 | 保留 installed agent 桥接和官方 verifier，不请求真实模型；Docker／镜像／下载是额外本地依赖，不要求每次修改都运行 |
 | Harbor 配合真实模型运行 Terminal-Bench | 暂停，保留给未来具备预算的评测 | 新改动的官方解题质量保持未评估，直到另行授权并完成真实评测 |
 
 根据[开发文档](../DEVELOPMENT.md#evaluation-evidence-requirements)选择与改动相称的检查。固定夹具通过只证明对应契约；Oracle reward 验证参考解答／环境，注入 reward 验证评分接线，两者均不是 Fatcat 真实模型成功率。历史真实结果保留原模型、配置、失败和限制，不验证后续改动。不得把合成用量、未知费用或更少 token 解释成实测 API 节省或任务质量提升。
@@ -42,7 +42,7 @@ Review 验收以相关离线／注入检查、真实结果和明确的剩余限�
 
 ### 保留 Harbor 路线与恢复条件
 
-Harbor 仍是未来 Terminal-Bench 评测的预定路线：保留任务／版本固定信息、官方 verifier、Linux 指南和全部已记录的对照及失败，并保留另行 review 的适配器工作。不得用夹具分数替代官方真实模型结果，也不因暂停付费而移除接入。
+Harbor 仍是未来 Terminal-Bench 评测的预定路线：保留适配器、任务／版本固定信息、官方 verifier、Linux 指南和全部已记录的对照及失败。不得用夹具分数替代官方真实模型结果，也不因暂停付费而移除接入。
 
 只有新的明确恢复指令及约定的范围、费用上限，才能恢复付费评测。恢复前重新核对模型可用性、现行价格、任务／Harbor 版本和实际生效的请求／时间／费用限制，再验证受影响的离线／注入路径。先做有界的官方单题试跑，只有预算依据充分时才扩展至声明的子集或全集。此次暂停后，原 KAI-44 的 10 元授权及任何剩余额度都不再构成继续运行的授权。代码 review、测试通过或保留的命令示例均不会自动恢复付费执行。这是开发策略，本次不新增运行时禁用开关。
 
@@ -61,7 +61,10 @@ Harbor 仍是未来 Terminal-Bench 评测的预定路线：保留任务／版本
 | `src/session-runner.ts` | 经 runtime 执行一次隔离尝试；事件、用量、取消、证据、清理与独立评分 |
 | `src/promptfoo-provider.ts` | 将样本／次数交给 runner，返回输出及结果元数据的薄 provider |
 | `src/harbor-result.ts` | 离线读取绑定哈希的 Harbor 单步骤 trial 结果；保留 reward、异常和可空用量，不另行评分 |
-| `src/headless.ts`、`scripts/headless.ts` | 注入模型的任务目录 Session 执行、明确限制／策略、持久证据与入口信号生命周期 |
+| `src/headless.ts`、`scripts/headless.ts` | 共享任务目录 Session 执行与注入入口、明确限制／策略、持久证据与入口信号生命周期 |
+| `src/deepseek-headless.ts`、`src/deepseek-budget.ts`、`scripts/headless-live.ts` | 保留但暂停的 DeepSeek 入口，提供限定日期的共享请求／人民币费用闸门及临时凭据读取／删除 |
+| `harbor/fatcat_agent.py`、`harbor/Dockerfile.bundle` | Harbor 0.23.0 installed agent 桥接与明确的 Linux 包导出；注入模式及保留但暂停的真实模式 |
+| `scripts/verify-harbor.ts` | 检查保留的官方 trial 及原生注入／真实证据，不发起新模型调用或另行评分 |
 | `harbor/`、`scripts/verify-linux.ts` | 固定官方任务／控制端依赖、Oracle／镜像元数据和真实 Linux 验收 |
 | `tests/`、`scripts/test.ts` | 本包合成数据、文件往返、统计与包集成回归；源码清单驱动的离线入口 |
 
@@ -171,7 +174,7 @@ Harbor 仍是未来 Terminal-Bench 评测的预定路线：保留任务／版本
 | [KAI-43](https://linear.app/kailtian/issue/KAI-43) | 固定 Linux 任务环境与注入模型的核心无界面执行；实现与复跑方式见下文 |
 | [KAI-44](https://linear.app/kailtian/issue/KAI-44) | KAI-43 之后直接接入 Harbor，先注入验证，再运行一次明确授权的 DeepSeek 单题尝试并保存官方证据 |
 
-KAI-43 新增 Linux 执行与注入模型的无界面入口；KAI-44 的 Harbor installed agent 和真实模型评分仍单独实施。Windows 原生仍是产品路径，Linux／容器作为新增评测路径。本增量不包含 TUI／Web UI 移植、新沙盒、本地替代题库或 Context／RAG 重构。
+KAI-43 新增 Linux 执行与注入模型的无界面入口；KAI-44 增加 Harbor installed agent 桥接、注入对照与明确授权的 DeepSeek 单题执行路径。Windows 原生仍是产品路径，Linux／容器作为新增评测路径。本增量不包含 TUI／Web UI 移植、新沙盒、本地替代题库或 Context／RAG 重构。
 
 <a id="kai-43-execution-plan"></a>
 
@@ -204,9 +207,33 @@ KAI-43 新增 Linux 执行与注入模型的无界面入口；KAI-44 的 Harbor 
 
 原模板已替换为 [Linux 评估](../GUIDES/LINUX_EVAL.md) 中的具体命令。`scripts/verify-linux.ts` 验证真实任务目录集成；产品进程／路径合同仍放 verification，评估编排合同仍放 eval，两个开发包互不导入。独立 Python 依赖快照用于 Windows Harbor 控制端；Fatcat JavaScript 依赖仍全部使用 pnpm 和现有锁文件。
 
-无界面证据包含已准备的请求正文（不含 SDK headers）、事件、当前 Session 历史／中断、用量消费、写入、命令结果、平台及临时状态位置；`result.json` 记录最终状态与清理。这些是注入集成证据，不是通用 EvalResult 判分或 Harbor reward。证据可能包含任务文本，需私密处理。发布或磁盘失败可能留下不完整产物／私有状态；没有覆盖、自动恢复、沙箱、token／金额上限或全实验预算，完整预算合同仍归 KAI-23。
+无界面证据包含已准备的请求正文（不含 SDK headers）、事件、当前 Session 历史／中断、用量消费、写入、命令结果、平台及临时状态位置；`result.json` 记录最终状态与清理。证据明确区分注入与真实执行；官方 reward 归 Harbor。证据可能包含任务文本，需私密处理。发布或磁盘失败可能留下不完整产物／私有状态；没有覆盖、自动恢复或沙箱。下文真实路径提供范围有限的请求／费用闸门；完整实验预算合同仍归 KAI-23。
 
-KAI-44 的真实接入验收要求实际运行获授权的模型、正常完成官方 verifier，并保留数值 reward（有效零分也可）、轨迹及可用用量／费用。该条件继续用于 Harbor 路线，不构成暂停期间重新付费评测的指令。环境失败、未执行或缺少评分都不能满足该里程碑。源码／镜像／版本身份和每次失败尝试必须与所选任务的有效结果区分。
+KAI-44 的真实接入验收要求实际运行获授权的模型、正常完成官方 verifier，并保留数值 reward（有效零分也可）、轨迹及可用用量／费用。已记录的验收见下文；这条条件不构成暂停期间重新付费评测的指令。环境失败、未执行或缺少评分都不能满足该里程碑。源码／镜像／版本身份和每次失败尝试必须与所选任务的有效结果区分。
+
+<a id="harbor-installed-agent-injection"></a>
+
+## Harbor installed agent 注入
+
+`harbor/fatcat_agent.py:FatcatAgent` 实现 Harbor 0.23.0 的 `BaseInstalledAgent`。薄 Python 桥接是 Harbor Python 集成接口的要求；执行、限制、权限、Session、Loop 和 Context 仍在现有 TypeScript 模块内。它上传并校验调用方审核的 Linux 包，安装到 `/app` 外，将原始题面以 UTF-8 JSON 传入，并以空的继承环境启动既有 headless 可执行入口。导出包排除 `.env` 文件和 Git 元数据，包括依赖中自带的副本。包属于受信任的可执行代码，不是沙箱化的上传内容。
+
+注入模式拒绝模型名称，两种模式都拒绝 Agent 环境变量覆盖。注入运行沿用 1–32 次请求／100–120000 ms 限制及明确的 workspace-write／shell-allow 策略。入口负责自身期限和信号取消后的收尾；外层 Harbor 超时或宿主突然中断可能留下不完整证据，依赖 Harbor 容器销毁。桥接不替代 Harbor 的任务准备、产物传输或独立官方 verifier。原生 `agent/fatcat/evidence.json` 保存请求、Session 历史、工具结果和合成用量，不是 ATIF 导出。Harbor token／费用字段保持 null，因为 fixture 计数不是服务商账单。
+
+`tests/fixtures/harbor-smoke.ts` 发起真实 read／write／shell 调用，写入故意不正确的恒等规则及顺序。官方 verifier 应返回 reward 0：两个完全匹配检查失败，五个结构／确定性检查通过。这说明评分接线可用，不说明题目已解出。`harbor-failure.ts` 注入服务商失败；入口以非零退出，Harbor 必须保留异常。`scripts/verify-harbor.ts` 检查这些产物并写出哈希，不修改官方测试或计算替代分数。Windows 离线测试通过 Session 覆盖相同 transport；独立 Python 测试使用固定版本桥接且不启动 Docker。命令和当前证据限制见 [Linux 评估](../GUIDES/LINUX_EVAL.md#harbor-injected-adapter)。
+
+<a id="authorized-deepseek-attempt"></a>
+
+## 获授权的 DeepSeek 尝试
+
+**按[当前评估策略](#current-evaluation-strategy)暂停运行。** 本节记录保留的实现与历史证据，不构成付费授权。恢复需要新的明确指令及预算；此前的 10 元上限不是持续额度。
+
+同一桥接支持明确的 `mode=live`、`deepseek/deepseek-flash`，且不接受注入模块。`scripts/headless-live.ts` 调用同一个 `runHeadlessSession` 和既有模型 SDK，使用 high 思考、全局最多 32 请求、单请求 180 秒和整次 30 分钟期限。SDK 与 Harbor 都不重试。`src/deepseek-headless.ts` 组装真实配置，编码后请求正文上限为 1 MiB；注入路径保持 256 KiB。这是字节限制，与服务商 token 窗口分别计算。临时凭据文件位于任务和日志目录外，在 Session 启动前读取并删除；凭据不进入命令参数、环境覆盖或保留配置。
+
+`src/deepseek-budget.ts` 包裹全部 SDK 请求，包括子任务和压缩。发送前，按官方缓存未命中高峰价预留服务商完整 1,048,576 token 上下文，加本次输出上限（最多 16,384 token）的费用。以整数纳元计数，累计保留费用加预留超过人民币 10 元则拒绝发送。在同一授权下手动继续时，必须用全部此前尝试的费用上界之和填入 `prior_cost_nano_cny`；新进程不能成为重置授权总额的理由。只有合法响应用量才退回多余预留；缺失用量、失败响应和超时均保留预留。缓存用量未知按未命中计算。拒绝重定向、其他端点／模型、流式和服务端工具。这是限定日期与模型的费用规则，不是通用计费引擎；真实入口要求价格日期覆盖本次运行，跨日期需重新核价。
+
+账本保存响应 ID／模型字符串、可空用量、费用上界及停止原因。官方文档中的模型版本和价格来源，与 API 实际返回的模型身份分别记录。费用按人民币高峰价计算，是保守估算，不是账单；Harbor 美元费用保持 null。完整的真实 token 计数会写入 Harbor 用量。`verify-harbor --expect live` 要求执行完成、官方评分正常、七项 verifier 测试结束、真实响应记录存在且费用上界在授权内。有效零分如实保留，执行失败仍是失败。
+
+已记录的接入验收及较长尝试失败维护在 [Linux 评估](../GUIDES/LINUX_EVAL.md#authorized-live-attempt) 和 [真实运行对照元数据](../../../packages/eval/harbor/live-control.json)。接入验收不代表 Fatcat 解出题目，也不代表完成 KAI-23 的完整预算工作。
 
 <a id="future-work-boundaries"></a>
 
@@ -214,4 +241,4 @@ KAI-44 的真实接入验收要求实际运行获授权的模型、正常完成�
 
 [KAI-23](https://linear.app/kailtian/issue/KAI-23) 在扩大真实评测前补齐整轮预算、重试／委派用量及费用覆盖；其中 harness 计费逻辑可以用合成响应开发。[KAI-24](https://linear.app/kailtian/issue/KAI-24)（LongMemEval）、[KAI-25](https://linear.app/kailtian/issue/KAI-25)（BEIR）、[KAI-26](https://linear.app/kailtian/issue/KAI-26)（Context 质量比较）和 [KAI-27](https://linear.app/kailtian/issue/KAI-27)（质量命令／CI／结果）继续后置，不阻塞 harness 可靠性工作。[KAI-42](https://linear.app/kailtian/issue/KAI-42) 仅在本地证据不足时考虑 Langfuse，不自动上传。[KAI-52](https://linear.app/kailtian/issue/KAI-52) 保留为未来 Harbor／Terminal-Bench 路线，在明确恢复预算并具备完整预算控制前暂停：恢复后核对 GPU／资源，以少量获批任务试算成本，再考虑固定官方全集及同版本 Codex 榜单比较。子集不得作为完整榜单结果。这些保留计划均不会自动恢复付费执行。
 
-离线测试不读取 `.env`、调用真实模型或授权花费。Windows 原生交互、Linux 任务执行、公开 benchmark 和真实模型质量分别验收；注入成功只证明集成契约。token、金额和整轮实验预算仍如上文所述只是声明，增加结果读取器不会落实这些限额。
+离线测试不读取 `.env`、调用真实模型或授权花费。Windows 原生交互、Linux 任务执行、公开 benchmark 和真实模型质量分别验收；注入成功只证明集成契约。通用实验预算仍只是声明；上述特定 DeepSeek 尝试闸门不代表已完成 KAI-23，也不授权扩大运行。

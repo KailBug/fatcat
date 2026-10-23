@@ -46,6 +46,24 @@ test("list and read support nested Windows paths and UTF-8 without modifying fil
   assert.deepEqual(await call(tools, "read", "bom.txt"), { ok: true, result: { kind: "file", path: "bom.txt", offset: 0, totalLines: 1, startLine: 1, endLine: 1, content: "Hello", truncated: false, nextOffset: null } });
 });
 
+test("TSV files retain ordinary UTF-8 text, search and write boundaries", async (t) => {
+  const { workspace } = await temporaryWorkspace(t);
+  await writeFile(join(workspace, "data.tsv"), "proto\tmodern\n");
+  const tools = await createTools(workspace, "workspace-write");
+  const read = await call(tools, "read", "data.tsv");
+  assert.equal(read.ok, true);
+  if (read.ok) assert.equal((read.result as { content: string }).content, "proto\tmodern\n");
+  const search = await tools.execute("read", JSON.stringify({ path: ".", query: "modern" }));
+  assert.equal(search.ok, true);
+  assert.match(JSON.stringify(search), /data.tsv/);
+  assert.equal((await tools.execute("write", JSON.stringify({ path: "output.tsv", content: "a\tb\n" }))).ok, true);
+  assert.equal(await readFile(join(workspace, "output.tsv"), "utf8"), "a\tb\n");
+  await writeFile(join(workspace, "binary.tsv"), Buffer.from([65, 0, 66]));
+  hasCode(await call(tools, "read", "binary.tsv"), "UNSUPPORTED_FILE");
+  const readOnly = await createTools(workspace, "read-only");
+  hasCode(await readOnly.execute("write", JSON.stringify({ path: "denied.tsv", content: "a\tb" })), "PERMISSION_DENIED");
+});
+
 test("path validation rejects traversal, absolute, device, stream, and hidden paths", async (t) => {
   const { workspace, outside } = await temporaryWorkspace(t);
   await writeFile(join(outside, "secret.txt"), "outside-only");

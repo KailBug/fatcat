@@ -7,7 +7,7 @@ import type { Workspace } from "./workspace.js";
 export const maxFileBytes = 1024 * 1024;
 export const textExtensions = new Set([
   ".txt", ".md", ".json", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-  ".yaml", ".yml", ".toml", ".csv", ".html", ".css", ".xml", ".sql", ".py",
+  ".yaml", ".yml", ".toml", ".csv", ".tsv", ".html", ".css", ".xml", ".sql", ".py",
 ]);
 
 type Target = Awaited<ReturnType<Workspace["resolvePath"]>>;

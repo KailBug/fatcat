@@ -43,7 +43,7 @@ query is a case-sensitive, single-line literal substring, not regex, glob or mul
 
 Traversal overflow fails and asks for narrower scope. Recursive search may skip oversized/unsupported-encoding candidates, returning skippedFiles and complete=false. complete=true only means discovered candidates had no such skips, not full-disk coverage or an unchanged scan. Each page traverses again, without .gitignore parsing or index caching.
 
-Workspace/text-file enforce ordinary naming, extension and link rules. Free to go broadens local access while retaining encoding, size and identity checks. `packages/runtime/src/permissions/text-file.ts` defines the exact extension set. Reads enter model input and plaintext history without implying redaction.
+Workspace/text-file enforce ordinary naming, extension and link rules. CSV and TSV use the same bounded UTF-8 text access for read, search and write. Free to go broadens local access while retaining encoding, size and identity checks. `packages/runtime/src/permissions/text-file.ts` defines the exact extension set. Reads enter model input and plaintext history without implying redaction.
 
 ## write publication protocol
 

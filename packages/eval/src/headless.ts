@@ -20,7 +20,7 @@ export interface HeadlessOptions {
 	durationMs: number;
 }
 
-export function parseHeadlessOptions(value: unknown): HeadlessOptions {
+export function parseHeadlessOptions(value: unknown, evidence: "injected" | "live" = "injected"): HeadlessOptions {
 	const raw = object(value, ["taskCwd", "instruction", "resultDirectory", "permission", "requests", "durationMs"], "headless options");
 	const taskCwd = text(raw.taskCwd, "taskCwd");
 	const resultDirectory = text(raw.resultDirectory, "resultDirectory");
@@ -35,14 +35,31 @@ export function parseHeadlessOptions(value: unknown): HeadlessOptions {
 	}
 	const requests = count(raw.requests, "requests", 1);
 	const durationMs = count(raw.durationMs, "durationMs", 100);
-	if (requests > 32 || durationMs > 120000) throw new Error("Injected runs are limited to 32 requests and 120 seconds.");
+	const maximumDuration = evidence === "live" ? 1800000 : 120000;
+	if (requests > 32 || durationMs > maximumDuration) throw new Error(`Runs are limited to 32 requests and ${maximumDuration / 1000} seconds.`);
 	return { taskCwd, instruction, resultDirectory, permission: { files: permission.files, shell: permission.shell }, requests, durationMs };
 }
 
-/** Execute in the caller's task directory; Session owns state and the runtime owns all tool policy. */
 export async function runHeadlessTask(input: HeadlessOptions, createTransport: () => typeof fetch, signal?: AbortSignal) {
 	const options = parseHeadlessOptions(input);
-	if (typeof createTransport !== "function") throw new Error("An explicit injected transport factory is required.");
+	const config: Config = { provider: "deepseek", region: "global", model: "deepseek-flash", thinking: "off",
+		apiKey: "fatcat-headless-injected", maxIterations: options.requests, maxRequestBytes: 262144,
+		requestTimeoutMs: Math.min(options.durationMs, 30000), autoCompaction: true };
+	return runHeadlessSession(options, { evidence: "injected", config, createTransport }, signal);
+}
+
+export interface HeadlessModel {
+	evidence: "injected" | "live";
+	config: Config;
+	createTransport: () => typeof fetch;
+	metadata?: () => unknown;
+}
+
+/** Execute in the caller's task directory; Session owns state and the runtime owns all tool policy. */
+export async function runHeadlessSession(input: HeadlessOptions, model: HeadlessModel, signal?: AbortSignal) {
+	const options = parseHeadlessOptions(input, model.evidence);
+	const { config, createTransport } = model;
+	if (typeof createTransport !== "function") throw new Error("An explicit transport factory is required.");
 	const workspace = await canonicalWorkspace(options.taskCwd);
 	// Canonicalize parents before publishing; results and private Session state must stay outside task inputs.
 	const output = join(await realpath(dirname(options.resultDirectory)), basename(options.resultDirectory));
@@ -71,13 +88,10 @@ export async function runHeadlessTask(input: HeadlessOptions, createTransport: (
 		const injected = createTransport();
 		if (typeof injected !== "function") throw new Error("Transport factory must return a fetch function.");
 		const transport: typeof fetch = async (input, init) => {
-			// Never retain SDK headers or credentials. This transport has no network fallback.
+			// Never retain SDK headers or credentials; the caller owns the explicit transport.
 			if (typeof init?.body === "string") requests.push(JSON.parse(init.body));
 			return injected(input, init);
 		};
-		const config: Config = { provider: "deepseek", region: "global", model: "deepseek-flash", thinking: "off",
-			apiKey: "fatcat-headless-injected", maxIterations: options.requests, maxRequestBytes: 262144,
-			requestTimeoutMs: Math.min(options.durationMs, 30000), autoCompaction: true };
 		tools = await createTools(workspace, options.permission.files, undefined, { permission: options.permission.shell });
 		store = new SessionStore({ root: join(temporary, "sessions") });
 		session = await SessionManager.open(createAgent(config, tools, transport), { workspace, store });
@@ -98,9 +112,10 @@ export async function runHeadlessTask(input: HeadlessOptions, createTransport: (
 		status = "infra_error";
 		failureCode = "EVIDENCE_READ_FAILED";
 	}
-	const evidence = { evidence: "injected", startedAt, finishedAt: new Date().toISOString(),
+	const evidence = { evidence: model.evidence, startedAt, finishedAt: new Date().toISOString(),
 		durationMs: Math.ceil(performance.now() - start), platform: process.platform, node: process.version,
 		workspace, options, temporaryRoot: temporary ?? null, status, failureCode, answer, requests, events,
+		...(model.metadata ? { model: model.metadata() } : {}),
 		consumption: session?.contextUsage?.consumption ?? null, session: snapshot,
 		commands: tools?.getCommands?.() ?? [], writes: tools?.getWrites?.() ?? [] };
 	// Publish interrupted history and command outcomes before removing only our own temporary state.
@@ -116,7 +131,7 @@ export async function runHeadlessTask(input: HeadlessOptions, createTransport: (
 		status = "infra_error";
 		failureCode = "CLEANUP_FAILED";
 	}
-	const result = { evidence: "injected" as const, status, failureCode, answer, cleanup, evidenceFile: join(output, "evidence.json") };
+	const result = { evidence: model.evidence, status, failureCode, answer, cleanup, evidenceFile: join(output, "evidence.json") };
 	await writeFile(join(output, "result.json"), JSON.stringify(result, null, 2) + "\n", { flag: "wx" });
 	return result;
 }

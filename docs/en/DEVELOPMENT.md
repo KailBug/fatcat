@@ -276,6 +276,8 @@ To retain `verify:webui` or `verify:webui-models` screenshots, set `$env:FATCAT_
 
 ## Explicit live model checks
 
+These optional commands are outside the [current zero-API-spend evaluation strategy](ARCHITECTURE/EVAL.md#current-evaluation-strategy). Do not use them as a substitute for the paused Harbor live runs or as a routine review gate; they still require their own explicit request and spending authorization.
+
 Run these only when real model verification is explicitly requested. They load the local env file, use a real DeepSeek key and consume API credits. Do not silently redirect them to another provider. Bounds include possible child requests; scripts report failed expectations rather than retrying until success.
 
 | Command | Fixture and acceptance scope | Maximum requests |
@@ -299,12 +301,16 @@ At handoff, report the branch, checks actually run, outcomes, failures/blockers 
 
 ## Evaluation evidence requirements
 
+The [current evaluation strategy](ARCHITECTURE/EVAL.md#current-evaluation-strategy) prioritizes harness reliability with no real model requests or model API spending. Real-model Harbor/Terminal-Bench runs are paused; the adapter, official scoring path and historical evidence remain available for future funded use. Choose the affected offline/injected checks below. Missing live-quality evidence is an explicit limit, not a reason to spend or block a change that makes no quality claim.
+
 Use the versioned [eval protocol](ARCHITECTURE/EVAL.md) for new experiment records. The implementation lives in `packages/eval`, separate from product regression checks. Configuration and serialization checks use synthetic data and do not demonstrate actual Session execution or model quality. The Session/promptfoo integration tests use injected transport with real runtime tools, persistence, cancellation and cleanup. They prove these integration contracts, not model quality; see [Injected Session execution](ARCHITECTURE/EVAL.md#injected-session-execution) for commands, materials, evidence and limitations.
 
 | Change | Required evidence |
 | --- | --- |
 | Eval protocol, serialization or statistics | Offline validation and synthetic hand-calculated totals; malformed inputs, missing/duplicate attempts and unknown usage/cost |
 | Eval Session adapter or lifecycle | Injected-model integration, isolated workspace/session state, cancellation and cleanup; live quality remains separate |
+| Long requests, truncated responses or execution limits | Deterministic request/response failure fixtures; assert terminal state, durable evidence, cancellation/child settlement and cleanup for the affected path |
+| Harbor adapter, task environment or official result handling | Offline adapter/result contracts; affected local injected/Oracle controls for environment or scoring changes, with no real model requests |
 | Context selection or compaction quality claim | Offline contracts plus fixed model/data/budget comparison on declared development and holdout samples; no claim of improvement from token savings alone |
 | Retrieval ranking or chunking | Deterministic labeled retrieval metrics and source checks; answer correctness and citation support assessed separately |
 | CLI, TUI or Web UI interaction | Existing affected native Windows terminal/Edge injected-model checks in addition to offline contracts |
@@ -312,7 +318,7 @@ Use the versioned [eval protocol](ARCHITECTURE/EVAL.md) for new experiment recor
 
 Declare scope, sample IDs, repetitions, code/model/data/prompt/policy/grader identities and budgets before running. Preserve all failures, timeouts, cancellations and infrastructure errors. Development and holdout IDs must be fixed and disjoint; holdout data is for acceptance, not iterative tuning. Missing results produce an incomplete report, never a reduced denominator or a best-attempt score. A subset is not the full public benchmark, and synthetic/injected evidence is not live quality evidence. Dirty-code experiments are diagnostic only unless a separate reproducible snapshot mechanism is supplied; v1 does not provide that mechanism. Unknown counters/prices remain `null` (display as `unknown`); partial usage is labeled as a known subtotal, not a complete total. Budget declarations do not enforce limits or authorize API spending.
 
-Actual model runs still require explicit scope and budget authorization. Existing DeepSeek live runners remain unchanged; live evaluation execution, complete budget enforcement, public datasets, paired baseline reports and scheduled/manual quality commands are subsequent work. Injected execution currently connects the per-attempt request allowance and deadline; token, money and whole-run limits are not yet enforced.
+The generic injected runner currently enforces its per-attempt request allowance and deadline; its token, money and whole-run limits remain declarative. Further paid Harbor/Terminal-Bench execution is paused under the [current strategy](ARCHITECTURE/EVAL.md#current-evaluation-strategy); preserve separately reviewed adapter/budget work without treating it as complete experiment-budget enforcement. Generic live orchestration, paired quality reports and scheduled/manual quality commands remain deferred. Existing DeepSeek verification commands retain their provider guards and separate authorization requirements; historical budgets do not authorize new evaluation calls.
 
 ## Version and badges
 

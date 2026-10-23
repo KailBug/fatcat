@@ -4,7 +4,15 @@ English | [简体中文](../../zh-CN/GUIDES/LINUX_EVAL.md)
 
 [Eval architecture](../ARCHITECTURE/EVAL.md) · [Development](../DEVELOPMENT.md)
 
+**Current policy (2026-10-23): real-model Harbor evaluation is paused for cost reasons.** Use the [harness evaluation strategy](../ARCHITECTURE/EVAL.md#current-evaluation-strategy) for routine work. This guide retains local injected/Oracle checks and the future Terminal-Bench route; it is not a sequence to run in full on every change. Further paid runs require a new explicit resumption and budget; the earlier KAI-44 allowance is not continuing authorization.
+
 KAI-43 adds an evaluation path; ordinary native Windows use still needs neither Docker nor Python. Use PowerShell 7, Node 24.x, pnpm 11.21.0 and a running Docker Desktop Linux engine. The checked host had 32 GiB RAM and about 16 GiB assigned to Docker. The task declares 2 CPU, 4096 MiB RAM, 10240 MiB storage and no GPU. CPU/memory limits below are explicit; the storage declaration is not a Docker disk quota. Reserve local space for images/dependencies. Downloads need network; injected execution does not.
+
+## Choose the check
+
+1. For ordinary harness changes, use the affected offline tests and injected workflows described in [Development](../DEVELOPMENT.md#evaluation-evidence-requirements). Root `pnpm run typecheck` and `pnpm test` provide the normal type/boundary/build and offline suites; after a build, `pnpm --filter @fatcat/eval test` focuses on eval. None of these commands starts a live Harbor evaluation.
+2. For Linux execution changes, use the relevant [injected Linux acceptance](#run-and-retain-injected-acceptance). Use the [Oracle control](#prepare-and-run-oracle) when the official task/environment or verifier needs a reference check. These paths require local resources but make no real model requests; verify separately reviewed adapter changes with injected controls before live use.
+3. Read and check existing trial evidence offline when only result parsing/reporting changes. Preserve historical failures and identify the exact tested snapshot. Resume paid Harbor/Terminal-Bench work only under the architecture's [resumption conditions](../ARCHITECTURE/EVAL.md#retained-harbor-route-and-resumption).
 
 ## Fixed task and evidence
 
@@ -106,4 +114,4 @@ Retain failed logs too. Copy evidence before removing only this named disposable
 
 Run `node packages/eval/dist/scripts/headless.js --config <options.json> --transport <trusted-module.js>`. The trusted module must export `createTransport()` returning injected fetch; there is no network fallback. Options are `taskCwd`, `instruction`, `resultDirectory`, `permission` (`files`, `shell`), `requests` and `durationMs`; see [Eval](../ARCHITECTURE/EVAL.md#ordered-implementation-and-acceptance) for limits. The result parent must exist and its new child directory must be outside the task. Evidence can contain task text; keep it private. Completed injection is not an official score.
 
-KAI-44 owns the Harbor installed agent and official Fatcat grading. It must use injection first, then obtain explicit authorization and concrete request/time/API allowance for one real `deepseek-flash` attempt. KAI-43 does not authorize live-model spending, cloud resources, uploads or a full-suite/leaderboard claim.
+KAI-44 owns the Harbor installed-agent and official Fatcat grading route. Preserve that work for future funded use; paid evaluation is paused under the [current strategy](../ARCHITECTURE/EVAL.md#current-evaluation-strategy). Explicit resumption with an agreed scope and budget is required before a real `deepseek-flash` attempt. KAI-43 does not authorize live-model spending, cloud resources, uploads or a full-suite/leaderboard claim.

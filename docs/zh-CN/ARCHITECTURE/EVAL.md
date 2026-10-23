@@ -10,6 +10,42 @@
 
 `packages/eval` 是独立开发包，管理实验定义、注入模型的 Session 执行、结果记录和统计。它通过现有包导出调用 runtime 的 Session、Loop、Context、工具及存储，所有权仍在 runtime。产品包不依赖它；它与 verification 互不依赖。真实模型执行、自动数据集下载管理、整轮预算调度和通用实验 CLI 尚未实现；下述注入无界面入口已可用于固定的 Linux 任务环境。
 
+<a id="current-evaluation-strategy"></a>
+
+## 当前评估策略
+
+自 2026-10-23 起，因当前开发无法承担费用，暂停通过 Harbor 运行付费真实模型评测。近期重点是在不请求真实模型的情况下验证 harness 正确性、执行边界与问题定位能力。日常评估的**模型 API 花费为零**；本地 CPU、存储、电力和依赖下载仍消耗资源。贡献或 review 改动不以具备本地模型或免费 API 为前提。
+
+| 层级 | 当前用途 | 证据与限制 |
+| --- | --- | --- |
+| 离线契约与故障夹具 | 受影响 runtime、产品及 eval 改动的默认验证 | 使用假凭据和确定性输入，检查解码、状态迁移、权限、请求计数、证据与清理 |
+| 注入 Session 与工具流程 | 执行或接入发生变化时的默认验证 | 用受信任的注入响应驱动真实 Session／Loop／Context、文件、shell 和持久化；按改动范围运行原生 Windows 或 Linux 检查 |
+| 本地注入 Linux 或 Harbor Oracle 对照 | 适配器、任务环境或官方评分接线变化时的专项检查 | 使用已有 headless 检查及官方 Oracle／verifier，不请求真实模型；Docker／镜像／下载是额外本地依赖，不要求每次修改都运行 |
+| Harbor 配合真实模型运行 Terminal-Bench | 暂停，保留给未来具备预算的评测 | 新改动的官方解题质量保持未评估，直到另行授权并完成真实评测 |
+
+根据[开发文档](../DEVELOPMENT.md#evaluation-evidence-requirements)选择与改动相称的检查。固定夹具通过只证明对应契约；Oracle reward 验证参考解答／环境，注入 reward 验证评分接线，两者均不是 Fatcat 真实模型成功率。历史真实结果保留原模型、配置、失败和限制，不验证后续改动。不得把合成用量、未知费用或更少 token 解释成实测 API 节省或任务质量提升。
+
+<a id="near-term-harness-acceptance"></a>
+
+### 近期 harness 验收
+
+以下优先级指导后续实现；本次文档调整没有新增恢复行为或通用轨迹回放服务。围绕已观察的失败扩展现有测试，并保持包职责：产品契约放在 `packages/verification`，评估适配器和结果契约放在 `packages/eval`。
+
+1. **长任务失败。** 用有界的请求／响应夹具复现编码正文超限、上下文限制响应、输出截断和错误工具调用。检查明确的失败分类、保留的执行证据及清理；缩短或中断的运行不能计为任务成功。
+2. **执行边界。** 向父任务／委派工作注入失败、超时和取消，检查权限决策、共享请求额度、已实现的预算计费、子进程收尾及临时文件所有权。预算声明的解析测试通过不代表预算已被强制执行。
+3. **工具流程。** 用固定预期产物和受保护文件检查，覆盖读、改、执行、检查及修正序列。保留 Windows 行为，Linux 代码受影响时补跑其进程／路径专项。这些是开发夹具，不是替代公开 benchmark 的题库。
+4. **证据与回归。** 将有用的历史失败缩减为不含秘密的合成夹具或经检查的响应序列，记录实际配置、终态、工具结果与清理结论。响应回放验证该序列下的 harness 行为，不模拟新的模型决策，也不证明质量提升。恢复 Session 不得重放工具副作用或旧审批。
+
+Review 验收以相关离线／注入检查、真实结果和明确的剩余限制为准。暂停期间，真实模型评测不是常规 review 的前置要求；没有相应证据时，模型质量、通用任务成功率或更好压缩／推理的结论继续暂缓。
+
+<a id="retained-harbor-route-and-resumption"></a>
+
+### 保留 Harbor 路线与恢复条件
+
+Harbor 仍是未来 Terminal-Bench 评测的预定路线：保留任务／版本固定信息、官方 verifier、Linux 指南和全部已记录的对照及失败，并保留另行 review 的适配器工作。不得用夹具分数替代官方真实模型结果，也不因暂停付费而移除接入。
+
+只有新的明确恢复指令及约定的范围、费用上限，才能恢复付费评测。恢复前重新核对模型可用性、现行价格、任务／Harbor 版本和实际生效的请求／时间／费用限制，再验证受影响的离线／注入路径。先做有界的官方单题试跑，只有预算依据充分时才扩展至声明的子集或全集。此次暂停后，原 KAI-44 的 10 元授权及任何剩余额度都不再构成继续运行的授权。代码 review、测试通过或保留的命令示例均不会自动恢复付费执行。这是开发策略，本次不新增运行时禁用开关。
+
 <a id="modules-and-references"></a>
 
 ## 模块与参考
@@ -126,7 +162,7 @@
 
 ## 当前 Linear 里程碑
 
-以下范围于 2026-10-22 与 Linear 对齐：
+以下是于 2026-10-22 与 Linear 对齐的 Issue 范围参考。这些依赖不覆盖[当前评估策略](#current-evaluation-strategy)；暂停调整开发优先级，不改写历史验收条件或 Linear 状态。
 
 | Issue | 当前职责与依赖 |
 | --- | --- |
@@ -170,12 +206,12 @@ KAI-43 新增 Linux 执行与注入模型的无界面入口；KAI-44 的 Harbor 
 
 无界面证据包含已准备的请求正文（不含 SDK headers）、事件、当前 Session 历史／中断、用量消费、写入、命令结果、平台及临时状态位置；`result.json` 记录最终状态与清理。这些是注入集成证据，不是通用 EvalResult 判分或 Harbor reward。证据可能包含任务文本，需私密处理。发布或磁盘失败可能留下不完整产物／私有状态；没有覆盖、自动恢复、沙箱、token／金额上限或全实验预算，完整预算合同仍归 KAI-23。
 
-KAI-44 必须真实运行获授权的模型，正常完成官方 verifier，并保留数值 reward（有效零分也可）、轨迹及可用用量／费用。环境失败、未执行或缺少评分都不能满足该里程碑。源码／镜像／版本身份和每次失败尝试必须与所选任务的有效结果区分。
+KAI-44 的真实接入验收要求实际运行获授权的模型、正常完成官方 verifier，并保留数值 reward（有效零分也可）、轨迹及可用用量／费用。该条件继续用于 Harbor 路线，不构成暂停期间重新付费评测的指令。环境失败、未执行或缺少评分都不能满足该里程碑。源码／镜像／版本身份和每次失败尝试必须与所选任务的有效结果区分。
 
 <a id="future-work-boundaries"></a>
 
 ## 后续工作边界
 
-[KAI-23](https://linear.app/kailtian/issue/KAI-23) 在扩大真实评测前补齐整轮预算、重试／委派用量及费用覆盖。[KAI-24](https://linear.app/kailtian/issue/KAI-24)（LongMemEval）、[KAI-25](https://linear.app/kailtian/issue/KAI-25)（BEIR）、[KAI-26](https://linear.app/kailtian/issue/KAI-26)（Context 比较）和 [KAI-27](https://linear.app/kailtian/issue/KAI-27)（命令／CI／结果）均后置，不阻塞首道官方题。[KAI-42](https://linear.app/kailtian/issue/KAI-42) 仅在本地证据不足时考虑 Langfuse，不自动上传。[KAI-52](https://linear.app/kailtian/issue/KAI-52) 等单题流程及完整预算控制完成后，再核对 GPU／资源，以少量获批任务试算成本，随后运行固定官方全集，与同版本榜单的 Codex 组合比较模型加 Agent 的整体表现。子集不得作为完整榜单结果。
+[KAI-23](https://linear.app/kailtian/issue/KAI-23) 在扩大真实评测前补齐整轮预算、重试／委派用量及费用覆盖；其中 harness 计费逻辑可以用合成响应开发。[KAI-24](https://linear.app/kailtian/issue/KAI-24)（LongMemEval）、[KAI-25](https://linear.app/kailtian/issue/KAI-25)（BEIR）、[KAI-26](https://linear.app/kailtian/issue/KAI-26)（Context 质量比较）和 [KAI-27](https://linear.app/kailtian/issue/KAI-27)（质量命令／CI／结果）继续后置，不阻塞 harness 可靠性工作。[KAI-42](https://linear.app/kailtian/issue/KAI-42) 仅在本地证据不足时考虑 Langfuse，不自动上传。[KAI-52](https://linear.app/kailtian/issue/KAI-52) 保留为未来 Harbor／Terminal-Bench 路线，在明确恢复预算并具备完整预算控制前暂停：恢复后核对 GPU／资源，以少量获批任务试算成本，再考虑固定官方全集及同版本 Codex 榜单比较。子集不得作为完整榜单结果。这些保留计划均不会自动恢复付费执行。
 
 离线测试不读取 `.env`、调用真实模型或授权花费。Windows 原生交互、Linux 任务执行、公开 benchmark 和真实模型质量分别验收；注入成功只证明集成契约。token、金额和整轮实验预算仍如上文所述只是声明，增加结果读取器不会落实这些限额。

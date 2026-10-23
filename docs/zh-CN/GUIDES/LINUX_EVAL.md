@@ -6,7 +6,17 @@
 
 [Eval 架构](../ARCHITECTURE/EVAL.md) · [开发](../DEVELOPMENT.md)
 
+**当前策略（2026-10-23）：因费用原因暂停真实模型配合 Harbor 的评测。** 日常工作遵循[harness 评估策略](../ARCHITECTURE/EVAL.md#current-evaluation-strategy)。本指南保留本地注入／Oracle 检查及未来 Terminal-Bench 路线，不要求每次修改都完整执行本页。后续付费运行需新的明确恢复指令及预算，原 KAI-44 额度不再构成继续执行的授权。
+
 KAI-43 增加评估路径；普通原生 Windows 使用仍不需要 Docker 或 Python。使用 PowerShell 7、Node 24.x、pnpm 11.21.0 和已启动的 Docker Desktop Linux 引擎。检查的宿主有 32 GiB RAM，Docker 分配约 16 GiB。任务声明 2 CPU、4096 MiB RAM、10240 MiB 存储且无 GPU；下文明确限制 CPU／内存，但存储声明不是 Docker 磁盘配额。为镜像／依赖预留本地空间，下载需要网络，注入执行不需要。
+
+<a id="choose-the-check"></a>
+
+## 选择检查范围
+
+1. 普通 harness 改动使用[开发文档](../DEVELOPMENT.md#evaluation-evidence-requirements)中的相关离线测试及注入流程。根目录 `pnpm run typecheck`、`pnpm test` 提供常规类型／边界／构建和离线套件；构建后用 `pnpm --filter @fatcat/eval test` 聚焦 eval。这些命令均不启动真实模型 Harbor 评测。
+2. Linux 执行改动使用相关[注入 Linux 验收](#run-and-retain-injected-acceptance)；官方任务／环境或 verifier 需要参考检查时使用 [Oracle 对照](#prepare-and-run-oracle)。这些路径占用本地资源，但不请求真实模型；另行 review 的适配器改动在真实使用前先以注入对照验证。
+3. 只修改结果解析／报告时，离线读取和检查现有 trial 证据，保留历史失败并注明实际验证的快照。只有符合架构中的[恢复条件](../ARCHITECTURE/EVAL.md#retained-harbor-route-and-resumption)，才能恢复付费 Harbor／Terminal-Bench 工作。
 
 <a id="fixed-task-and-evidence"></a>
 
@@ -118,4 +128,4 @@ pnpm test
 
 执行 `node packages/eval/dist/scripts/headless.js --config <options.json> --transport <trusted-module.js>`。受信任模块必须导出返回注入 fetch 的 `createTransport()`，没有网络回退。配置为 `taskCwd`、`instruction`、`resultDirectory`、`permission`（`files`、`shell`）、`requests`、`durationMs`，限制见 [Eval](../ARCHITECTURE/EVAL.md#ordered-implementation-and-acceptance)。结果父目录须存在，新子目录必须位于任务外。证据可能包含任务文本，需私密保存；注入完成不等于官方评分。
 
-KAI-44 负责 Harbor installed agent 与 Fatcat 官方判分，必须先注入，再取得单次真实 `deepseek-flash` 的明确授权和具体请求／时间／API 额度。KAI-43 不授权真实模型付费、云资源、上传或全量／排行榜声明。
+KAI-44 负责 Harbor installed agent 和 Fatcat 官方评分路线，相关工作保留给未来具备预算时使用；付费评测按[当前策略](../ARCHITECTURE/EVAL.md#current-evaluation-strategy)暂停。运行真实 `deepseek-flash` 前须明确恢复并约定范围与预算。KAI-43 不授权真实模型付费、云资源、上传或全量／排行榜声明。

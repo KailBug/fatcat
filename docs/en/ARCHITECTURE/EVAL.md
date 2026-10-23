@@ -6,6 +6,36 @@ English | [简体中文](../../zh-CN/ARCHITECTURE/EVAL.md)
 
 `packages/eval` is an independent development package for experiment definitions, injected Session execution, result records and statistics. It calls runtime's Session, Loop, Context, tools and stores through existing package exports; runtime retains their ownership. Product packages do not depend on it; eval and verification do not depend on each other. Live model execution, an automated dataset-download manager, whole-experiment budget scheduling and a general experiment CLI remain unimplemented. The injected headless entry below is available for the pinned Linux task environment.
 
+## Current evaluation strategy
+
+As of 2026-10-23, paid real-model evaluation through Harbor is paused because its cost is not affordable for current development. Near-term work measures harness correctness, execution boundaries and diagnosability without real model requests. Routine evaluation has **zero model API spending**; local CPU, storage, electricity and dependency downloads still consume resources. Access to a local model or free API is not a prerequisite for contributing or reviewing changes.
+
+| Layer | Current use | Evidence and limit |
+| --- | --- | --- |
+| Offline contracts and failure fixtures | Default for affected runtime, product and eval changes | Validate decoding, state transitions, permissions, request accounting, evidence and cleanup with fake credentials and deterministic inputs |
+| Injected Session and tool workflows | Default when execution or integration changes | Exercise real Session/Loop/Context, filesystem, shell and persistence with trusted injected responses; use native Windows or Linux checks where the change requires them |
+| Local injected Linux or Harbor Oracle control | Targeted checks when the adapter, task environment or official grading integration changes | Use the existing headless checks and official Oracle/verifier with no real model requests; Docker/images/downloads are additional local dependencies, not requirements for every change |
+| Harbor with a real model on Terminal-Bench | Paused; retained for future funded evaluation | Official task-solving quality remains unassessed for new changes until a separately authorized live evaluation is performed |
+
+Use [Development](../DEVELOPMENT.md#evaluation-evidence-requirements) to select checks proportional to the change. Passing fixed fixtures establishes only their contracts. Oracle rewards validate the reference solution/environment; injected rewards validate the scoring connection. Neither is a Fatcat real-model success rate. Historical live results retain their original model, configuration, failures and limitations; they do not validate later changes. Do not interpret synthetic usage, unknown cost or fewer tokens as measured API savings or improved task quality.
+
+### Near-term harness acceptance
+
+The following priorities guide subsequent implementation; this documentation update does not implement new recovery behavior or a general trajectory-replay service. Extend existing tests around observed failures and preserve package ownership: product contracts stay in `packages/verification`, evaluation adapters and result contracts stay in `packages/eval`.
+
+1. **Long-task failures.** Use bounded request/response fixtures to reproduce encoded request overflow, context-limit responses, truncated output and malformed tool calls. Check explicit failure classification, retained execution evidence and cleanup; do not count a shortened or interrupted run as successful task completion.
+2. **Execution boundaries.** Inject failures, timeouts and cancellation into parent/delegated work. Check permission decisions, shared request allowances, budget accounting where implemented, child-process settlement and ownership of temporary files. Passing a declared-budget parser does not prove that the budget is enforced.
+3. **Tool workflows.** Cover read, edit, execute, inspect and correction sequences with fixed expected artifacts and protected-file checks. Preserve Windows behavior and run Linux-specific process/path checks for affected Linux code. These are development fixtures, not a replacement public benchmark.
+4. **Evidence and regression.** Reduce useful historical failures to nonsecret synthetic fixtures or reviewed response sequences. Record the exercised configuration, terminal state, tool results and cleanup outcome. Replaying responses verifies harness behavior under that sequence; it does not simulate new model decisions or prove quality improvements. Restoring a Session must not replay tool effects or old approvals.
+
+Review acceptance consists of the relevant offline/injected checks, actual outcomes and explicit remaining limits. Real-model evaluation is not a routine review prerequisite during this pause. Claims about model quality, general task success rates or better compaction/reasoning remain deferred without corresponding evidence.
+
+### Retained Harbor route and resumption
+
+Keep Harbor as the intended route for future Terminal-Bench evaluation: retain task/version pins, the official verifier, Linux guide and all recorded controls and failures; preserve any separately reviewed adapter work. Do not substitute fixture scores for official real-model results or remove the integration because paid runs are paused.
+
+Resume only after a new explicit instruction to resume paid evaluation with an agreed scope and spending cap. Recheck model availability, current pricing, task/Harbor versions and enforced request/time/cost limits, then validate the affected offline/injected path before spending. Begin with a bounded official single-task pilot; expand to a declared subset or full set only within a separately justified budget. The previous KAI-44 CNY 10 authorization and any unused balance are not continuing authorization after this pause. Code review, passing tests and retained command examples do not resume paid execution. This is a development policy; no runtime disable switch is introduced here.
+
 ## Modules and references
 
 | Module | Responsibility |
@@ -108,7 +138,7 @@ The synthetic builder `tests/fixtures/harbor.ts` and `tests/harbor-result.test.t
 
 ## Current Linear milestones
 
-Scope reconciled with Linear on 2026-10-22:
+Issue scope reference, reconciled with Linear on 2026-10-22. These dependencies do not override the [current evaluation strategy](#current-evaluation-strategy); the pause changes development priorities, not the historical acceptance criteria or Linear statuses.
 
 | Issue | Current responsibility and dependency |
 | --- | --- |
@@ -144,10 +174,10 @@ The former templates are now concrete commands in [Linux evaluation](../GUIDES/L
 
 Headless evidence includes prepared request bodies (without SDK headers), events, current Session history/interruption, usage consumption, writes, command outcomes, platform and temporary-state location. `result.json` records final status and cleanup. These are injected integration artifacts, not generic EvalResult grades or Harbor rewards. They can contain task text and require private handling. Publication or disk failure can leave partial artifacts/private state; there is no overwrite, automatic resume, sandbox, token/money cap or whole-experiment budget. KAI-23 remains responsible for the broader budget contract.
 
-KAI-44 must run the actual authorized model, finish official verification, and retain numeric reward (including a valid zero), trajectory and available usage/cost. An environment failure, missing execution or absent grading cannot satisfy that milestone. Source/image/version identities and every failed attempt must remain distinguishable from the selected task's valid result.
+KAI-44's live integration acceptance requires actual authorized model execution, normal official verification, and numeric reward (including a valid zero), trajectory and available usage/cost. This criterion is retained for the Harbor route; it is not an instruction to rerun paid evaluation during the pause. An environment failure, missing execution or absent grading cannot satisfy that milestone. Source/image/version identities and every failed attempt must remain distinguishable from the selected task's valid result.
 
 ## Future work boundaries
 
-[KAI-23](https://linear.app/kailtian/issue/KAI-23) completes whole-run budgets, retry/delegation usage and cost coverage before scaling real evaluations. [KAI-24](https://linear.app/kailtian/issue/KAI-24) (LongMemEval), [KAI-25](https://linear.app/kailtian/issue/KAI-25) (BEIR), [KAI-26](https://linear.app/kailtian/issue/KAI-26) (Context comparisons) and [KAI-27](https://linear.app/kailtian/issue/KAI-27) (commands/CI/results) are deferred and do not block the first official task. [KAI-42](https://linear.app/kailtian/issue/KAI-42) considers Langfuse only if local evidence is insufficient; no automatic uploads. [KAI-52](https://linear.app/kailtian/issue/KAI-52) follows the single-task path and full budget controls: check GPU/resources, run a small authorized cost pilot, then evaluate the fixed official set and compare model-plus-agent combinations with the matching Codex leaderboard entry. A subset is never a full leaderboard result.
+[KAI-23](https://linear.app/kailtian/issue/KAI-23) completes whole-run budgets, retry/delegation usage and cost coverage before scaling real evaluations; its harness accounting can be developed with synthetic responses. [KAI-24](https://linear.app/kailtian/issue/KAI-24) (LongMemEval), [KAI-25](https://linear.app/kailtian/issue/KAI-25) (BEIR), [KAI-26](https://linear.app/kailtian/issue/KAI-26) (Context quality comparisons) and [KAI-27](https://linear.app/kailtian/issue/KAI-27) (quality commands/CI/results) remain deferred and do not block harness reliability work. [KAI-42](https://linear.app/kailtian/issue/KAI-42) considers Langfuse only if local evidence is insufficient; no automatic uploads. [KAI-52](https://linear.app/kailtian/issue/KAI-52) remains a future Harbor/Terminal-Bench route, paused until explicit funded resumption and full budget controls: check GPU/resources, run a small authorized cost pilot, then consider the fixed official set and comparisons with the matching Codex leaderboard entry. A subset is never a full leaderboard result. None of these retained plans resumes paid execution automatically.
 
 Offline tests neither read `.env`, call real models nor authorize spending. Native Windows interaction, Linux task execution, public benchmarks and real-model quality require separate acceptance; injected success demonstrates integration contracts only. Current token, money and whole-experiment budgets remain declarative as described above; adding a result reader does not enforce them.

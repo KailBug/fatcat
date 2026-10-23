@@ -312,6 +312,8 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 
 ## 显式真实模型检查
 
+这些可选命令不属于[当前零 API 花费的评估策略](ARCHITECTURE/EVAL.md#current-evaluation-strategy)。不得把它们当作暂停 Harbor 真实运行后的替代途径，或作为常规 review 门槛；运行仍需单独的明确请求及费用授权。
+
 仅在用户明确要求真实模型验证时运行。它们加载本地 env、使用真实 DeepSeek Key 并消耗额度；不得静默改用其他供应商。上限包含可能的子请求；断言失败就报告，不反复重跑直到成功。
 
 | 命令 | 夹具与验收 | 请求上限 |
@@ -339,12 +341,16 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 
 ## Eval 证据要求
 
+[当前评估策略](ARCHITECTURE/EVAL.md#current-evaluation-strategy)优先验证 harness 可靠性，不请求真实模型，不产生模型 API 花费。真实模型 Harbor／Terminal-Bench 运行暂停，适配器、官方评分路径和历史证据保留给未来具备预算时使用。按改动选择下表相关离线／注入检查。缺少真实质量证据应明确记为限制，不因此付费，也不因此阻塞未宣称质量提升的改动。
+
 新实验使用版本化 [Eval 协议](ARCHITECTURE/EVAL.md)。实现独立于产品回归，位于 packages/eval。配置/序列化使用合成数据，不证明 Session 执行或模型质量。Session/promptfoo 集成测试使用注入 transport，执行真实 runtime 工具、持久化、取消与清理，证明这些集成契约，不证明模型质量。命令、材料、证据和限制见[注入模型的 Session 执行](ARCHITECTURE/EVAL.md#injected-session-execution)。
 
 | 改动 | 必需证据 |
 | --- | --- |
 | 协议、序列化、统计 | 离线/手算合成总量；坏输入、缺失/重复、未知 usage/cost |
 | Session adapter 或生命周期 | 注入接入、隔离 workspace/session、取消/清理；live 质量独立 |
+| 长请求、响应截断或执行限制 | 确定性请求／响应故障夹具；断言相关路径的终态、持久证据、取消／子任务收尾及清理 |
+| Harbor adapter、任务环境或官方结果处理 | 离线 adapter／结果契约；环境或评分变化时补充相关本地注入／Oracle 对照，不请求真实模型 |
 | 上下文选择/压缩质量 | 离线加声明开发/留出样本的固定模型/数据/预算比较，不能只因少 token 宣称改善 |
 | 排序/分块 | 确定性标注检索指标与来源检查，回答/引用另评 |
 | CLI/TUI/Web 交互 | 离线外还需受影响原生 Windows/Edge 注入专项 |
@@ -352,7 +358,7 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 
 运行前声明范围、样本、重复、代码/模型/数据/prompt/策略/grader 身份及预算。保留全部失败/超时/取消/基础设施错误。开发与留出 ID 固定且不相交；留出只验收，不迭代调优。缺记录即不完整，不缩分母或只挑最好。子集不等于全 benchmark，合成/注入不等于 live。Dirty 实验仅诊断，除非另有可复现快照机制，v1 没有。未知计数/价格保持 null（显示 unknown），部分 usage 标已知小计，不冒充总量。预算声明不实施限制或授权花费。
 
-真实模型仍需明确范围/预算授权。现有 DeepSeek live 不变；真实模型评测执行、完整预算实施、公开数据、成对报告及定时/手动质量命令是后续工作。注入执行目前接入单次请求额度和截止时间，token、金额及整轮限制尚未强制执行。
+通用注入 runner 目前落实单次请求额度和截止时间，token、金额及整轮限制仍是声明。后续付费 Harbor／Terminal-Bench 执行按[当前策略](ARCHITECTURE/EVAL.md#current-evaluation-strategy)暂停；保留另行 review 的适配器／预算工作，但不将其视为完整实验预算实施。通用真实编排、成对质量报告和定时／手动质量命令继续后置。既有 DeepSeek 验证命令保持供应商约束及单独授权要求；历史预算不授权新的评测调用。
 
 <a id="version-and-badges"></a>
 

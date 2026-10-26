@@ -28,7 +28,7 @@ HARNESS_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your-local-key
 ```
 
-真实密钥只保存在被忽略的 `.env` 或本地环境变量中。Kimi、MiMo、Qwen、模型选择与请求预算见[配置参考](REFERENCE/CONFIGURATION.md)。模板的迭代预算为 128；未设置时运行时默认为 32。
+真实密钥只保存在被忽略的 `.env` 或本地环境变量中。Kimi、MiMo、Qwen、GLM、模型选择与请求预算见[配置参考](REFERENCE/CONFIGURATION.md)。模板的迭代预算为 128；未设置时运行时默认为 32。
 
 ```powershell
 pnpm start --checkConfig

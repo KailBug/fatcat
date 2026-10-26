@@ -264,7 +264,7 @@ test("compacting after an interrupted turn preserves recovery evidence outside t
 	assert.match(JSON.stringify(requests.at(-1)), /Do not automatically replay/);
 });
 
-for (const [provider, key] of [["deepseek", "DEEPSEEK_API_KEY"], ["kimi", "MOONSHOT_API_KEY"], ["mimo", "MIMO_API_KEY"], ["qwen", "DASHSCOPE_API_KEY"]]) {
+for (const [provider, key] of [["deepseek", "DEEPSEEK_API_KEY"], ["kimi", "MOONSHOT_API_KEY"], ["mimo", "MIMO_API_KEY"], ["qwen", "DASHSCOPE_API_KEY"], ["glm", "GLM_API_KEY"]]) {
 	test(`${provider}: summary requests use the current provider and exact byte guard without tool or agent guidance`, async () => {
 		const config = loadConfig({ HARNESS_PROVIDER: provider!, [key!]: "offline-compaction", HARNESS_MAX_REQUEST_BYTES: "16384" });
 		const agent = createAgent(config, undefined, async (input, init) => {

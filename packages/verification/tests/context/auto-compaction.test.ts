@@ -36,7 +36,7 @@ function rejectRequest(observe?: (event: ModelObservation) => void): never {
 }
 
 for (const [provider, key] of [["deepseek", "DEEPSEEK_API_KEY"], ["kimi", "MOONSHOT_API_KEY"],
-	["mimo", "MIMO_API_KEY"], ["qwen", "DASHSCOPE_API_KEY"]]) {
+	["mimo", "MIMO_API_KEY"], ["qwen", "DASHSCOPE_API_KEY"], ["glm", "GLM_API_KEY"]]) {
 	test(`${provider}: local SDK rejection compacts once within the turn budget and preserves raw history`, async (t) => {
 		const config = loadConfig({ HARNESS_PROVIDER: provider!, [key!]: "offline-auto-compaction",
 			HARNESS_MAX_REQUEST_BYTES: "32768", HARNESS_MAX_ITERATIONS: "8" });

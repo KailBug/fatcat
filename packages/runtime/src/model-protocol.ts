@@ -5,7 +5,7 @@ import { HarnessError } from "./errors.js";
 
 export type ModelPurpose = "chat" | "compaction" | "document";
 export interface GenerationParameters {
-	thinking?: { type: "enabled" | "disabled"; keep?: "all" };
+	thinking?: { type: "enabled" | "disabled"; keep?: "all"; clear_thinking?: boolean };
 	reasoning_effort?: NonNullable<ChatCompletionCreateParamsNonStreaming["reasoning_effort"]>;
 	enable_thinking?: boolean;
 	preserve_thinking?: boolean;
@@ -31,6 +31,13 @@ export function resolveModelProtocol(value: ModelSelection, purpose: ModelPurpos
 	const enabled = thinking !== "off";
 	const totalOutput = enabled ? 16_384 : 2_048;
 	const inputLimitTokens = descriptor.inputLimitTokens?.[enabled ? "thinking" : "off"] ?? null;
+	if (descriptor.protocol === "glm" || descriptor.protocol === "glm-effort") {
+		return { generation: { thinking: { type: enabled ? "enabled" : "disabled",
+			...(enabled ? { clear_thinking: false } : {}) }, max_tokens: totalOutput,
+			...(enabled && descriptor.protocol === "glm-effort" ? { reasoning_effort: wireEffort(thinking) } : {}) },
+			outputReservationTokens: descriptor.known ? totalOutput : null, inputLimitTokens,
+			reasoningHistory: enabled ? "all" : "none" };
+	}
 	if (descriptor.protocol === "qwen-effort" || descriptor.protocol === "qwen-toggle") {
 		return { generation: { enable_thinking: enabled, preserve_thinking: enabled, max_completion_tokens: totalOutput,
 			...(enabled && descriptor.protocol === "qwen-effort" ? { reasoning_effort: wireEffort(thinking) } : {}) },

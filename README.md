@@ -18,7 +18,7 @@
 
 <p align="center">English | <a href="docs/zh-CN/README.md">中文</a></p>
 
-A small TypeScript agent harness demo for local coding experiments, with configurable DeepSeek, Kimi, MiMo, and Qwen providers, built to run natively on Windows.
+A small TypeScript agent harness demo for local coding experiments, with configurable DeepSeek, Kimi, MiMo, Qwen, and GLM providers, built to run natively on Windows.
 
 Use CLI chat, TUI or the local Web UI to inspect a workspace, make controlled edits and run checks. These interfaces share persistent conversations, tools and permission boundaries. Fatcat is still an early demo; use the documentation to check supported workflows and verification limits.
 

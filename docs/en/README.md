@@ -2,7 +2,7 @@
 
 English | [简体中文](../zh-CN/README.md)
 
-Fatcat is a TypeScript Agent Harness for local coding tasks on native Windows, with configurable DeepSeek, Kimi, MiMo and Qwen providers. Use CLI chat, TUI or the local Web UI to inspect a workspace, make controlled edits and run checks. These interfaces share persistent sessions, tools and permission boundaries.
+Fatcat is a TypeScript Agent Harness for local coding tasks on native Windows, with configurable DeepSeek, Kimi, MiMo, Qwen and GLM providers. Use CLI chat, TUI or the local Web UI to inspect a workspace, make controlled edits and run checks. These interfaces share persistent sessions, tools and permission boundaries.
 
 These documents describe the current source tree for users, contributors and agents. Fatcat is still an early demo; check each topic for supported workflows and verification limits.
 

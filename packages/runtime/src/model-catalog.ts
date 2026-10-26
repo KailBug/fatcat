@@ -4,7 +4,7 @@ import type { Provider, ProviderRegion } from "./providers.js";
 
 export type ThinkingLevel = "off" | "on" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 export type ModelProtocolKind = "deepseek" | "kimi-toggle" | "kimi-code" | "kimi-k3" | "mimo"
-	| "qwen-legacy" | "qwen-toggle" | "qwen-effort";
+	| "qwen-legacy" | "qwen-toggle" | "qwen-effort" | "glm" | "glm-effort";
 
 /** Public model identity; credentials and endpoint URLs never belong in session state. */
 export interface ModelSelection {
@@ -47,6 +47,18 @@ const visionOnly = "This vision model is available for document requests, not th
 
 // Exact model IDs only. Sources and verification limits: docs/en/ARCHITECTURE/PROVIDERS.md.
 const catalog: readonly CatalogEntry[] = [
+	{ provider: "glm", model: "glm-5.3", label: "GLM 5.3", contextWindowTokens: 1_048_576,
+		inputLimitTokens: null, imageInput: false, thinkingOptions: ["low", "high", "max"], defaultThinking: "max",
+		protocol: "glm-effort" },
+	{ provider: "glm", model: "glm-5.2", label: "GLM 5.2", contextWindowTokens: 1_048_576,
+		inputLimitTokens: null, imageInput: false, thinkingOptions: ["off", "high", "max"], defaultThinking: "max",
+		protocol: "glm-effort" },
+	{ provider: "glm", model: "glm-5.1", label: "GLM 5.1", contextWindowTokens: 202_752,
+		inputLimitTokens: null, imageInput: false, thinkingOptions: toggle, protocol: "glm" },
+	{ provider: "glm", model: "glm-5", label: "GLM 5", contextWindowTokens: 202_752,
+		inputLimitTokens: null, imageInput: false, thinkingOptions: toggle, protocol: "glm" },
+	{ provider: "glm", model: "glm-4.7", label: "GLM 4.7", contextWindowTokens: 202_752,
+		inputLimitTokens: null, imageInput: false, thinkingOptions: toggle, protocol: "glm" },
 	{ provider: "deepseek", model: "deepseek-flash", label: "DeepSeek V4.1 Flash", contextWindowTokens: 1_048_576,
 		inputLimitTokens: null, imageInput: true, thinkingOptions: effort, protocol: "deepseek",
 		thinkingAliases: { medium: "high", ultra: "max" } },
@@ -127,7 +139,7 @@ export function decodeModelSelection(value: unknown): ModelSelection {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return invalidSelection();
 	const raw = value as Record<string, unknown>;
 	if (Object.keys(raw).some((key) => !["provider", "region", "workspaceId", "model", "thinking"].includes(key))
-		|| typeof raw.provider !== "string" || !["deepseek", "kimi", "mimo", "qwen"].includes(raw.provider)
+		|| typeof raw.provider !== "string" || !["deepseek", "kimi", "mimo", "qwen", "glm"].includes(raw.provider)
 		|| typeof raw.region !== "string" || !["cn", "global", "intl", "us", "eu", "jp", "hk"].includes(raw.region)
 		|| (Object.hasOwn(raw, "workspaceId") && typeof raw.workspaceId !== "string")
 		|| typeof raw.model !== "string" || !raw.model.trim() || raw.model !== raw.model.trim()

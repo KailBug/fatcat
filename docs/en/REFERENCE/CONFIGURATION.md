@@ -10,13 +10,14 @@ Keep credentials only in local environment variables or the ignored `.env`. Do n
 
 ## Providers
 
-`HARNESS_PROVIDER` selects `deepseek` (default), `kimi`, `mimo` or `qwen`.
+`HARNESS_PROVIDER` selects `deepseek` (default), `kimi`, `mimo`, `qwen` or `glm`.
 
 | Provider | Required key | Model variable and default | Region |
 | --- | --- | --- | --- |
 | DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_MODEL=deepseek-flash` | No region option |
 | Kimi | `MOONSHOT_API_KEY` | `KIMI_MODEL=kimi-k2.6` | `KIMI_REGION=cn` (default) or `global` |
 | MiMo | `MIMO_API_KEY` | `MIMO_MODEL=mimo-v2.6-flash` | Pay-as-you-go API, not Token Plan |
+| GLM | `GLM_API_KEY` | `GLM_MODEL=glm-5.3` | Domestic BigModel standard API; fixed `cn`, no region option |
 | Qwen | `DASHSCOPE_API_KEY` | `QWEN_MODEL=qwen-plus` | `QWEN_REGION=cn` (default), `intl`, `us`, `eu`, `jp`, `hk` |
 
 `HARNESS_PROVIDER` selects the startup default, whose configuration is validated by `--checkConfig`. The host also reads the other providers' environment settings into `ModelConnections`; invalid or unconfigured connections are unavailable for switching. There is no fallback to another provider's key or `OPENAI_API_KEY`. Region-specific keys must match their region. Optional values use defaults when absent; explicitly empty selected values are invalid. Fields are trimmed before validation.
@@ -26,6 +27,16 @@ Qwen optionally accepts `QWEN_WORKSPACE_ID`, a lowercase DNS label (1–63 lette
 Current Qwen alternatives include `qwen3.8-max`, `qwen3.8-flash` and `qwen3.7-plus`. Existing startup defaults remain unchanged. Kimi K3 and K2.7 Code support main-agent execution with session reasoning-history replay. Stateless document requests use the model's mandatory thinking protocol. The catalog is not a guarantee of account access, region-specific model availability or online verification.
 
 The shared OpenAI-compatible client uses non-streaming Chat Completions. New sessions use the catalog thinking default: medium when supported, on for off/on models, otherwise the explicit model default or off. Explicit Config.thinking and saved session choices take precedence. Exact endpoints, request fields, model versions, image capabilities, retirement notices and subscription-only entry points live in [provider architecture](../ARCHITECTURE/PROVIDERS.md). Protocol checks use fake credentials and injected transport; they do not establish real account access or task quality. Existing live verification scripts remain DeepSeek-specific.
+
+For GLM, configure the domestic standard API key, not a Coding Plan or Z.ai key:
+
+```dotenv
+HARNESS_PROVIDER=glm
+GLM_API_KEY=your-local-key
+GLM_MODEL=glm-5.3
+```
+
+GLM uses the fixed `https://open.bigmodel.cn/api/paas/v4` endpoint. `glm-5.3` supports low/high/max thinking (default max, cannot disable); `glm-5.2` supports off/high/max (default max); `glm-5.1`, `glm-5` and `glm-4.7` support off/on (default on). These catalog entries cover text and tools, not image input. Unknown custom names retain off-only compatibility without inferred capabilities. The model catalog is shared by all clients; configure `GLM_MODEL` for startup or select a configured connection in Web UI. Run `pnpm start --checkConfig` for local validation. This does not send a model request.
 
 ## Request budgets
 

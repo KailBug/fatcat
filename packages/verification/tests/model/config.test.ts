@@ -88,6 +88,7 @@ test("request byte budgets are positive bounded integers without leaking invalid
 });
 
 const providerCases = [
+  { provider: "glm", key: "GLM_API_KEY", modelEnv: "GLM_MODEL", model: "glm-5.3", region: "cn" },
   { provider: "deepseek", key: "DEEPSEEK_API_KEY", modelEnv: "DEEPSEEK_MODEL", model: "deepseek-flash", region: "global" },
   { provider: "kimi", key: "MOONSHOT_API_KEY", modelEnv: "KIMI_MODEL", model: "kimi-k2.6", region: "cn" },
   { provider: "mimo", key: "MIMO_API_KEY", modelEnv: "MIMO_MODEL", model: "mimo-v2.6-flash", region: "global" },

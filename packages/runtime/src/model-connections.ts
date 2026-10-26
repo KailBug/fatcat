@@ -31,7 +31,7 @@ export class ModelConnections {
 	readonly #connections: readonly Connection[];
 
 	constructor(startup: Config, env: NodeJS.ProcessEnv = {}) {
-		this.#connections = (["deepseek", "kimi", "mimo", "qwen"] as const).map((provider) => {
+		this.#connections = (["deepseek", "kimi", "mimo", "qwen", "glm"] as const).map((provider) => {
 			if (provider === startup.provider) return { provider, region: startup.region, model: startup.model, apiKey: startup.apiKey,
 				...(startup.workspaceId !== undefined ? { workspaceId: startup.workspaceId } : {}) };
 			const profile = getProviderProfile(provider);

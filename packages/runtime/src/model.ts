@@ -46,7 +46,7 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
         }
         const protocol = resolveModelProtocol(selection, options?.purpose);
         const includeTools = options?.purpose !== "compaction" && options?.purpose !== "document"
-            && !(options?.toolChoice === "none" && config.provider === "mimo");
+            && !(options?.toolChoice === "none" && (config.provider === "mimo" || config.provider === "glm"));
         const replay = protocol.reasoningHistory === "all" || (protocol.reasoningHistory === "with-tools" && includeTools);
         const encode = (input: { messages: Message[] }): ChatCompletionCreateParamsNonStreaming => ({
             model: config.model,

@@ -16,13 +16,14 @@
 
 ## 供应商
 
-`HARNESS_PROVIDER` 选择 `deepseek`（默认）、`kimi`、`mimo` 或 `qwen`。
+`HARNESS_PROVIDER` 选择 `deepseek`（默认）、`kimi`、`mimo`、`qwen` 或 `glm`。
 
 | 供应商 | 必需密钥 | 模型变量与默认值 | 地区 |
 | --- | --- | --- | --- |
 | DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_MODEL=deepseek-flash` | 无地区选项 |
 | Kimi | `MOONSHOT_API_KEY` | `KIMI_MODEL=kimi-k2.6` | `KIMI_REGION=cn`（默认）或 `global` |
 | MiMo | `MIMO_API_KEY` | `MIMO_MODEL=mimo-v2.6-flash` | 按量 API，不是 Token Plan |
+| GLM | `GLM_API_KEY` | `GLM_MODEL=glm-5.3` | 智谱国内标准 API；固定 `cn`，无地区选项 |
 | Qwen | `DASHSCOPE_API_KEY` | `QWEN_MODEL=qwen-plus` | `QWEN_REGION=cn`（默认）、`intl`、`us`、`eu`、`jp`、`hk` |
 
 `HARNESS_PROVIDER` 选择启动默认供应商，`--checkConfig` 校验该配置。宿主也会读取其他供应商的环境配置并建立 `ModelConnections`；配置无效或缺少凭据的连接不可供切换。不回退到其他供应商密钥或 `OPENAI_API_KEY`。地区密钥必须匹配地区。可选值缺省时使用默认值；选中配置显式为空则无效。校验前会 trim 字段。
@@ -32,6 +33,16 @@ Qwen 可选 `QWEN_WORKSPACE_ID`，为小写 DNS 标签（1–63 个字母、数�
 当前 Qwen 备选包括 `qwen3.8-max`、`qwen3.8-flash`、`qwen3.7-plus`，现有启动默认值不变。Kimi K3 和 K2.7 Code 已支持主 Agent 执行与会话推理历史回放。无状态文档请求使用模型的强制思考协议。目录不保证账户权限、地区模型可用性或在线验证。
 
 共享 OpenAI-compatible 客户端使用非流式 Chat Completions。新会话采用目录默认思考策略：支持 medium 时优先 medium，仅支持 off/on 时默认 on，其他采用型号明确默认值或 off。显式 Config.thinking 与已保存的会话选择优先。精确端点、请求字段、模型版本、图片能力、退役通知和订阅专用入口见[供应商架构](../ARCHITECTURE/PROVIDERS.md)。协议检查使用假凭据和注入 transport，不证明真实账户访问或任务质量。已有真实模型验证脚本仍专用于 DeepSeek。
+
+GLM 使用智谱国内标准 API 密钥，不使用 Coding Plan 或 Z.ai 密钥：
+
+```dotenv
+HARNESS_PROVIDER=glm
+GLM_API_KEY=your-local-key
+GLM_MODEL=glm-5.3
+```
+
+GLM 固定使用 `https://open.bigmodel.cn/api/paas/v4`。`glm-5.3` 支持 low/high/max 思考（默认 max，不能关闭）；`glm-5.2` 支持 off/high/max（默认 max）；`glm-5.1`、`glm-5`、`glm-4.7` 支持 off/on（默认 on）。这些目录项支持文本和工具，不包含图片输入。未知自定义名称仅保留 off 兼容模式，不推断能力。所有客户端共用模型目录；可用 `GLM_MODEL` 设置启动型号，或在 Web UI 选择已配置连接。运行 `pnpm start --checkConfig` 可校验本地配置，不会发送模型请求。
 
 <a id="request-budgets"></a>
 

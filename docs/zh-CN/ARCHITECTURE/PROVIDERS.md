@@ -60,9 +60,10 @@ arguments 仍为原始 JSON 字符串：工具层继续负责 JSON 解析和参�
 | DeepSeek | https://api.deepseek.com | thinking disabled，max_tokens |
 | Kimi | https://api.moonshot.cn/v1 或 https://api.moonshot.ai/v1 | thinking disabled，max_completion_tokens |
 | MiMo | https://api.xiaomimimo.com/v1 | thinking disabled，max_completion_tokens；使用 Bearer |
+| GLM | https://open.bigmodel.cn/api/paas/v4 | max_tokens；仅对支持 off 的型号禁用思考 |
 | Qwen | 原 cn/intl DashScope 地址，或业务空间区域域名（下表） | enable_thinking=false；旧版 max_tokens，新版 max_completion_tokens + preserve_thinking=false |
 
-共同使用 OpenAI-compatible Chat Completions、Bearer 认证与 stream=false，普通非思考输出上限 2048；普通工具选择 auto。文字收尾时 DeepSeek/Kimi/Qwen 使用 none，MiMo 省略 tools/tool_choice，因为其协议只保证 auto。MiMo 同时支持 api-key 头，Fatcat 继续采用 Bearer。即便服务返回违规工具，Loop 仍拒绝超出额度执行。供应商另有 Responses/Anthropic 等接入协议，本轮不新增适配或 SDK。
+共同使用 OpenAI-compatible Chat Completions、Bearer 认证与 stream=false，普通非思考输出上限 2048；普通工具选择 auto。文字收尾时 DeepSeek/Kimi/Qwen 使用 none，MiMo/GLM 省略 tools/tool_choice，因为其协议只保证 auto。MiMo 同时支持 api-key 头，Fatcat 继续采用 Bearer。即便服务返回违规工具，Loop 仍拒绝超出额度执行。供应商另有 Responses/Anthropic 等接入协议，本轮不新增适配或 SDK。
 
 Qwen 的可选 QWEN_WORKSPACE_ID 只允许安全的单个 DNS label；不接受任意 URL。存在该字段时拼接 `https://{workspaceId}.{regionHost}.maas.aliyuncs.com/compatible-mode/v1`，缺省时 cn/intl 保留旧 endpoint，其他区域拒绝缺少 workspaceId 的配置。
 
@@ -96,17 +97,20 @@ Qwen 的可选 QWEN_WORKSPACE_ID 只允许安全的单个 DNS label；不接受�
 | kimi-k3 | low/high/max，默认 max，无 off | reasoning_effort、max_completion_tokens=16384；不发送旧 thinking 对象 | 共用 16384；回传完整 assistant message |
 | kimi-k2.7-code、kimi-k2.7-code-highspeed | on，无 off | thinking enabled、keep=all、max_completion_tokens=16384 | 共用 16384；回传思考历史 |
 | MiMo V2.6 Flash/Pro/Pro Ultraspeed、V2.5/Pro | off/on | thinking enabled、max_completion_tokens=16384 | 共用 16384；完整回传思考历史，特别是工具调用 |
+| glm-5.3 | low/high/max，默认 max，不支持 off | thinking enabled、clear_thinking=false、reasoning_effort、max_tokens=16384 | 共用 16384；原样回传 reasoning_content |
+| glm-5.2 | off/high/max，默认 max | 开启时与 GLM 5.3 字段相同 | 共用 16384；原样回传 reasoning_content |
+| glm-5.1、glm-5、glm-4.7 | off/on，默认 on | thinking enabled、clear_thinking=false、max_tokens=16384 | 共用 16384；不发送 reasoning_effort；原样回传 reasoning_content |
 | qwen3.8-max、qwen3.8-flash | off/low/medium/xhigh；兼容 high/max | enable_thinking、preserve_thinking、reasoning_effort、max_completion_tokens=16384 | high/max→xhigh；共用 16384，不同时发送 thinking_budget；开启时回传历史 |
 | qwen3.7-plus | off/on | enable_thinking、preserve_thinking、max_completion_tokens=16384 | 共用 16384，不另加思考预留；开启时回传历史 |
 | qwen-plus | off/on | enable_thinking=true、thinking_budget=8192、max_tokens=2048 | 思考与回答分别预留，总计 10240；不回传思考历史 |
 | qwen3-vl-plus/flash | 当前适配 off | enable_thinking=false、max_tokens=2048 | 仅接入辅助图片请求，不用于工具 Agent |
 | 未知自定义名称 | off | 保留原供应商非思考字段 | 不猜测额外思考能力，预留语义未知 |
 
-这些上限是 Fatcat 的显式策略，不是供应商最大输出容量。off 保持 2048；compaction/document 在模型支持时关思考，否则保留强制思考并使用包含推理的 16384。辅助请求不修改父选择。K3/K2.7 普通 Agent 请求已开放，K3 完整消息经过工具往返、保存和恢复的离线回传验证；不等于真实账户与模型服务验收。默认启动型号继续保留 DeepSeek Flash、Kimi K2.6、MiMo V2.6 Flash、Qwen Plus。
+这些上限是 Fatcat 的显式策略，不是供应商最大输出容量。off 保持 2048；compaction/document 在模型支持时关思考，否则保留强制思考并使用包含推理的 16384。辅助请求不修改父选择。K3/K2.7 普通 Agent 请求已开放，K3 完整消息经过工具往返、保存和恢复的离线回传验证；不等于真实账户与模型服务验收。默认启动型号为 DeepSeek Flash、Kimi K2.6、MiMo V2.6 Flash、Qwen Plus 和 GLM 5.3。
 
 共享目录的默认思考策略为：该型号支持 medium 时优先 medium；仅支持 off/on 的型号默认 on；其他采用目录内明确默认档位（K3 为 max、K2.7 Code 为 on）；未知或未接入思考的型号仍为 off。这影响使用启动默认的新会话和直接模型客户端，显式 Config.thinking 及保存的会话选择仍优先，不迁移已有 off 记录。Web 选择器只提供该型号已开启的思考档位，详见 [Web UI](WEBUI.md#model-thinking-and-context-controls)。
 
-思考响应在规范助手消息旁保存 providerReplay 来源与厂商附加字段，读取时校验附加数据的格式及工具调用 ID 关联，不保存或核对第二份回答和工具参数。只有 API 标识以及 provider、region、workspaceId、model 全部匹配且当前协议允许回传时才将附加字段合回规范消息；思考档位可以在同一模型内改变，但 off 会剥离私有历史。跨模型、跨区域和跨业务空间只发送规范文本与工具事实，内部 providerReplay 永不直接上网。DeepSeek 在启用思考且请求带工具定义时回传；Kimi/MiMo/新版 Qwen 按上表处理，旧 Qwen 不回传。摘要序列化也剥离私有数据。该投影先于最终 JSON 字节检查和旧读裁剪，不重复加入规范消息。
+思考响应在规范助手消息旁保存 providerReplay 来源与厂商附加字段，读取时校验附加数据的格式及工具调用 ID 关联，不保存或核对第二份回答和工具参数。只有 API 标识以及 provider、region、workspaceId、model 全部匹配且当前协议允许回传时才将附加字段合回规范消息；思考档位可以在同一模型内改变，但 off 会剥离私有历史。跨模型、跨区域和跨业务空间只发送规范文本与工具事实，内部 providerReplay 永不直接上网。DeepSeek 在启用思考且请求带工具定义时回传；Kimi/MiMo/GLM/新版 Qwen 按上表处理，旧 Qwen 不回传。摘要序列化也剥离私有数据。该投影先于最终 JSON 字节检查和旧读裁剪，不重复加入规范消息。
 
 ThinkingLevel 保留 medium/ultra，增加 Qwen 原生 xhigh；它是应用层选项集合，不是所有模型通用的档位。wire reasoning_effort 从 SDK 的请求类型派生，只写入归一化后的合法值。model.ts 原 TS2375 的根因是把 ultra 放入所有供应商共用的 wire 联合类型，赋给 SDK 不接受 ultra 的 ReasoningEffort；exactOptionalPropertyTypes 出现在诊断中，但不是关闭该检查或加类型断言的理由。Kimi/Qwen 不接受的档位显式拒绝，不跨供应商猜测 ultra 的含义。
 
@@ -117,6 +121,8 @@ ThinkingLevel 保留 medium/ultra，增加 Qwen 原生 xhigh；它是应用层�
 | Kimi K3 | null（官方写 1M，未据该缩写猜测精确整数） | 未核定 |
 | MiMo V2.6 三个 ID | 1048576 | 未核定 |
 | MiMo V2.5/Pro | null（保留精确窗口未核定） | 未核定 |
+| GLM 5.3 / 5.2 | 1048576 | 未核定 |
+| GLM 5.1 / 5 / 4.7 | 202752 | 未核定 |
 | Qwen3.8 Max/Flash、3.7 Plus | 1000000 | 991808 / 983616 |
 | Qwen Plus | 1000000 | 997952 / 995904 |
 | Qwen3 VL Plus/Flash | 262144 | 260096 / 258048 |
@@ -163,6 +169,20 @@ MiMo V2.5 Pro 的模型总览与图片指南存在描述差异；按具体 [图�
 
 本轮目录刷新核对日期为 2026-10-19。除上面的既有协议来源，新增型号与限制参见 [DeepSeek 模型列表](https://api-docs.deepseek.com/api/list-models/)、[Kimi K3](https://platform.kimi.com/docs/guide/kimi-k3-quickstart)、[Kimi K2.7 Code](https://platform.kimi.com/docs/guide/kimi-k2-7-code-quickstart)、[MiMo 模型及下线说明](https://mimo.mi.com/docs/quick-start/model)、[Qwen3.8 Max](https://help.aliyun.com/zh/model-studio/qwen3-8-max)、[Qwen3.8 Flash](https://help.aliyun.com/zh/model-studio/qwen3-8-flash)、[Qwen3.7 Plus](https://help.aliyun.com/zh/model-studio/qwen3-7-plus)、[Qwen VL Plus](https://help.aliyun.com/zh/model-studio/qwen3-vl-plus)、[Qwen VL Flash](https://help.aliyun.com/zh/model-studio/qwen3-vl-flash)。模型目录没有远程自动更新；未来更新必须核对具体协议和实际序列化请求。
 
+<a id="glm-standard-api-scope"></a>
+
+## GLM 标准 API 范围
+
+GLM 仅使用智谱国内 BigModel 标准 API 凭据。Coding Plan、Z.ai 的端点和密钥不可混用，本配置不接入这些服务。启动与公开连接选择共用固定的 `cn` 身份，不新增任意地址或其他密钥回退。见[配置参考](../REFERENCE/CONFIGURATION.md#providers)。
+
+参考本地 pi `3daa20280` 的 `providers/zai.ts` 和 `api/openai-completions.ts`，配置描述、模型目录与类型化生成参数映射保持分离。Fatcat 复用已有非流式 SDK 与回放适配器。启用思考时设置嵌套的 `thinking.clear_thinking=false`，同模型原样回传推理内容。文字收尾省略 tools/tool_choice，因为文档仅保证 auto。压缩请求关闭可选思考；GLM 5.3 保留选定的强制思考档位。不声明 GLM 图片能力，未知模型名不继承已知型号的思考能力或容量。
+
+于 2026-10-26 核对官方 [API 简介](https://docs.bigmodel.cn/cn/api/introduction)、[对话补全结构](https://docs.bigmodel.cn/api-reference/模型-api/对话补全)、[思考参数](https://docs.bigmodel.cn/cn/guide/capabilities/thinking)、[思考回放](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode)和[模型概览](https://docs.bigmodel.cn/cn/guide/start/model-overview)。GLM 5.2 仅公开原生 off/high/max 选项，不增加兼容 effort 别名。
+
+窗口参考值采用官方模型配置的 `max_position_embeddings`：[GLM 5.3](https://huggingface.co/zai-org/GLM-5.3/blob/main/config.json) 和 [5.2](https://huggingface.co/zai-org/GLM-5.2/blob/main/config.json) 为 1048576；[5.1](https://huggingface.co/zai-org/GLM-5.1/blob/main/config.json)、[5](https://huggingface.co/zai-org/GLM-5/blob/main/config.json) 和 [4.7](https://huggingface.co/zai-org/GLM-4.7/blob/main/config.json) 为 202752。这些精确模型窗口值与国内指南的 1M/200K 标注对应，不构成端点接受能力的实测保证。独立 API 输入上限仍为 null。未提供匹配的本地 tokenizer，因此可以显示容量，但没有注入匹配计数器时，输入用量与剩余空间仍未知。存在有效估算时，共用输出只扣除一次，并保留负数余量。仍执行本地字节预算。
+
+注入 SDK 测试覆盖凭据、固定地址、生成字段、工具、预览与发送的精确字节、请求限制、用量、安全错误、取消、超时、会话保存/恢复和推理隔离。固化回归还覆盖容量边界、token 计数未知、从 DeepSeek 切换到 GLM 后的父/子/压缩请求绑定，以及迭代预算耗尽后拒绝执行意外工具调用。GLM 证据仅为离线验证；账号权限、服务端接受情况及真实任务质量需另行授权模型调用。已有 DeepSeek live 脚本保留供应商限制。
+
 <a id="usage-validation"></a>
 
 ## 用量校验
@@ -181,7 +201,7 @@ Session 保留自己的累计消费与普通请求实测观察，并通过无副
 
 当前协议依据保留为：[DeepSeek](https://api-docs.deepseek.com/api/create-chat-completion/)、[Kimi](https://platform.kimi.com/docs/api/chat)、[MiMo](https://mimo.mi.com/docs/en-US/api/chat/openai-api)、[Qwen](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)。这是实现选择的来源，后续修改仍需重新核对，不能据链接存在宣称已在线验证。
 
-Kimi/MiMo/Qwen 的现有证据为离线合约；视觉也未调用真实 API，账号可用性、图表理解和转写质量未验收。已有 live 脚本保持 DeepSeek 专用范围，仅在明确请求时运行。新增供应商不必默认产生真实调用。
+Kimi/MiMo/Qwen/GLM 的现有证据为离线合约；视觉也未调用真实 API，账号可用性、图表理解和转写质量未验收。已有 live 脚本保持 DeepSeek 专用范围，仅在明确请求时运行。新增供应商不必默认产生真实调用。
 
 第二阶段的注入检查覆盖会话独立选择、当前格式持久化、保存失败/忙碌/并发冲突、不可信历史、完整 K3 消息回传、跨模型隔离，以及换目录后的父子/图片/摘要模型绑定。真实 Edge 专项的两处失败均定位为测试时序：弹窗入场位移尚未完成，以及会话刷新后的延迟聚焦覆盖了测试提前执行的失焦。等待实际动画/聚焦完成并加入受控帧延迟回归后通过；保持原居中与折叠断言。没有运行真实模型或原生交互终端专项。
 

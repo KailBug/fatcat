@@ -157,46 +157,50 @@ describe("provider reasoning history projection", () => {
 		function: { name: "sum", arguments: '{"numbers":[1,2]}', provider_tag: "preserve" } };
 	const raw = { role: "assistant", content: null, reasoning_content: "PRIVATE_REASONING", tool_calls: [tool], opaque_state: { signature: "opaque" } };
 
-	it("round trips the full K3 assistant through tools and persistence, but isolates foreign models and summaries", async (t) => {
-		const { base, workspace } = await temporaryWorkspace(t);
-		const store = new SessionStore({ root: join(base, "sessions") });
-		const bodies: { model: string; messages: Record<string, unknown>[] }[] = [];
-		const transport: typeof fetch = async (input, init) => {
-			const body = await new Request(input, init).json() as typeof bodies[number];
-			bodies.push(body);
-			return response(bodies.length === 1 ? raw : { role: "assistant", content: "3", reasoning_content: "PRIVATE_FINAL" });
-		};
-		const agent = createAgent({ ...config, ...kimi, apiKey: "offline-kimi" }, await createTools(workspace), transport);
-		const manager = await SessionManager.open(agent, { workspace, store });
-		await manager.run("Add one and two");
-		assert.deepEqual(bodies[1]!.messages.find((message) => message.role === "assistant"), raw);
-		assert.equal(bodies[1]!.messages.at(-1)?.role, "tool");
-		const resumed = await SessionManager.open(agent, { workspace, store, selection: { resume: manager.current.id } });
-		const saved = resumed.history.find((message) => message.role === "assistant");
-		assert.ok(saved?.role === "assistant");
-		assert.deepEqual(saved.providerReplay?.data, {
-			messageFields: { reasoning_content: "PRIVATE_REASONING", opaque_state: { signature: "opaque" } },
-			toolFields: [{ id: "sum-call", fields: { provider_signature: "call-signature" }, functionFields: { provider_tag: "preserve" } }],
+	for (const selection of [kimi, defaultModelSelection("glm"), defaultModelSelection("glm", "cn", "glm-5.1"),
+		defaultModelSelection("glm", "cn", "glm-5.2"), defaultModelSelection("glm", "cn", "glm-5"),
+		defaultModelSelection("glm", "cn", "glm-4.7")]) {
+		it(`${selection.model}: round trips the full assistant through tools and persistence, but isolates foreign models and summaries`, async (t) => {
+			const { base, workspace } = await temporaryWorkspace(t);
+			const store = new SessionStore({ root: join(base, "sessions") });
+			const bodies: { model: string; messages: Record<string, unknown>[] }[] = [];
+			const transport: typeof fetch = async (input, init) => {
+				const body = await new Request(input, init).json() as typeof bodies[number];
+				bodies.push(body);
+				return response(bodies.length === 1 ? raw : { role: "assistant", content: "3", reasoning_content: "PRIVATE_FINAL" });
+			};
+			const agent = createAgent({ ...config, ...selection, apiKey: "offline-replay" }, await createTools(workspace), transport);
+			const manager = await SessionManager.open(agent, { workspace, store });
+			await manager.run("Add one and two");
+			assert.deepEqual(bodies[1]!.messages.find((message) => message.role === "assistant"), raw);
+			assert.equal(bodies[1]!.messages.at(-1)?.role, "tool");
+			const resumed = await SessionManager.open(agent, { workspace, store, selection: { resume: manager.current.id } });
+			const saved = resumed.history.find((message) => message.role === "assistant");
+			assert.ok(saved?.role === "assistant");
+			assert.deepEqual(saved.providerReplay?.data, {
+				messageFields: { reasoning_content: "PRIVATE_REASONING", opaque_state: { signature: "opaque" } },
+				toolFields: [{ id: "sum-call", fields: { provider_signature: "call-signature" }, functionFields: { provider_tag: "preserve" } }],
+			});
+			await resumed.run("Continue");
+			assert.deepEqual(bodies[2]!.messages.find((message) => message.role === "assistant"), raw);
+			assert.ok(!JSON.stringify(bodies).includes("providerReplay"));
+			const plan = prepareCompaction(resumed.history, undefined);
+			assert.ok(!plan.chunks.join("").includes("PRIVATE_"));
+			assert.ok(!plan.chunks.join("").includes("opaque_state"));
+			assert.ok(plan.chunks.join("").includes("sum-call"));
+			for (const destination of [defaultModelSelection("deepseek"), defaultModelSelection("kimi", "global", "kimi-k3"),
+				defaultModelSelection("kimi", "cn", "kimi-k2.7-code")]) {
+				await createModel({ ...config, ...destination }, async (input, init) => {
+					const body = await new Request(input, init).text();
+					assert.ok(!body.includes("PRIVATE_"));
+					assert.ok(!body.includes("opaque_state"));
+					assert.ok(!body.includes("providerReplay"));
+					assert.ok(body.includes("sum-call"));
+					return response();
+				})(resumed.history);
+			}
 		});
-		await resumed.run("Continue");
-		assert.deepEqual(bodies[2]!.messages.find((message) => message.role === "assistant"), raw);
-		assert.ok(!JSON.stringify(bodies).includes("providerReplay"));
-		const plan = prepareCompaction(resumed.history, undefined);
-		assert.ok(!plan.chunks.join("").includes("PRIVATE_"));
-		assert.ok(!plan.chunks.join("").includes("opaque_state"));
-		assert.ok(plan.chunks.join("").includes("sum-call"));
-		for (const destination of [defaultModelSelection("deepseek"), defaultModelSelection("kimi", "global", "kimi-k3"),
-			defaultModelSelection("kimi", "cn", "kimi-k2.7-code")]) {
-			await createModel({ ...config, ...destination }, async (input, init) => {
-				const body = await new Request(input, init).text();
-				assert.ok(!body.includes("PRIVATE_"));
-				assert.ok(!body.includes("opaque_state"));
-				assert.ok(!body.includes("providerReplay"));
-				assert.ok(body.includes("sum-call"));
-				return response();
-			})(resumed.history);
-		}
-	});
+	}
 
 	it("isolates replay, measures wire bytes, and rejects invalid extras or tool associations", async () => {
 		const selection = { ...defaultModelSelection("deepseek"), thinking: "high" as const };

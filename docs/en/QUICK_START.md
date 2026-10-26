@@ -22,7 +22,7 @@ HARNESS_PROVIDER=deepseek
 DEEPSEEK_API_KEY=your-local-key
 ```
 
-Keep real keys in the ignored `.env` file or local environment variables. See [configuration](REFERENCE/CONFIGURATION.md) for Kimi, MiMo, Qwen, model selection and request budgets. The template sets an iteration budget of 128; the runtime default when unset is 32.
+Keep real keys in the ignored `.env` file or local environment variables. See [configuration](REFERENCE/CONFIGURATION.md) for Kimi, MiMo, Qwen, GLM, model selection and request budgets. The template sets an iteration budget of 128; the runtime default when unset is 32.
 
 ```powershell
 pnpm start --checkConfig

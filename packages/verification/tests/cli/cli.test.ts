@@ -417,7 +417,7 @@ test("CLI discovers skills for ordinary tasks and reset clears loaded instructio
 });
 
 test("new provider config checks select only their own credential without making requests", () => {
-  for (const [provider, key] of [["kimi", "MOONSHOT_API_KEY"], ["mimo", "MIMO_API_KEY"], ["qwen", "DASHSCOPE_API_KEY"]]) {
+  for (const [provider, key] of [["kimi", "MOONSHOT_API_KEY"], ["mimo", "MIMO_API_KEY"], ["qwen", "DASHSCOPE_API_KEY"], ["glm", "GLM_API_KEY"]]) {
     const result = run(["--checkConfig"], { HARNESS_PROVIDER: provider!, [key!]: "offline-provider-only" });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, new RegExp(`Provider: ${provider}`));

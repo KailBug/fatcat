@@ -67,7 +67,7 @@ Inside chat/TUI:
 
 Configuration and details:
   Before chatting, configure a provider key: docs/en/QUICK_START.md.
-  HARNESS_PROVIDER: deepseek (default), kimi, mimo, qwen.
+  HARNESS_PROVIDER: deepseek (default), kimi, mimo, qwen, glm.
   FATCAT_SESSION_DIR: session store (default: ~/.fatcat/sessions).
   Read file/skill content is sent to the provider; saved history is local plaintext.
   Delegation: up to two child tasks per turn, three model requests each; no nesting.

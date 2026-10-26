@@ -8,6 +8,8 @@ import { createDeepSeekModel, createModel } from "@fatcat/runtime/model";
 import type { Message, ModelObservation } from "@fatcat/runtime/model-types";
 
 const cases = [
+  { provider: "glm", key: "GLM_API_KEY", label: "GLM", model: "glm-5.1",
+    endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions" },
   { provider: "deepseek", key: "DEEPSEEK_API_KEY", label: "DeepSeek", model: "deepseek-flash",
     endpoint: "https://api.deepseek.com/chat/completions" },
   { provider: "kimi", key: "MOONSHOT_API_KEY", label: "Kimi", model: "kimi-k2.6",
@@ -44,7 +46,7 @@ for (const item of cases) {
       const body = await request.json() as Record<string, unknown> & { messages: ChatMessage[] };
       assert.equal(body.model, item.model);
       assert.equal(body.stream, false);
-      if (calls === 1 && item.provider === "mimo") {
+      if (calls === 1 && (item.provider === "mimo" || item.provider === "glm")) {
         assert.ok(!("tool_choice" in body));
         assert.ok(!("tools" in body));
       } else {
@@ -64,9 +66,9 @@ for (const item of cases) {
         assert.ok(!("thinking" in body));
       } else {
         assert.deepEqual(body.thinking, { type: "disabled" });
-        assert.equal(item.provider === "deepseek" ? body.max_tokens : body.max_completion_tokens, 2048);
+        assert.equal(item.provider === "deepseek" || item.provider === "glm" ? body.max_tokens : body.max_completion_tokens, 2048);
         assert.ok(!("enable_thinking" in body));
-        assert.ok(!(item.provider === "deepseek" ? "max_completion_tokens" in body : "max_tokens" in body));
+        assert.ok(!(item.provider === "deepseek" || item.provider === "glm" ? "max_completion_tokens" in body : "max_tokens" in body));
       }
       assert.ok(!("extra_body" in body));
       assert.ok(!("temperature" in body));

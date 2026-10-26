@@ -6,7 +6,7 @@
 
 [English](../en/README.md) | 简体中文
 
-Fatcat 是原生运行于 Windows 的 TypeScript Agent Harness，用于本地编码任务，支持配置 DeepSeek、Kimi、MiMo 和 Qwen。通过 CLI 对话、TUI 或本地 Web UI 检查工作区、受控修改文件并运行验证；各入口共用持久会话、工具与权限边界。
+Fatcat 是原生运行于 Windows 的 TypeScript Agent Harness，用于本地编码任务，支持配置 DeepSeek、Kimi、MiMo、Qwen 和 GLM。通过 CLI 对话、TUI 或本地 Web UI 检查工作区、受控修改文件并运行验证；各入口共用持久会话、工具与权限边界。
 
 文档面向使用者、开发者与 Agent，描述当前源码树。项目仍处于早期 demo 阶段，具体操作、支持范围与验证限制见各专题。
 

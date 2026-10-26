@@ -1,6 +1,6 @@
 import {HarnessError} from "./errors.js";
 
-export type Provider = "deepseek" | "kimi" | "mimo" | "qwen";
+export type Provider = "deepseek" | "kimi" | "mimo" | "qwen" | "glm";
 export type ProviderRegion = "cn" | "global" | "intl" | "us" | "eu" | "jp" | "hk";
 
 type ProviderProfile = {
@@ -16,6 +16,11 @@ type ProviderProfile = {
 // Protocol sources and scope are recorded in docs/en/ARCHITECTURE/PROVIDERS.md.
 // These are API platforms, not subscription/coding-plan endpoints.
 const profiles: Record<Provider, ProviderProfile> = {
+    glm: {
+        label: "GLM", apiKeyEnv: "GLM_API_KEY", modelEnv: "GLM_MODEL",
+        defaultModel: "glm-5.3", defaultRegion: "cn",
+        endpoints: {cn: "https://open.bigmodel.cn/api/paas/v4"},
+    },
     deepseek: {
         label: "DeepSeek", apiKeyEnv: "DEEPSEEK_API_KEY", modelEnv: "DEEPSEEK_MODEL",
         defaultModel: "deepseek-flash", defaultRegion: "global",
@@ -42,8 +47,8 @@ const profiles: Record<Provider, ProviderProfile> = {
 };
 
 export function parseProvider(value: string): Provider {
-    if (value === "deepseek" || value === "kimi" || value === "mimo" || value === "qwen") return value;
-    throw new HarnessError("CONFIG", "HARNESS_PROVIDER must be deepseek, kimi, mimo, or qwen.");
+    if (value === "deepseek" || value === "kimi" || value === "mimo" || value === "qwen" || value === "glm") return value;
+    throw new HarnessError("CONFIG", "HARNESS_PROVIDER must be deepseek, kimi, mimo, qwen, or glm.");
 }
 
 export function getProviderProfile(provider: Provider) {

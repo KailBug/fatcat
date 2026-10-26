@@ -50,9 +50,10 @@ The following table describes requests with thinking disabled. Model-specific th
 | DeepSeek | https://api.deepseek.com | thinking disabled, max_tokens |
 | Kimi | https://api.moonshot.cn/v1 or https://api.moonshot.ai/v1 | thinking disabled, max_completion_tokens |
 | MiMo | https://api.xiaomimimo.com/v1 | thinking disabled, max_completion_tokens; Bearer |
+| GLM | https://open.bigmodel.cn/api/paas/v4 | max_tokens; thinking disabled only for models that support off |
 | Qwen | Existing cn/intl DashScope or workspace regional hosts below | enable_thinking=false; older max_tokens, newer max_completion_tokens + preserve_thinking=false |
 
-All use OpenAI-compatible Chat Completions, Bearer and stream=false. Ordinary nonthinking output caps at 2048; tool choice is auto. Final text uses none on DeepSeek/Kimi/Qwen; MiMo omits tools/tool_choice because only auto is guaranteed. MiMo also supports api-key headers; Fatcat retains Bearer. Loop refuses over-budget execution even if a provider returns forbidden calls. Providers offer other protocols such as Responses/Anthropic; this implementation adds no adapters/SDKs for them.
+All use OpenAI-compatible Chat Completions, Bearer and stream=false. Ordinary nonthinking output caps at 2048; tool choice is auto. Final text uses none on DeepSeek/Kimi/Qwen; MiMo/GLM omit tools/tool_choice because only auto is guaranteed. MiMo also supports api-key headers; Fatcat retains Bearer. Loop refuses over-budget execution even if a provider returns forbidden calls. Providers offer other protocols such as Responses/Anthropic; this implementation adds no adapters/SDKs for them.
 
 Optional QWEN_WORKSPACE_ID accepts one safe DNS label, not arbitrary URLs. It constructs `https://{workspaceId}.{regionHost}.maas.aliyuncs.com/compatible-mode/v1`. Without it cn/intl retain old endpoints; other regions reject missing workspaceId.
 
@@ -84,17 +85,20 @@ These mappings are wired into execution and supported by injected-transport offl
 | kimi-k3 | low/high/max, default max, no off | reasoning_effort, max_completion_tokens=16384; no old thinking object | Shared 16384; reconstruct full assistant message |
 | kimi-k2.7-code, kimi-k2.7-code-highspeed | on, no off | thinking enabled, keep=all, max_completion_tokens=16384 | Shared 16384; replay thinking |
 | MiMo V2.6 Flash/Pro/Pro Ultraspeed, V2.5/Pro | off/on | thinking enabled, max_completion_tokens=16384 | Shared 16384; full thinking replay, especially tool calls |
+| glm-5.3 | low/high/max, default max, no off | thinking enabled, clear_thinking=false, reasoning_effort, max_tokens=16384 | Shared 16384; preserve original reasoning_content |
+| glm-5.2 | off/high/max, default max | Same enabled fields as GLM 5.3 | Shared 16384; preserve original reasoning_content |
+| glm-5.1, glm-5, glm-4.7 | off/on, default on | thinking enabled, clear_thinking=false, max_tokens=16384 | Shared 16384; no reasoning_effort; preserve original reasoning_content |
 | qwen3.8-max, qwen3.8-flash | off/low/medium/xhigh; compatible high/max | enable_thinking, preserve_thinking, reasoning_effort, max_completion_tokens=16384 | high/max→xhigh; shared 16384, no simultaneous thinking_budget; replay when enabled |
 | qwen3.7-plus | off/on | enable_thinking, preserve_thinking, max_completion_tokens=16384 | Shared 16384 without extra thinking reservation; replay when enabled |
 | qwen-plus | off/on | enable_thinking=true, thinking_budget=8192, max_tokens=2048 | Separate thinking/answer reservation, total 10240; no thinking replay |
 | qwen3-vl-plus/flash | Current adapter off | enable_thinking=false, max_tokens=2048 | Auxiliary images only, not tool Agents |
 | Unknown custom names | off | Existing provider nonthinking fields | No guessed thinking capabilities; reservation semantics unknown |
 
-These caps are Fatcat policy, not provider maximum output. off retains 2048; compaction/document disable thinking when possible, otherwise retain mandatory reasoning within 16384. Auxiliary requests do not change parent choices. K3/K2.7 Agent execution is enabled; K3 full-message reconstruction has offline tool-roundtrip/save/resume evidence, not real-account/service acceptance. Startup model defaults remain DeepSeek Flash, Kimi K2.6, MiMo V2.6 Flash and Qwen Plus.
+These caps are Fatcat policy, not provider maximum output. off retains 2048; compaction/document disable thinking when possible, otherwise retain mandatory reasoning within 16384. Auxiliary requests do not change parent choices. K3/K2.7 Agent execution is enabled; K3 full-message reconstruction has offline tool-roundtrip/save/resume evidence, not real-account/service acceptance. Startup model defaults are DeepSeek Flash, Kimi K2.6, MiMo V2.6 Flash, Qwen Plus and GLM 5.3.
 
 Catalog default thinking prefers medium where supported, on for off/on models, otherwise explicit catalog defaults (K3 max, K2.7 Code on). Unknown/unadapted models stay off. This affects new default sessions and direct clients; explicit Config.thinking/saved choices win, with no migration of existing off records. Web offers only enabled thinking levels; see [Web UI](WEBUI.md#model-thinking-and-context-controls).
 
-Replay stores provenance/extras beside canonical assistant data, validating formats/call IDs without another copy of answers/arguments. Merge only when API, provider, region, workspaceId and model match and current protocol permits it. Levels may change within the model, but off strips private history. Cross-model/region/workspace sends only canonical text/tool facts; internal providerReplay never goes directly on the wire. DeepSeek replays with enabled thinking and tool definitions; Kimi/MiMo/new Qwen follow the table; old Qwen does not. Summaries strip private data. Projection precedes final byte checks/omission without duplicate canonical messages.
+Replay stores provenance/extras beside canonical assistant data, validating formats/call IDs without another copy of answers/arguments. Merge only when API, provider, region, workspaceId and model match and current protocol permits it. Levels may change within the model, but off strips private history. Cross-model/region/workspace sends only canonical text/tool facts; internal providerReplay never goes directly on the wire. DeepSeek replays with enabled thinking and tool definitions; Kimi/MiMo/GLM/new Qwen follow the table; old Qwen does not. Summaries strip private data. Projection precedes final byte checks/omission without duplicate canonical messages.
 
 ThinkingLevel retains medium/ultra and adds Qwen-native xhigh. It is an application option set, not universal levels. Wire reasoning_effort derives from SDK request types and receives normalized legal values only. The original model.ts TS2375 came from putting ultra in a shared wire union that SDK ReasoningEffort rejects. exactOptionalPropertyTypes appeared in diagnostics but did not justify disabling it or adding casts. Unsupported Kimi/Qwen levels reject explicitly; never guess ultra across providers.
 
@@ -105,6 +109,8 @@ ThinkingLevel retains medium/ultra and adds Qwen-native xhigh. It is an applicat
 | Kimi K3 | null (official 1M is not assumed to be an exact integer) | Unverified |
 | Three MiMo V2.6 IDs | 1048576 | Unverified |
 | MiMo V2.5/Pro | null (exact capacity unverified) | Unverified |
+| GLM 5.3 / 5.2 | 1048576 | Unverified |
+| GLM 5.1 / 5 / 4.7 | 202752 | Unverified |
 | Qwen3.8 Max/Flash, 3.7 Plus | 1000000 | 991808 / 983616 |
 | Qwen Plus | 1000000 | 997952 / 995904 |
 | Qwen3 VL Plus/Flash | 262144 | 260096 / 258048 |
@@ -147,6 +153,18 @@ Only PAYG APIs are implemented. Subscription keys, model IDs, allowances and end
 
 The catalog refresh was checked on 2026-10-19. Additional sources: [DeepSeek models](https://api-docs.deepseek.com/api/list-models/), [Kimi K3](https://platform.kimi.com/docs/guide/kimi-k3-quickstart), [K2.7 Code](https://platform.kimi.com/docs/guide/kimi-k2-7-code-quickstart), [MiMo models/retirement](https://mimo.mi.com/docs/quick-start/model), [Qwen3.8 Max](https://help.aliyun.com/zh/model-studio/qwen3-8-max), [Qwen3.8 Flash](https://help.aliyun.com/zh/model-studio/qwen3-8-flash), [Qwen3.7 Plus](https://help.aliyun.com/zh/model-studio/qwen3-7-plus), [VL Plus](https://help.aliyun.com/zh/model-studio/qwen3-vl-plus), [VL Flash](https://help.aliyun.com/zh/model-studio/qwen3-vl-flash). There is no remote catalog auto-update; future changes must check protocols and actual serialized requests.
 
+## GLM standard API scope
+
+GLM uses domestic BigModel standard API credentials only. Coding Plan and Z.ai endpoints/keys are not interchangeable and are not configured by this profile. Startup and public connection selection use the same fixed `cn` identity; no arbitrary host or alternate-key fallback is added. See [configuration](../REFERENCE/CONFIGURATION.md#providers).
+
+Following local pi `3daa20280` (`providers/zai.ts` and `api/openai-completions.ts`), the profile, model catalog and typed generation mapping remain separate. Fatcat retains its existing non-streaming SDK and replay adapter. Enabled thinking sets nested `thinking.clear_thinking=false` and replays unchanged reasoning for the same model. Text-only final requests omit tools/tool_choice because the documented selector only guarantees auto. Compaction disables optional thinking; GLM 5.3 keeps its selected mandatory effort. No GLM image capability is advertised. Unknown model names do not inherit known-model thinking or capacity.
+
+Checked on 2026-10-26 against the official [API introduction](https://docs.bigmodel.cn/cn/api/introduction), [Chat Completions schema](https://docs.bigmodel.cn/api-reference/模型-api/对话补全), [thinking parameters](https://docs.bigmodel.cn/cn/guide/capabilities/thinking), [reasoning replay](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode) and [model overview](https://docs.bigmodel.cn/cn/guide/start/model-overview). GLM 5.2 exposes the native off/high/max choices rather than compatibility effort aliases.
+
+Window references use the official model configurations' `max_position_embeddings`: [GLM 5.3](https://huggingface.co/zai-org/GLM-5.3/blob/main/config.json) and [5.2](https://huggingface.co/zai-org/GLM-5.2/blob/main/config.json) specify 1048576; [5.1](https://huggingface.co/zai-org/GLM-5.1/blob/main/config.json), [5](https://huggingface.co/zai-org/GLM-5/blob/main/config.json) and [4.7](https://huggingface.co/zai-org/GLM-4.7/blob/main/config.json) specify 202752. These provide exact model-window references alongside the domestic guides' 1M/200K labels; they are not a measured guarantee of endpoint acceptance. Independent API input limits remain null. No matching local tokenizer is supplied, so capacity can be displayed while input usage and remaining headroom stay unknown without an injected matching counter. With a valid estimate, shared output is subtracted once and negative headroom is retained. The normal local byte budget still applies.
+
+Injected SDK tests cover credentials, fixed URL, generation fields, tools, exact prepared/sent bytes, request limits, usage, safe failures, cancellation, timeout, session save/resume and reasoning isolation. Durable regressions also cover capacity boundaries, unknown token counts, switching from DeepSeek to GLM for parent/child/compaction requests, and refusal to execute unexpected tools after the iteration budget is exhausted. GLM evidence is offline only; account access, service acceptance and real task quality require a separately authorized model run. Existing DeepSeek live runners retain their provider guard.
+
 ## Usage validation
 
 prompt_tokens, completion_tokens and total_tokens must be consistent nonnegative safe integers. Cache validation independently checks standard cached_tokens and DeepSeek hit/miss against input. Explicit miss can derive missing hit using prompt=hit+miss; conflicting fields make cache unknown while basic usage may remain valid. Missing counters are never zero-filled.
@@ -161,7 +179,7 @@ Check official hosts, auth, tool/nonthinking capabilities, fields, finish reason
 
 Protocol sources remain [DeepSeek](https://api-docs.deepseek.com/api/create-chat-completion/), [Kimi](https://platform.kimi.com/docs/api/chat), [MiMo](https://mimo.mi.com/docs/en-US/api/chat/openai-api) and [Qwen](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions). These explain implementation choices; future changes require renewed checks and links alone are not online evidence.
 
-Kimi/MiMo/Qwen evidence is offline. Real vision APIs, account access, chart understanding and transcription quality are unverified. Existing live scripts remain DeepSeek-only and run only on explicit request; adding providers need not make live calls.
+Kimi/MiMo/Qwen/GLM evidence is offline. Real vision APIs, account access, chart understanding and transcription quality are unverified. Existing live scripts remain DeepSeek-only and run only on explicit request; adding providers need not make live calls.
 
 Phase-two injected checks cover independent selection, current persistence, save/busy/conflict failure, untrusted history, full K3 reconstruction, cross-model isolation and parent/child/image/summary rebinding after directory changes. Two real-Edge failures were fixture timing: modal entry motion and delayed session focus overriding an early blur. Waiting for actual animation/focus and adding controlled delayed-frame regressions passed while retaining centered-modal/collapse assertions. No real models or native interactive terminal checks ran for that work.
 

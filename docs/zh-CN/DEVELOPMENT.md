@@ -51,7 +51,7 @@ Web UI 通过 `@fatcat/webui` 导出 runWebUi，CLI 在参数校验后惰性加�
 
 Verification 为无库导出/barrel 的私有开发包。tests/、verify/、scripts/ 编译到自身 dist 对应位置，不需声明。五个产品包及外部夹具/浏览器依赖都是直接开发依赖。产品包不得声明 verification 依赖（含 devDependency）或导入其文件。只有 verification 可消费产品 internal/*；测试与运行器同样接受边界检查。
 
-根 pnpm test 和 verify:* 保持命令名、参数、env-file 行为，先构建再调用对应可执行入口。构建/安装/类型检查 verification 不执行运行器。离线入口从模块定位包根，只发现 tests/**/*.test.ts，浏览器/原生/网络/live 在清单之外。scripts/copy-resources.mjs 将原生探针复制入构建。启动适配回归有意执行根 dist/scripts/start.js，版本回归读根 manifest，live 读取仍用 examples/workspace；这些是明确 checkout 资源，不是运行时代码导入。
+根 pnpm test 和 verify:* 保持命令名、参数、env-file 行为，先构建再调用对应可执行入口。构建/安装/类型检查 verification 不执行运行器。离线入口从模块定位包根，只发现 tests/**/*.test.ts，浏览器/原生/网络/live 在清单之外。`packages/verification/scripts/copy-resources.mjs` 将原生探针复制入构建。启动适配回归有意执行根 dist/scripts/start.js，版本回归读根 manifest，live 读取仍使用被忽略的本地 `examples/workspace` 夹具，详见[真实模型检查](#explicit-live-model-checks)；这些 checkout 资源不是运行时代码导入。
 
 CLI 的 `@fatcat/cli` 导出可调用 runCli，`@fatcat/cli/entry` 为执行 argv 的进程入口，直接映射所属模块。验证用 `@fatcat/cli/internal/*` 检查 parser/chat/terminal；进程测试通过 import.meta.resolve 定位可执行入口，不依赖相对构建目录。可调用入口导入时不得执行 argv 或接管输入。VERSION 读取相邻 CLI manifest，边界检查要求与根版本一致，应一起更新。
 
@@ -327,7 +327,7 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 
 编码检查只授权指定源码编辑及固定测试。Workflow 要求各回合有失败和最终成功验证，但不另断言失败先于首次编辑。委派断言不能机械证明每条 review；Context 是小型行为夹具，不是 token 成本/普遍成功率 benchmark。普通报告仍 taskVerification: not_assessed。
 
-夹具与用户项目分离，基本 live 读取也使用合成 examples/workspace。清理不撤销供应商用量。实际运行器位于 packages/verification/verify/live，共享流程在 tests/support/coding-workflow.ts。
+临时夹具与用户项目分离。`verify:live` 还要求被忽略的本地 `examples/workspace/project-notes.txt`：恰好三行，包含验证短语 `AMBER-MEADOW-42`，用于分页及委派读取。运行器不创建该夹具，新克隆的仓库也不包含它。应在获授权的运行开始前准备合成内容；读取此文件前的场景已经会发送付费请求。清理不撤销供应商用量。实际运行器位于 `packages/verification/verify/live/`，共享流程夹具和断言位于 `packages/verification/tests/support/coding-workflow.ts`。
 
 <a id="verification-evidence"></a>
 

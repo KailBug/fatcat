@@ -13,7 +13,7 @@ pnpm start --resume review
 pnpm start --resume review --fork-session --name alternative
 ```
 
-`--continue` selects the most recently updated session across all workspace buckets in the selected store. `--resume` selects by ID or name; use an ID when a name is ambiguous. Without another mode or prompt, session-selection options start chat. Bare `--resume` provides a terminal picker, or a list when output is redirected, without requiring model credentials. Starting chat/TUI itself requires configured credentials.
+`--continue` selects the most recently updated session across all workspace buckets in the selected store. `--resume` selects by ID or name; use an ID when a name is ambiguous. Without another mode or prompt, session-selection options start chat. Bare `--resume` provides a picker when both stdin and stderr are terminals; otherwise it prints a list to stdout and exits without requiring model credentials. Redirecting stdout alone does not select list mode. Starting chat/TUI itself requires configured credentials.
 
 In chat/TUI, `/sessions` lists saved sessions, `/resume <id-or-name>` switches, `/rename <name>` names, and `/fork [name]` branches completed history. `/new [name]`, `/clear` and `/reset` retain the old session and create a new one. Inside a project, the new session remains in that project; `/new --standalone [name]` leaves that scope.
 
@@ -77,7 +77,9 @@ In chat, TUI or the Web UI composer:
 
 Automatic compaction is enabled by default. If older-read omission still cannot fit a request within the local byte budget, Fatcat can compact eligible older history once and continue the same turn. The rejected attempt, summaries and continuation share the turn's request allowance. Already executed tools are not replayed. Provider HTTP errors, timeouts and token thresholds do not trigger this recovery. Set `HARNESS_AUTO_COMPACT=false` for manual-only compaction.
 
-A tiny request budget, one oversized recent turn or large journals can still prevent continuation. Summary usage is reported even if subsequent work fails. A successful summary is saved before continuation and remains if continuation is cancelled. Cancelled/invalid summaries or failed saves retain the previous projection. Full history still counts toward the session-file limit. See [context architecture](../ARCHITECTURE/CONTEXT.md).
+A tiny request budget, one oversized recent turn or large journals can still prevent continuation. Older-read omission protects the current and latest completed turn; compaction summarizes only older completed turns. A long task can therefore exceed the request-byte limit even when the model's token window has room, and compaction cannot shrink that current turn. Increasing the iteration allowance does not increase either limit. After interruption, inspect completed effects before continuing with a smaller task or a new conversation and an explicit handoff.
+
+Summary usage is reported even if subsequent work fails. A successful summary is saved before continuation and remains if continuation is cancelled. Cancelled/invalid summaries or failed saves retain the previous projection. Full history still counts toward the session-file limit. See [context architecture](../ARCHITECTURE/CONTEXT.md).
 
 ## Storage and recovery
 

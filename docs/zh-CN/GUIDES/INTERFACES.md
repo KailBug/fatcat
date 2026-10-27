@@ -8,7 +8,7 @@
 
 [文档首页](../README.md) · [命令参考](../REFERENCE/COMMANDS.md)
 
-先按[快速开始](../QUICK_START.md)配置供应商。示例从仓库根目录运行。普通单次任务、chat 和 TUI 默认创建已保存会话；新建未命名 Web UI 聊天从草稿开始。持久化与续接见[会话与项目](SESSIONS.md)。
+先按[快速开始](../QUICK_START.md)配置供应商。示例从 Fatcat 仓库根目录运行；将 `D:\work\my-app` 替换为已有项目目录。不传 `--workspace` 时，新的独立会话使用启动目录。普通单次任务、chat 和 TUI 默认创建已保存会话；新建未命名 Web UI 聊天从草稿开始。持久化与续接见[会话与项目](SESSIONS.md)。
 
 <a id="single-task-and-terminal-chat"></a>
 
@@ -16,7 +16,7 @@
 
 ```powershell
 pnpm start --prompt "Inspect this workspace and summarize its entry points."
-pnpm start --chat --workspace examples/workspace
+pnpm start --chat --workspace "D:\work\my-app"
 ```
 
 单次任务输出到 stdout；诊断、审批和执行事件使用 stderr。脚本若需避开 pnpm/构建输出，可先构建，再从仓库根目录执行 `node --env-file-if-exists=.env packages/cli/dist/cli.js --prompt "Your task"`。直接调用 Node 使用自己的工作目录，不恢复 `INIT_CWD`。
@@ -30,7 +30,7 @@ Chat 每行接受一个 prompt，忽略空行。本地斜杠命令必须独占�
 ## 交互式 TUI
 
 ```powershell
-pnpm start --tui --workspace examples/workspace
+pnpm start --tui --workspace "D:\work\my-app"
 ```
 
 TUI 共用 chat 的会话命令与工具，并提供编辑器、活动展示、审批提示和配置/usage 面板。它要求终端，拒绝重定向输入/输出。Enter 发送，Alt+Enter 换行，Page Up/Page Down 滚动。`/status` 显示完整配置与指标定义。Escape 或 Ctrl+C 取消当前工作并保留对话；空闲时 Ctrl+C 退出；Ctrl+D 取消并退出。
@@ -43,7 +43,7 @@ TUI 共用 chat 的会话命令与工具，并提供编辑器、活动展示、�
 
 ```powershell
 pnpm start --webui
-pnpm start --webui --workspace examples/workspace --port 3211
+pnpm start --webui --workspace "D:\work\my-app" --port 3211
 ```
 
 服务默认绑定 `127.0.0.1:3210` 并打开默认浏览器。打开失败时复制终端完整链接，包括 `#token=...`。请将其视为私有链接：它授予对该服务会话和当前对话的访问。设置 `FATCAT_WEBUI_OPEN_BROWSER=0` 可关闭自动打开。服务终端中 Ctrl+C 停止服务并取消当前工作。

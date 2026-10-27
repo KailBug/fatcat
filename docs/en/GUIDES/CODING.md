@@ -4,10 +4,10 @@ English | [简体中文](../../zh-CN/GUIDES/CODING.md)
 
 [Documentation](../README.md) · [Permissions](../REFERENCE/COMMANDS.md#permission-modes)
 
-Start a task, chat, TUI or Web UI in the target workspace. A useful request states the intended change and a concrete way to check it:
+Start a task, chat, TUI or Web UI in the target workspace. Run from the Fatcat repository root and replace the path below with an existing project directory. A useful request states the intended change and a concrete way to check it:
 
 ```powershell
-pnpm start --chat --workspace examples/workspace
+pnpm start --chat --workspace "D:\work\my-app"
 # Then ask: Find the greeting implementation, change its wording, and run its focused test.
 ```
 
@@ -28,7 +28,7 @@ If the file changed while approval was pending, Fatcat rejects a stale edit inst
 To allow controlled writes automatically while still reviewing commands:
 
 ```powershell
-pnpm start --chat --permission-mode acceptEdits
+pnpm start --chat --workspace "D:\work\my-app" --permission-mode acceptEdits
 ```
 
 See [tool contracts](../ARCHITECTURE/TOOLS.md) for exact read, search and write limits; [permissions](../ARCHITECTURE/PERMISSIONS.md) owns access rules.

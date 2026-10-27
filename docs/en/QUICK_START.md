@@ -43,8 +43,10 @@ Run one of these commands. Chat uses the terminal; TUI needs an interactive term
 
 ## Work in a directory
 
+Replace the path below with an existing project directory. Keep running the command from the Fatcat repository root; `--workspace` selects the files the agent works on. A fresh checkout does not include `examples/workspace`.
+
 ```powershell
-pnpm start --chat --workspace examples/workspace
+pnpm start --chat --workspace "D:\work\my-app"
 ```
 
 Ask Fatcat to inspect a file and propose a small change. The default mode asks before file writes and commands. Review each proposed operation before allowing it. [The coding guide](GUIDES/CODING.md) explains reading, editing and checking results; [permission modes](REFERENCE/COMMANDS.md#permission-modes) describe the alternatives.

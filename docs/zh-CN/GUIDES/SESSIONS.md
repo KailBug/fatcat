@@ -19,7 +19,7 @@ pnpm start --resume review
 pnpm start --resume review --fork-session --name alternative
 ```
 
-`--continue` 从选定存储的所有工作区桶中选择最近更新的会话。`--resume` 按 ID 或名称选择；名称有歧义时使用 ID。没有其他模式或 prompt 时，会话选择参数启动 chat。单独 `--resume` 提供终端选择器，输出重定向时提供列表，无需模型凭据；真正启动 chat/TUI 仍需已配置凭据。
+`--continue` 从选定存储的所有工作区桶中选择最近更新的会话。`--resume` 按 ID 或名称选择；名称有歧义时使用 ID。没有其他模式或 prompt 时，会话选择参数启动 chat。单独 `--resume` 在 stdin 和 stderr 均为终端时提供选择器，否则将列表打印到 stdout 后退出，无需模型凭据。仅重定向 stdout 不会进入列表模式；真正启动 chat/TUI 仍需已配置凭据。
 
 Chat/TUI 中，`/sessions` 列出已保存会话，`/resume <id-or-name>` 切换，`/rename <name>` 命名，`/fork [name]` 从已完成历史分支。`/new [name]`、`/clear`、`/reset` 保留旧会话并新建会话。在项目内，新会话仍属于该项目；`/new --standalone [name]` 离开该作用域。
 
@@ -91,7 +91,9 @@ Web UI 的 **Move to project** 和拖放使用相同确认。项目重命名、�
 
 自动压缩默认启用。省略旧读取后仍不能满足本地请求字节预算时，Fatcat 可对符合条件的较旧历史压缩一次，然后继续同一回合。被拒绝的尝试、摘要和续跑共用该回合请求额度，不重放已执行工具。供应商 HTTP 错误、超时或 token 阈值不会触发该恢复。设置 `HARNESS_AUTO_COMPACT=false` 可只使用手动压缩。
 
-过小请求预算、单个过大最近回合或过大 journal 仍可能阻止续跑。后续工作失败时仍报告摘要 usage。成功摘要先保存再续跑，续跑取消也保留摘要。取消/无效摘要或保存失败保留之前投影。完整历史仍计入会话文件上限。见[上下文架构](../ARCHITECTURE/CONTEXT.md)。
+过小请求预算、单个过大最近回合或过大 journal 仍可能阻止续跑。旧读取省略保护当前回合和最近一个已完成回合；压缩只摘要更早的已完成回合。因此，即使模型 token 窗口仍有余量，长任务也可能超过请求字节上限，而压缩无法缩小当前回合。增加迭代额度不会提高这两种上限。中断后先检查已完成操作的效果，再以更小任务继续，或通过明确交接开启新对话。
+
+后续工作失败时仍报告摘要 usage。成功摘要先保存再续跑，续跑取消也保留摘要。取消/无效摘要或保存失败保留之前投影。完整历史仍计入会话文件上限。见[上下文架构](../ARCHITECTURE/CONTEXT.md)。
 
 <a id="storage-and-recovery"></a>
 

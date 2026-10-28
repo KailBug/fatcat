@@ -4,13 +4,13 @@ English | [简体中文](../../zh-CN/GUIDES/INTERFACES.md)
 
 [Documentation](../README.md) · [Command reference](../REFERENCE/COMMANDS.md)
 
-Configure a provider first using the [quick start](../QUICK_START.md). All examples run from the repository root. Ordinary task, chat and TUI launches create saved sessions by default; a new unnamed Web UI chat starts as a draft. See [sessions and projects](SESSIONS.md) for persistence and continuation.
+Configure a provider first using the [quick start](../QUICK_START.md). All examples run from the Fatcat repository root; replace `D:\work\my-app` with an existing project directory. Without `--workspace`, a new independent session uses the launch directory. Ordinary task, chat and TUI launches create saved sessions by default; a new unnamed Web UI chat starts as a draft. See [sessions and projects](SESSIONS.md) for persistence and continuation.
 
 ## Single task and terminal chat
 
 ```powershell
 pnpm start --prompt "Inspect this workspace and summarize its entry points."
-pnpm start --chat --workspace examples/workspace
+pnpm start --chat --workspace "D:\work\my-app"
 ```
 
 Single-task output goes to stdout; diagnostics, approvals and execution events use stderr. For scripts that need to avoid pnpm/build output, build once and invoke `node --env-file-if-exists=.env packages/cli/dist/cli.js --prompt "Your task"` from the repository root. Direct Node invocation uses its own working directory and does not restore `INIT_CWD`.
@@ -22,7 +22,7 @@ Use `/context` to inspect history size and `/compact [focus]` to summarize older
 ## Interactive TUI
 
 ```powershell
-pnpm start --tui --workspace examples/workspace
+pnpm start --tui --workspace "D:\work\my-app"
 ```
 
 TUI shares chat's session commands and tools, with an editor, activity display, approval prompts and configuration/usage panels. It requires a terminal; redirected input/output is rejected. Enter sends, Alt+Enter inserts a newline, and Page Up/Page Down scroll. `/status` shows full configuration and metric definitions. Escape or Ctrl+C cancels active work while retaining the conversation. Ctrl+C while idle exits; Ctrl+D cancels and exits.
@@ -33,7 +33,7 @@ Provider usage is reported only when supplied by the provider. Missing token or 
 
 ```powershell
 pnpm start --webui
-pnpm start --webui --workspace examples/workspace --port 3211
+pnpm start --webui --workspace "D:\work\my-app" --port 3211
 ```
 
 The server binds to `127.0.0.1:3210` by default and opens the default browser. If opening fails, copy the complete terminal link, including `#token=...`. Treat it as private: it grants access to this server's sessions and active conversation. Set `FATCAT_WEBUI_OPEN_BROWSER=0` to disable automatic opening. Ctrl+C in the server terminal stops the server and cancels active work.

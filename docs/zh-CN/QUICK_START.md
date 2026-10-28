@@ -53,8 +53,10 @@ pnpm start --webui
 
 ## 在指定目录中工作
 
+将下方路径替换为已有项目目录。命令仍从 Fatcat 仓库根目录运行，`--workspace` 选择 agent 操作的文件目录。新克隆的仓库不包含 `examples/workspace`。
+
 ```powershell
-pnpm start --chat --workspace examples/workspace
+pnpm start --chat --workspace "D:\work\my-app"
 ```
 
 让 Fatcat 检查一个文件并提出小范围修改。默认模式在写文件和执行命令前请求批准，请逐项审阅。[编码指南](GUIDES/CODING.md)说明读取、编辑和结果检查；其他模式见[权限模式](REFERENCE/COMMANDS.md#permission-modes)。

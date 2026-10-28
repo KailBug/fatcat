@@ -8,10 +8,10 @@
 
 [文档首页](../README.md) · [权限](../REFERENCE/COMMANDS.md#permission-modes)
 
-在目标工作区启动单次任务、chat、TUI 或 Web UI。有效的请求应说明预期修改及具体检查方法：
+在目标工作区启动单次任务、chat、TUI 或 Web UI。命令从 Fatcat 仓库根目录运行，并将下方路径替换为已有项目目录。有效的请求应说明预期修改及具体检查方法：
 
 ```powershell
-pnpm start --chat --workspace examples/workspace
+pnpm start --chat --workspace "D:\work\my-app"
 # 然后提问：找到问候语的实现，修改文案，并运行对应的定向测试。
 ```
 
@@ -36,7 +36,7 @@ Fatcat 可以检查文本、搜索、创建或编辑文件、执行命令、研�
 如需自动允许受控写入，同时继续审阅命令：
 
 ```powershell
-pnpm start --chat --permission-mode acceptEdits
+pnpm start --chat --workspace "D:\work\my-app" --permission-mode acceptEdits
 ```
 
 精确的读取、搜索与写入限制见[工具契约](../ARCHITECTURE/TOOLS.md)，访问规则由[权限架构](../ARCHITECTURE/PERMISSIONS.md)维护。

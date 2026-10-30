@@ -19,11 +19,13 @@ Definitions use Fatcat's `ToolDefinition` with direct name, description, paramet
 | `packages/runtime/src/tools/shell.ts` | Command protocol, authorization, cwd rechecks and command journal |
 | `packages/runtime/src/tools/shell/powershell.ts` | Windows PowerShell environment, process execution and cleanup |
 | `packages/runtime/src/tools/shell/bash.ts` | Linux Bash environment, process-group execution and cleanup |
-| `packages/runtime/src/tools/shell/types.ts` | Shared ProcessResult contract and combined output limit |
-| `packages/runtime/src/tools/shell-output.ts` | Bounded immutable command logs, previews and output_read |
+| `packages/runtime/src/tools/shell/types.ts` | Shared process result and streaming sink contracts |
+| `packages/runtime/src/tools/shell-output.ts` | Workspace-owned output IDs, capture metadata and output_read |
+| `packages/runtime/src/tools/shell/capture.ts`, `output-files.ts`, `output-pages.ts` | Bounded preview, streamed temporary logs and file paging/search |
+| `packages/runtime/src/tools/ask-user.ts`, `image-read.ts` | Parent clarification and budgeted local image inspection |
 | `packages/runtime/src/tools/web.ts`, `browser.ts` | [HTTP research](WEB.md) and [local browser](BROWSER.md) entries |
 
-Programmatic createTools without a directory has no local tools. A directory adds read/glob/grep/write/edit/shell/output_read, defaulting to read-only files and shell deny. sum has been removed; model requests omit the tools envelope when the collection is empty. Ordinary entries explicitly select directories/permissions and assemble web/browser. Skills, attachments and Memory wrap general read/write; their own topics define those protocols.
+Programmatic createTools without a directory has no local tools. A directory adds read/glob/grep/write/edit/shell/output_read, defaulting to read-only files and shell deny. sum has been removed; model requests omit the tools envelope when the collection is empty. Ordinary entries explicitly select directories/permissions and assemble web/browser. Skills and attachments wrap read. Memory uses memory_search, memory_read and parent-only memory_write. Agent assembly adds image_read and, when a host callback exists, parent-only ask_user; their contracts are below.
 
 Results use `{ok:true,result}` or `{ok:false,error:{code,message}}`. Recoverable errors return to the model; cancellation throws CANCELLED and stops the turn. Session separately saves failed-turn messages as an attempt. Later request overflow does not roll back file/command effects.
 
@@ -31,7 +33,7 @@ Results use `{ok:true,result}` or `{ok:false,error:{code,message}}`. Recoverable
 
 ## read, glob and grep
 
-read accepts path, offset and limit for known workspace paths. Workspace query belongs to grep. Attachment, Memory and Skill virtual-resource wrappers retain their documented read query protocols. offset is zero-based; limit defaults to 100 and caps at 200. Displayed line numbers start at 1. Files return bounded complete lines; directories return filtered, sorted entries. nextOffset indicates continuation. Paging rereads current content without a workspace snapshot or version token.
+read accepts path, offset and limit for known workspace paths. Workspace query belongs to grep. Attachment and Skill virtual-resource wrappers retain their documented read query protocols. offset is zero-based; limit defaults to 100 and caps at 200. Displayed line numbers start at 1. Files return bounded complete lines; directories return filtered, sorted entries. nextOffset indicates continuation. Paging rereads current content without a workspace snapshot or version token.
 
 glob accepts pattern and an optional directory path, returning sorted paths without opening file contents. grep accepts query and an optional file/directory path; literal, case-sensitive matching is the default. regex=true enables JavaScript Unicode regular expressions in a worker with a three-second per-file deadline; ignoreCase and 0–5 context lines are optional. Regex cancellation terminates the worker. Results sort by path UTF-16 code units then line number; multiple matches on one line return it once. offset counts paths for glob or matching lines for grep. Both default to 100 results, at most 200.
 
@@ -67,7 +69,7 @@ This avoids partial in-place writes; it is neither a multi-file transaction nor 
 
 ## shell execution boundaries
 
-`tools/shell.ts` coordinates permission snapshots, approval, cwd validation, command records and cleanup-failure lockout. The platform executors in `tools/shell/` only receive the command, cwd, timeout and cancellation signal; they own process lifecycle and return `ProcessResult`. They do not read permission policy or request approval. Policy, approval coordination and command-risk classification remain in `permissions/`.
+`tools/shell.ts` coordinates permission snapshots, approval, cwd validation, command records and cleanup-failure lockout. The platform executors in `tools/shell/` only receive the command, cwd, timeout, cancellation signal and optional output sink; they own process lifecycle and return `ProcessResult`. They do not read permission policy or request approval. Policy, approval coordination and command-risk classification remain in `permissions/`.
 
 Input is command with optional cwd and timeoutMs. Commands allow 4000 UTF-16 code units; timeout defaults to 30 seconds and accepts 100–120000 ms. Approval shows the complete command, canonical directory and deadline; cwd is rechecked afterward. File-write authorization is not command authorization.
 
@@ -75,7 +77,7 @@ Each call launches a fresh hidden Windows PowerShell without profile or interact
 
 The additional Linux evaluation path uses `/bin/bash --noprofile --norc -c` in a new process group, with no stdin and no persistent shell state. `tools/shell/bash.ts` retains the same ProcessResult contract and an explicit Linux environment allowlist; BASH_ENV, ENV, SHELLOPTS, loader hooks and provider credentials are not inherited. Tool descriptions and system guidance select the actual platform. Other platforms remain unsupported by shell. Linux does not use the PowerShell risk classifier: every Free to go Bash command requires approval. A headless task must select an explicit workspace-write/shell-allow policy or deny shell.
 
-Combined stdout/stderr capture is limited to 1 MiB raw bytes, independently of the model preview. Overflow, timeout and cancellation trigger bounded process-tree cleanup. Cleanup does not target the old PID after parent exit; detached descendants may survive. Unconfirmed cleanup records unconfirmed and blocks further commands on the same Tools instance. There is no Job Object guarantee, background-service or interactive-command support.
+stdout/stderr stream to temporary files with backpressure and a 16 KiB raw preview per stream. The log quota is 64 MiB per command and 256 MiB across the process. Quota exhaustion or storage failure stops further capture while the process continues; captureStatus reports command_quota, process_quota or storage_error. Only timeout/cancellation trigger bounded process-tree cleanup. Cleanup does not target the old PID after parent exit; detached descendants may survive. Unconfirmed cleanup blocks further commands on the same Tools instance. There is no Job Object guarantee, background-service or interactive-command support.
 
 Linux sends SIGKILL immediately to the owned process group, following the inspected pi executor, and waits up to five seconds for stream/process settlement. This deliberately replaces the earlier proposed TERM/grace escalation: a delayed signal after the leader exits can target a reused identifier or miss a TERM-ignoring child. A stopped zombie can still await init reaping. Processes that escape the group need container teardown; `tree-killed` confirms group termination/settlement, not isolation. Both native executors reject already-aborted launches before spawning.
 
@@ -83,11 +85,21 @@ Results reflect PowerShell errors and external exit codes. Chained native comman
 
 ## output_read and captured output
 
-Each shell result includes outputId (the command record ID), preview stdout/stderr, outputTruncated and the original status/exitCode/cleanup/truncated fields. Each stream preview allows 8000 JSON-escaped content bytes. outputTruncated only means the preview is shortened; truncated means capture overflow. success requires completed, exit code zero, no capture truncation and confirmed cleanup.
+Each shell result includes outputId (the command record ID), preview stdout/stderr, outputTruncated and the original status/exitCode/cleanup/truncated fields. Each stream preview allows 8000 JSON-escaped content bytes. outputTruncated only means the preview is shortened; truncated means incomplete capture. success requires completed, exit code zero and confirmed cleanup, independently of capture completeness. storedBytes/receivedBytes and captureStatus distinguish command execution from logging. A successful process with missing logs is not proof of complete verification.
 
 output_read takes outputId, never a filesystem path. action=read (default) pages stdout (default) or stderr by Unicode code-point offset, default limit 4000 and maximum 12000; tail=true reads the suffix and excludes offset. action=search accepts a case-sensitive literal query up to 512 UTF-16 code units, with offset counting matching lines and limit default 100/max 200. Read content and search-match JSON have separate 12000-byte page budgets. Long search lines use bounded previews plus textTruncated and characterOffset for expansion. Follow nextOffset with identical options. captureTruncated describes the stored capture, independently of page truncated.
 
-Logs are immutable in-memory captures owned by the workspace Tools instance, at most 20 commands, each captured at most 1 MiB raw bytes. Parent/child tools share them, including failed-command captures; a mode downgrade denies reads from unrestricted launches. New unrelated Tools instances and restarted processes cannot resolve old IDs. Session history persists only returned previews/pages, not the entire capture. No persistent log directory or cleanup job is introduced.
+Logs are private temporary artifacts indexed by the workspace Tools instance, with the existing 20-command journal bound. Parent/child tools share them, including failed commands; a mode downgrade denies unrestricted captures. Reads reject changed/replaced files and scan bounded chunks, never loading the entire log. New Tools instances and restarted processes cannot resolve old IDs. History saves only returned previews/pages. Normal process exit removes its owned log directory. On first capture, best-effort cleanup removes marked directories older than 24 hours whose owner process is dead; unrelated directories and live/unknown owners are skipped. Logs have no restart recovery, encryption or secure-erasure guarantee. A process-wide quota is not released before exit.
+
+<a id="clarification-and-image-tools"></a>
+
+## Clarification, images and memory tools
+
+ask_user accepts one question (2000 UTF-16 units), optionally 2–6 distinct choices (200 units each), and returns answered with free text up to 4000 units or skipped. At most four questions per turn. Runtime validates inputs and coordinates one fresh, single-use pending ID; CLI/TUI/Web UI own presentation and fresh input. Answers do not grant operation approval. Cancellation clears the pending question; TUI restores the prior draft. Child tools omit ask_user; automated Session turns reject it even when the host has an interactive callback. No answer/approval is restored from saved history. Noninteractive CLI use returns QUESTION_UNAVAILABLE without consuming stdin.
+
+image_read({path,question}) inspects one local PNG/JPEG, including browser screenshots, using current workspace read permissions. It reuses the attachment import boundary (16 MiB), bounded decoder worker and 2048px/4M-pixel render limit. The source is read again after decoding to revalidate permissions and its SHA-256 before transmission. It uses the selected model's vision capability, one auxiliary request from the executing parent/child budget, and preserves the final response reservation. It returns a fallible model description, source digest and rendered dimensions; inline image bytes do not enter history. It does not create an immutable attachment citation, fetch URLs or guarantee exact OCR. File changes after the final recheck remain possible. See [Documents](DOCUMENTS.md) for decoder and vision limits.
+
+memory_search({query?,offset?,limit?}) lists visible current references; memory_read({path}) reads an exact revision; memory_write({path,content,memoryEvidence}) performs parent-only changes. File read/write/edit do not route memory addresses. Scope validation, evidence, revisions, eight-attempt mutation allowance and persistent formats remain owned by [Memory](MEMORY.md).
 
 ## Journals and verification
 

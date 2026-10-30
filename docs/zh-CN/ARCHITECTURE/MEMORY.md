@@ -8,7 +8,7 @@
 
 [架构总览](README.md) · [Memory 操作](../GUIDES/MATERIALS.md#remember-facts-across-conversations)
 
-Memory 保存当前用户直接提供的持久事实、定义、偏好和决定，独立于历史摘要、附件和 RAG。父模型可通过通用 write 保存，主机命令是可选管理入口。
+Memory 保存当前用户直接提供的持久事实、定义、偏好和决定，独立于历史摘要、附件和 RAG。父模型可通过 memory_write 保存，主机命令是可选管理入口。
 
 <a id="module-responsibilities"></a>
 
@@ -19,8 +19,8 @@ Memory 保存当前用户直接提供的持久事实、定义、偏好和决定�
 | `packages/runtime/src/memory/record.ts` | 作用域、来源、完整修订及持久记录格式校验 |
 | `packages/runtime/src/memory/store.ts` | 内存状态、存储锁、记录变更与修订冲突、容量规则及迁移协调 |
 | `packages/runtime/src/memory/files.ts` | 作用域文件有界读取、原子发布、锁 owner 记录读取及文件大小上限 |
-| `packages/runtime/src/memory/tools.ts` | 通用 read 与每次请求的当前状态 notice |
-| `packages/runtime/src/memory/write.ts` | 通用 write 保留地址、证据及能力指导 |
+| `packages/runtime/src/memory/tools.ts` | memory_search/memory_read 与每次请求的当前状态 notice |
+| `packages/runtime/src/memory/write.ts` | memory_write 地址、证据及能力指导 |
 | `packages/commands/src/memory/commands.ts` | 用户主动管理，不请求模型或增加成功历史 |
 | `packages/runtime/src/session/memory.ts` | 会话可见作用域、作用域内增改删规则、模型写入请求转换及迁入统计；不持有活动会话状态 |
 | `packages/runtime/src/session/manager.ts` | MemoryStore 实例、宿主互斥、草稿保存与激活、按执行身份绑定访问及每次操作的校验入口 |
@@ -40,7 +40,7 @@ MemoryAccess 的闭包在 activate 时捕获原身份及必要的草稿快照，
 
 ## 保存与来源契约
 
-write 的 memory:new 保存到实际私有/项目范围；memory:global:new 只用于明确全局请求；`memory:<uuid>@<revision>` 修改当前条目，空正文删除。不增加专用模型工具，只有成功工具结果才能证明已保存。
+memory_write 的 memory:new 保存到实际私有/项目范围；memory:global:new 只用于明确全局请求；`memory:<uuid>@<revision>` 修改当前条目，空正文删除。文件 read/write 不再分发记忆地址；只有成功的 memory_write 结果才能证明已保存。
 
 自然语言变更须带 memoryEvidence，逐字匹配当前实际用户请求。主机核对 running attempt 的 ownerPid/startedAt，记录 source 的 sessionId、request、turn、evidence。长请求只保存有界证据摘录并标 requestExcerpt；turn 是此前完整回合数加一。主机命令记录命令原文与当时已完成回合数，来源语义不同。
 
@@ -56,9 +56,9 @@ write 的 memory:new 保存到实际私有/项目范围；memory:global:new 只�
 
 Memory 属于受控元数据，Plan/read-only 不禁用它；不授予普通文件、命令或网络权限。这是接口隔离，不是 OS 沙箱。无持久化 Manager 使用独立内存 store，global 也不访问磁盘全局记录。草稿查询不落盘，首次主机修改先保存来源 Session。
 
-read 支持 memory:list 及当前 UUID@revision；清单可做 active 正文字面 query。旧修订/删除返回 MEMORY_STALE，不可见 ID 返回 MEMORY_NOT_FOUND。/memory show 可查看历史修订；删除不是物理擦除，历史文本仍可能存在。
+memory_search 接受可选 query/offset/limit，列出当前可见引用，可按 active 正文做字面查询；memory_read 只接受精确 memory:UUID@revision 的 path。旧修订/删除返回 MEMORY_STALE，不可见 ID 返回 MEMORY_NOT_FOUND。/memory show 可查看历史修订；删除不是物理擦除，历史文本仍可能存在。
 
-每次父子模型请求重新加载当前 manifest 与部分 active 正文。notice 不写入成功历史，遗漏正文可再 read；不存在、过期或删除的记录不能因旧 read、fork 或 compact 恢复有效。该机制提供状态依据，不保证模型永不重复旧事实。
+每次父子模型请求重新加载当前 manifest 与部分 active 正文。notice 不写入成功历史，遗漏正文可再 memory_read；不存在、过期或删除的记录不能因旧 read、fork 或 compact 恢复有效。该机制提供状态依据，不保证模型永不重复旧事实。
 
 上下文预览使用 MemoryAccess.preview，复用相同的 manifest、正文预算与 notice 组装，但通过只读 metadata/Memory 门禁读取。它保留执行身份与作用域校验，不创建缺失目录、不恢复事务、不回收陈旧锁；只获取和释放短暂同步锁。没有提供只读 preview 的注入访问器使上下文估算未知，不退回普通 list。普通模型执行继续使用 list 的既有恢复语义，详见 [Context](CONTEXT.md) 与 [Metadata](METADATA.md)。
 
@@ -72,7 +72,7 @@ read 支持 memory:list 及当前 UUID@revision；清单可做 active 正文字�
 | 正文；来源请求/证据 | 1 KiB；各 2 KiB UTF-8 |
 | 每条修订 | 32，最后一次保留给删除 |
 | 作用域文件 | 64 MiB |
-| read 清单 | 16 KiB；默认 20、最多 64 项 |
+| memory_search 清单 | 16 KiB；默认 20、最多 64 项 |
 | 请求 notice / 正文集合 | 24 KiB / 8 KiB，继续计入完整请求预算 |
 
 memory/ 下分 `session-<uuid>.json`、`project-<uuid>.json` 和 `global.json`，使用有界解码、修订锁及原子发布。损坏或写入失败不以空数据覆盖。
@@ -99,7 +99,7 @@ Windows 上独占创建锁时，旧锁等待删除可能返回 `EPERM`；仅该�
 
 ## 验证与未实现范围
 
-检查生产装配下的自然语言 write/read、当前证据、Plan/read-only 例外、子/自动任务拒绝、旧能力回复、修订/tombstone、重启与同目录隔离、失败后保留及迁入恢复。固定真实 DeepSeek 样例曾验证保存、独立项目历史共享、重启和其他项目隔离；Edge 回归的模型回复为注入。
+检查生产装配下的自然语言 memory_write/memory_read、当前证据、Plan/read-only 例外、子/自动任务拒绝、旧能力回复、修订/tombstone、重启与同目录隔离、失败后保留及迁入恢复。固定真实 DeepSeek 样例曾验证保存、独立项目历史共享、重启和其他项目隔离；Edge 回归的模型回复为注入。
 
 `packages/verification/tests/memory/` 的文件/协调回归覆盖文件已打开后的作用域及锁 owner 读取取消、sync 后发布前取消不覆盖原数据且释放 Store 锁、项目已发布而私有范围清空失败后的重放。既有测试继续覆盖损坏/超限文件、修订冲突、内存隔离、真实第二进程写入和锁恢复；文件边界重组不以真实模型或浏览器检查代替这些契约。
 

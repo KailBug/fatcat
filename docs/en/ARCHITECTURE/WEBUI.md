@@ -145,3 +145,9 @@ verify:webui-models uses real Edge/SDK assembly with injected transport/local co
 verify:documents delays final context refresh after answers become visible: sources remain readable while busy/send gates hold. Consecutive submissions wait for actual send availability, not merely answer nodes. Request counts, observed input and visual/transcription provenance assertions remain strict.
 
 Future UI work follows actual tasks and shared ownership, checking target actions, keyboard, narrow layouts, errors/cancel. Accounts, multiuser, remote publishing, interface-language switching, streaming, full message search, math/chart Markdown extensions, high-fidelity Office viewing, file restoration and replay are unimplemented.
+
+<a id="interactive-questions"></a>
+
+## Interactive questions
+
+Controller uses the runtime QuestionCoordinator separately from approvals, publishes pending question state and accepts authenticated POST /api/question with id and answer (text or null to skip). IDs are single-use; stale replies return 409. Stop/close clears pending input. The browser preserves an answer draft across polling, supports choice plus free text, skip and cancellation, and restores focus when the question settles. See [tool contracts](TOOLS.md#clarification-and-image-tools). Native injected-model checks are described in [Development](../DEVELOPMENT.md#question-interaction-checks); they do not establish real-model clarification quality.

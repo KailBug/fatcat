@@ -4,7 +4,7 @@ English | [简体中文](../../zh-CN/ARCHITECTURE/MEMORY.md)
 
 [Architecture](README.md) · [Memory operations](../GUIDES/MATERIALS.md#remember-facts-across-conversations)
 
-Memory stores durable facts, definitions, preferences and decisions directly supplied by the current user, separate from history summaries, attachments and RAG. Parent models can save through general write; host commands are optional management entries.
+Memory stores durable facts, definitions, preferences and decisions directly supplied by the current user, separate from history summaries, attachments and RAG. Parent models can save through memory_write; host commands are optional management entries.
 
 ## Module responsibilities
 
@@ -13,8 +13,8 @@ Memory stores durable facts, definitions, preferences and decisions directly sup
 | `packages/runtime/src/memory/record.ts` | Scopes, provenance, complete revisions and persistent record validation |
 | `packages/runtime/src/memory/store.ts` | In-memory state, locks, mutations/revision conflicts, capacity and migration coordination |
 | `packages/runtime/src/memory/files.ts` | Bounded scope reads, atomic publication, lock-owner reads and file limits |
-| `packages/runtime/src/memory/tools.ts` | General read and per-request current-state notices |
-| `packages/runtime/src/memory/write.ts` | Reserved write addresses, evidence and capability guidance |
+| `packages/runtime/src/memory/tools.ts` | memory_search/memory_read and per-request current-state notices |
+| `packages/runtime/src/memory/write.ts` | memory_write addresses, evidence and capability guidance |
 | `packages/commands/src/memory/commands.ts` | User management without model requests or successful-history additions |
 | `packages/runtime/src/session/memory.ts` | Visible scopes, scoped mutation rules, model-write conversion and migration statistics; no active-session ownership |
 | `packages/runtime/src/session/manager.ts` | MemoryStore instances, host mutex, draft save/activation, identity-bound access and per-operation validation |
@@ -32,7 +32,7 @@ MemoryAccess closures capture original identity/necessary draft snapshots on act
 
 ## Saving and provenance contracts
 
-write at memory:new saves to actual private/project scope; memory:global:new requires an explicit global request. `memory:<uuid>@<revision>` modifies an existing entry, with empty content deleting it. No specialized model tool is added; only successful tool results prove saving.
+memory_write at memory:new saves to actual private/project scope; memory:global:new requires an explicit global request. `memory:<uuid>@<revision>` modifies an existing entry, with empty content deleting it. File read/write no longer route memory paths; only successful memory_write results prove saving.
 
 Natural-language changes require memoryEvidence matching the actual current user request verbatim. The host checks running attempt ownerPid/startedAt and records source sessionId, request, turn and evidence. Long requests retain bounded evidence excerpts marked requestExcerpt; turn is completed prior turns plus one. Host commands instead record literal commands and the completed-turn count at that time, with different provenance semantics.
 
@@ -46,7 +46,7 @@ Independent sessions read their own and global records; project sessions read pr
 
 Memory is controlled metadata available in Plan/read-only, without granting ordinary file, command or network access. This is interface separation, not OS sandboxing. Nonpersistent Managers use independent memory stores; even global does not access disk global records. Draft queries do not persist; first host mutation saves its source Session first.
 
-read supports memory:list and current UUID@revision, with literal active-body queries. Old/deleted revisions return MEMORY_STALE; invisible IDs return MEMORY_NOT_FOUND. /memory show can inspect revisions. Deletion is not physical erasure; historical text may remain.
+memory_search accepts optional query/offset/limit and lists visible current references, with literal active-body queries. memory_read accepts only path with an exact memory:UUID@revision. Old/deleted revisions return MEMORY_STALE; invisible IDs return MEMORY_NOT_FOUND. /memory show can inspect revisions. Deletion is not physical erasure; historical text may remain.
 
 Each parent/child model request reloads the current manifest and some active bodies. Notices do not enter successful history; omitted bodies can be read separately. Missing/stale/deleted records cannot regain validity from old reads, forks or compaction. This supplies state evidence, not a guarantee against repeated stale facts.
 
@@ -60,7 +60,7 @@ Context preview uses MemoryAccess.preview with the same manifest/body budgets/no
 | Body; source request/evidence | 1 KiB; 2 KiB UTF-8 each |
 | Revisions per record | 32, reserving the last for deletion |
 | Scope file | 64 MiB |
-| read list | 16 KiB; default 20, maximum 64 entries |
+| memory_search list | 16 KiB; default 20, maximum 64 entries |
 | Request notice / body collection | 24 KiB / 8 KiB, still within full request budgets |
 
 Files under memory/ are `session-<uuid>.json`, `project-<uuid>.json` and `global.json`, using bounded decoding, revision locks and atomic publication. Corruption/write failure cannot be overwritten as empty data.

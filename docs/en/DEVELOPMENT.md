@@ -327,3 +327,11 @@ The generic injected runner currently enforces its per-attempt request allowance
 Use `0.x.y` during early development: patch for fixes, minor for new capabilities or compatibility changes. Document compatibility changes before upgrading; reserve `1.0.0` for a stable compatibility contract. Application, session and automation schema versions are independent.
 
 README version and CI badges refer to `main`, not the local branch or working tree. Update static Node.js/pnpm badges in the root README and requirements in both documentation languages when requirements change. Repository stars and badge state do not constitute verification evidence.
+
+<a id="question-interaction-checks"></a>
+
+## Question interaction checks
+
+`pnpm run verify:questions:browser` launches local installed Edge with injected model responses. It checks desktop/mobile question focus, suggested choices plus free text, draft preservation during polling, skip, cancellation, single-use replies and unchanged approval state. `pnpm run verify:memory` covers the dedicated memory_write path in the existing session/project workflow.
+
+Run `pnpm run verify:questions:terminal` in a native Windows VT-capable terminal. CLI: answer 2, then /skip. TUI: submit ask and immediately type draft without Enter; answer 2 when the question appears, then submit the restored draft. Submit cancel, wait for the question, press Esc, submit continue, then Ctrl+D. The fixture asserts exact prompt history, raw-mode/listener restoration and passed:true. It uses injected responses, no .env or model API requests. Ordinary pnpm test covers offline questions, background rejection, memory schema/scopes, local image decoding/budgets and large command logs; Linux executor cases remain platform-specific.

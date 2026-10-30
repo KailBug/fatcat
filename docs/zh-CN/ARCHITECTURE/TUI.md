@@ -85,3 +85,9 @@ TUI 不猜测模型 token 窗口；本地 bytes 进度不能代替容量。每�
 后续交互改进继续沿当前所有权边界，针对输入、审批、取消和反馈做离线回归与原生 Windows 终端验收，并保留普通 CLI。尚无冻结的新布局或排期。
 
 未新增流式答案、思考历史、provider 热切换、费用估算或任务验收引擎；恢复不重建旧过程遥测。不能以渲染单测代替实际终端可用性。
+
+<a id="interactive-questions"></a>
+
+## 交互式问题
+
+App 使用 runtime 的 QuestionCoordinator，与授权状态独立。保存编辑器当前草稿，显示全新回答/选项输入，回答、跳过或取消后恢复草稿，并沿用当前回合的取消生命周期。回答进入工具结果，不作为新用户回合或授权。契约见 [Tools](TOOLS.md#clarification-and-image-tools)。原生注入模型检查见 [Development](../DEVELOPMENT.md#question-interaction-checks)，不证明真实模型的澄清质量。

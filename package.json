@@ -16,6 +16,8 @@
     "test": "pnpm run build && pnpm --filter @fatcat/eval --filter @fatcat/verification -r --workspace-concurrency=1 test",
     "verify:tui": "pnpm run build && node packages/verification/dist/verify/native/verify-tui.js",
     "verify:cli": "pnpm run build && node packages/verification/dist/verify/native/verify-cli.js",
+    "verify:questions:terminal": "pnpm run build && node packages/verification/dist/verify/native/verify-questions.js",
+    "verify:questions:browser": "pnpm run build && node packages/verification/dist/verify/browser/verify-questions.js",
     "verify:delegation": "pnpm run build && node --env-file-if-exists=.env packages/verification/dist/verify/live/verify-delegation.js",
     "verify:coding": "pnpm run build && node --env-file-if-exists=.env packages/verification/dist/verify/live/verify-coding.js",
     "verify:workflow": "pnpm run build && node --env-file-if-exists=.env packages/verification/dist/verify/live/verify-workflow.js",

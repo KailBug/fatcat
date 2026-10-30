@@ -1,113 +1,83 @@
-import { opendir } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { Worker } from "node:worker_threads";
 import { HarnessError, checkCancellation } from "../errors.js";
-import { readTextFile, textExtensions } from "../permissions/text-file.js";
+import { readTextFile } from "../permissions/text-file.js";
 import type { Workspace } from "../permissions/workspace.js";
+import { discoverFiles } from "./discovery.js";
+import type { SearchTarget, DiscoveryOptions } from "./discovery.js";
 
-type Target = Awaited<ReturnType<Workspace["resolvePath"]>>;
-type Match = { path: string; line: number; text: string };
-const maxEntries = 1000;
-const maxFiles = 128;
-const maxDepth = 12;
-const maxPageBytes = 16 * 1024;
+type Match = { path: string; line: number; text: string; context?: { line: number; text: string }[] };
+type SearchOptions = DiscoveryOptions & { query: string; offset: number; limit: number;
+	regex: boolean; ignoreCase: boolean; context: number };
 
-/** Search a bounded, freshly validated subtree; never return partial traversal as complete. */
-export async function searchText(workspace: Workspace, target: Target,
-  options: { query: string; offset: number; limit: number }, signal?: AbortSignal) {
-  const lease = workspace.permissionPolicy?.beginOperation();
-  try { return await search(workspace, target, options, signal); }
-  finally { lease?.release(); }
+/** Isolate regex evaluation so pathological patterns cannot block cancellation or the host. */
+async function regexLines(lines: string[], query: string, ignoreCase: boolean, signal?: AbortSignal): Promise<number[]> {
+	checkCancellation(signal);
+	const worker = new Worker(new URL("./search-worker.js", import.meta.url), {
+		workerData: { lines, query, ignoreCase }, resourceLimits: { maxOldGenerationSizeMb: 64 },
+	});
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let abort: (() => void) | undefined;
+	try {
+		return await new Promise<number[]>((resolve, reject) => {
+			timer = setTimeout(() => reject(new HarnessError("SEARCH_TIMEOUT", "Regex evaluation exceeded 3 seconds for one file. Simplify query, narrow path, or use literal search.")), 3000);
+			abort = () => reject(new HarnessError("CANCELLED", "Search cancelled."));
+			signal?.addEventListener("abort", abort, { once: true });
+			worker.once("message", resolve);
+			worker.once("error", () => reject(new HarnessError("SEARCH_FAILED", "Regex worker failed. Narrow the search or use literal mode.")));
+			worker.once("exit", (code) => { if (code !== 0) reject(new HarnessError("SEARCH_FAILED", "Regex worker stopped without results.")); });
+			if (signal?.aborted) abort();
+		});
+	} finally {
+		clearTimeout(timer);
+		if (abort) signal?.removeEventListener("abort", abort);
+		await worker.terminate();
+	}
 }
 
-async function search(workspace: Workspace, target: Target,
-  options: { query: string; offset: number; limit: number }, signal?: AbortSignal) {
-  const paths: string[] = [];
-  const visited = new Set<string>();
-  let entries = 0;
-  const recursive = target.stat.isDirectory();
-
-  function limitExceeded(): never {
-    throw new HarnessError("SEARCH_LIMIT", "Search supports at most 1000 raw entries, 128 candidate files, and 12 directory levels. Choose a narrower path.");
-  }
-  async function collect(directory: Target, depth: number): Promise<void> {
-    checkCancellation(signal);
-    if (visited.has(directory.absolute)) return;
-    visited.add(directory.absolute);
-    if (depth > maxDepth) limitExceeded();
-    const handle = await opendir(directory.absolute);
-    for await (const entry of handle) {
-      checkCancellation(signal);
-      if (++entries > maxEntries) limitExceeded();
-      if (!target.unrestricted && (entry.isSymbolicLink() || (!entry.isFile() && !entry.isDirectory()))) continue;
-      if (!target.unrestricted && entry.isFile() && !textExtensions.has(extname(entry.name).toLowerCase())) continue;
-      let child: Target;
-      try {
-        child = await workspace.resolvePath(directory.unrestricted ? join(directory.absolute, entry.name)
-          : `${directory.relative}/${entry.name}`, signal);
-      } catch (error) {
-        if (error instanceof HarnessError && error.code === "PATH_NOT_ALLOWED") continue;
-        if (target.unrestricted && ((error as NodeJS.ErrnoException).code === "ENOENT"
-          || error instanceof HarnessError && error.code === "UNSUPPORTED_FILE")) continue;
-        throw error;
-      }
-      if (child.stat.isDirectory()) {
-        await collect(child, depth + 1);
-      } else if (target.unrestricted || textExtensions.has(extname(child.relative).toLowerCase())) {
-        if (!paths.includes(child.relative)) paths.push(child.relative);
-        if (paths.length > maxFiles) limitExceeded();
-      }
-    }
-  }
-  if (recursive) await collect(target, 0);
-  else paths.push(target.relative);
-  paths.sort();
-
-  const matches: Match[] = [];
-  let totalMatches = 0;
-  let scannedFiles = 0;
-  let skippedFiles = 0;
-  let pageBytes = 2;
-  let pageFull = false;
-  for (const path of paths) {
-    checkCancellation(signal);
-    // Resolve again after traversal so a changed file/link is not trusted from an earlier listing.
-    const current = await workspace.resolvePath(path, signal);
-    let content: string;
-    try {
-      ({ content } = await readTextFile(current, signal));
-    } catch (error) {
-      if (recursive && error instanceof HarnessError && ["FILE_TOO_LARGE", "UNSUPPORTED_FILE"].includes(error.code)) {
-        skippedFiles++;
-        continue;
-      }
-      throw error;
-    }
-    scannedFiles++;
-    let line = 0;
-    for (const item of content.matchAll(/[^\r\n]*(?:\r\n|\r|\n|$)/g)) {
-      checkCancellation(signal);
-      if (!item[0]) continue;
-      line++;
-      const text = item[0].replace(/(?:\r\n|\r|\n)$/, "");
-      if (!text.includes(options.query)) continue;
-      const index = totalMatches++;
-      if (index < options.offset || pageFull) continue;
-      const match = { path, line, text };
-      const size = Buffer.byteLength(JSON.stringify(match)) + (matches.length ? 1 : 0);
-      if (pageBytes + size > maxPageBytes) {
-        if (!matches.length) throw new HarnessError("OUTPUT_LIMIT", "One search match exceeds the 16384-byte page budget; narrow the query or inspect the file separately.");
-        pageFull = true;
-        continue;
-      }
-      matches.push(match);
-      pageBytes += size;
-      if (matches.length === options.limit) pageFull = true;
-    }
-  }
-  checkCancellation(signal);
-  const end = Math.min(options.offset, totalMatches) + matches.length;
-  return { kind: "search", path: target.relative, query: options.query, offset: options.offset,
-    totalMatches, matches, truncated: end < totalMatches, nextOffset: end < totalMatches ? end : null,
-    scannedFiles, skippedFiles, complete: skippedFiles === 0,
-  };
+export async function searchText(workspace: Workspace, target: SearchTarget, options: SearchOptions, signal?: AbortSignal) {
+	const paths = await discoverFiles(workspace, target, options, true, signal);
+	const matches: Match[] = [];
+	let totalMatches = 0;
+	let scannedFiles = 0;
+	let skippedFiles = 0;
+	let pageBytes = 2;
+	let pageFull = false;
+	const needle = options.ignoreCase ? options.query.toLowerCase() : options.query;
+	for (const path of paths) {
+		checkCancellation(signal);
+		const current = await workspace.resolvePath(path, signal);
+		let content: string;
+		try { ({ content } = await readTextFile(current, signal)); }
+		catch (error) {
+			if (target.stat.isDirectory() && error instanceof HarnessError && ["FILE_TOO_LARGE", "UNSUPPORTED_FILE"].includes(error.code)) {
+				skippedFiles++; continue;
+			}
+			throw error;
+		}
+		scannedFiles++;
+		const lines = content.split(/\r\n|\r|\n/);
+		if (lines.at(-1) === "") lines.pop();
+		const indices = options.regex ? await regexLines(lines, options.query, options.ignoreCase, signal)
+			: lines.flatMap((text, index) => (options.ignoreCase ? text.toLowerCase() : text).includes(needle) ? [index] : []);
+		for (const line of indices) {
+			checkCancellation(signal);
+			const index = totalMatches++;
+			if (index < options.offset || pageFull) continue;
+			const match: Match = { path, line: line + 1, text: lines[line]! };
+			if (options.context) match.context = lines.slice(Math.max(0, line - options.context), line + options.context + 1)
+				.map((text, offset) => ({ line: Math.max(0, line - options.context) + offset + 1, text }));
+			const size = Buffer.byteLength(JSON.stringify(match)) + (matches.length ? 1 : 0);
+			if (pageBytes + size > 16384) {
+				if (!matches.length) throw new HarnessError("OUTPUT_LIMIT", "One match with context exceeds 16384 bytes. Reduce context or inspect the file separately.");
+				pageFull = true; continue;
+			}
+			matches.push(match); pageBytes += size;
+			if (matches.length === options.limit) pageFull = true;
+		}
+	}
+	checkCancellation(signal);
+	const end = Math.min(options.offset, totalMatches) + matches.length;
+	return { kind: "search", path: target.relative, query: options.query, regex: options.regex, ignoreCase: options.ignoreCase,
+		offset: options.offset, totalMatches, matches, truncated: end < totalMatches, nextOffset: end < totalMatches ? end : null,
+		scannedFiles, skippedFiles, complete: skippedFiles === 0 };
 }

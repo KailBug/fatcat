@@ -8,4 +8,5 @@ export type ProcessResult = {
 	cleanup: "foreground-exited" | "tree-killed" | "not-started" | "unconfirmed";
 };
 
-export const outputLimit = 16 * 1024;
+// Capture and process termination use this bound; model-facing previews have a separate 16 KiB budget.
+export const outputLimit = 1024 * 1024;

@@ -9,6 +9,7 @@ import type { PermissionPolicy } from "../permissions/policy.js";
 import type { ShellOptions, ShellPermission, ShellRequest } from "../permissions/types.js";
 import type {Tool, ToolResult} from "./types.js";
 import type { Workspace } from "../permissions/workspace.js";
+import { createShellOutputStore, truncateShellOutputPreview } from "./shell-output.js";
 
 export type { ApproveShell, ShellPermission, ShellOptions, ShellRequest } from "../permissions/types.js";
 export type CommandRecord = ShellRequest & ProcessResult & { id: string; outputSummaryTruncated: boolean };
@@ -36,6 +37,7 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
   const permission = options.permission ?? "deny";
   if (!["ask", "deny", "allow"].includes(permission)) throw new HarnessError("CONFIG", "Shell permission must be ask, deny, or allow.");
   const records: CommandRecord[] = [];
+  const shellOutputStore = createShellOutputStore(policy ?? workspace.permissionPolicy);
   let busy = false;
   let cleanupFailed = false;
 
@@ -91,10 +93,14 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
         stderr: Array.from(outcome.stderr).slice(0, 1000).join(""),
         outputSummaryTruncated: Array.from(outcome.stdout).length > 1000 || Array.from(outcome.stderr).length > 1000 });
       cleanupFailed = outcome.cleanup === "unconfirmed";
+      shellOutputStore.save(id, outcome, current.unrestricted);
       checkCancellation(signal);
       // The tool completed; success describes the command, not merely the transport.
-      return { ok: true, result: { recordId: id, ...outcome,
-          success: outcome.status === "completed" && outcome.exitCode === 0 && !outcome.truncated } };
+      const stdout = truncateShellOutputPreview(outcome.stdout);
+      const stderr = truncateShellOutputPreview(outcome.stderr);
+      return { ok: true, result: { recordId: id, ...outcome, stdout, stderr, outputId: id,
+          outputTruncated: stdout !== outcome.stdout || stderr !== outcome.stderr,
+          success: outcome.status === "completed" && outcome.exitCode === 0 && !outcome.truncated && outcome.cleanup !== "unconfirmed" } };
     } finally {
       busy = false;
     }
@@ -104,7 +110,7 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
     definition: {
       name: "shell",
       description: (process.platform === "linux" ? "Run a foreground command in Linux Bash" : "Run a foreground command in Windows PowerShell (not Bash)")
-        + ", in a fresh non-interactive process without profiles. cwd defaults to the workspace root. Requires separate command authorization. No OS sandbox: commands can access files and network with current-user permissions. Do not launch background processes or interactive programs. Output is capped at 16 KiB combined; exceeding it stops the process tree or Linux process group. Check success, exitCode, status and truncated before claiming verification passed. Earlier side effects are never rolled back. Check each command's exit status when chaining commands."
+        + ", in a fresh non-interactive process without profiles. cwd defaults to the workspace root. timeoutMs defaults 30000, maximum 120000. Requires separate command authorization. No OS sandbox: commands can access files and network with current-user permissions. Do not launch background processes or interactive programs. Model output is a bounded preview: outputTruncated means use output_read with outputId for more. Combined capture is capped at 1 MiB; only capture overflow stops the process tree/group and sets truncated=true. Logs live in these workspace tools until process exit. Check success, exitCode, status, cleanup and truncated before claiming verification passed; a shortened preview alone does not imply command failure. Earlier side effects are never rolled back. Check each command's exit status when chaining commands."
         + (policy ? " Current permission is supplied in request guidance and checked at execution." : ""),
       parameters: {
         type: "object",
@@ -117,5 +123,5 @@ export function createShellTool(workspace: Workspace, options: ShellOptions = {}
         additionalProperties: false } },
     execute,
   };
-  return { tool, getCommands: (): CommandRecord[] => structuredClone(records) };
+  return { tool, outputTool: shellOutputStore.tool, getCommands: (): CommandRecord[] => structuredClone(records) };
 }

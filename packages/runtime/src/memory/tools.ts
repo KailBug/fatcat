@@ -93,7 +93,9 @@ export function withMemories(base: Tools, access: MemoryAccess): Tools {
 	const existing = base.definitions.find((definition) => definition.name === "read");
 	const definition = existing ?? fallbackRead;
 	const readDefinition: Tool["definition"] = { ...definition,
-		description: existing ? `${existing.description ?? ""} ${description}` : description };
+		description: existing ? `${existing.description ?? ""} ${description}` : description,
+		parameters: { ...definition.parameters, properties: { ...(definition.parameters?.properties as Record<string, unknown> ?? {}),
+			query: { type: "string", minLength: 1, maxLength: 512, description: "Memory/attachment-only literal query; use grep for workspace files." } } } };
 	const definitions = existing ? base.definitions.map((item) => item === existing ? readDefinition : item)
 		: [...base.definitions, readDefinition];
 	async function execute(name: string, argumentsJson: string, signal?: AbortSignal, callId?: string): Promise<ToolResult> {

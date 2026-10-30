@@ -45,14 +45,14 @@ function currentNotice(body: ModelRequest): MemoryNotice {
 
 function currentCapabilities(body: ModelRequest): { write: boolean; read: boolean } {
 	const system = String(body.messages[0]?.content);
-	assert.match(system, /Current parent capability: Memory writes through generic write are available/);
+	assert.match(system, /Current parent capability: Memory writes through memory_write are available/);
 	assert.match(system, /Prior assistant statements.*historical capability claims, not the current tool state/);
 	assert.match(system, /Workspace file read-only rules.*do not disable this Memory path/);
-	const write = body.tools?.find((tool) => tool.function.name === "write")?.function;
-	const read = body.tools?.find((tool) => tool.function.name === "read")?.function;
+	const write = body.tools?.find((tool) => tool.function.name === "memory_write")?.function;
+	const read = body.tools?.find((tool) => tool.function.name === "memory_read")?.function;
 	const properties = write?.parameters?.properties as Record<string, unknown> | undefined;
 	const canWrite = properties?.memoryEvidence !== undefined && /memory:new/.test(write?.description ?? "");
-	const canRead = /memory:list/.test(read?.description ?? "");
+	const canRead = /memory_search/.test(read?.description ?? "");
 	assert.ok(canWrite, "The SDK model must receive the Memory write schema, not only the executor binding");
 	assert.ok(canRead, "The SDK model must receive the scoped Memory read schema");
 	assert.ok(!body.tools?.some((tool) => tool.function.name === "memory"));
@@ -81,13 +81,13 @@ for (const selection of ["manual", "read-only", "plan"] as const) {
 				sawHistoricalRefusal = body.messages.some((message) => message.role === "assistant" && message.content === oldRefusal);
 				assert.equal(sawHistoricalRefusal, true, "The regression must include the prior unavailable-capability answer");
 				return capabilities.write
-					? call("write", { path: "memory:new", content: preference, memoryEvidence: remember }, "remember-current-fact")
+					? call("memory_write", { path: "memory:new", content: preference, memoryEvidence: remember }, "remember-current-fact")
 					: answer(oldRefusal);
 			}
 			if (last.role === "user" && prompt === question) {
 				const active = notice.manifest.find((entry) => entry.status === "active");
 				return capabilities.read && active
-					? call("read", { path: `memory:${active.id}@${active.revision}` }, "read-current-fact")
+					? call("memory_read", { path: `memory:${active.id}@${active.revision}` }, "read-current-fact")
 					: answer("No current dog preference.");
 			}
 			assert.equal(last.role, "tool");

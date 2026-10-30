@@ -61,7 +61,7 @@ try {
 		const noticeLine = system.split("\n").find((line) => line.startsWith('{"manifest":'));
 		const notice = noticeLine ? JSON.parse(noticeLine) as { contents: { content: string }[] } : undefined;
 		observations.push({ stage, memoryNotice: Boolean(notice),
-			memoryWriteSchema: Boolean(body.tools?.find((tool) => tool.function.name === "write")?.function.parameters?.properties?.memoryEvidence),
+			memoryWriteSchema: Boolean(body.tools?.find((tool) => tool.function.name === "memory_write")?.function.parameters?.properties?.memoryEvidence),
 			factInCurrentContext: Boolean(notice?.contents.some((entry) => /CSGO/i.test(entry.content))),
 			oldRefusalInHistory: body.messages.some((message) => message.role === "assistant" && message.content === oldRefusal) });
 		requests++;

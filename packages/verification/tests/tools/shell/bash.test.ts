@@ -4,7 +4,6 @@ import { join } from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { bashEnvironment, runBash } from "@fatcat/runtime/internal/tools/shell/bash";
-import { outputLimit } from "@fatcat/runtime/internal/tools/shell/types";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../../support/workspace.js";
@@ -66,13 +65,14 @@ test("native Bash preserves cwd, Unicode, stderr, exit codes and fresh process s
 	assert.equal(missing.cleanup, "not-started");
 });
 
-test("Bash caps both streams and refuses already-aborted launches", linux, async (t) => {
+test("Bash bounds previews without stopping output and refuses already-aborted launches", linux, async (t) => {
 	const { workspace } = await temporaryWorkspace(t);
-	const result = await runBash("while :; do printf '0123456789'; printf 'abcdefghij' >&2; done", workspace, 5000);
-	assert.equal(result.status, "output_limit");
-	assert.equal(result.cleanup, "tree-killed");
+	const result = await runBash("head -c 2000000 /dev/zero | tr '\\0' x; printf 'END' >&2", workspace, 5000);
+	assert.equal(result.status, "completed");
+	assert.equal(result.cleanup, "foreground-exited");
+	assert.equal(result.stderr, "END");
 	assert.equal(result.truncated, true);
-	assert.ok(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) <= outputLimit);
+	assert.ok(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) <= 32768);
 	const aborted = await runBash("touch never.txt", workspace, 5000, AbortSignal.abort());
 	assert.equal(aborted.status, "cancelled");
 	assert.equal(aborted.cleanup, "not-started");

@@ -52,6 +52,35 @@ const settings = {
 };
 const answer = (content = "Answer") => ({ message: { role: "assistant" as const, content } });
 
+test("TUI questions restore the pending draft and accept choices without a new user turn", async (t) => {
+  const terminal = new FakeTerminal();
+  const app = new TuiApp({ ...settings, terminal, color: false });
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let response: string | null = null;
+  const session = new Session({ maxIterations: 1, model: async (messages, signal) => {
+    if (messages.at(-1)?.content === "Ask") {
+      await gate;
+      response = await app.askUser({ question: "Choose format", options: ["Text", "JSON"] }, signal);
+    }
+    return answer();
+  } });
+  const done = app.run(session);
+  t.after(async () => { terminal.input("\x04"); await done; });
+  terminal.submit("Ask");
+  terminal.type("Restored draft");
+  release();
+  await until(() => terminal.plain.includes("Choose format"));
+  terminal.submit("2");
+  await until(() => app.telemetry.snapshot().session.answered === 1);
+  assert.equal(response, "JSON");
+  terminal.input("\r");
+  await until(() => app.telemetry.snapshot().session.answered === 2);
+  assert.deepEqual(session.messages.filter((item) => item.role === "user").map((item) => item.content), ["Ask", "Restored draft"]);
+  terminal.submit("/exit");
+  assert.equal(await done, 0);
+});
+
 describe("TUI turn feedback boundaries", () => {
   it("deduplicates parent and child records, displays updates and resets eligibility for the next turn", async (t) => {
     const terminal = new FakeTerminal();

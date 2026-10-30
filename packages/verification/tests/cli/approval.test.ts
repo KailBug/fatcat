@@ -25,6 +25,27 @@ function terminalFixture(interactive = true, env: NodeJS.ProcessEnv = {}) {
   return { input, error, terminal, text: () => text, waitFor };
 }
 const final = (content: string): ModelTurn => ({ message: { role: "assistant", content } });
+
+test("terminal questions preserve queued tasks and never act as write approval", async (t) => {
+  const io = terminalFixture();
+  t.after(io.terminal.close);
+  io.input.write("queued task\n");
+  const pending = io.terminal.askUser({ question: "Choose output", options: ["Text", "JSON"] });
+  await assert.rejects(io.terminal.askUser({ question: "Competing question" }), { code: "QUESTION_BUSY" });
+  await io.waitFor("Answer (or /skip)>");
+  io.input.write("2\n");
+  assert.equal(await pending, "JSON");
+  assert.equal(await io.terminal.readTask(), "queued task");
+  const aborted = new AbortController();
+  const next = io.terminal.askUser({ question: "Wait?" }, aborted.signal);
+  aborted.abort();
+  await assert.rejects(next, { code: "CANCELLED" });
+  io.input.write("next task\n");
+  assert.equal(await io.terminal.readTask(), "next task");
+  const noninteractive = terminalFixture(false);
+  t.after(noninteractive.terminal.close);
+  await assert.rejects(noninteractive.terminal.askUser({ question: "Choose?" }), { code: "QUESTION_UNAVAILABLE" });
+});
 function toolCall(name: string, args: unknown): ModelTurn {
   const toolCalls = [{ id: "write-call", name, arguments: JSON.stringify(args) }];
   return { message: { role: "assistant", content: null, toolCalls } };

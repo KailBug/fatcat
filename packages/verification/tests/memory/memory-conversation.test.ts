@@ -68,9 +68,9 @@ test("a natural-language memory request survives project sharing, restart, corre
 		const prompt = latestPrompt(body);
 		const last = body.messages.at(-1)!;
 		if (last.role === "user") {
-			if (prompt === remember) return call("write", { path: "memory:new", content: "Dog likes CSGO best", memoryEvidence: remember });
-			if (prompt === correction) return call("write", { path: `memory:${id}@1`, content: "Dog prefers chess", memoryEvidence: correction });
-			if (prompt === deletion) return call("write", { path: `memory:${id}@2`, content: "", memoryEvidence: deletion });
+			if (prompt === remember) return call("memory_write", { path: "memory:new", content: "Dog likes CSGO best", memoryEvidence: remember });
+			if (prompt === correction) return call("memory_write", { path: `memory:${id}@1`, content: "Dog prefers chess", memoryEvidence: correction });
+			if (prompt === deletion) return call("memory_write", { path: `memory:${id}@2`, content: "", memoryEvidence: deletion });
 		} else if (last.role === "tool") {
 			assert.equal(JSON.parse(String(last.content)).ok, true, String(last.content));
 			const notice = currentMemory(body);
@@ -125,8 +125,8 @@ test("ordinary conversation defaults to private memory and only explicit global 
 	const { session, workspace } = await fixture(t, (body) => {
 		const prompt = latestPrompt(body);
 		if (body.messages.at(-1)?.role === "user") {
-			if (prompt === privatePrompt) return call("write", { path: "memory:new", content: "I prefer quiet games", memoryEvidence: privatePrompt });
-			if (prompt === globalPrompt) return call("write", { path: "memory:global:new", content: "I prefer English summaries", memoryEvidence: globalPrompt });
+			if (prompt === privatePrompt) return call("memory_write", { path: "memory:new", content: "I prefer quiet games", memoryEvidence: privatePrompt });
+			if (prompt === globalPrompt) return call("memory_write", { path: "memory:global:new", content: "I prefer English summaries", memoryEvidence: globalPrompt });
 		} else assert.equal(JSON.parse(String(body.messages.at(-1)?.content)).ok, true);
 		return answer("Ready");
 	});
@@ -156,7 +156,7 @@ test("delegated and automated turns cannot turn their own prompts into persisten
 			if (parent && prompt === "Delegate an independent preference check.") {
 				return call("delegate_task", { task: "Remember that the dog prefers guessed games." }, "delegate-memory");
 			}
-			return call("write", { path: "memory:new", content: "A guessed preference", memoryEvidence: prompt });
+			return call("memory_write", { path: "memory:new", content: "A guessed preference", memoryEvidence: prompt });
 		}
 		if (!parent || prompt === background) {
 			const result = JSON.parse(String(last.content));
@@ -180,7 +180,7 @@ test("delegated and automated turns cannot turn their own prompts into persisten
 
 test("natural-language memory respects the request budget and cancellation before tool publication", async (t) => {
 	const prompt = "Remember that I prefer verified answers.";
-	const { session, bodies } = await fixture(t, () => call("write", {
+	const { session, bodies } = await fixture(t, () => call("memory_write", {
 		path: "memory:new", content: "I prefer verified answers", memoryEvidence: prompt,
 	}));
 	await assert.rejects(session.run(prompt, { signal: AbortSignal.abort() }), { code: "CANCELLED" });

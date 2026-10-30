@@ -908,6 +908,10 @@ details ul {
   border-color:var(--primary)
 }
 
+.question-options { flex-wrap:wrap; justify-content:flex-start }
+.question-options button { max-width:100%; white-space:normal; overflow-wrap:anywhere; text-align:left }
+.question-text { overflow-wrap:anywhere; white-space:pre-wrap }
+
 .waiting {
   color:var(--muted);
   font-size:13px

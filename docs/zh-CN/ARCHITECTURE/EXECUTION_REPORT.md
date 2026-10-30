@@ -36,7 +36,7 @@
 | tokenUsage | 合法服务计数及覆盖请求数，父子分别统计；未知不是零 |
 | contextReduction | 每次请求省略数量和字节差，重复省略重复计数，不等于 token 或费用节省 |
 
-命令 succeeded 要求 completed、exitCode=0、无输出截断且清理不为 unconfirmed。日志摘要截断与执行收集超限是两件事，不能混淆。
+命令 succeeded 要求 completed、exitCode=0、捕获未超限且清理不为 unconfirmed。日志摘要截断及模型侧 shell 的 outputTruncated 都与捕获超限不同；预览缩短不导致命令失败。output_read 读取已捕获输出，不启动新命令或新增命令记录。日志上限及生命周期见 [Tools](TOOLS.md#output_read-and-captured-output)。
 
 新的或变化的 write_record 会把更早命令/浏览器检查标为 laterWriteAttempt。失败或 uncertain 写入也触发；相同记录重复事件不触发。该标记不能检测 shell、编辑器或外部进程修改，false 不证明文件仍未变。
 

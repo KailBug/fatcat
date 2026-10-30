@@ -12,7 +12,7 @@ Delegation serves small, self-contained tasks. Models can select it by default w
 
 Input task is a nonblank description of at most 4000 characters. Each child starts with empty history and only its task plus current system/workspace/permission/Skill metadata. It does not copy parent messages or loaded Skill bodies. Children reread needed materials. Final answer is limited to 12000 characters; overflow fails. Internal child conversations do not merge into successful parent history.
 
-Defaults allow two children per parent turn, each with at most min(parent configured request limit, 3) requests. Execution is sequential, without parallelism or automatic retries. Failed delegation consumes its allowance; the parent can reason from safe errors. All children share parent cancellation and base tool journals and cannot expand file, network, material or command permissions.
+Defaults allow two children per parent turn, each with at most 32 model requests, independent of the parent configured request limit. Execution is sequential, without parallelism or automatic retries. Failed delegation consumes its allowance; failures report the cause code, request count and successful tool-return count without claiming task completion. Existing effects remain. The programmatic constructor may explicitly lower the child limit to 1–32 for bounded verification; ordinary agent assembly uses 32. All children share parent cancellation and base tool journals and cannot expand file, network, material or command permissions.
 
 ## Execution identity and budgets
 

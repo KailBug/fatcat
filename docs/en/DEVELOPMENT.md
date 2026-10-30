@@ -282,11 +282,11 @@ Run these only when real model verification is explicitly requested. They load t
 
 | Command | Fixture and acceptance scope | Maximum requests |
 | --- | --- | --- |
-| `pnpm run verify:live` | Direct answer, sum, contextual follow-up, paginated sample reads, delegation and temporary create/read/edit/read | 29 |
-| `pnpm run verify:delegation` | Temporary read-only reviews with isolated child context; unchanged files and no shell/write operations | 20 |
-| `pnpm run verify:coding` | Temporary search/read/edit task and narrowly authorized fixed test; independent rerun and execution/usage checks | 14 |
-| `pnpm run verify:workflow` | Two-turn multi-file pricing/receipt fixture; per-turn reports, protected files and independent checks | 28 |
-| `pnpm run verify:context` | Three-turn read-only fixture with changed content and a 26000-byte request budget; omission and fresh rereading | 27 |
+| `pnpm run verify:live` | Direct answer, workspace read, contextual follow-up, paginated sample reads, delegation and temporary create/read/edit/read | 29 |
+| `pnpm run verify:delegation` | Temporary read-only reviews with isolated child context; unchanged files and no shell/write operations | 136 |
+| `pnpm run verify:coding` | Temporary search/read/edit task and narrowly authorized fixed test; independent rerun and execution/usage checks | 72 |
+| `pnpm run verify:workflow` | Two-turn multi-file pricing/receipt fixture; per-turn reports, protected files and independent checks | 144 |
+| `pnpm run verify:context` | Three-turn read-only fixture with changed content and a 33000-byte request budget; omission and fresh rereading | 201 |
 | `pnpm run verify:memory:live` | Explicit remembering, project sharing, restart and scope isolation in temporary data | 16 |
 
 The coding checks authorize only designated source edits and a fixed test command. Workflow checks require failed and final successful verification within each turn, but do not separately assert that failure preceded the first edit. Delegation checks do not mechanically prove every review claim. Context checks are small behavioral fixtures, not token-cost or general success-rate benchmarks. Ordinary execution reports still use `taskVerification: not_assessed`.

@@ -318,11 +318,11 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 
 | 命令 | 夹具与验收 | 请求上限 |
 | --- | --- | --- |
-| `pnpm run verify:live` | 直接回答、sum、上下文追问、分页样本、委派、临时创建/读/改/读 | 29 |
-| `pnpm run verify:delegation` | 隔离子历史的临时只读 review，文件不变、无 shell/write | 20 |
-| `pnpm run verify:coding` | 临时搜索/读/改与窄授权固定测试，独立重跑及执行/usage | 14 |
-| `pnpm run verify:workflow` | 两回合多文件价格/收据，逐回合报告、保护文件与独立检查 | 28 |
-| `pnpm run verify:context` | 三回合只读，变化内容和 26000 字节预算，省略/重读 | 27 |
+| `pnpm run verify:live` | 直接回答、工作区读取、上下文追问、分页样本、委派、临时创建/读/改/读 | 29 |
+| `pnpm run verify:delegation` | 隔离子历史的临时只读 review，文件不变、无 shell/write | 136 |
+| `pnpm run verify:coding` | 临时搜索/读/改与窄授权固定测试，独立重跑及执行/usage | 72 |
+| `pnpm run verify:workflow` | 两回合多文件价格/收据，逐回合报告、保护文件与独立检查 | 144 |
+| `pnpm run verify:context` | 三回合只读，变化内容和 33000 字节预算，省略/重读 | 201 |
 | `pnpm run verify:memory:live` | 显式记忆、项目共享、重启与临时数据隔离 | 16 |
 
 编码检查只授权指定源码编辑及固定测试。Workflow 要求各回合有失败和最终成功验证，但不另断言失败先于首次编辑。委派断言不能机械证明每条 review；Context 是小型行为夹具，不是 token 成本/普遍成功率 benchmark。普通报告仍 taskVerification: not_assessed。

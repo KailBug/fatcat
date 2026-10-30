@@ -32,11 +32,11 @@ Context 决定本次发送什么，不拥有原始历史、文件、资料或长
 
 Model 先构造含 system、动态指导、工具定义、专有参数与历史的完整 JSON，再调用 prepareRequestContext 测量 UTF-8 字节。未超限原样返回；超限时按最旧优先替换可省略结果，重新测量后才发送。
 
-当前回合与最近一个完整回合受保护。只替换更早、正确关联到 read 调用且成功返回的 file/directory/search/document 结果；错误、未知协议、write/shell/delegate_task 结果、用户要求及 assistant 消息保留。Skill 正文的 kind=skill 不参加省略，引用资源可按普通 read 处理。
+当前回合与最近一个完整回合受保护。只替换更早、正确关联到 read/grep/glob/output_read 调用且成功返回的 file/directory/search/document/glob/output 结果；错误、未知协议、write/edit/shell/delegate_task 结果、用户要求及 assistant 消息保留。Skill 正文的 kind=skill 不参加省略，引用资源可按普通 read 处理。
 
-替换结果使用 kind=context_omitted，保留原类型、固定路径及文档 parserVersion，并明确要求需要时重读。原参数和调用 ID 保留，跨回合重复 ID 按局部工具批次关联。标记表示原调用曾成功，不表示正文仍在或文件当前未变。仅实际节省字节才替换；仍超限则本次传输前报 MODEL_CONTEXT_LIMIT。
+替换结果使用 kind=context_omitted，保留原类型、路径及文档 parserVersion，或命令输出的 outputId/stream，并明确要求需要时重读。原参数和调用 ID 保留，跨回合重复 ID 按局部工具批次关联。标记表示原调用曾成功，不表示正文仍在或文件当前未变。仅实际节省字节才替换；仍超限则本次传输前报 MODEL_CONTEXT_LIMIT。
 
-该操作只修改请求副本，下一次请求重新准备。它不执行模型摘要、不自动读取文件、不删磁盘历史；重读重新经过当前权限与版本校验。
+该操作只修改请求副本，下一次请求重新准备。它不执行模型摘要、不自动读取文件、不删磁盘历史；重读重新经过当前权限与版本校验。工作区搜索重新扫描当前文件；输出引用指向不可变的进程内日志，随所属 Tools 实例或进程失效，不随历史恢复。
 
 <a id="manual-and-automatic-compact"></a>
 

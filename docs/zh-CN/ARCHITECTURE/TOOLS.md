@@ -26,7 +26,7 @@ Tools 提供模型可见定义、参数校验和异步执行。工具不自行�
 | `packages/runtime/src/tools/shell/powershell.ts` | Windows PowerShell 环境、进程执行与清理 |
 | `packages/runtime/src/tools/shell/bash.ts` | Linux Bash 环境、进程组执行与清理 |
 | `packages/runtime/src/tools/shell/types.ts` | 共享 ProcessResult 协议与合并输出上限 |
-| `packages/runtime/src/tools/output.ts` | 有界不可变命令日志、预览及 output_read |
+| `packages/runtime/src/tools/shell-output.ts` | 有界不可变命令日志、预览及 output_read |
 | `packages/runtime/src/tools/web.ts`、`browser.ts` | [HTTP 研究](WEB.md)与[本地浏览器](BROWSER.md)入口 |
 
 程序化 createTools 省略目录时没有本地工具；传入目录增加 read/glob/grep/write/edit/shell/output_read，默认文件只读、shell deny。sum 已移除；集合为空时模型请求不发送 tools 外层。日常入口显式选择目录与权限，并装配 web/browser。Skills、附件、Memory 在通用 read/write 外包装，协议归各自专题，不在此复制。

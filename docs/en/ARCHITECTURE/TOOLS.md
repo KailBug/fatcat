@@ -20,7 +20,7 @@ Definitions use Fatcat's `ToolDefinition` with direct name, description, paramet
 | `packages/runtime/src/tools/shell/powershell.ts` | Windows PowerShell environment, process execution and cleanup |
 | `packages/runtime/src/tools/shell/bash.ts` | Linux Bash environment, process-group execution and cleanup |
 | `packages/runtime/src/tools/shell/types.ts` | Shared ProcessResult contract and combined output limit |
-| `packages/runtime/src/tools/output.ts` | Bounded immutable command logs, previews and output_read |
+| `packages/runtime/src/tools/shell-output.ts` | Bounded immutable command logs, previews and output_read |
 | `packages/runtime/src/tools/web.ts`, `browser.ts` | [HTTP research](WEB.md) and [local browser](BROWSER.md) entries |
 
 Programmatic createTools without a directory has no local tools. A directory adds read/glob/grep/write/edit/shell/output_read, defaulting to read-only files and shell deny. sum has been removed; model requests omit the tools envelope when the collection is empty. Ordinary entries explicitly select directories/permissions and assemble web/browser. Skills, attachments and Memory wrap general read/write; their own topics define those protocols.

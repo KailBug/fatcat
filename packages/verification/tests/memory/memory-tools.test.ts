@@ -74,13 +74,13 @@ test("memory read composes with existing tools, permissions, journals, and turn 
 		execute: async (_name, _args, _signal, id) => { callId = id; return { ok: true, result: "passthrough" }; },
 		forTurn: (_onEvent, context) => { turns++; observedContext = context; return defaultTools; } };
 	const tools = withMemories(base, access);
-	assert.deepEqual(tools.definitions.map((item) => item.name), ["sum", "read"]);
+	assert.deepEqual(tools.definitions.map((item) => item.name), ["read"]);
 	assert.equal(tools.workspaceRoot, base.workspaceRoot);
 	assert.equal(tools.getWrites, writes);
 	assert.equal(tools.getCommands, commands);
 	assert.equal(tools.getBrowserChecks, checks);
 	assert.equal(tools.getPermissionState, state);
-	await tools.execute("sum", "{}", undefined, "stable-call");
+	await tools.execute("fixture_passthrough", "{}", undefined, "stable-call");
 	assert.equal(callId, "stable-call");
 	const context = { documentRequest: () => (_event: ModelObservation) => {} };
 	const turnTools = tools.forTurn!(undefined, context);

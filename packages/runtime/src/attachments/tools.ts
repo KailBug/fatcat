@@ -75,6 +75,7 @@ export function withAttachments(base: Tools, access: AttachmentAccess, vision?: 
 			+ (vision ? ` Current model image input: ${vision.capability.supported ? "supported" : "unavailable"}. ${vision.capability.reason}` : ""),
 		parameters: { ...definition.parameters, properties: {
 			...(definition.parameters?.properties as Record<string, unknown> ?? {}), ...documentProperties,
+			query: { type: "string", minLength: 1, maxLength: 512, description: "Attachment-only literal search; use grep for workspace files." },
 		} } };
 	const definitions = existing ? base.definitions.map((item) => item === existing ? readDefinition : item)
 		: [...base.definitions, readDefinition];

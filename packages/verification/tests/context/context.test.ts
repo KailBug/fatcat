@@ -45,6 +45,34 @@ const response = (content = "Done") => Response.json({ choices: [{ finish_reason
 const responseCall = (id: string, args: { path: string; offset?: number; limit?: number }) =>
   Response.json({ choices: [{ finish_reason: "tool_calls", message: chatMessage(call(id, "read", args)) }] });
 
+test("retrieval projection retains output references and preserves edits, errors and current results", () => {
+  const outputId = "00000000-0000-0000-0000-000000000001";
+  const content = "source text ".repeat(1000);
+  const messages: Message[] = [user("Old task")];
+  for (const [name, value] of [
+    ["glob", { ok: true, result: { kind: "glob", path: "src", paths: [content] } }],
+    ["grep", { ok: true, result: { kind: "search", path: "src", matches: [{ text: content }] } }],
+    ["output_read", { ok: true, result: { kind: "output", outputId, stream: "stderr", content } }],
+    ["edit", { ok: true, result: { kind: "file", path: "src/code.ts", content } }],
+    ["grep", { ok: false, error: { code: "SEARCH_LIMIT", message: content } }],
+  ] as const) {
+    const id = `call-${messages.length}`;
+    messages.push(call(id, name), result(id, value));
+  }
+  messages.push(answer(), user("Recent task"), answer(), user("Current task"), call("current", "output_read"),
+    result("current", { ok: true, result: { kind: "output", outputId, stream: "stdout", content } }));
+  const snapshot = structuredClone(messages);
+  const prepared = prepareRequestContext({ messages }, 1);
+  assert.equal(prepared.omittedReadResults, 3);
+  assert.deepEqual(messages, snapshot);
+  const outputs = prepared.body.messages.filter((message) => message.role === "tool");
+  const marker = JSON.parse(String(outputs[2]!.content)).result;
+  assert.equal(marker.outputId, outputId);
+  assert.equal(marker.stream, "stderr");
+  assert.match(marker.notice, /references may have expired/);
+  for (const index of [3, 4, 5]) assert.ok(String(outputs[index]!.content).includes(content));
+});
+
 test("under-budget bodies keep exact content and references without unnecessary reduction", () => {
   const body = { model: "fixture", messages: history(), tools: [{ definition: "x".repeat(500) }] };
   const snapshot = structuredClone(body);
@@ -168,9 +196,9 @@ test("a multi-turn session rereads changed content after omission and reset remo
   await writeFile(join(workspace, "notes.txt"), source);
   const tools = await createTools(workspace);
   let thirdRequests = 0;
-  const agent = createAgent({ ...config, maxRequestBytes: 28000 }, tools, async (input, init) => {
+  const agent = createAgent({ ...config, maxRequestBytes: 33000 }, tools, async (input, init) => {
     const payload = await new Request(input, init).text();
-    assert.ok(Buffer.byteLength(payload) <= 28000);
+    assert.ok(Buffer.byteLength(payload) <= 33000);
     const body = JSON.parse(payload) as { messages: ChatMessage[] };
     const prompt = String(body.messages.findLast((message) => message.role === "user")?.content);
     const last = body.messages.at(-1)!;
@@ -210,7 +238,7 @@ test("failed requests cannot persist omitted markers into later session history"
   const { workspace } = await temporaryWorkspace(t);
   await writeFile(join(workspace, "notes.txt"), "original-body\n" + "x".repeat(12000));
   let fail = false;
-  const agent = createAgent({ ...config, maxRequestBytes: 28000 }, await createTools(workspace), async (input, init) => {
+  const agent = createAgent({ ...config, maxRequestBytes: 33000 }, await createTools(workspace), async (input, init) => {
     const body = await new Request(input, init).json() as { messages: ChatMessage[] };
     const prompt = String(body.messages.findLast((message) => message.role === "user")?.content);
     if (fail) {

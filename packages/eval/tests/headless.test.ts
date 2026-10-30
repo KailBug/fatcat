@@ -34,7 +34,7 @@ describe("headless injected Session", () => {
 		const result = await runHeadlessTask(options, sequence([
 			{ name: "read", args: { path: "input.txt" } },
 			{ name: "write", args: { path: "output.txt", content: "first" } },
-			{ name: "write", args: { path: "output.txt", oldText: "first", newText: "edited" } },
+			{ name: "edit", args: { path: "output.txt", edits: [{ oldText: "first", newText: "edited" }] } },
 			{ name: "read", args: { path: "output.txt" } },
 			{ name: "shell", args: { command: process.platform === "win32" ? "Get-Content output.txt; exit 7" : "cat output.txt; exit 7" } },
 		]));

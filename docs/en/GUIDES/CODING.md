@@ -15,13 +15,13 @@ Fatcat can inspect text, search, create or edit files, run commands, research pu
 
 ## Read and locate code
 
-Ask for an entry-point overview, a named file or a literal symbol search. Reads are paged; large results may need follow-up reads. Text reads accept UTF-8 files up to 1 MiB, with bounded line ranges and response sizes. Search is literal, case-sensitive and single-line, with bounded file, directory and match counts. A partial result or skipped file does not prove absence.
+Ask for an entry-point overview, a named file or a literal symbol search. Reads are paged; large results may need follow-up reads. Text reads accept UTF-8 files up to 1 MiB, with bounded line ranges and response sizes. Use glob to locate paths, grep to search content, and read for known files/directories. Search defaults to case-sensitive literal text; explicit regex, ignoreCase, glob/exclude filters and 0–5 context lines are available, with bounded file, directory and match counts. A partial result or skipped file does not prove absence.
 
 Ordinary modes confine file tools to the workspace and exclude hidden paths, dependency directories and links. Free to go broadens local access while retaining text and resource limits. Read content may be sent to the configured model. Use [attachments](MATERIALS.md) for supported document formats instead of asking text tools to parse binary files.
 
 ## Make a controlled edit
 
-Default mode asks before each write. The prompt shows the path and proposed content/change. The text tool creates a new file without overwriting an existing one, or replaces an exact fragment that must occur once. Parent directories must exist; edits retain strict text/size checks. It does not offer general directory creation or deletion.
+Default mode asks before each write. The prompt shows the path and proposed content/change. write creates a new file without overwriting an existing one. edit accepts 1–32 exact replacements against the same original file: each fragment must occur once and regions must not overlap. All replacements receive one approval and one publication; a conflict leaves the original file intact. Parent directories must exist; edits retain strict text/size checks. It does not offer general directory creation or deletion.
 
 If the file changed while approval was pending, Fatcat rejects a stale edit instead of silently replacing new content. Ask it to reread and revise the operation. A later model failure does not roll back writes already committed. Inspect the file and diff before retrying an interrupted task.
 
@@ -37,7 +37,7 @@ See [tool contracts](../ARCHITECTURE/TOOLS.md) for exact read, search and write 
 
 Ask for a focused test or build command. Shell uses a fresh foreground Windows PowerShell process without a profile or interactive stdin. The approval shows the command, working directory and timeout. File-write approval does not authorize commands.
 
-The default command timeout is 30 seconds, with a maximum of 120 seconds. Combined output is bounded at 16 KiB; hitting the limit terminates the command. A successful tool call alone does not mean a check passed: inspect exit code, timeout, cancellation and truncation. A command with multiple native programs must preserve their failure status.
+The default command timeout is 30 seconds, with a maximum of 120 seconds. The model receives a short output preview and outputId. output_read can page, read the tail or search the captured stdout/stderr without rerunning the command. Preview truncation does not stop execution; combined raw capture is capped at 1 MiB and exceeding that cap terminates the command. Logs are process-local and unavailable after restart. A successful tool call alone does not mean a check passed: inspect exit code, timeout, cancellation and truncation. A command with multiple native programs must preserve their failure status.
 
 Commands run with the Windows user's access, not in an OS sandbox. Process cleanup is best effort; detached processes can survive. An unconfirmed stop blocks further shell launches through that Tools instance; inspecting the process does not automatically clear the block. Each Tools instance retains bounded command/write journals shared by parent and delegated work. Ordinary interfaces cache that instance per workspace, so starting another chat in the same workspace does not reset it. Counts and lifecycle are defined in [Tools](../ARCHITECTURE/TOOLS.md#journals-and-verification).
 
@@ -45,7 +45,7 @@ Commands run with the Windows user's access, not in an OS sandbox. Process clean
 
 Delegation is available by default; no capability flag is required. Ask for independent, bounded subtasks when useful. The model decides whether to delegate.
 
-Children have isolated conversation histories and inherit tool/permission boundaries. They share operation journals and cannot recursively delegate. Current defaults allow two children with at most three model requests each, capped by the configured iteration limit. They run sequentially. A child's final answer is evidence to review, not proof that its task succeeded. See [delegation architecture](../ARCHITECTURE/SUBAGENT.md).
+Children have isolated conversation histories and inherit tool/permission boundaries. They share operation journals and cannot recursively delegate. Current defaults allow two children with at most 32 model requests each, independent of the parent iteration limit and including auxiliary requests plus a reserved final answer. They run sequentially. A child's final answer is evidence to review, not proof that its task succeeded. See [delegation architecture](../ARCHITECTURE/SUBAGENT.md).
 
 ## Research public information
 

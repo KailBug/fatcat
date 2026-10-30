@@ -199,7 +199,8 @@ test("CLI persists completed tool history, resumes by name and forks without cha
   assert.deepEqual(restored.map((message: { role: string }) => message.role),
     ["user", "assistant", "user", "assistant", "tool", "assistant"]);
   assert.equal(restored[4].tool_call_id, "call_1");
-  assert.equal(restored[4].content, '{"ok":true,"result":42}');
+  assert.equal(JSON.parse(restored[4].content).result.kind, "directory");
+  assert.equal(JSON.parse(restored[4].content).result.path, ".");
   const afterFork = await new SessionStore({ root: env.FATCAT_SESSION_DIR }).list(workspace);
   assert.equal(afterFork.find((session) => session.name === "original")?.turnCount, 2);
   const copy = afterFork.find((session) => session.name === "copy")!;
@@ -437,7 +438,7 @@ test("chat preserves tool history, resets locally, and stops at the exit command
   const history = JSON.parse(answers[1]!) as { role: string; tool_call_id?: string; content?: string }[];
   assert.deepEqual(history.map((message) => message.role), ["user", "assistant", "tool", "assistant"]);
   assert.equal(history[2]?.tool_call_id, "call_1");
-  assert.equal(history[2]?.content, '{"ok":true,"result":42}');
+  assert.equal(JSON.parse(history[2]!.content!).result.kind, "directory");
   assert.equal(answers[2], "[]");
   assert.match(result.stderr, /"turn":3,"type":"completed"/);
   assert.ok(!result.stderr.includes("offline-credential-only"));
@@ -690,7 +691,7 @@ test("read-only CLI follows recursive search pages without logging source conten
     { path: "src/a.ts", line: 2, text: "SEARCH_TOKEN private-text" },
     { path: "src/b.ts", line: 1, text: "SEARCH_TOKEN final-match" },
   ]);
-  assert.equal((result.stderr.match(/"tool":"read"/g) ?? []).length, 2);
+  assert.equal((result.stderr.match(/"tool":"grep"/g) ?? []).length, 2);
   for (const text of ["SEARCH_TOKEN", "private-text", "final-match", workspace]) assert.ok(!result.stderr.includes(text));
   assert.equal(await readFile(join(workspace, "src", "a.ts"), "utf8"), source);
   assert.deepEqual(reports(result.stderr)[0]!.writes, []);
@@ -734,7 +735,7 @@ test("CLI chat projects old read payloads under pressure while preserving follow
   const { workspace } = await temporaryWorkspace(t);
   await writeFile(join(workspace, "notes.txt"), "CURRENT_MARKER\n" + "x".repeat(12000));
   const result = run(["--chat", "--workspace", workspace, "--permission", "read-only"],
-    { DEEPSEEK_API_KEY: "offline-only", HARNESS_MAX_REQUEST_BYTES: "42000" },
+    { DEEPSEEK_API_KEY: "offline-only", HARNESS_MAX_REQUEST_BYTES: "48000" },
     "context load\nkeep-context-rule\ncontext recall " + "padding ".repeat(1375) + "\n/exit\n");
   assert.equal(result.status, 0, result.stderr);
   assert.ok(result.stdout.trim().endsWith("CURRENT_MARKER"));

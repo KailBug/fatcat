@@ -14,11 +14,11 @@ function hasCode(result: ToolResult, code: string) {
 
 test("only an explicit valid workspace enables filesystem definitions and execution", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
-  assert.deepEqual(defaultTools.definitions.map((tool) => tool.name), ["sum"]);
+  assert.deepEqual(defaultTools.definitions.map((tool) => tool.name), []);
   hasCode(await call(defaultTools, "read", "notes.txt"), "UNKNOWN_TOOL");
   hasCode(await defaultTools.execute("__proto__", "{}"), "UNKNOWN_TOOL");
   const tools = await createTools(workspace);
-  assert.deepEqual(tools.definitions.map((tool) => tool.name), ["sum", "read", "write", "shell"]);
+  assert.deepEqual(tools.definitions.map((tool) => tool.name), ["read", "glob", "grep", "write", "edit", "shell", "output_read"]);
   for (const oldName of ["list_directory", "read_file"]) hasCode(await call(tools, oldName, "."), "UNKNOWN_TOOL");
   await assert.rejects(createTools(join(workspace, "missing")), /existing accessible directory/);
   await assert.rejects(createTools(" "), /existing accessible directory/);
@@ -53,7 +53,7 @@ test("TSV files retain ordinary UTF-8 text, search and write boundaries", async 
   const read = await call(tools, "read", "data.tsv");
   assert.equal(read.ok, true);
   if (read.ok) assert.equal((read.result as { content: string }).content, "proto\tmodern\n");
-  const search = await tools.execute("read", JSON.stringify({ path: ".", query: "modern" }));
+  const search = await tools.execute("grep", JSON.stringify({ path: ".", query: "modern" }));
   assert.equal(search.ok, true);
   assert.match(JSON.stringify(search), /data.tsv/);
   assert.equal((await tools.execute("write", JSON.stringify({ path: "output.tsv", content: "a\tb\n" }))).ok, true);

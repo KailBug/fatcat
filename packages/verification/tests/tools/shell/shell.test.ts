@@ -117,7 +117,7 @@ test("child environment excludes model credentials, hooks and arbitrary inherite
 
 test("output limits bound both streams and stop a noisy command", windows, async (t) => {
   const { workspace } = await temporaryWorkspace(t);
-  const result = await runPowerShell("[Console]::Out.Write(('x' * 100000)); Start-Sleep -Seconds 30", workspace, 10000);
+  const result = await runPowerShell("[Console]::Out.Write(('x' * 2000000)); Start-Sleep -Seconds 30", workspace, 10000);
   assert.equal(result.status, "output_limit", JSON.stringify(result));
   assert.equal(result.truncated, true);
   assert.equal(result.cleanup, "tree-killed");

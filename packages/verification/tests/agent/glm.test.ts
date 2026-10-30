@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
@@ -27,7 +28,7 @@ describe("GLM agent assembly and execution boundaries", () => {
 		it(`${model}: rebinds parent, child and compaction requests from the startup provider`, async () => {
 			const selection = defaultModelSelection("glm", "cn", model);
 			let requests = 0;
-			const base = createAgent(config, undefined, async (input, init) => {
+			const base = createAgent(config, fixtureTools, async (input, init) => {
 				const request = new Request(input, init);
 				assert.equal(request.url, "https://open.bigmodel.cn/api/paas/v4/chat/completions");
 				assert.equal(request.headers.get("authorization"), "Bearer offline-glm-agent");
@@ -46,7 +47,7 @@ describe("GLM agent assembly and execution boundaries", () => {
 				assert.equal(body.tool_choice, "auto");
 				const names = body.tools!.map((tool) => tool.function.name);
 				if (requests === 2) {
-					assert.deepEqual(names, ["sum"]);
+					assert.deepEqual(names, ["fixture_add"]);
 					assert.ok(!JSON.stringify(body.messages).includes("Parent-only detail"));
 					return answer("Child result");
 				}
@@ -82,7 +83,7 @@ describe("GLM agent assembly and execution boundaries", () => {
 				assert.equal(body.model, model);
 				assert.equal(body.tools, undefined);
 				assert.equal(body.tool_choice, undefined);
-				return call("sum", { numbers: [1, 2] });
+				return call("fixture_add", { numbers: [1, 2] });
 			}, undefined, undefined, undefined, undefined, connections);
 			const bound = base.forModel(defaultModelSelection("glm", "cn", model), base);
 			await assert.rejects(runAgent("Compute a sum", bound), { code: "MAX_ITERATIONS" });

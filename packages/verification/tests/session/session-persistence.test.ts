@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -28,7 +29,7 @@ test("durable sessions preserve full tool history and skill text with isolated s
   const tools = await createTools(workspace);
   const model: Model = async (messages) => {
     if (messages.at(-1)?.role === "tool") return answer("42");
-    const toolCalls = [{ id: "reused-id", name: "sum", arguments: '{"numbers":[17,25]}' }];
+    const toolCalls = [{ id: "reused-id", name: "fixture_add", arguments: '{"numbers":[17,25]}' }];
     return { message: { role: "assistant", content: null, toolCalls } };
   };
   const first = await SessionManager.open({ model, maxIterations: 2, tools }, { workspace, store });
@@ -37,7 +38,7 @@ test("durable sessions preserve full tool history and skill text with isolated s
   const file = await savedPath(store.root, id);
   const raw = JSON.parse(await readFile(file, "utf8"));
   assert.equal(raw.version, 4);
-  assert.deepEqual(raw.history[2].toolCalls, [{ id: "reused-id", name: "sum", arguments: '{"numbers":[17,25]}' }]);
+  assert.deepEqual(raw.history[2].toolCalls, [{ id: "reused-id", name: "fixture_add", arguments: '{"numbers":[17,25]}' }]);
   assert.equal(raw.history[3].callId, "reused-id");
   assert.equal(raw.history[2].tool_calls, undefined);
   raw.history[3].content = '{"ok":true,"result":{"kind":"skill","content":"FULL_SKILL_BODY"}}';
@@ -272,16 +273,16 @@ test("strict disk validation rejects malformed, unfinished, orphaned and mismatc
 });
 
 test("history validation permits repeated tool IDs across turns but rejects incomplete batches", () => {
-  const call = { id: "id", name: "sum", arguments: "{}" };
+  const call = { id: "id", name: "fixture_add", arguments: "{}" };
   const turn: Message[] = [{ role: "user", content: "Calculate" },
     { role: "assistant", content: null, toolCalls: [call] },
     { role: "tool", callId: "id", content: "42" }, { role: "assistant", content: "42" }];
-  const session = new Session({ maxIterations: 1, model: async () => answer() },
+  const session = new Session({ tools: fixtureTools, maxIterations: 1, model: async () => answer() },
     [{ role: "system", content: "old" }, ...turn, ...turn]);
   assert.equal(session.messages.length, 9);
-  assert.throws(() => new Session({ maxIterations: 1, model: async () => answer() },
+  assert.throws(() => new Session({ tools: fixtureTools, maxIterations: 1, model: async () => answer() },
     [{ role: "system", content: "old" }, ...turn.slice(0, 2)]), expectCode("SESSION_CORRUPT"));
-  assert.throws(() => new Session({ maxIterations: 1, model: async () => answer() },
+  assert.throws(() => new Session({ tools: fixtureTools, maxIterations: 1, model: async () => answer() },
     [{ role: "system", content: "old" }, turn[0]!, { role: "assistant", content: null, toolCalls: [call, call] },
       ...turn.slice(2)]), expectCode("SESSION_CORRUPT"));
 });

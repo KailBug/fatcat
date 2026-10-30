@@ -6,7 +6,7 @@ import type { LoopEvent } from "@fatcat/runtime/loop";
 import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
-import { defaultTools } from "@fatcat/runtime/tools";
+import { fixtureTools as defaultTools } from "../support/tool-fixture.js";
 
 function answer(content: string): ModelTurn {
   return { message: { role: "assistant", content } };
@@ -20,7 +20,7 @@ test("delegation isolates child history, correlates events, and returns only the
   const childRequests: Message[][] = [];
   const child: Model = async (messages) => {
     childRequests.push(structuredClone(messages));
-    return childRequests.length === 1 ? calls("sum", '{"numbers":[17,25]}', "child-sum") : answer("42");
+    return childRequests.length === 1 ? calls("fixture_add", '{"numbers":[17,25]}', "child-sum") : answer("42");
   };
   const tools = createSubagentTools(defaultTools, child, 8);
   const events: LoopEvent[] = [];
@@ -99,7 +99,7 @@ test("children have a bounded loop and cannot execute recursive delegation", asy
     const result = await tools.execute("delegate_task", '{"task":"Try"}');
     assert.equal(result.ok, false);
     if (!result.ok) { assert.equal(result.error.code, "SUBAGENT_FAILED"); assert.match(result.error.message, /MAX_ITERATIONS/); }
-    assert.equal(requests, Math.min(3, configured));
+    assert.equal(requests, configured);
     assert.throws(() => createSubagentTools(tools, child, 8), /without delegation/);
   }
 });
@@ -133,4 +133,23 @@ test("oversized child answers fail instead of returning a successful partial ans
   const result = await tools.execute("delegate_task", '{"task":"Work"}');
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.error.code, "SUBAGENT_OUTPUT_LIMIT");
+});
+
+test("default child exhaustion stops at 32 requests and reports completed tool returns", async () => {
+  let requests = 0;
+  const child: Model = async (_messages, _signal, _observe, options) => {
+    requests++;
+    if (requests === 32) assert.equal(options?.toolChoice, "none");
+    return calls("fixture_add", '{"numbers":[1,2]}', `call-${requests}`);
+  };
+  const tools = createSubagentTools(defaultTools, child);
+  const result = await tools.execute("delegate_task", '{"task":"Continue until the budget stops"}');
+  assert.equal(requests, 32);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "SUBAGENT_FAILED");
+    assert.match(result.error.message, /MAX_ITERATIONS/);
+    assert.match(result.error.message, /32 model requests and 31 successful tool returns/);
+  }
+  for (const limit of [0, 33, 1.5]) assert.throws(() => createSubagentTools(defaultTools, child, limit), /1 to 32/);
 });

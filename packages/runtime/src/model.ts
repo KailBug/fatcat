@@ -45,7 +45,7 @@ export function createModel(config: Config, transport?: typeof fetch, tools: Too
             throw new HarnessError("MODEL_UNAVAILABLE", descriptor.chatUnavailableReason);
         }
         const protocol = resolveModelProtocol(selection, options?.purpose);
-        const includeTools = options?.purpose !== "compaction" && options?.purpose !== "document"
+        const includeTools = tools.definitions.length > 0 && options?.purpose !== "compaction" && options?.purpose !== "document"
             && !(options?.toolChoice === "none" && (config.provider === "mimo" || config.provider === "glm"));
         const replay = protocol.reasoningHistory === "all" || (protocol.reasoningHistory === "with-tools" && includeTools);
         const encode = (input: { messages: Message[] }): ChatCompletionCreateParamsNonStreaming => ({

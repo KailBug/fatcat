@@ -28,7 +28,7 @@ Automatic compaction belongs to the original turn and only adds activity/request
 | tokenUsage | Valid server counters and request coverage, parent/child separately; unknown is not zero |
 | contextReduction | Per-request omissions and byte differences; repeated omissions count repeatedly, not token or cost savings |
 
-Command succeeded requires completed, exitCode=0, no output truncation and cleanup other than unconfirmed. Journal-summary truncation differs from execution collection overflow.
+Command succeeded requires completed, exitCode=0, no capture overflow and cleanup other than unconfirmed. Journal-summary truncation and the model-facing shell outputTruncated flag both differ from capture overflow; shortening a preview does not fail a command. output_read retrieves the captured output without launching another command or adding a command record. See [Tools](TOOLS.md#output_read-and-captured-output) for log bounds and lifetime.
 
 New or changed write_record marks earlier commands/browser checks as laterWriteAttempt, including failed or uncertain writes. Repeated identical records do not trigger it. This cannot detect changes by shell, editors or external processes; false does not prove unchanged files.
 

@@ -29,7 +29,7 @@ function call(name: string, args: unknown): ModelTurn {
 const model: Model = async (messages) => {
   const last = messages.at(-1)!;
   if (last.role === "user") {
-    if (last.content === "write") return call("write", { path: "notes.txt", oldText: "before", newText: "after" });
+    if (last.content === "write") return call("edit", { path: "notes.txt", edits: [{ oldText: "before", newText: "after" }] });
     if (last.content === "shell") return call("shell", { command: "'PERMISSION_FIXTURE'" });
     return call("read", { path: "notes.txt" });
   }

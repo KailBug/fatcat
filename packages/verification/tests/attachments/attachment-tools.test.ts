@@ -132,8 +132,8 @@ test("attachment read wrapper filters names separately and preserves access bind
 	assert.equal(tools.workspaceRoot, base.workspaceRoot);
 	assert.equal(tools.getWrites, writes);
 	assert.equal(tools.getCommands, commands);
-	assert.deepEqual(tools.definitions.map((item) => item.name), ["sum", "read"]);
-	await tools.execute("sum", "{}", undefined, "known-call");
+	assert.deepEqual(tools.definitions.map((item) => item.name), ["read"]);
+	await tools.execute("fixture_passthrough", "{}", undefined, "known-call");
 	assert.equal(callId, "known-call");
 	const list = resultObject(await tools.execute("read", JSON.stringify({ path: "attachment:list", query: "alpha" })));
 	assert.equal(list.queryScope, "name");

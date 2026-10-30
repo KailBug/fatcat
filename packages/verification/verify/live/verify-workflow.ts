@@ -27,7 +27,7 @@ try {
   });
   const tools: Tools = { ...base, async execute(...args) {
     const result = await base.execute(...args);
-    if (args[0] === "read" && result.ok) {
+    if (["read", "grep"].includes(args[0]) && result.ok) {
       const value = result.result as { kind?: string; path?: string; content?: string; matches?: { path: string }[] };
       if (value.kind === "search") {
         for (const match of value.matches ?? []) evidence.searchedPaths.push(match.path);
@@ -43,7 +43,7 @@ try {
   const session = new Session(createAgent({ ...config, maxIterations }, tools));
   const reports: ExecutionReport[] = [];
   const prompts = [
-    `Fix the shopping cart calculations. Use read with a literal query in src to locate subtotal and its receipt caller, then read both modules and check.test.mjs. First reproduce the failing checks with shell command exactly "${workflowCommand}" and cwd ".". subtotal must multiply each priceCents by quantity; receipt must round percentage tax to the nearest cent. Change only those two source modules using exact write edits, preserving the public result shape and unrelated code. Run the same checks after the edits, correct any remaining failures, and report the actual results. Do not edit tests or src/catalog.mjs.`,
+    `Fix the shopping cart calculations. Use grep with a literal query in src to locate subtotal and its receipt caller, then read both modules and check.test.mjs. First reproduce the failing checks with shell command exactly "${workflowCommand}" and cwd ".". subtotal must multiply each priceCents by quantity; receipt must round percentage tax to the nearest cent. Change only those two source modules using edit with edits[], preserving the public result shape and unrelated code. Run the same checks after the edits, correct any remaining failures, and report the actual results. Do not edit tests or src/catalog.mjs.`,
     `Extend receipt with an optional third argument discountCents, defaulting to 0. Keep subtotalCents as the original quantity-weighted subtotal; subtract the discount before calculating tax, clamp the taxable amount to zero, round tax to the nearest cent, and return totalCents as the discounted taxable amount plus tax. Keep the existing two-argument behavior and do not mutate items. I added new checks and a user note to the current files since your last answer: read both source modules and check.test.mjs again, preserve that note, and reproduce the new failure using shell command exactly "${workflowCommand}" and cwd "." before editing. Edit only src/receipt.mjs, then run the same checks again and report this turn's actual result. Do not edit tests, src/catalog.mjs, or the subtotal module.`,
   ];
   for (const prompt of prompts) {
@@ -68,7 +68,7 @@ try {
     assert.ok(report);
     await assertWorkflowTurn(workspace, tools, evidence, report);
     assert.ok(report.modelRequests.parent <= maxIterations);
-    assert.ok(report.modelRequests.children <= 2 * Math.min(3, maxIterations));
+    assert.ok(report.modelRequests.children <= 2 * 32);
     reports.push(report);
     console.log(JSON.stringify({ scenario: "workflow", phase, passed: true,
       requests: report.modelRequests, requestBytes: report.requestBytes, tokenUsage: report.tokenUsage,

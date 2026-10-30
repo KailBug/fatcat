@@ -41,9 +41,9 @@ async function scriptedWorkflow(workspace: string) {
   const attemptedWrites = new Set<string>();
   const tools: Tools = { ...base, async execute(name, args, signal, callId) {
     const input = JSON.parse(args) as { path?: string };
-    if (name === "write" && input.path) attemptedWrites.add(input.path);
+    if ((name === "write" || name === "edit") && input.path) attemptedWrites.add(input.path);
     const result = await base.execute(name, args, signal, callId);
-    if (name === "read" && result.ok) {
+    if ((name === "read" || name === "grep") && result.ok) {
       const value = result.result as { kind: string; path: string; content?: string; matches?: { path: string }[] };
       if (value.kind === "file" && !attemptedWrites.has(value.path)
         && value.content === evidence.beforeFiles[value.path]) evidence.freshReads.push(value.path);
@@ -64,12 +64,12 @@ async function scriptedWorkflow(workspace: string) {
     evidence = await captureWorkflowStart(workspace, tools, phase);
     attemptedWrites.clear();
     const reads: [string, unknown][] = editablePaths.map((path) => ["read", { path }]);
-    if (phase === 1) reads.unshift(["read", { path: "src", query: "subtotal" }]);
+    if (phase === 1) reads.unshift(["grep", { path: "src", query: "subtotal" }]);
     reads.push(["read", { path: "check.test.mjs" }], ["shell", { command: workflowCommand, cwd: "." }]);
     const writes: [string, unknown][] = phase === 1 ? [
-      ["write", { path: editablePaths[0], oldText: "sum + item.priceCents", newText: "sum + item.priceCents * item.quantity" }],
-      ["write", { path: editablePaths[1], oldText: "Math.floor(", newText: "Math.round(" }],
-    ] : [["write", { path: editablePaths[1], oldText: fixedReceipt, newText: discountedReceipt }]];
+      ["edit", { path: editablePaths[0], edits: [{ oldText: "sum + item.priceCents", newText: "sum + item.priceCents * item.quantity" }] }],
+      ["edit", { path: editablePaths[1], edits: [{ oldText: "Math.floor(", newText: "Math.round(" }] }],
+    ] : [["edit", { path: editablePaths[1], edits: [{ oldText: fixedReceipt, newText: discountedReceipt }] }]];
     writes.push(["shell", { command: workflowCommand, cwd: "." }]);
     steps = [calls(`read-${phase}`, reads), calls(`edit-${phase}`, writes), answer(`Phase ${phase} checks passed.`)];
     let report: ExecutionReport | undefined;

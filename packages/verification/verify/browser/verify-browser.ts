@@ -46,7 +46,7 @@ try {
       assert.ok(observations[0]!.diagnostics.some((item: { kind: string }) => item.kind === "pageerror"));
       return call("read", { path: "app.js" });
     }
-    if (phase === 3) return call("write", { path: "app.js", oldText: "missingName.value", newText: "document.querySelector('#name').value" });
+    if (phase === 3) return call("edit", { path: "app.js", edits: [{ oldText: "missingName.value", newText: "document.querySelector('#name').value" }] });
     if (phase === 4) return call("browser", request);
     assert.equal(observations[1]!.status, "completed");
     assert.equal(observations[1]!.completedSteps, 3);

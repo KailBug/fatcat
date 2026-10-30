@@ -24,11 +24,11 @@ Context selects request content without owning original history, files, material
 
 Model builds full JSON with system/dynamic guidance, tools, protocol fields and history, then prepareRequestContext measures UTF-8 bytes. Within-budget requests pass unchanged; overflow replaces eligible results oldest-first and remeasures before transport.
 
-Protect the current and latest complete turn. Only older successful file/directory/search/document results correctly associated with read calls are eligible. Errors, unknown protocols, write/shell/delegate_task results, user requests and assistant messages remain. kind=skill bodies are excluded; referenced resources may follow ordinary reads.
+Protect the current and latest complete turn. Only older successful file/directory/search/document/glob/output results correctly associated with read/grep/glob/output_read calls are eligible. Errors, unknown protocols, write/edit/shell/delegate_task results, user requests and assistant messages remain. kind=skill bodies are excluded; referenced resources may follow ordinary reads.
 
-Replacements use kind=context_omitted and retain original kind, fixed path and parserVersion, requiring rereads when needed. Arguments/call IDs remain; repeated IDs across turns associate within local batches. Markers mean an original successful call, not retained content or unchanged files. Replace only when bytes shrink. Remaining overflow raises MODEL_CONTEXT_LIMIT before transport.
+Replacements use kind=context_omitted and retain original kind, path and parserVersion, or outputId/stream for captured output, requiring rereads when needed. Arguments/call IDs remain; repeated IDs across turns associate within local batches. Markers mean an original successful call, not retained content or unchanged files. Replace only when bytes shrink. Remaining overflow raises MODEL_CONTEXT_LIMIT before transport.
 
-Only request copies change; every request prepares again. No summary, automatic file read or disk-history deletion occurs. Rereads use current permissions/version checks.
+Only request copies change; every request prepares again. No summary, automatic file read or disk-history deletion occurs. Rereads use current permissions/version checks. Workspace discovery rescans current files. Output references name immutable process-local logs; they expire with their owning Tools instance or process and are not restored with history.
 
 ## Manual and automatic compact
 

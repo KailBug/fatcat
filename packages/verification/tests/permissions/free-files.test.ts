@@ -1,3 +1,4 @@
+import { createGrepTool } from "@fatcat/runtime/internal/tools/grep";
 import assert from "node:assert/strict";
 import { link, mkdir, open, readFile, readdir, realpath, rename, symlink, unlink, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
@@ -46,7 +47,7 @@ test("unrestricted files use a fixed relative root, allow outside and hidden pat
   assert.equal(await readFile(join(workspace, "relative.custom"), "utf8"), "local fixture");
   const external = await call(tools, "write", { path: "../outside/.created", content: "outside created" });
   assert.equal(external.path, join(await realpath(outside), ".created"));
-  await call(tools, "write", { path: outsideFile, oldText: "outside fixture", newText: "outside updated" });
+  await call(tools, "edit", { path: outsideFile, edits: [{ oldText: "outside fixture", newText: "outside updated" }] });
   assert.equal(await readFile(outsideFile, "utf8"), "outside updated");
   assert.equal(approvals, 0);
   const records = tools.getWrites!();
@@ -59,7 +60,7 @@ test("unrestricted files use a fixed relative root, allow outside and hidden pat
     for (const path of [outsideFile, "../outside/notes.custom", ".private/extensionless", "node_modules/module.custom"]) {
       errorCode(await tools.execute("read", JSON.stringify({ path })), "PATH_NOT_ALLOWED");
     }
-    errorCode(await tools.execute("write", JSON.stringify({ path: outsideFile, oldText: "updated", newText: "blocked" })), "PATH_NOT_ALLOWED");
+    errorCode(await tools.execute("edit", JSON.stringify({ path: outsideFile, edits: [{ oldText: "updated", newText: "blocked" }] })), "PATH_NOT_ALLOWED");
   }
   assert.equal(approvals, 0);
   policy.select("plan");
@@ -89,7 +90,7 @@ test("unrestricted directory pages and search include hidden, dependency, extens
   assert.equal(throughJunction.path, await realpath(join(outside, "linked.custom")));
   assert.equal(throughJunction.content, "hit outside");
   assert.equal((await call(tools, "read", { path: "hard-link.custom" })).content, "hit outside");
-  const result = await call(tools, "read", { path: ".", query: "hit" });
+  const result = await call(tools, "grep", { path: ".", query: "hit", exclude: [] });
   assert.equal(result.complete, true);
   assert.equal(result.scannedFiles, 5);
   assert.deepEqual(result.matches!.map(({ path }) => path).sort(), [
@@ -102,7 +103,7 @@ test("unrestricted directory pages and search include hidden, dependency, extens
     errorCode(await tools.execute("read", JSON.stringify({ path })), "PATH_NOT_ALLOWED");
   }
   policy.select("freeToGo");
-  await call(tools, "write", { path: "outside-link/linked.custom", oldText: "hit outside", newText: "hit edited" });
+  await call(tools, "edit", { path: "outside-link/linked.custom", edits: [{ oldText: "hit outside", newText: "hit edited" }] });
   assert.equal(await readFile(join(outside, "linked.custom"), "utf8"), "hit edited");
   assert.equal(await readFile(join(workspace, "hard-link.custom"), "utf8"), "hit outside");
   assert.equal(tools.getWrites!()[0]!.path, await realpath(join(outside, "linked.custom")));
@@ -119,7 +120,7 @@ test("unrestricted addressing keeps UTF-8, binary, file-size, exact-edit and no-
     errorCode(await tools.execute("read", JSON.stringify({ path: join(outside, name) })), "UNSUPPORTED_FILE");
   }
   errorCode(await tools.execute("read", JSON.stringify({ path: join(outside, "oversized") })), "FILE_TOO_LARGE");
-  const search = await call(tools, "read", { path: outside, query: "hit" });
+  const search = await call(tools, "grep", { path: outside, query: "hit" });
   assert.equal(search.complete, false);
   assert.equal(search.skippedFiles, 3);
   assert.equal(search.scannedFiles, 1);
@@ -129,7 +130,7 @@ test("unrestricted addressing keeps UTF-8, binary, file-size, exact-edit and no-
   }
   errorCode(await tools.execute("write", JSON.stringify({ path: join(outside, "new.custom"), content: "\u4e2d".repeat(400000) })), "FILE_TOO_LARGE");
   errorCode(await tools.execute("write", JSON.stringify({ path: join(outside, "good"), content: "overwrite" })), "WRITE_CONFLICT");
-  errorCode(await tools.execute("write", JSON.stringify({ path: join(outside, "good"), oldText: "missing", newText: "wrong" })), "WRITE_CONFLICT");
+  errorCode(await tools.execute("edit", JSON.stringify({ path: join(outside, "good"), edits: [{ oldText: "missing", newText: "wrong" }] })), "WRITE_CONFLICT");
   errorCode(await tools.execute("write", JSON.stringify({ path: join(outside, "missing", "new"), content: "wrong" })), "NOT_FOUND");
   assert.equal(await readFile(join(outside, "good"), "utf8"), "hit valid");
   assert.deepEqual(tools.getWrites!(), []);
@@ -148,7 +149,7 @@ test("reads and search hold the policy until the asynchronous operation complete
     const waiting = new Promise<void>((resolve) => { entered = resolve; });
     const gate = new Promise<void>((resolve) => { resume = resolve; });
     let paused = false;
-    const reader = createReadTool({ ...scope, async resolvePath(input, signal) {
+    const reader = (searching ? createGrepTool : createReadTool)({ ...scope, async resolvePath(input, signal) {
       const target = await scope.resolvePath(input, signal);
       if (!paused && (!searching || target.stat.isFile())) { paused = true; entered(); await gate; }
       return target;
@@ -180,7 +181,7 @@ test("outside writes preserve concurrent changes and cancel staged publication w
       return file;
     },
   });
-  await assert.rejects(async () => changed.tool.execute({ path, oldText: "original", newText: "agent edit" }), { code: "WRITE_CONFLICT" });
+  await assert.rejects(async () => changed.editTool.execute({ path, edits: [{ oldText: "original", newText: "agent edit" }] }), { code: "WRITE_CONFLICT" });
   assert.equal(await readFile(path, "utf8"), "concurrent user edit");
   assert.equal(changed.getWrites()[0]!.status, "failed");
   assert.equal(changed.getWrites()[0]!.path, await realpath(path));
@@ -193,7 +194,7 @@ test("outside writes preserve concurrent changes and cancel staged publication w
       return file;
     },
   });
-  await assert.rejects(async () => cancelled.tool.execute({ path, oldText: "concurrent user edit", newText: "cancelled edit" }, controller.signal), { code: "CANCELLED" });
+  await assert.rejects(async () => cancelled.editTool.execute({ path, edits: [{ oldText: "concurrent user edit", newText: "cancelled edit" }] }, controller.signal), { code: "CANCELLED" });
   assert.equal(await readFile(path, "utf8"), "concurrent user edit");
   assert.deepEqual(await readdir(outside), ["fixture.custom"]);
   assert.equal(cancelled.getWrites()[0]!.status, "failed");

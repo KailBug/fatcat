@@ -67,7 +67,7 @@ test("memory writer preserves ordinary tool and file arguments without bypassing
 	const controller = new AbortController();
 	for (const [name, args] of [
 		["read", '{"path":"memory:list"}'], ["write", '{"path":"notes.txt","content":"Text"}'],
-		["write", '{"path":"notes.txt","oldText":"before","newText":"after"}'],
+		["edit", '{"path":"notes.txt","edits":[{"oldText":"before","newText":"after"}]}'],
 		["write", "null"], ["write", "[]"],
 	]) {
 		assert.deepEqual(await tools.execute(name!, args!, controller.signal, "file-call"), { ok: true, result: "existing" });
@@ -190,7 +190,7 @@ test("memory writer extends existing write definitions and preserves original cr
 	assert.deepEqual(alternatives[1]!.allOf, [edit, { not: { required: ["memoryEvidence"] } }]);
 	assert.deepEqual(alternatives[2]!.required, ["path", "content", "memoryEvidence"]);
 	assert.deepEqual(definition, original);
-	assert.deepEqual(withMemoryWriter().definitions.map((item) => item.name), ["sum", "write"]);
+	assert.deepEqual(withMemoryWriter().definitions.map((item) => item.name), ["write"]);
 	assert.doesNotMatch(withMemoryWriter().definitions.at(-1)!.description!, /persistence is unavailable/);
 	assert.match(memoryWriteGuidance, /exact excerpt/);
 	assert.match(memoryWriteGuidance, /Never persist inferred facts/);

@@ -29,7 +29,7 @@ globalThis.fetch = async (input, init) => {
   }
   const prompt = messages.findLast((message) => message.role === "user")?.content;
   if (prompt === "workspace location") {
-    assert.deepEqual(tools.filter((tool) => !["delegate_task", "automation"].includes(tool.function.name)).map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web", "browser"]);
+    assert.deepEqual(tools.filter((tool) => !["delegate_task", "automation"].includes(tool.function.name)).map((tool) => tool.function.name), ["read", "glob", "grep", "write", "edit", "shell", "output_read", "web", "browser"]);
     const prefix = "Workspace root (JSON string): ";
     const rootLines = String(messages[0]?.content).split("\n").filter((line) => line.startsWith(prefix));
     assert.equal(rootLines.length, 1);
@@ -88,10 +88,10 @@ globalThis.fetch = async (input, init) => {
     const last = messages.at(-1);
     if (last?.role === "user" || (last?.role === "tool" && last.tool_call_id === "inspect")) {
       const reading = last?.role === "user";
-      const args = reading ? { path: "notes.txt" } : { path: "notes.txt", oldText: "before", newText: "after" };
+      const args = reading ? { path: "notes.txt" } : { path: "notes.txt", edits: [{ oldText: "before", newText: "after" }] };
       return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
         role: "assistant", content: null, tool_calls: [{ id: reading ? "inspect" : "edit", type: "function",
-          function: { name: reading ? "read" : "write", arguments: JSON.stringify(args) } }],
+          function: { name: reading ? "read" : "edit", arguments: JSON.stringify(args) } }],
       } }] });
     }
     if (prompt === "write then fail") return Response.json({ error: { message: "offline failure" } }, { status: 500 });
@@ -118,7 +118,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: value.result.answer } }] });
   }
   if (prompt === "workspace pages") {
-    assert.deepEqual(tools.filter((tool) => !["delegate_task", "automation"].includes(tool.function.name)).map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web", "browser"]);
+    assert.deepEqual(tools.filter((tool) => !["delegate_task", "automation"].includes(tool.function.name)).map((tool) => tool.function.name), ["read", "glob", "grep", "write", "edit", "shell", "output_read", "web", "browser"]);
     const last = messages.at(-1);
     const previous = last?.role === "tool" ? JSON.parse(String(last.content)).result : undefined;
     if (previous?.nextOffset === null) {
@@ -146,12 +146,12 @@ globalThis.fetch = async (input, init) => {
     const offset = previous?.nextOffset ?? 0;
     return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
       role: "assistant", content: null, tool_calls: [{ id: `search-${offset}`, type: "function",
-        function: { name: "read", arguments: JSON.stringify({ path: ".", query: "SEARCH_TOKEN", offset, limit: 1 }) },
+        function: { name: "grep", arguments: JSON.stringify({ path: ".", query: "SEARCH_TOKEN", offset, limit: 1 }) },
       }],
     } }] });
   }
   if (prompt === "workspace" || prompt === "workspace blocked") {
-    assert.deepEqual(tools.filter((tool) => !["delegate_task", "automation"].includes(tool.function.name)).map((tool) => tool.function.name), ["sum", "read", "write", "shell", "web", "browser"]);
+    assert.deepEqual(tools.filter((tool) => !["delegate_task", "automation"].includes(tool.function.name)).map((tool) => tool.function.name), ["read", "glob", "grep", "write", "edit", "shell", "output_read", "web", "browser"]);
     const last = messages.at(-1);
     const list = prompt === "workspace" && last?.role === "user";
     if (last?.role === "user" || (last?.role === "tool" && last.tool_call_id === "list")) {
@@ -171,7 +171,7 @@ globalThis.fetch = async (input, init) => {
   if (prompt === "add" && messages.at(-1)?.role !== "tool") {
     return Response.json({ choices: [{ finish_reason: "tool_calls", message: {
       role: "assistant", content: null,
-      tool_calls: [{ id: "call_1", type: "function", function: { name: "sum", arguments: '{"numbers":[17,25]}' } }],
+      tool_calls: [{ id: "call_1", type: "function", function: { name: "read", arguments: '{"path":"."}' } }],
     } }] });
   }
   const content = prompt === "history" ? JSON.stringify(messages.slice(1, -1)) : prompt === "add" ? "42" : String(prompt);

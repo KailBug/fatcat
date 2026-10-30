@@ -39,7 +39,7 @@ test("chat approves one edit without sending the confirmation to the model", asy
   const prompts: unknown[] = [];
   const model: Model = async (messages) => {
     prompts.push(messages.filter((message) => message.role === "user").map((message) => message.content));
-    if (messages.at(-1)?.role === "user") return toolCall("write", { path: "notes.txt", oldText: "before", newText: "after" });
+    if (messages.at(-1)?.role === "user") return toolCall("edit", { path: "notes.txt", edits: [{ oldText: "before", newText: "after" }] });
     assert.match(String(messages.at(-1)?.content), /"ok":true/);
     return final("Edited.");
   };
@@ -96,7 +96,7 @@ test("every write needs fresh approval and changes made while waiting cause conf
   await io.waitFor("Allow this write? [yes/no]");
   io.input.write("yes\n");
   assert.equal((await first).ok, true);
-  const second = tools.execute("write", '{"path":"notes.txt","oldText":"before","newText":"after"}');
+  const second = tools.execute("edit", '{"path":"notes.txt","edits":[{"oldText":"before","newText":"after"}]}');
   await io.waitFor('Replace: "before"');
   await writeFile(join(workspace, "notes.txt"), "user change while waiting");
   io.input.write("yes\n");

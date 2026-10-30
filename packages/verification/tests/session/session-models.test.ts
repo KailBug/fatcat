@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -154,7 +155,7 @@ describe("session-owned model selection", () => {
 
 describe("provider reasoning history projection", () => {
 	const tool = { id: "sum-call", type: "function", provider_signature: "call-signature",
-		function: { name: "sum", arguments: '{"numbers":[1,2]}', provider_tag: "preserve" } };
+		function: { name: "fixture_add", arguments: '{"numbers":[1,2]}', provider_tag: "preserve" } };
 	const raw = { role: "assistant", content: null, reasoning_content: "PRIVATE_REASONING", tool_calls: [tool], opaque_state: { signature: "opaque" } };
 
 	for (const selection of [kimi, defaultModelSelection("glm"), defaultModelSelection("glm", "cn", "glm-5.1"),
@@ -197,14 +198,14 @@ describe("provider reasoning history projection", () => {
 					assert.ok(!body.includes("providerReplay"));
 					assert.ok(body.includes("sum-call"));
 					return response();
-				})(resumed.history);
+				}, fixtureTools)(resumed.history);
 			}
 		});
 	}
 
 	it("isolates replay, measures wire bytes, and rejects invalid extras or tool associations", async () => {
 		const selection = { ...defaultModelSelection("deepseek"), thinking: "high" as const };
-		const first = await createModel({ ...config, ...selection }, async () => response(raw))([{ role: "user", content: "Add" }]);
+		const first = await createModel({ ...config, ...selection }, async () => response(raw), fixtureTools)([{ role: "user", content: "Add" }]);
 		const history: Message[] = [{ role: "system", content: systemPrompt }, { role: "user", content: "Add" }, first.message,
 			{ role: "tool", callId: "sum-call", content: "3" }, { role: "assistant", content: "3" }];
 		assert.deepEqual(validateHistory(history), history);
@@ -237,18 +238,18 @@ describe("provider reasoning history projection", () => {
 			assert.equal(text.includes("PRIVATE_REASONING"), calls++ === 0);
 			assert.ok(!text.includes("providerReplay"));
 			return response();
-		});
+		}, fixtureTools);
 		const observe = (event: { type: string; bytes?: number }) => { if (event.type === "model_input") inputBytes = event.bytes!; };
 		await model(history, undefined, observe);
 		await model(history, undefined, observe, { toolChoice: "none", purpose: "compaction" });
 		await createModel({ ...config, thinking: "off" }, async (input, init) => {
 			assert.ok(!(await new Request(input, init).text()).includes("PRIVATE_REASONING"));
 			return response();
-		})(history);
+		}, fixtureTools)(history);
 		let sent = false;
 		await assert.rejects(createModel({ ...config, ...selection, maxRequestBytes: 32 }, async () => {
 			sent = true; return response();
-		})(history), { code: "MODEL_CONTEXT_LIMIT" });
+		}, fixtureTools)(history), { code: "MODEL_CONTEXT_LIMIT" });
 		assert.equal(sent, false);
 	});
 });

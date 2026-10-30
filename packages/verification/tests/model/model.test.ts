@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfig } from "@fatcat/runtime/config";
@@ -13,7 +14,17 @@ function completion(content: string | null, toolCalls?: unknown[]) {
     message: { role: "assistant", content, ...(toolCalls ? { tool_calls: toolCalls } : {}) },
   }] };
 }
-const tool = { id: "call_1", type: "function", function: { name: "sum", arguments: '{"numbers":[17,25]}' } };
+const tool = { id: "call_1", type: "function", function: { name: "fixture_add", arguments: '{"numbers":[17,25]}' } };
+
+test("an empty default collection sends neither tools nor tool_choice", async () => {
+  const model = createDeepSeekModel(config, async (input, init) => {
+    const body = await new Request(input, init).json() as Record<string, unknown>;
+    assert.equal("tools" in body, false);
+    assert.equal("tool_choice" in body, false);
+    return Response.json(completion("Direct answer"));
+  });
+  assert.equal((await model(messages)).message.content, "Direct answer");
+});
 
 test("SDK requests use only the DeepSeek endpoint and the configured non-streaming protocol", async () => {
   const model = createDeepSeekModel(config, async (input, init) => {
@@ -30,7 +41,7 @@ test("SDK requests use only the DeepSeek endpoint and the configured non-streami
     assert.equal((body.tools as unknown[]).length, 1);
     assert.deepEqual(body.messages, messages);
     return Response.json(completion("Hello!"));
-  });
+  }, fixtureTools);
   assert.equal((await model(messages)).message.content, "Hello!");
 });
 
@@ -41,8 +52,8 @@ test("SDK, loop, tool execution, and history form a complete offline round trip"
     if (++requests === 1) return Response.json(completion(null, [tool]));
     assert.deepEqual(body.messages.at(-1), { role: "tool", tool_call_id: "call_1", content: '{"ok":true,"result":42}' });
     return Response.json(completion("The result is 42."));
-  });
-  assert.equal(await runAgent("Add 17 and 25", { model, maxIterations: 2 }), "The result is 42.");
+  }, fixtureTools);
+  assert.equal(await runAgent("Add 17 and 25", { tools: fixtureTools, model, maxIterations: 2 }), "The result is 42.");
   assert.equal(requests, 2);
 });
 
@@ -52,7 +63,7 @@ test("HTTP errors are not retried and never echo provider error bodies", async (
     const model = createDeepSeekModel(config, async () => {
       requests++;
       return Response.json({ error: { message: "test-key-not-real provider-secret" } }, { status });
-    });
+    }, fixtureTools);
     await assert.rejects(model(messages), (error: unknown) =>
       error instanceof HarnessError && error.code === "MODEL_HTTP"
       && error.message.includes(String(status)) && !error.message.includes("secret") && !error.message.includes("test-key"));
@@ -68,17 +79,17 @@ test("invalid, empty, inconsistent, duplicate, and truncated responses fail safe
     completion(null, [{ ...tool, id: "" }]),
     completion(null, [tool, tool]),
     completion(null, [{ ...tool, type: "custom" }]),
-    completion(null, [{ ...tool, function: { name: "sum", arguments: {} } }]),
+    completion(null, [{ ...tool, function: { name: "fixture_add", arguments: {} } }]),
     { choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Incomplete", tool_calls: [tool] } }] },
   ];
   for (const response of invalidResponses) {
-    const model = createDeepSeekModel(config, async () => Response.json(response));
+    const model = createDeepSeekModel(config, async () => Response.json(response), fixtureTools);
     await assert.rejects(model(messages), (error: unknown) => error instanceof HarnessError);
   }
 });
 
 test("connection failures are reported without raw transport details", async () => {
-  const model = createDeepSeekModel(config, async () => { throw new Error("private transport data"); });
+  const model = createDeepSeekModel(config, async () => { throw new Error("private transport data"); }, fixtureTools);
   await assert.rejects(model(messages), (error: unknown) =>
     error instanceof HarnessError && error.code === "MODEL_CONNECTION" && !error.message.includes("private"));
 });
@@ -90,7 +101,7 @@ test("the request deadline cancels a stalled transport", async () => {
       const abort = () => { clearTimeout(timer); reject(new Error("aborted")); };
       if (init?.signal?.aborted) abort();
       else init?.signal?.addEventListener("abort", abort, { once: true });
-    }));
+    }), fixtureTools);
   await assert.rejects(model(messages), (error: unknown) => error instanceof HarnessError && error.code === "MODEL_TIMEOUT");
 });
 
@@ -100,7 +111,7 @@ test("caller cancellation stops an SDK request without retrying", async () => {
     new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
       controller.abort();
-    }));
+    }), fixtureTools);
   await assert.rejects(model(messages, controller.signal), (error: unknown) =>
     error instanceof HarnessError && error.code === "CANCELLED");
 });

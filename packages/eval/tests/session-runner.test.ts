@@ -132,7 +132,7 @@ describe("injected Session evaluation", () => {
 		let calls = 0;
 		const denied = await runSessionEvaluation(options, { createTransport: () => async (_input, init) => {
 			calls++;
-			if (calls === 1) return completion(null, [{ id: "write", type: "function", function: { name: "write", arguments: '{"path":"note.txt","oldText":"violet","newText":"orange"}' } }]);
+			if (calls === 1) return completion(null, [{ id: "edit", type: "function", function: { name: "edit", arguments: '{"path":"note.txt","edits":[{"oldText":"violet","newText":"orange"}]}' } }]);
 			assert.match(String(init?.body), /PERMISSION_DENIED/);
 			return completion("violet");
 		} }, { sampleId: "read", repetition: 1 });

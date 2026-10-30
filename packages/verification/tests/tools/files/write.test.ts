@@ -52,7 +52,7 @@ test("exact edits preserve BOM, mixed newlines, Unicode and unrelated user conte
   const before = "\ufeff// user note\r\nexport const value = 1;\n// \u4e2d\u6587\r\n";
   await writeFile(join(workspace, "value.ts"), before);
   const tools = await createTools(workspace, "workspace-write");
-  const result = await tools.execute("write", JSON.stringify({ path: "value.ts", oldText: "value = 1", newText: "value = 2" }));
+  const result = await tools.execute("edit", JSON.stringify({ path: "value.ts", edits: [{ oldText: "value = 1", newText: "value = 2" }] }));
   assert.equal(result.ok, true);
   const after = before.replace("value = 1", "value = 2");
   assert.equal(await readFile(join(workspace, "value.ts"), "utf8"), after);
@@ -66,7 +66,7 @@ test("missing, ambiguous and overlapping edit fragments cannot change a file", a
   await writeFile(join(workspace, "notes.txt"), "aaa\nsame same");
   const tools = await createTools(workspace, "workspace-write");
   for (const oldText of ["missing", "same", "aa"]) {
-    code(await tools.execute("write", JSON.stringify({ path: "notes.txt", oldText, newText: "new" })), "WRITE_CONFLICT");
+    code(await tools.execute("edit", JSON.stringify({ path: "notes.txt", edits: [{ oldText, newText: "new" }] })), "WRITE_CONFLICT");
   }
   assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "aaa\nsame same");
   assert.deepEqual(tools.getWrites!(), []);
@@ -76,8 +76,8 @@ test("write validation rejects mixed forms, binary content and oversized text", 
   const { workspace } = await temporaryWorkspace(t);
   const tools = await createTools(workspace, "workspace-write");
   for (const args of [{}, { path: "" }, { path: "a.txt", content: 1 },
-    { path: "a.txt", content: "a", oldText: "a", newText: "b" }, { path: "a.txt", oldText: "", newText: "b" },
-    { path: "a.txt", oldText: "a", newText: "a" }, { path: "a.txt", content: "a", extra: true }]) {
+    { path: "a.txt", content: "a", oldText: "a", newText: "b" }, { path: "a.txt", edits: [{ oldText: "", newText: "b" }] },
+    { path: "a.txt", edits: [{ oldText: "a", newText: "a" }] }, { path: "a.txt", content: "a", extra: true }]) {
     code(await tools.execute("write", JSON.stringify(args)), "INVALID_ARGUMENTS");
   }
   for (const content of ["a\0b", "\ud800"]) {
@@ -99,7 +99,7 @@ test("write maintains path, junction and hard-link boundaries", async (t) => {
     "node_modules/a.txt", "NUL.txt", "file.txt:stream", "escape/new.txt"]) {
     code(await tools.execute("write", JSON.stringify({ path, content: "blocked" })), "PATH_NOT_ALLOWED");
   }
-  code(await tools.execute("write", '{"path":"linked.txt","oldText":"outside","newText":"blocked"}'), "PATH_NOT_ALLOWED");
+  code(await tools.execute("edit", '{"path":"linked.txt","edits":[{"oldText":"outside","newText":"blocked"}]}'), "PATH_NOT_ALLOWED");
   assert.equal(await readFile(join(outside, "secret.txt"), "utf8"), "outside");
   assert.deepEqual(await readdir(outside), ["secret.txt"]);
 });
@@ -113,7 +113,7 @@ test("a concurrent content change during staging is preserved and the failed att
     if (path === "notes.txt" && ++fileResolutions === 3) await writeFile(join(workspace, "notes.txt"), "user edit");
     return scope.resolvePath(path, signal);
   } }, "workspace-write");
-  await assert.rejects(async () => writer.tool.execute({ path: "notes.txt", oldText: "old", newText: "new" }),
+  await assert.rejects(async () => writer.editTool.execute({ path: "notes.txt", edits: [{ oldText: "old", newText: "new" }] }),
     (error: unknown) => error instanceof HarnessError && error.code === "WRITE_CONFLICT");
   assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "user edit");
   assert.equal(writer.getWrites()[0]!.status, "failed");
@@ -130,7 +130,7 @@ test("cancellation after staging removes the temporary file and leaves the targe
     if (path === "." && ++parents === 2) controller.abort();
     return scope.resolvePath(path, signal);
   } }, "workspace-write");
-  await assert.rejects(async () => writer.tool.execute({ path: "notes.txt", oldText: "old", newText: "new" }, controller.signal), /cancelled/);
+  await assert.rejects(async () => writer.editTool.execute({ path: "notes.txt", edits: [{ oldText: "old", newText: "new" }] }, controller.signal), /cancelled/);
   assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "old");
   assert.equal(writer.getWrites()[0]!.status, "failed");
   assert.equal(writer.getWrites()[0]!.errorCode, "CANCELLED");
@@ -158,7 +158,7 @@ test("publication errors remain uncertain and never report a successful edit", a
   const writer = createWriteTool(await createWorkspace(workspace), "workspace-write", {
     open, link, unlink, rename: async () => { throw Object.assign(new Error("private I/O details"), { code: "EIO" }); },
   });
-  await assert.rejects(async () => writer.tool.execute({ path: "notes.txt", oldText: "old", newText: "new" }));
+  await assert.rejects(async () => writer.editTool.execute({ path: "notes.txt", edits: [{ oldText: "old", newText: "new" }] }));
   assert.equal(await readFile(join(workspace, "notes.txt"), "utf8"), "old");
   assert.equal(writer.getWrites()[0]!.status, "uncertain");
   assert.equal(writer.getWrites()[0]!.errorCode, "TOOL_IO");

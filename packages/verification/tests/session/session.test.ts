@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
@@ -9,13 +10,13 @@ function answer(content = "Ready"): ModelTurn {
   return { message: { role: "assistant", content } };
 }
 function sum(id = "sum_call"): ModelTurn {
-  const toolCalls = [{ id, name: "sum", arguments: '{"numbers":[17,25]}' }];
+  const toolCalls = [{ id, name: "fixture_add", arguments: '{"numbers":[17,25]}' }];
   return { message: { role: "assistant", content: null, toolCalls } };
 }
 
 test("a session keeps successful turns without sharing mutable model references", async () => {
   const requests: Message[][] = [];
-  const session = new Session({ maxIterations: 1, model: async (messages) => {
+  const session = new Session({ tools: fixtureTools, maxIterations: 1, model: async (messages) => {
     requests.push(messages);
     return answer();
   } });
@@ -33,8 +34,8 @@ test("a session keeps successful turns without sharing mutable model references"
 test("sessions isolate their histories and reset restores a fresh conversation", async () => {
   const requests: Message[][] = [];
   const model: Model = async (messages) => { requests.push(structuredClone(messages)); return answer(); };
-  const first = new Session({ model, maxIterations: 1 });
-  const second = new Session({ model, maxIterations: 1 });
+  const first = new Session({ tools: fixtureTools, model, maxIterations: 1 });
+  const second = new Session({ tools: fixtureTools, model, maxIterations: 1 });
   await first.run("Private to the first session");
   await second.run("Second session");
   first.reset();
@@ -46,7 +47,7 @@ test("sessions isolate their histories and reset restores a fresh conversation",
 test("tool history stays complete across turns with a fresh iteration budget and ID scope", async () => {
   const requests: Message[][] = [];
   const events: LoopEvent[] = [];
-  const session = new Session({ maxIterations: 2, model: async (messages) => {
+  const session = new Session({ tools: fixtureTools, maxIterations: 2, model: async (messages) => {
     requests.push(structuredClone(messages));
     return messages.at(-1)?.role === "tool" ? answer("42") : sum();
   } });
@@ -61,7 +62,7 @@ test("tool history stays complete across turns with a fresh iteration budget and
 test("failed, cancelled, and exhausted turns never replace successful history", async () => {
   for (const code of ["MODEL_HTTP", "MODEL_TIMEOUT", "MODEL_RESPONSE", "CANCELLED", "MAX_ITERATIONS"]) {
     const controller = new AbortController();
-    const session = new Session({ maxIterations: 2, model: async (messages) => {
+    const session = new Session({ tools: fixtureTools, maxIterations: 2, model: async (messages) => {
       const prompt = messages.findLast((message) => message.role === "user")?.content;
       if (prompt === "Fail this turn") {
         if (messages.at(-1)?.role === "user") return sum();
@@ -85,11 +86,11 @@ test("failed, cancelled, and exhausted turns never replace successful history", 
 
 test("overlapping runs and reset are rejected without affecting the active turn", async () => {
   let finish!: (value: ModelTurn) => void;
-  const session = new Session({ maxIterations: 1, model: async () => new Promise((resolve) => { finish = resolve; }) });
+  const session = new Session({ tools: fixtureTools, maxIterations: 1, model: async () => new Promise((resolve) => { finish = resolve; }) });
   const running = session.run("First");
   await assert.rejects(session.run("Overlap"), (error: unknown) => error instanceof HarnessError && error.code === "SESSION_BUSY");
   assert.throws(() => session.reset(), /already running/);
-  const independent = new Session({ maxIterations: 1, model: async () => answer() });
+  const independent = new Session({ tools: fixtureTools, maxIterations: 1, model: async () => answer() });
   assert.equal(await independent.run("Independent"), "Ready");
   finish(answer());
   assert.equal(await running, "Ready");
@@ -99,7 +100,7 @@ test("overlapping runs and reset are rejected without affecting the active turn"
 test("invalid input and cancellation at completion release the session without committing", async () => {
   const requests: Message[][] = [];
   const controller = new AbortController();
-  const session = new Session({ maxIterations: 1, model: async (messages) => {
+  const session = new Session({ tools: fixtureTools, maxIterations: 1, model: async (messages) => {
     requests.push(structuredClone(messages)); return answer();
   } });
   await assert.rejects(session.run(" "), /prompt/);

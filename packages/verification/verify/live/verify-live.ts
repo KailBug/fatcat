@@ -19,7 +19,7 @@ async function verifyWorkspaceWrite(config: ReturnType<typeof loadLiveConfig>): 
     const tools = await createTools(workspace, "workspace-write");
     const events: LoopEvent[] = [];
     const answer = await runAgent(
-      'Use write to create calculation.ts containing exactly "export const total = 1;" followed by a newline. Read it with read. Then use write with oldText "total = 1" and newText "total = 2". Read it again to verify the change. Reply with WRITE_READY only after verification.', {
+      'Use write to create calculation.ts containing exactly "export const total = 1;" followed by a newline. Read it with read. Then use edit with edits [{oldText: "total = 1", newText: "total = 2"}]. Read it again to verify the change. Reply with WRITE_READY only after verification.', {
         model: createDeepSeekModel(config, undefined, tools), tools, maxIterations: Math.min(config.maxIterations, 6),
         onEvent: (event) => { events.push(event); console.error(JSON.stringify({ scenario: "workspace_write", ...event })); },
       });
@@ -39,20 +39,21 @@ async function verifyWorkspaceWrite(config: ReturnType<typeof loadLiveConfig>): 
 
 try {
   const config = loadLiveConfig();
-  const model = createDeepSeekModel(config);
+  const initialTools = await createTools(fileURLToPath(new URL("../../../../../", import.meta.url)));
+  const model = createDeepSeekModel(config, undefined, initialTools);
   const maxIterations = Math.min(config.maxIterations, 3);
-  const session = new Session({ model, maxIterations });
+  const session = new Session({ model, tools: initialTools, maxIterations });
   for (const scenario of [
     { name: "direct_answer", prompt: "Reply with exactly READY. Do not call any tools.", tool: false, expected: /READY/ },
-    { name: "tool_round_trip", prompt: "Use the sum tool to add 17 and 25, then report the total.", tool: true, expected: /\b42\b/ },
-    { name: "session_follow_up", prompt: "Use the sum tool to add 8 to the total from my previous request. Reply with the new total only.", tool: true, expected: /\b50\b/ },
+    { name: "tool_round_trip", prompt: "Use read to inspect package.json in the workspace root. Reply with its exact package name only.", tool: true, expected: /^fatcat$/ },
+    { name: "session_follow_up", prompt: "What package name did you just read? Reply with that name only, without tools.", tool: false, expected: /^fatcat$/ },
   ]) {
     const events: LoopEvent[] = [];
     const onEvent = (event: LoopEvent) => { events.push(event); console.error(JSON.stringify({ scenario: scenario.name, ...event })); };
     const answer = scenario.name === "direct_answer"
-      ? await runAgent(scenario.prompt, { model, maxIterations, onEvent })
+      ? await runAgent(scenario.prompt, { model, tools: initialTools, maxIterations, onEvent })
       : await session.run(scenario.prompt, { onEvent });
-    const toolUsed = events.some((event) => event.type === "tool_result" && event.tool === "sum" && event.ok);
+    const toolUsed = events.some((event) => event.type === "tool_result" && event.tool === "read" && event.ok);
     assert.equal(toolUsed, scenario.tool, "Unexpected tool usage.");
     assert.match(answer, scenario.expected);
     console.log(JSON.stringify({ scenario: scenario.name, passed: true, answer }));
@@ -80,7 +81,7 @@ try {
   assert.ok(filePages.every((page) => page.startLine === page.endLine));
   assert.match(answer, /AMBER-MEADOW-42/);
   console.log(JSON.stringify({ scenario: "workspace_read", passed: true, answer }));
-  const delegatedTools = createSubagentTools(tools, createDeepSeekModel(config, undefined, tools), config.maxIterations);
+  const delegatedTools = createSubagentTools(tools, createDeepSeekModel(config, undefined, tools), Math.min(3, config.maxIterations));
   const delegatedEvents: LoopEvent[] = [];
   const delegatedAnswer = await runAgent("Use delegate_task to ask a child assistant to read project-notes.txt with read and return its verification phrase. Then report the child's phrase only.", {
     model: createDeepSeekModel(config, undefined, delegatedTools), tools: delegatedTools, maxIterations,

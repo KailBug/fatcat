@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
@@ -46,13 +47,13 @@ test("the budget counts UTF-8, JSON escaping and tools, accepts the exact bounda
     sent++;
     return Response.json(response());
   };
-  await createDeepSeekModel(config, transport)(messages);
+  await createDeepSeekModel(config, transport, fixtureTools)(messages);
   const limit = bytes;
   const events: ModelObservation[] = [];
-  await createDeepSeekModel({ ...config, maxRequestBytes: limit }, transport)(messages, undefined, (event) => events.push(event));
+  await createDeepSeekModel({ ...config, maxRequestBytes: limit }, transport, fixtureTools)(messages, undefined, (event) => events.push(event));
   assert.deepEqual(events[0], { type: "model_input", bytes: limit, limitBytes: limit, accepted: true });
   const blocked: ModelObservation[] = [];
-  await assert.rejects(createDeepSeekModel({ ...config, maxRequestBytes: limit - 1 }, transport)(messages, undefined,
+  await assert.rejects(createDeepSeekModel({ ...config, maxRequestBytes: limit - 1 }, transport, fixtureTools)(messages, undefined,
     (event) => blocked.push(event)), { code: "MODEL_CONTEXT_LIMIT" });
   assert.equal(sent, 2);
   assert.deepEqual(blocked, [{ type: "model_input", bytes: limit, limitBytes: limit - 1, accepted: false }]);
@@ -61,7 +62,7 @@ test("the budget counts UTF-8, JSON escaping and tools, accepts the exact bounda
 
 test("programmatic models cannot disable the request budget with invalid numbers", () => {
   for (const maxRequestBytes of [0, -1, NaN, Infinity, 1.5, 16777217]) {
-    assert.throws(() => createDeepSeekModel({ ...config, maxRequestBytes }), { code: "CONFIG" });
+    assert.throws(() => createDeepSeekModel({ ...config, maxRequestBytes }, undefined, fixtureTools), { code: "CONFIG" });
   }
 });
 
@@ -74,7 +75,7 @@ test("valid zero usage differs from absent or invalid provider counters, without
     const data = response();
     data.usage = counts;
     const observations: ModelObservation[] = [];
-    const model = createDeepSeekModel(config, async () => Response.json(data));
+    const model = createDeepSeekModel(config, async () => Response.json(data), fixtureTools);
     assert.equal((await model([{ role: "user", content: "safe" }], undefined, (event) => observations.push(event))).message.content, "Ready");
     const result = observations.find((event) => event.type === "model_usage")!;
     assert.deepEqual(result.usage, counts === usage ? { promptTokens: 120, completionTokens: 30, totalTokens: 150 }
@@ -88,14 +89,14 @@ test("received usage survives invalid and truncated responses and cancellation a
     const data = response();
     data.choices[0]!.finish_reason = reason;
     const capture = recorder();
-    await assert.rejects(runAgent("Task", { model: createDeepSeekModel(config, async () => Response.json(data)),
+    await assert.rejects(runAgent("Task", { tools: fixtureTools, model: createDeepSeekModel(config, async () => Response.json(data), fixtureTools),
       maxIterations: 1, onEvent: capture.onEvent }), { code: reason === "length" ? "MODEL_TRUNCATED" : "MODEL_RESPONSE" });
     assert.deepEqual(capture.report().tokenUsage.parent, { reportedRequests: 1,
       totals: { promptTokens: 120, completionTokens: 30, totalTokens: 150 } });
   }
   const controller = new AbortController();
   const capture = recorder();
-  await assert.rejects(runAgent("Task", { model: createDeepSeekModel(config, async () => Response.json(response())),
+  await assert.rejects(runAgent("Task", { tools: fixtureTools, model: createDeepSeekModel(config, async () => Response.json(response()), fixtureTools),
     maxIterations: 1, signal: controller.signal, onEvent(event) {
       capture.onEvent(event);
       if (event.type === "model_usage") controller.abort();
@@ -106,7 +107,7 @@ test("received usage survives invalid and truncated responses and cancellation a
 test("parent and child usage stays separate and guidance plus delegate schema enter the budget", async () => {
   const agent = createAgent(config, await createTools(), async (input, init) => {
     const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
-    const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
+    const parent = body.tools?.some((tool) => tool.function.name === "delegate_task");
     if (parent && body.messages.at(-1)?.role === "user") return Response.json(call("delegate_task", { task: "Independent check" }));
     return Response.json(response("Ready", parent ? usage : { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }));
   });
@@ -126,11 +127,11 @@ test("parent and child usage stays separate and guidance plus delegate schema en
 test("partial provider usage is never presented as complete and earlier totals survive transport failure", async () => {
   let sent = 0;
   const model = createDeepSeekModel(config, async () => {
-    if (++sent === 1) return Response.json(call("sum", { numbers: [2, 3] }));
+    if (++sent === 1) return Response.json(call("fixture_add", { numbers: [2, 3] }));
     return Response.json({ error: { message: "private-provider-error" } }, { status: 500 });
-  });
+  }, fixtureTools);
   const capture = recorder();
-  await assert.rejects(runAgent("Sum", { model, maxIterations: 2, onEvent: capture.onEvent }), { code: "MODEL_HTTP" });
+  await assert.rejects(runAgent("Sum", { tools: fixtureTools, model, maxIterations: 2, onEvent: capture.onEvent }), { code: "MODEL_HTTP" });
   assert.equal(capture.report().modelRequests.parent, 2);
   assert.equal(capture.report().tokenUsage.parent.reportedRequests, 1);
   assert.equal(capture.report().tokenUsage.parent.totals!.totalTokens, 150);
@@ -149,7 +150,7 @@ test("budget failure after a committed edit keeps execution facts across reset w
   let sent = 0;
   const model = createDeepSeekModel({ ...config, maxRequestBytes: 18000 }, async (input, init) => {
     const body = await new Request(input, init).json() as { messages: ChatMessage[] };
-    if (++sent === 1) return Response.json(call("write", { path: "code.ts", oldText: "before", newText: "after" }));
+    if (++sent === 1) return Response.json(call("edit", { path: "code.ts", edits: [{ oldText: "before", newText: "after" }] }));
     assert.ok(JSON.stringify(body.messages).includes("Harness workspace write records"));
     assert.ok(!JSON.stringify(body.messages).includes("large-result-"));
     return Response.json(response());
@@ -179,8 +180,8 @@ test("a blocked follow-up preserves successful history and reset explicitly star
     if (last === "history") assert.ok(JSON.stringify(body.messages).includes("remember-me"));
     if (last === "fresh") assert.ok(!JSON.stringify(body.messages).includes("remember-me"));
     return Response.json(response("Ready"));
-  });
-  const session = new Session({ model, maxIterations: 1 });
+  }, fixtureTools);
+  const session = new Session({ tools: fixtureTools, model, maxIterations: 1 });
   await session.run("remember-me");
   await assert.rejects(session.run("private-large-prompt" + "x".repeat(15000)), { code: "MODEL_CONTEXT_LIMIT" });
   assert.equal(sent, 1);
@@ -206,13 +207,13 @@ test("overflowing token aggregates stay unknown and reports own their copies", (
 
 test("child request overflow becomes a bounded tool failure and cannot send the oversized body", async () => {
   let sent = 0;
-  const base = await createTools();
+  const base = fixtureTools;
   const tools: Tools = { ...base, async execute() { return { ok: true, result: "x".repeat(30000) }; } };
   const agent = createAgent({ ...config, maxRequestBytes: 14000 }, tools, async (input, init) => {
     sent++;
     const body = await new Request(input, init).json() as { messages: ChatMessage[]; tools: { function: { name: string } }[] };
     const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
-    if (!parent) return Response.json(call("sum", { numbers: [2, 3] }));
+    if (!parent) return Response.json(call("fixture_add", { numbers: [2, 3] }));
     if (body.messages.at(-1)?.role === "user") return Response.json(call("delegate_task", { task: "Add two numbers" }));
     assert.match(JSON.stringify(body.messages.at(-1)), /SUBAGENT_FAILED.*MODEL_CONTEXT_LIMIT/);
     return Response.json(response("The child reached its request limit."));

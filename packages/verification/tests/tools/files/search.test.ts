@@ -7,7 +7,7 @@ import { loadConfig } from "@fatcat/runtime/config";
 import { runAgent } from "@fatcat/runtime/loop";
 import { createTools } from "@fatcat/runtime/tools";
 import type { Tools, ToolResult } from "@fatcat/runtime/tools";
-import { createReadTool } from "@fatcat/runtime/internal/tools/read";
+import { createGrepTool } from "@fatcat/runtime/internal/tools/grep";
 import { createWorkspace } from "@fatcat/runtime/permissions/workspace";
 import { temporaryWorkspace } from "../../support/workspace.js";
 
@@ -15,7 +15,7 @@ type SearchResult = { kind: string; path: string; query: string; offset: number;
   matches: { path: string; line: number; text: string }[]; truncated: boolean; nextOffset: number | null;
   scannedFiles: number; skippedFiles: number; complete: boolean };
 async function search(tools: Tools, args: object): Promise<SearchResult> {
-  const result = await tools.execute("read", JSON.stringify(args));
+  const result = await tools.execute("grep", JSON.stringify(args));
   assert.equal(result.ok, true, JSON.stringify(result));
   return (result as { ok: true; result: unknown }).result as SearchResult;
 }
@@ -24,7 +24,7 @@ function errorCode(result: ToolResult, code: string) {
   if (!result.ok) assert.equal(result.error.code, code);
 }
 
-test("read query searches a file or subtree with stable paths, literal matches and original line numbers", async (t) => {
+test("grep searches a file or subtree with stable paths, literal matches and original line numbers", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
   await mkdir(join(workspace, "nested"));
   const source = "\ufeffIntro\r\n\r\nNeedle [x] twice [x]\rTail [x]\n";
@@ -90,17 +90,17 @@ test("search bounds encoded match payloads and rejects an oversized whole line",
   assert.equal((await search(tools, { path: "quoted.txt", query: "hit", offset: 1 })).nextOffset, null);
   assert.equal((await search(tools, { path: ".", query: "\u{1f408}" })).matches[0]!.text, "\u4e2d\u6587 \u{1f408}");
   await writeFile(join(workspace, "long.txt"), "hit " + "x".repeat(16384));
-  errorCode(await tools.execute("read", JSON.stringify({ path: "long.txt", query: "hit" })), "OUTPUT_LIMIT");
+  errorCode(await tools.execute("grep", JSON.stringify({ path: "long.txt", query: "hit" })), "OUTPUT_LIMIT");
 });
 
 test("invalid queries cannot turn search into regex, multiline, or unbounded input", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
   const tools = await createTools(workspace);
   for (const query of [null, false, 42, {}, [], "", " ", "x\ny", "x\ry", "x\0", "x".repeat(513), "\ud800"]) {
-    errorCode(await tools.execute("read", JSON.stringify({ path: ".", query })), "INVALID_ARGUMENTS");
+    errorCode(await tools.execute("grep", JSON.stringify({ path: ".", query })), "INVALID_ARGUMENTS");
   }
-  for (const options of [{ regex: true }, { recursive: true }, { offset: -1 }, { limit: 201 }]) {
-    errorCode(await tools.execute("read", JSON.stringify({ path: ".", query: "valid", ...options })), "INVALID_ARGUMENTS");
+  for (const options of [{ regex: "yes" }, { recursive: true }, { offset: -1 }, { limit: 201 }]) {
+    errorCode(await tools.execute("grep", JSON.stringify({ path: ".", query: "valid", ...options })), "INVALID_ARGUMENTS");
   }
   assert.equal((await search(tools, { path: ".", query: "x".repeat(512) })).totalMatches, 0);
 });
@@ -123,7 +123,7 @@ test("recursive search excludes restricted names, dependencies, unsupported exte
   assert.ok(!JSON.stringify(result).includes("secret"));
   assert.ok(!JSON.stringify(result).includes(workspace));
   for (const path of ["../outside", "escape", "linked.ts", ".private", "node_modules", "src/code.ts:stream"]) {
-    errorCode(await tools.execute("read", JSON.stringify({ path, query: "hit" })), "PATH_NOT_ALLOWED");
+    errorCode(await tools.execute("grep", JSON.stringify({ path, query: "hit" })), "PATH_NOT_ALLOWED");
   }
 });
 
@@ -140,34 +140,34 @@ test("skipped oversized and invalid text files make recursive coverage explicitl
   assert.equal(result.skippedFiles, 3);
   assert.equal(result.scannedFiles, 1);
   assert.equal(result.nextOffset, null);
-  errorCode(await tools.execute("read", '{"path":"large.ts","query":"hit"}'), "FILE_TOO_LARGE");
-  errorCode(await tools.execute("read", '{"path":"bad.ts","query":"hit"}'), "UNSUPPORTED_FILE");
+  errorCode(await tools.execute("grep", '{"path":"large.ts","query":"hit"}'), "FILE_TOO_LARGE");
+  errorCode(await tools.execute("grep", '{"path":"bad.ts","query":"hit"}'), "UNSUPPORTED_FILE");
 });
 
 test("candidate-file and depth limits fail without returning incomplete matches as exhaustive", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
   await mkdir(join(workspace, "files"));
-  for (let index = 0; index < 128; index++) await writeFile(join(workspace, "files", `${index}.ts`), "hit");
+  for (let index = 0; index < 2048; index++) await writeFile(join(workspace, "files", `${index}.ts`), "hit");
   const tools = await createTools(workspace);
-  assert.equal((await search(tools, { path: "files", query: "hit" })).totalMatches, 128);
+  assert.equal((await search(tools, { path: "files", query: "hit" })).totalMatches, 2048);
   await writeFile(join(workspace, "files", "overflow.ts"), "hit");
-  errorCode(await tools.execute("read", '{"path":"files","query":"hit"}'), "SEARCH_LIMIT");
+  errorCode(await tools.execute("grep", '{"path":"files","query":"hit"}'), "SEARCH_LIMIT");
   let path = "deep";
   await mkdir(join(workspace, path));
-  for (let depth = 0; depth < 12; depth++) { path += "/d"; await mkdir(join(workspace, path)); }
+  for (let depth = 0; depth < 32; depth++) { path += "/d"; await mkdir(join(workspace, path)); }
   await writeFile(join(workspace, path, "code.ts"), "hit");
   assert.equal((await search(tools, { path: "deep", query: "hit" })).totalMatches, 1);
   await mkdir(join(workspace, path, "extra"));
-  errorCode(await tools.execute("read", '{"path":"deep","query":"hit"}'), "SEARCH_LIMIT");
+  errorCode(await tools.execute("grep", '{"path":"deep","query":"hit"}'), "SEARCH_LIMIT");
 });
 
 test("raw entry budget includes unsupported files and narrow paths remain usable", async (t) => {
   const { workspace } = await temporaryWorkspace(t);
   await mkdir(join(workspace, "src"));
   await writeFile(join(workspace, "src", "code.ts"), "hit");
-  for (let index = 0; index < 1000; index++) await writeFile(join(workspace, `${index}.png`), "");
+  for (let index = 0; index < 10000; index++) await writeFile(join(workspace, `${index}.png`), "");
   const tools = await createTools(workspace);
-  errorCode(await tools.execute("read", '{"path":".","query":"hit"}'), "SEARCH_LIMIT");
+  errorCode(await tools.execute("grep", '{"path":".","query":"hit"}'), "SEARCH_LIMIT");
   assert.equal((await search(tools, { path: "src", query: "hit" })).totalMatches, 1);
 });
 
@@ -177,16 +177,16 @@ test("cancellation and a file gaining a hard link after enumeration prevent cont
   const scope = await createWorkspace(workspace);
   const controller = new AbortController();
   let resolutions = 0;
-  const tool = createReadTool({ ...scope, async resolvePath(path, signal) {
+  const tool = createGrepTool({ ...scope, async resolvePath(path, signal) {
     const target = await scope.resolvePath(path, signal);
     if (++resolutions === 2) controller.abort();
     return target;
   } });
   await assert.rejects(async () => tool.execute({ path: ".", query: "hit" }, controller.signal), /cancelled/);
   const tools = await createTools(workspace);
-  await assert.rejects(tools.execute("read", '{"path":".","query":"hit"}', controller.signal), /cancelled/);
+  await assert.rejects(tools.execute("grep", '{"path":".","query":"hit"}', controller.signal), /cancelled/);
   let files = 0;
-  const changed = createReadTool({ ...scope, async resolvePath(path, signal) {
+  const changed = createGrepTool({ ...scope, async resolvePath(path, signal) {
     if (path.endsWith("code.ts") && ++files === 2) {
       // A second link makes the original candidate ineligible before its content is opened.
       await link(join(workspace, "code.ts"), join(outside, "alias.ts"));
@@ -206,9 +206,9 @@ test("the SDK child sees the same query schema and returns search results to its
     const body = await new Request(input, init).json() as { messages: { role: string; content?: string }[];
       tools: { function: { name: string; parameters: { properties: Record<string, unknown> } } }[] };
     const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
-    assert.ok(body.tools.find((tool) => tool.function.name === "read")!.function.parameters.properties.query);
+    assert.ok(body.tools.find((tool) => tool.function.name === "grep")!.function.parameters.properties.query);
     const last = body.messages.at(-1)!;
-    const name = parent ? "delegate_task" : "read";
+    const name = parent ? "delegate_task" : "grep";
     if (last.role === "user") {
       if (!parent) searches++;
       const args = parent ? { task: "Locate findMe in src" } : { path: "src", query: "findMe" };

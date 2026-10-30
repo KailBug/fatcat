@@ -78,7 +78,7 @@ test("skills require explicit workspace discovery and leave empty tool sets unch
   const catalog = await discoverSkills({ userHome });
   assert.deepEqual(catalog.skills.map((skill) => skill.name), ["personal-only"]);
   const tools = withSkills(defaultTools, catalog);
-  assert.deepEqual(tools.definitions.map((tool) => tool.name), ["sum", "read"]);
+  assert.deepEqual(tools.definitions.map((tool) => tool.name), ["read"]);
   hasCode(await read(tools, join(workspace, "notes.txt")), "PATH_NOT_ALLOWED");
   hasCode(await read(tools, "notes.txt"), "PATH_NOT_ALLOWED");
   hasCode(await tools.execute("write", "{}"), "UNKNOWN_TOOL");
@@ -287,12 +287,12 @@ test("skills do not raise write or command permissions and preserve journals and
   const catalog = await discoverSkills({ workspace, userHome });
   const base = await createTools(workspace, "read-only");
   const tools = withSkills(base, catalog);
-  assert.deepEqual(tools.definitions.map((tool) => tool.name), ["sum", "read", "write", "shell"]);
+  assert.deepEqual(tools.definitions.map((tool) => tool.name), ["read", "glob", "grep", "write", "edit", "shell", "output_read"]);
   assert.equal(tools.getWrites, base.getWrites);
   assert.equal(tools.getCommands, base.getCommands);
   assert.equal(resultObject(await read(tools, "note.txt")).content, "original");
   assert.equal(resultObject(await read(tools, "skill://example/SKILL.md")).kind, "skill");
-  hasCode(await tools.execute("write", JSON.stringify({ path: "note.txt", oldText: "original", newText: "changed" })), "PERMISSION_DENIED");
+  hasCode(await tools.execute("edit", JSON.stringify({ path: "note.txt", edits: [{ oldText: "original", newText: "changed" }] })), "PERMISSION_DENIED");
   hasCode(await tools.execute("shell", JSON.stringify({ command: "Write-Output test" })), "PERMISSION_DENIED");
   assert.equal(await readFile(join(workspace, "note.txt"), "utf8"), "original");
   let seenCallId: string | undefined;
@@ -302,7 +302,7 @@ test("skills do not raise write or command permissions and preserve journals and
     return { ok: true, result: "forwarded" };
   }, forTurn: () => { turnCalls++; return defaultTools; } };
   const wrapped = withSkills(forwarded, catalog);
-  await wrapped.execute("sum", "{}", undefined, "call-42");
+  await wrapped.execute("fixture_add", "{}", undefined, "call-42");
   assert.equal(seenCallId, "call-42");
   const turnTools = wrapped.forTurn!();
   assert.equal(turnCalls, 1);

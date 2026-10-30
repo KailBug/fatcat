@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import { preparedChatRequest, type ChatRequest } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
@@ -45,7 +46,7 @@ function gate() {
 describe("read-only request preparation", () => {
 	it("estimates real Chinese replies, punctuation, emoji and Unicode tool results without dropping the entire context", async () => {
 		let sent = 0;
-		const model = createModel(config, async () => { sent++; return response(); });
+		const model = createModel(config, async () => { sent++; return response(); }, fixtureTools);
 		const history: Message[] = [{ role: "system", content: "Rules" }, { role: "user", content: "\u4f60\u597d" }];
 		const before = await estimateRequest(await model.prepare!(history), 1);
 		for (const content of ["\u4f60\u597d\uff01\u6709\u4ec0\u4e48\u9700\u8981\u6211\u5e2e\u5fd9\u7684\u5417\uff1f", "\u201c\u4e2d\u6587\u201d\uff0c\u6587\u4ef6\u8def\u5f84\uff1aD:\\work\u3002", "\ud83d\udc08 caf\u00e9 e\u0301 \u65e5\u672c\u8a9e\u3067\u3059"]) {
@@ -86,7 +87,7 @@ describe("read-only request preparation", () => {
 		let sent: unknown;
 		const model = createModel(config, async (input, init) => {
 			sent = await new Request(input, init).json(); return response();
-		});
+		}, fixtureTools);
 		const messages: Message[] = [{ role: "system", content: "Rules" }, { role: "user", content: "Hello" }];
 		const before = structuredClone(messages);
 		const prepared = await model.prepare!(messages);
@@ -111,7 +112,7 @@ describe("read-only request preparation", () => {
 
 	it("keeps byte limits separate, marks approximation, prioritizes matching counters, and never maps unknown to zero", async () => {
 		let sent = 0;
-		const model = createModel({ ...config, maxRequestBytes: 1 }, async () => { sent++; return response(); });
+		const model = createModel({ ...config, maxRequestBytes: 1 }, async () => { sent++; return response(); }, fixtureTools);
 		const prepared = await model.prepare!([{ role: "user", content: "Hello中文" }]);
 		const estimate = await estimateRequest(prepared, 1);
 		assert.equal(estimate.status, "ready");
@@ -316,10 +317,10 @@ describe("session context lifecycle", () => {
 		const waiting = gate(); const entered = gate();
 		let turns = 0; let executions = 0; let request!: PreparedModelRequest;
 		const base = await createTools(workspace);
-		const tools = { ...base, execute: async (...args: Parameters<typeof base.execute>) => { executions++; return base.execute(...args); } };
+		const tools = { ...base, definitions: [...base.definitions, ...fixtureTools.definitions], execute: async (...args: Parameters<typeof base.execute>) => { executions++; return fixtureTools.execute(...args); } };
 		const agent = { ...createAgent(config, tools, async () => {
 			if (++turns === 1) return Response.json({ choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
-				tool_calls: [{ id: "sum", type: "function", function: { name: "sum", arguments: '{"numbers":[5,7]}' } }] } }],
+				tool_calls: [{ id: "fixture_add", type: "function", function: { name: "fixture_add", arguments: '{"numbers":[5,7]}' } }] } }],
 				usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } });
 			entered.resolve(); await waiting.promise; return response("The result is 12");
 		}), inputCounter: counter((value) => { request = value; }) };

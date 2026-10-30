@@ -41,12 +41,12 @@ try {
   let searches = 0;
   let locatedSource = false;
   const tools: Tools = { ...base, async execute(name, args, signal, callId) {
-    if (name === "write") {
+    if (name === "write" || name === "edit") {
       const input = JSON.parse(args) as { path?: string };
       if (input.path !== sourcePath) return failure("PERMISSION_DENIED", "Only src/math/add.mjs may be edited in this verification fixture.");
     }
     const result = await base.execute(name, args, signal, callId);
-    if (name === "read" && result.ok) {
+    if (name === "grep" && result.ok) {
       const value = result.result as { kind?: string; matches?: { path: string }[] };
       if (value.kind === "search") {
         searches++;
@@ -57,7 +57,7 @@ try {
   } };
   let report: ExecutionReport | undefined;
   const agent = createAgent({ ...config, maxIterations: Math.min(config.maxIterations, 8) }, tools);
-  const answer = await runAgent(`The total function returns an incorrect sum. Use read with a literal query in src to locate the add implementation and its caller, then inspect the relevant files and check.test.mjs. Fix only the add implementation using an exact write edit. Do not change its caller. Run shell with command exactly "${command}" and cwd ".". Do not change the test. Report CODING_VERIFIED only if the command succeeds; otherwise explain the failure.`, {
+  const answer = await runAgent(`The total function returns an incorrect sum. Use grep with a literal query in src to locate the add implementation and its caller, then inspect the relevant files and check.test.mjs. Fix only the add implementation using edit with edits[]. Do not change its caller. Run shell with command exactly "${command}" and cwd ".". Do not change the test. Report CODING_VERIFIED only if the command succeeds; otherwise explain the failure.`, {
     ...agent,
     onEvent: createTurnReporter((event) => {
       if (event.type === "execution_report") report = event.report;

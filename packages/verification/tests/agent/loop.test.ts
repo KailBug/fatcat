@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
@@ -20,8 +21,8 @@ test("direct answers finish after one request with fresh history per run", async
     histories.push(structuredClone(messages));
     return finalAnswer("Ready.");
   };
-  assert.equal(await runAgent("First task", { model, maxIterations: 1 }), "Ready.");
-  await runAgent("Second task", { model, maxIterations: 1 });
+  assert.equal(await runAgent("First task", { tools: fixtureTools, model, maxIterations: 1 }), "Ready.");
+  await runAgent("Second task", { tools: fixtureTools, model, maxIterations: 1 });
   assert.equal((histories[0] as unknown[]).length, 2);
   assert.equal((histories[1] as unknown[]).length, 2);
   assert.ok(!JSON.stringify(histories[1]).includes("First task"));
@@ -32,24 +33,24 @@ test("multiple tools and subsequent turns preserve call/result association", asy
   const model: Model = async (messages) => {
     requests++;
     if (requests === 1) return requestTools(
-      { id: "a", name: "sum", args: '{"numbers":[17,25]}' },
-      { id: "b", name: "sum", args: '{"numbers":[1,2]}' },
+      { id: "a", name: "fixture_add", args: '{"numbers":[17,25]}' },
+      { id: "b", name: "fixture_add", args: '{"numbers":[1,2]}' },
     );
     if (requests === 2) {
       assert.deepEqual(messages[2], { role: "assistant", content: null, toolCalls: [
-        { id: "a", name: "sum", arguments: '{"numbers":[17,25]}' },
-        { id: "b", name: "sum", arguments: '{"numbers":[1,2]}' },
+        { id: "a", name: "fixture_add", arguments: '{"numbers":[17,25]}' },
+        { id: "b", name: "fixture_add", arguments: '{"numbers":[1,2]}' },
       ] });
       assert.deepEqual(messages.slice(3), [
         { role: "tool", callId: "a", content: '{"ok":true,"result":42}' },
         { role: "tool", callId: "b", content: '{"ok":true,"result":3}' },
       ]);
-      return requestTools({ id: "c", name: "sum", args: '{"numbers":[42,3]}' });
+      return requestTools({ id: "c", name: "fixture_add", args: '{"numbers":[42,3]}' });
     }
     assert.deepEqual(messages.at(-1), { role: "tool", callId: "c", content: '{"ok":true,"result":45}' });
     return finalAnswer("45");
   };
-  assert.equal(await runAgent("Add these numbers", { model, maxIterations: 3 }), "45");
+  assert.equal(await runAgent("Add these numbers", { tools: fixtureTools, model, maxIterations: 3 }), "45");
   assert.equal(requests, 3);
 });
 
@@ -58,24 +59,24 @@ test("tool errors reach the model and allow corrected calls", async () => {
   const model: Model = async (messages) => {
     requests++;
     if (requests === 1) return requestTools(
-      { id: "bad-json", name: "sum", args: "{" },
+      { id: "bad-json", name: "fixture_add", args: "{" },
       { id: "unknown", name: "missing", args: "{}" },
     );
     if (requests === 2) {
       assert.match(JSON.stringify(messages.at(-2)), /INVALID_ARGUMENTS/);
       assert.match(JSON.stringify(messages.at(-1)), /UNKNOWN_TOOL/);
-      return requestTools({ id: "fixed", name: "sum", args: '{"numbers":[1,2]}' });
+      return requestTools({ id: "fixed", name: "fixture_add", args: '{"numbers":[1,2]}' });
     }
     return finalAnswer("3");
   };
-  assert.equal(await runAgent("Add", { model, maxIterations: 3 }), "3");
+  assert.equal(await runAgent("Add", { tools: fixtureTools, model, maxIterations: 3 }), "3");
 });
 
 test("the iteration limit bounds model requests and skips unusable final tools", async () => {
   let requests = 0;
   const events: LoopEvent[] = [];
-  const model: Model = async () => requestTools({ id: String(++requests), name: "sum", args: '{"numbers":[1,2]}' });
-  await assert.rejects(runAgent("Keep going", {
+  const model: Model = async () => requestTools({ id: String(++requests), name: "fixture_add", args: '{"numbers":[1,2]}' });
+  await assert.rejects(runAgent("Keep going", { tools: fixtureTools,
     model, maxIterations: 3, onEvent: (event) => events.push(event),
   }), (error: unknown) => error instanceof HarnessError && error.code === "MAX_ITERATIONS");
   assert.equal(requests, 3);
@@ -92,12 +93,12 @@ test("request budgets reserve a final answer without polluting checkpoints or th
     assert.equal((system.match(/Turn request budget:/g) ?? []).length, 1);
     assert.match(system, new RegExp(`request ${requests} of 3`));
     assert.equal(options?.toolChoice, requests === 3 ? "none" : "auto");
-    if (requests < 3) return requestTools({ id: `budget-${requests}`, name: "sum", args: '{"numbers":[1,2]}' });
+    if (requests < 3) return requestTools({ id: `budget-${requests}`, name: "fixture_add", args: '{"numbers":[1,2]}' });
     assert.equal(messages.at(-1)?.role, "tool");
     assert.match(system, /unfinished or unverified/);
     return finalAnswer("Calculated 3. Further work remains unverified.");
   };
-  const result = await runAgentTurn("Work within the allowance", [], {
+  const result = await runAgentTurn("Work within the allowance", [], { tools: fixtureTools,
     model, maxIterations: 3, onCheckpoint: async (messages) => { checkpoints.push(messages); },
   });
   assert.equal(requests, 3);
@@ -105,7 +106,7 @@ test("request budgets reserve a final answer without polluting checkpoints or th
   assert.ok(!JSON.stringify([result.messages, checkpoints]).includes("Turn request budget:"));
   const before = structuredClone(result.messages);
   requests = 0;
-  await runAgentTurn("Continue", result.messages, { model, maxIterations: 3 });
+  await runAgentTurn("Continue", result.messages, { tools: fixtureTools, model, maxIterations: 3 });
   assert.deepEqual(result.messages, before);
 });
 
@@ -119,7 +120,7 @@ test("a one-request budget allows an honest answer but no tool execution", async
 
 test("model errors terminate without another request", async () => {
   let requests = 0;
-  await assert.rejects(runAgent("Hello", {
+  await assert.rejects(runAgent("Hello", { tools: fixtureTools,
     maxIterations: 8,
     model: async () => { requests++; throw new HarnessError("MODEL_HTTP", "Failed."); },
   }), /Failed/);
@@ -127,8 +128,8 @@ test("model errors terminate without another request", async () => {
 });
 
 test("reused tool call IDs fail before executing the duplicated turn", async () => {
-  const model: Model = async () => requestTools({ id: "duplicate", name: "sum", args: '{"numbers":[1,2]}' });
-  await assert.rejects(runAgent("Add", { model, maxIterations: 3 }), /reused a tool call ID/);
+  const model: Model = async () => requestTools({ id: "duplicate", name: "fixture_add", args: '{"numbers":[1,2]}' });
+  await assert.rejects(runAgent("Add", { tools: fixtureTools, model, maxIterations: 3 }), /reused a tool call ID/);
 });
 
 test("cancellation prevents requests and suppresses late tool execution", async () => {
@@ -136,21 +137,21 @@ test("cancellation prevents requests and suppresses late tool execution", async 
   const events: LoopEvent[] = [];
   const model: Model = async () => {
     controller.abort();
-    return requestTools({ id: "a", name: "sum", args: '{"numbers":[1,2]}' });
+    return requestTools({ id: "a", name: "fixture_add", args: '{"numbers":[1,2]}' });
   };
-  await assert.rejects(runAgent("Add", {
+  await assert.rejects(runAgent("Add", { tools: fixtureTools,
     model, maxIterations: 3, signal: controller.signal, onEvent: (event) => events.push(event),
   }), /cancelled/);
   assert.ok(!events.some((event) => event.type === "tool_result"));
-  await assert.rejects(runAgent("Add", {
+  await assert.rejects(runAgent("Add", { tools: fixtureTools,
     model: async () => { assert.fail("No request should start"); }, maxIterations: 3, signal: controller.signal,
   }), /cancelled/);
 });
 
 test("blank prompts and invalid loop limits are rejected before model calls", async () => {
   const model: Model = async () => { assert.fail("No request should start"); };
-  await assert.rejects(runAgent(" ", { model, maxIterations: 1 }), /prompt/);
-  await assert.rejects(runAgent("Hello", { model, maxIterations: 0 }), /maxIterations/);
+  await assert.rejects(runAgent(" ", { tools: fixtureTools, model, maxIterations: 1 }), /prompt/);
+  await assert.rejects(runAgent("Hello", { tools: fixtureTools, model, maxIterations: 0 }), /maxIterations/);
 });
 
 

@@ -55,7 +55,7 @@ test("built-in skills ship with the build and add only catalogued reads without 
   assert.equal(catalog.warnings.length, 0);
   assert.equal(catalog.skills.length, bundled.length);
   const tools = withSkills(defaultTools, catalog);
-  assert.deepEqual(tools.definitions.map((entry) => entry.name), ["sum", "read"]);
+  assert.deepEqual(tools.definitions.map((entry) => entry.name), ["read"]);
   for (const expected of bundled) {
     const descriptor = catalog.skills.find((entry) => entry.name === expected.name);
     assert.ok(descriptor, expected.name);

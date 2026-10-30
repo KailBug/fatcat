@@ -191,7 +191,7 @@ test("skill, automation, and delegation wrappers bind child document allowance i
     return answer("One child page analyzed; the next was not covered.");
   };
   const base = withSkills(visionTools(vision), catalog);
-  const tools = withAutomationTool(createSubagentTools(base, child, 8));
+  const tools = withAutomationTool(createSubagentTools(base, child, 3));
   for (let run = 0; run < 2; run++) {
     const events: ReportEvent[] = [];
     let parentRequests = 0;

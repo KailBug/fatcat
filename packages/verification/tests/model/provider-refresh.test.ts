@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { loadConfig } from "@fatcat/runtime/config";
@@ -62,7 +63,7 @@ describe("current provider protocol contracts", () => {
 					assert.equal(body.thinking, undefined);
 				} else assert.deepEqual(body.thinking, { type: "enabled", keep: "all" });
 				return response();
-			});
+			}, fixtureTools);
 			const turn = await client(messages);
 			assert.deepEqual(turn.message.providerReplay?.selection, selection);
 			assert.equal(calls, 1);

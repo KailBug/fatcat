@@ -23,7 +23,7 @@ const options: HeadlessOptions = { taskCwd, instruction: "Run the injected file 
 const calls = [
 	{ name: "read", args: { path: "data/train.tsv", limit: 2 } },
 	{ name: "write", args: { path: "fatcat smoke.txt", content: "first\n" } },
-	{ name: "write", args: { path: "fatcat smoke.txt", oldText: "first", newText: "verified" } },
+	{ name: "edit", args: { path: "fatcat smoke.txt", edits: [{ oldText: "first", newText: "verified" }] } },
 	{ name: "read", args: { path: "fatcat smoke.txt" } },
 	{ name: "shell", args: { command: "test \"$PWD\" = /app && test \"$(cat 'fatcat smoke.txt')\" = verified && printf 'same-task-cwd'" } },
 	{ name: "shell", args: { command: "printf 'expected-nonzero' >&2; exit 7" } },

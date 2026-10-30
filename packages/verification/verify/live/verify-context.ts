@@ -32,7 +32,7 @@ try {
   } };
   const config = loadLiveConfig();
   // The smaller local budget deliberately exercises projection using only synthetic data.
-  const session = new Session(createAgent({ ...config, maxRequestBytes: 26000,
+  const session = new Session(createAgent({ ...config, maxRequestBytes: 33000,
     maxIterations: Math.min(config.maxIterations, 3) }, tools));
   const reports: ExecutionReport[] = [];
   async function run(prompt: string) {

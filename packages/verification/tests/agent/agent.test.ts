@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import { readdir, realpath } from "node:fs/promises";
@@ -26,19 +27,19 @@ type RequestBody = { messages: ChatMessage[]; tools: { function: { name: string 
 test("parent and child guidance forwards their independent final-answer options", async () => {
   let parents = 0;
   let children = 0;
-  const agent = createAgent(config, undefined, async (input, init) => {
+  const agent = createAgent(config, fixtureTools, async (input, init) => {
     const body = await new Request(input, init).json() as RequestBody;
     const parent = body.tools.some((tool) => tool.function.name === "delegate_task");
     const iteration = parent ? ++parents : ++children;
-    assert.equal(body.tool_choice, iteration === 3 ? "none" : "auto");
-    assert.match(String(body.messages[0]?.content), new RegExp(`request ${iteration} of 3`));
-    if (iteration === 3) return answer(parent ? "Parent summary" : "Child summary");
+    assert.equal(body.tool_choice, iteration === (parent ? 3 : 32) ? "none" : "auto");
+    assert.match(String(body.messages[0]?.content), new RegExp(`request ${iteration} of ${parent ? 3 : 32}`));
+    if (iteration === (parent ? 3 : 32)) return answer(parent ? "Parent summary" : "Child summary");
     if (parent && iteration === 1) return calls({ name: "delegate_task", args: { task: "Compute the fixture sum" }, id: "delegate-budget" });
-    return calls({ name: "sum", args: { numbers: [1, 2] }, id: `${parent ? "parent" : "child"}-${iteration}` });
+    return calls({ name: "fixture_add", args: { numbers: [1, 2] }, id: `${parent ? "parent" : "child"}-${iteration}` });
   });
   assert.equal(await runAgent("Review the calculation", agent), "Parent summary");
   assert.equal(parents, 3);
-  assert.equal(children, 3);
+  assert.equal(children, 32);
 });
 
 test("default agent construction is idle and direct tasks make no child requests", async () => {
@@ -46,7 +47,7 @@ test("default agent construction is idle and direct tasks make no child requests
   const agent = createAgent(config, undefined, async (input, init) => {
     requests++;
     const body = await new Request(input, init).json() as RequestBody;
-    assert.deepEqual(body.tools.map((tool) => tool.function.name), ["sum", "delegate_task", "automation"]);
+    assert.deepEqual(body.tools.map((tool) => tool.function.name), ["delegate_task", "automation"]);
     assert.ok(!String(body.messages[0]?.content).includes("Workspace root (JSON string):"));
     return answer("Direct answer");
   });
@@ -58,7 +59,7 @@ test("default agent construction is idle and direct tasks make no child requests
 test("assembled SDK parent and child use distinct definitions and isolated histories", async () => {
   let parents = 0;
   let children = 0;
-  const agent = createAgent(config, undefined, async (input, init) => {
+  const agent = createAgent(config, fixtureTools, async (input, init) => {
     const body = await new Request(input, init).json() as RequestBody;
     const names = body.tools.map((tool) => tool.function.name);
     if (names.includes("delegate_task")) {
@@ -71,11 +72,11 @@ test("assembled SDK parent and child use distinct definitions and isolated histo
       return answer("Reviewed child result");
     }
     children++;
-    assert.deepEqual(names, ["sum"]);
+    assert.deepEqual(names, ["fixture_add"]);
     assert.ok(!String(body.messages[0]?.content).includes("prefer delegate_task"));
     assert.ok(!JSON.stringify(body.messages).includes("Parent-only details"));
     assert.equal(body.messages[1]?.content, "Focused child context");
-    if (children === 1) return calls({ name: "sum", args: { numbers: [17, 25] }, id: "child-sum" });
+    if (children === 1) return calls({ name: "fixture_add", args: { numbers: [17, 25] }, id: "child-sum" });
     assert.equal(body.messages.at(-1)?.content, '{"ok":true,"result":42}');
     return answer("Child result: 42");
   });
@@ -94,7 +95,7 @@ test("default delegation cannot turn a read-only workspace into write or shell a
       if (body.messages.at(-1)?.role === "user") return calls({ name: "delegate_task", args: { task: "Try requested operations" }, id: "delegate" });
       return answer("Both operations denied");
     }
-    assert.deepEqual(body.tools.map((tool) => tool.function.name), ["sum", "read", "write", "shell"]);
+    assert.deepEqual(body.tools.map((tool) => tool.function.name), ["read", "glob", "grep", "write", "edit", "shell", "output_read"]);
     if (body.messages.at(-1)?.role === "user") return calls(
       { name: "write", args: { path: "blocked.txt", content: "blocked" }, id: "child-write" },
       { name: "shell", args: { command: "exit 0" }, id: "child-shell" });
@@ -112,7 +113,7 @@ test("default delegation cannot turn a read-only workspace into write or shell a
 
 test("parent delegation guidance does not mutate or accumulate in caller history", async () => {
   let requests = 0;
-  const agent = createAgent(config, undefined, async (input, init) => {
+  const agent = createAgent(config, fixtureTools, async (input, init) => {
     const body = await new Request(input, init).json() as RequestBody;
     const system = String(body.messages[0]?.content);
     assert.equal((system.match(/prefer delegate_task/g) ?? []).length, 1);

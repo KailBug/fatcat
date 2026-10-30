@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import type { ChatMessage } from "../support/chat-protocol.js";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -24,7 +25,7 @@ const cases = [
   })),
 ];
 const usage = { prompt_tokens: 30, completion_tokens: 12, total_tokens: 42 };
-const toolCall = { id: "sum-call", type: "function", function: { name: "sum", arguments: '{"numbers":[17,25]}' } };
+const toolCall = { id: "sum-call", type: "function", function: { name: "fixture_add", arguments: '{"numbers":[17,25]}' } };
 const messages: Message[] = [{ role: "user", content: "Hello \"\\\n \u4e2d\u6587 \u{1f408}" }];
 function response(tool = false) {
   return { usage, choices: [{ finish_reason: tool ? "tool_calls" : "stop", message: {
@@ -76,8 +77,8 @@ for (const item of cases) {
       assert.deepEqual(body.messages.at(-1), { role: "tool", tool_call_id: "sum-call", content: '{"ok":true,"result":42}' });
       assert.deepEqual(body.messages.at(-2), { role: "assistant", content: null, tool_calls: [toolCall] });
       return Response.json(response());
-    });
-    assert.equal(await runAgent("Add 17 and 25", { model, onEvent: (event) => {
+    }, fixtureTools);
+    assert.equal(await runAgent("Add 17 and 25", { tools: fixtureTools, model, onEvent: (event) => {
       if (event.type === "model_usage") observations.push(event);
     }, maxIterations: 2 }), "42");
     assert.equal(calls, 2);
@@ -95,12 +96,12 @@ for (const item of cases) {
       calls++;
       return Response.json(response());
     };
-    await createModel(config, transport)(messages);
+    await createModel(config, transport, fixtureTools)(messages);
     const limit = bytes;
     const observed: ModelObservation[] = [];
-    await createModel({ ...config, maxRequestBytes: limit }, transport)(messages, undefined, (event) => observed.push(event));
+    await createModel({ ...config, maxRequestBytes: limit }, transport, fixtureTools)(messages, undefined, (event) => observed.push(event));
     assert.deepEqual(observed[0], { type: "model_input", bytes: limit, limitBytes: limit, accepted: true });
-    await assert.rejects(createModel({ ...config, maxRequestBytes: limit - 1 }, transport)(messages), { code: "MODEL_CONTEXT_LIMIT" });
+    await assert.rejects(createModel({ ...config, maxRequestBytes: limit - 1 }, transport, fixtureTools)(messages), { code: "MODEL_CONTEXT_LIMIT" });
     assert.equal(calls, 2);
   });
 
@@ -110,7 +111,7 @@ for (const item of cases) {
       const model = createModel(config, async () => {
         calls++;
         return Response.json({ error: { message: `private-error-${config.apiKey}` } }, { status });
-      });
+      }, fixtureTools);
       await assert.rejects(model(messages), (error: unknown) => error instanceof HarnessError
         && error.code === "MODEL_HTTP" && error.message.includes(item.label) && error.message.includes(String(status))
         && !error.message.includes(config.apiKey) && !error.message.includes("private-error"));
@@ -120,7 +121,7 @@ for (const item of cases) {
       const observed: ModelObservation[] = [];
       const data = response();
       data.choices[0]!.finish_reason = reason;
-      await assert.rejects(createModel(config, async () => Response.json(data))(messages, undefined,
+      await assert.rejects(createModel(config, async () => Response.json(data), fixtureTools)(messages, undefined,
         (event) => observed.push(event)), { code: reason === "length" ? "MODEL_TRUNCATED" : "MODEL_RESPONSE" });
       assert.deepEqual(observed.at(-1), { type: "model_usage", usage: { promptTokens: 30, completionTokens: 12, totalTokens: 42 } });
     }
@@ -133,7 +134,7 @@ for (const item of cases) {
       calls++;
       init?.signal?.addEventListener("abort", () => reject(new Error("private-abort")), { once: true });
       controller.abort();
-    }));
+    }), fixtureTools);
     await assert.rejects(model(messages, controller.signal), { code: "CANCELLED" });
     await assert.rejects(model(messages, controller.signal), { code: "CANCELLED" });
     assert.equal(calls, 1);
@@ -147,7 +148,7 @@ for (const item of cases) {
       const abort = () => { clearTimeout(timer); reject(new Error("private-timeout")); };
       if (init?.signal?.aborted) abort();
       else init?.signal?.addEventListener("abort", abort, { once: true });
-    }));
+    }), fixtureTools);
     await assert.rejects(model(messages), (error: unknown) => error instanceof HarnessError
       && error.code === "MODEL_TIMEOUT" && error.message.includes(item.label));
     assert.equal(calls, 1);
@@ -165,7 +166,7 @@ test("region selection changes only the approved provider endpoint", async () =>
       assert.equal(request.url, item.endpoint);
       assert.equal(request.headers.get("authorization"), "Bearer offline-region");
       return Response.json(response());
-    })(messages);
+    }, fixtureTools)(messages);
   }
 });
 
@@ -182,7 +183,7 @@ test("ambient OpenAI settings cannot redirect credentials or add project and org
         assert.equal(request.headers.get("openai-organization"), null);
         assert.equal(request.headers.get("openai-project"), null);
         return Response.json(response());
-      })(messages);
+      }, fixtureTools)(messages);
     }
   } finally {
     keys.forEach((key, index) => {
@@ -194,6 +195,6 @@ test("ambient OpenAI settings cannot redirect credentials or add project and org
 
 test("DeepSeek compatibility wrapper rejects other providers before any transport", () => {
   for (const item of cases.filter((entry) => entry.provider !== "deepseek")) {
-    assert.throws(() => createDeepSeekModel(loadConfig({ HARNESS_PROVIDER: item.provider, [item.key]: "offline-wrapper" })), { code: "CONFIG" });
+    assert.throws(() => createDeepSeekModel(loadConfig({ HARNESS_PROVIDER: item.provider, [item.key]: "offline-wrapper" }), undefined, fixtureTools), { code: "CONFIG" });
   }
 });

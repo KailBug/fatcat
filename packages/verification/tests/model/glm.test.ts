@@ -1,3 +1,4 @@
+import { fixtureTools } from "../support/tool-fixture.js";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { loadConfig } from "@fatcat/runtime/config";
@@ -114,7 +115,7 @@ describe("GLM domestic standard API", () => {
 						assert.equal(body.tool_choice, purpose ? undefined : "auto");
 						assert.equal(body.tools === undefined, !!purpose);
 						return response();
-					});
+					}, fixtureTools);
 					const options = purpose ? { purpose, toolChoice: "none" as const } : undefined;
 					const preview = await client.prepare!(messages, undefined, options);
 					const turn = await client(messages, undefined, undefined, options);

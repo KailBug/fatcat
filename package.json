@@ -10,6 +10,7 @@
   },
   "packageManager": "pnpm@11.21.0",
   "scripts": {
+    "eval:tools": "pnpm run build && pnpm --filter @fatcat/eval run tools",
     "typecheck": "pnpm run check:boundaries && pnpm --filter \"./packages/*\" -r build && tsc --noEmit",
     "build": "pnpm run check:boundaries && pnpm --filter \"./packages/*\" -r build && tsc",
     "start": "pnpm run build && node --env-file-if-exists=.env dist/scripts/start.js",

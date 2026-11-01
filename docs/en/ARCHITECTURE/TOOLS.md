@@ -8,6 +8,35 @@ Tools expose model-visible definitions, argument validation and asynchronous exe
 
 Definitions use Fatcat's `ToolDefinition` with direct name, description, parameters and optional strict fields. Assembly/wrappers do not construct OpenAI's function envelope. Model API encoders add protocol fields, preserving definition content and execution contracts. Tools.execute still parses raw arguments JSON and returns validation failures under the original call ID; see [Model boundaries](PROVIDERS.md#internal-messages-and-api-boundaries).
 
+<a id="tool-contract-audit"></a>
+
+## Tool contract audit
+
+The P2 audit retains sixteen definitions when all corresponding host capabilities are available. Availability still depends on assembly, session and permission context; this is not a promise that every request exposes all sixteen. No new tool or permission is introduced.
+
+| Tool | Responsibility and contract reviewed |
+| --- | --- |
+| read | Known file/directory paging; offset/limit and complete-line bounds; virtual wrappers retain their own protocols |
+| glob | Path discovery without reading bodies; pattern/exclude, pagination and traversal limits |
+| grep | Literal or regex content search; glob filters paths, query searches text; skipped files remain explicit |
+| write | Create a new text file; existing targets fail; approval and publication journal |
+| edit | Unique, non-overlapping replacements validated together; conflict never means partial success |
+| shell | Foreground process, independent permission, timeout and cleanup; command success differs from capture completeness |
+| output_read | Read/search captured streams by outputId; no command rerun; page and capture truncation are separate |
+| web | Mutually exclusive search/fetch inputs; network authorization and bounded output |
+| browser | Bounded local browser inspection; explicit steps/selectors/viewport types and execution evidence |
+| image_read | Local image identity/decoding and optional budgeted visual request; no inline image in saved history |
+| memory_search | List/search currently accessible memories; bounded result metadata |
+| memory_read | Read an exact memory reference/revision; stale references fail explicitly |
+| memory_write | Parent-only mutation with user evidence, scope checks and revision validation |
+| ask_user | Parent clarification through the host; answered/skipped are distinct; background requests fail |
+| delegate_task | Bounded child execution and parent cancellation; separate child history, at most 32 model requests per child |
+| automation | Session-bound scheduling through existing authorization and budgets; no implicit heartbeat |
+
+Targeted audit fixes align schemas and runtime validation: output_read rejects explicit null limits and any tail field in search mode; its schema distinguishes read/search and tail/offset. web advertises mutually exclusive action fields and enforces its 2048-character URL limit. Browser defaults apply only to omitted fields, not null collections/viewport. Discovery rejects malformed Unicode patterns. Missing-path and tool-I/O errors suggest discovery or inspecting existing effects before retrying; they never imply rollback.
+
+An empty successful search means no matches within the declared scope. skippedFiles/complete=false, nextOffset, page truncation and incomplete command capture retain their distinct meanings. Invalid arguments, denied access and unavailable artifacts remain errors. Existing domain tests plus `verification/tests/tools/p2-contracts.test.ts` cover these boundaries; the [injected tool baseline](EVAL.md#injected-tool-baseline) exercises task outcomes. Schema validation is not delegated to the model or provider.
+
 ## Assembly and specialized responsibilities
 
 | Source | Responsibility |

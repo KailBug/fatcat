@@ -231,6 +231,12 @@ When moving or deleting tests, update static imports, `import.meta.url` paths, c
 
 Eval package tests are the exception to the centralized product-test layout: keep protocol, result, summary and eval integration checks under `packages/eval/tests/`, and synthetic builders under its `tests/fixtures/`. Run `pnpm --filter @fatcat/eval test` after the root build for a focused offline check. This does not execute a benchmark or validate model quality. Root `pnpm test` includes this suite and the existing verification suite; the existing live/browser/native commands retain their scopes and provider guards.
 
+<a id="offline-tool-baseline"></a>
+
+## Offline tool baseline
+
+Run `pnpm run eval:tools development`, then `pnpm run eval:tools holdout` for the [injected tool baseline](ARCHITECTURE/EVAL.md#injected-tool-baseline). Each command builds first; run them sequentially. After a successful build, `pnpm --filter @fatcat/eval run tools all` runs both splits without rebuilding. Pass an optional absolute output filename to retain complete JSON; existing files are not overwritten. This uses actual local file, shell, memory, image and delegation paths with injected responses, never real models. Keep full artifacts local because they include synthetic task traces. Offline product regression remains `pnpm test`; this diagnostic does not replace domain tests or native UI checks.
+
 ## Windows terminal checks
 
 Run `pnpm run verify:cli` in an interactive, VT-capable Windows terminal to check CLI startup and input handoff. `TERM=dumb` is deliberately rejected. If a ConPTY host supports VT but incorrectly inherits `TERM=dumb`, set `$env:TERM = 'xterm-256color'` in that verification shell; do not relax the production TUI guard. The runner uses a temporary session store/workspace, fake credentials and an intercepted model transport, without loading `.env` or contacting a provider. Follow its three phases:

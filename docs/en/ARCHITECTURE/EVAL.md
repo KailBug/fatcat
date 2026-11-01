@@ -6,6 +6,23 @@ English | [简体中文](../../zh-CN/ARCHITECTURE/EVAL.md)
 
 `packages/eval` is an independent development package for experiment definitions, injected Session execution, result records and statistics. It calls runtime's Session, Loop, Context, tools and stores through existing package exports; runtime retains their ownership. Product packages do not depend on it; eval and verification do not depend on each other. The injected headless entry and a narrowly scoped DeepSeek/Harbor live path exist for the pinned Linux task environment. An automated dataset-download manager, whole-experiment budget scheduling and a general experiment CLI remain unimplemented. The live path is retained but paused under the strategy below.
 
+<a id="injected-tool-baseline"></a>
+
+## Injected tool baseline
+
+`src/tool-suite.ts` and `scripts/tools.ts` provide a diagnostic P2 contract baseline through actual createAgent, SessionManager and tools, using public runtime exports. Each attempt creates an isolated temporary workspace, injects a deterministic response script, enforces a 30-second deadline and cleans only its owned directory after grading. No .env, provider request or credential is used. The default parent budget is 16 requests; delegated children retain the runtime's 32-request bound. This is a local diagnostic format, separate from the formal Experiment/EvalResult protocol and public benchmark scoring below.
+
+| Split | Cases and acceptance |
+| --- | --- |
+| development | repair: exact final file plus committed edit and successful post-edit command; output: >1 MiB capture plus readable final sentinel; memory: final revised content plus stale-reference rejection; clarification: custom answer/skip without extra user turns or file writes |
+| holdout | repair-unicode: Chinese text and CRLF preserved; output-stderr: full large stderr capture and suffix read; image: decoded identity, no inline saved image and budgeted visual request; delegation: actual child read and returned content |
+
+The development set runs in offline tests; holdout is a separate explicit command. Acceptance requires every selected case to pass (4/4 per split), with all failures retained in the denominator. Scenarios exercise contracts, not model reasoning. The fixed injected call sequence drives the fixture; grading checks observable state/results and does not compare against an exact tool-call sequence. The image case also asserts request accounting. A negative file-grader control rejects a completion claim or final-file regression even with historical successful execution.
+
+After building, run `pnpm --filter @fatcat/eval run tools development` or replace development with holdout/all. Root `pnpm run eval:tools development` builds first. An optional absolute second argument writes the full JSON artifact exclusively; an existing file fails rather than being replaced. Relative artifact paths resolve from the eval package directory. The artifact retains sample IDs, all selected outcomes, injected arguments/results, history, final state, execution report, environment, HEAD, dirty status and the compiled suite hash. It contains fixture/task data and is not ordinary metadata telemetry. Dirty HEAD plus suite hash does not fully identify a reproducible runtime snapshot; formal comparisons still require the provenance rules below.
+
+Metrics include end-to-end attempt duration (including setup/cleanup), executed calls, statuses, repeated identical calls, known input/output byte subtotals and output coverage. Repetition is a review candidate, not proven redundancy; rereads can be necessary. Missing output bytes remain unknown. Token usage remains null without provider usage and is never inferred from bytes. An 8/8 injected result establishes these integration contracts, not real-model success rate, token savings, latency improvement or holdout generalization. Separate baseline/candidate model-quality evaluation remains deferred pending explicit authorization.
+
 ## Current evaluation strategy
 
 As of 2026-10-23, paid real-model evaluation through Harbor is paused because its cost is not affordable for current development. Near-term work measures harness correctness, execution boundaries and diagnosability without real model requests. Routine evaluation has **zero model API spending**; local CPU, storage, electricity and dependency downloads still consume resources. Access to a local model or free API is not a prerequisite for contributing or reviewing changes.

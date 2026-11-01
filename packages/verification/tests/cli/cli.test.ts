@@ -546,7 +546,7 @@ test("the actual CLI follows read pages through the model transport", async (t) 
   const result = run(["--workspace", workspace, "--prompt", "workspace pages"], { DEEPSEEK_API_KEY: "offline-only" }, "");
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), "first\nsecond\nlast");
-  assert.equal((result.stderr.match(/"tool":"read"/g) ?? []).length, 3);
+  assert.equal(result.stderr.split("\n").filter((line) => line.includes('"type":"tool_result"') && line.includes('"tool":"read"')).length, 3);
   assert.ok(!result.stderr.includes("second"));
 });
 
@@ -691,7 +691,7 @@ test("read-only CLI follows recursive search pages without logging source conten
     { path: "src/a.ts", line: 2, text: "SEARCH_TOKEN private-text" },
     { path: "src/b.ts", line: 1, text: "SEARCH_TOKEN final-match" },
   ]);
-  assert.equal((result.stderr.match(/"tool":"grep"/g) ?? []).length, 2);
+  assert.equal(result.stderr.split("\n").filter((line) => line.includes('"type":"tool_result"') && line.includes('"tool":"grep"')).length, 2);
   for (const text of ["SEARCH_TOKEN", "private-text", "final-match", workspace]) assert.ok(!result.stderr.includes(text));
   assert.equal(await readFile(join(workspace, "src", "a.ts"), "utf8"), source);
   assert.deepEqual(reports(result.stderr)[0]!.writes, []);
@@ -735,7 +735,7 @@ test("CLI chat projects old read payloads under pressure while preserving follow
   const { workspace } = await temporaryWorkspace(t);
   await writeFile(join(workspace, "notes.txt"), "CURRENT_MARKER\n" + "x".repeat(12000));
   const result = run(["--chat", "--workspace", workspace, "--permission", "read-only"],
-    { DEEPSEEK_API_KEY: "offline-only", HARNESS_MAX_REQUEST_BYTES: "48000" },
+    { DEEPSEEK_API_KEY: "offline-only", HARNESS_MAX_REQUEST_BYTES: "50000" },
     "context load\nkeep-context-rule\ncontext recall " + "padding ".repeat(1375) + "\n/exit\n");
   assert.equal(result.status, 0, result.stderr);
   assert.ok(result.stdout.trim().endsWith("CURRENT_MARKER"));

@@ -18,6 +18,8 @@ import { createTuiTheme } from "./theme.js";
 import { FatcatView } from "./view.js";
 import type { TuiViewState } from "./view.js";
 import { ConversationAutomations } from "@fatcat/runtime/automation/conversations";
+import { QuestionCoordinator } from "@fatcat/runtime/tools/ask-user";
+import type { AskUser } from "@fatcat/runtime/tools/ask-user";
 import type { SessionAutomation } from "@fatcat/runtime/automation/tasks";
 import type { Activation } from "@fatcat/runtime/automation/scheduler";
 import { browserApprovalDetails, eventPresentation, shellApprovalDetails, writeApprovalDetails } from "./presentation.js";
@@ -70,6 +72,13 @@ export class TuiApp {
   private turnController: AbortController | undefined;
   private activeTurn?: Promise<void>;
   private approval: { id: string; draft: string; label: string; answer?: boolean } | undefined;
+  private questionDraft: string | undefined;
+  private readonly questions = new QuestionCoordinator(() => {
+    if (!this.questions.snapshot() && this.questionDraft !== undefined) {
+      this.editor.setText(this.questionDraft); this.questionDraft = undefined;
+      this.editor.disableSubmit = true;
+    }
+  });
   private readonly approvals = new ApprovalCoordinator<{ confirmation: { label: string; details: string } }>(() => {
     if (this.approvals.snapshot() || !this.approval) return;
     const { draft, label, answer } = this.approval;
@@ -107,7 +116,8 @@ export class TuiApp {
     layout.render = (width) => {
       const editorLines = this.editor.render(Math.max(1, width));
       this.view.height = Math.max(1, this.terminal.rows - editorLines.length - 1);
-      const hint = this.approval ? " APPROVAL > Type yes or no, then Enter | Esc cancels | PgUp reviews details"
+      const hint = this.questions.snapshot() ? " QUESTION > Answer or /skip | Esc cancels | PgUp reviews details"
+        : this.approval ? " APPROVAL > Type yes or no, then Enter | Esc cancels | PgUp reviews details"
         : this.state.busy ? " Working | Esc cancel | draft your next prompt | PgUp/PgDn scroll"
         : " Enter send  Alt+Enter newline  /help  /status  /reset  Ctrl+C exit  PgUp/PgDn scroll";
       return [...this.view.render(width), ...editorLines, truncateToWidth(hint, width)].slice(-this.terminal.rows);
@@ -205,9 +215,23 @@ export class TuiApp {
   readonly approveBrowser: ApproveBrowser = (request, signal) =>
     this.confirm("BROWSER APPROVAL", browserApprovalDetails(request, this.options.workspace), signal);
 
+  readonly askUser: AskUser = async (request, signal) => {
+    if (!this.started || this.closing || !this.turnController) throw new HarnessError("QUESTION_UNAVAILABLE", "No active interactive TUI turn.");
+    if (this.approval || this.questions.snapshot()) throw new HarnessError("QUESTION_BUSY", "Another interaction is pending.");
+    const waiting = signal ? AbortSignal.any([signal, this.turnController.signal]) : this.turnController.signal;
+    checkCancellation(waiting);
+    this.questionDraft = this.editor.getExpandedText();
+    const pending = this.questions.request(request, waiting);
+    this.editor.setText(""); this.editor.disableSubmit = false;
+    this.message("system", [request.question, ...(request.options ?? []).map((option, index) => `${index + 1}. ${option}`), "Enter an answer, choice number, or /skip."].join("\n"), "QUESTION");
+    this.activity = "Answer needed"; this.refresh();
+    try { return await pending; }
+    finally { this.activity = "Running tool"; this.refresh(); }
+  };
+
   private async confirm(label: string, details: string, signal?: AbortSignal): Promise<boolean> {
     checkCancellation(signal);
-    if (!this.started || this.closing || !this.turnController || this.approval) {
+    if (!this.started || this.closing || !this.turnController || this.approval || this.questions.snapshot()) {
       throw new HarnessError("PERMISSION_DENIED", "Approval requires an active TUI turn with no other approval pending.");
     }
     const waiting = signal ? AbortSignal.any([signal, this.turnController.signal]) : this.turnController.signal;
@@ -229,6 +253,14 @@ export class TuiApp {
 
   private submit(value: string): void {
     if (this.closing) return;
+    const question = this.questions.snapshot();
+    if (question) {
+      const text = value.trim();
+      const selected = /^[1-6]$/.test(text) ? question.request.options?.[Number(text) - 1] : undefined;
+      try { this.questions.answer(question.id, text === "/skip" ? null : selected ?? text); }
+      catch { this.message("system", "Enter a nonblank answer up to 4000 characters, a choice number, or /skip."); }
+      this.refresh(); return;
+    }
     const prompt = automationCommandPrompt(value.trim()) ?? value.trim();
     if (this.approval) {
       const answer = prompt.toLowerCase();

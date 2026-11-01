@@ -9,6 +9,8 @@ import type { SessionSummary } from "@fatcat/runtime/session/record";
 import type { ShellRequest } from "@fatcat/runtime/tools/shell";
 import type { WriteApprovalRequest } from "@fatcat/runtime/tools/write";
 import { ApprovalCoordinator } from "@fatcat/runtime/permissions/approval";
+import { QuestionCoordinator } from "@fatcat/runtime/tools/ask-user";
+import type { AskUser } from "@fatcat/runtime/tools/ask-user";
 import { PermissionPolicy } from "@fatcat/runtime/permissions/policy";
 import type { PermissionMode } from "@fatcat/runtime/permissions/policy";
 import { decodeModelSelection } from "@fatcat/runtime/model-catalog";
@@ -40,6 +42,10 @@ export class WebUiController {
   private revision = 0;
   private active: { abort: AbortController; done: Promise<void> } | undefined;
   private readonly approvals: ApprovalCoordinator;
+  private readonly questions = new QuestionCoordinator(() => {
+    this.status = this.questions.snapshot() ? "Answer needed" : "Working";
+    this.revision++;
+  });
   private status = "Ready";
   private closed = false;
   private changing: Promise<void> | undefined;
@@ -99,7 +105,7 @@ export class WebUiController {
       fileAccess: "workspace" as const, networkAccess: "public" as const,
     };
     return structuredClone({ revision: this.revision, info: this.info, turns: this.turns,
-      busy: Boolean(this.active || this.changing), approval: this.approvals.snapshot(), status: this.status,
+      busy: Boolean(this.active || this.changing), approval: this.approvals.snapshot(), question: this.questions.snapshot(), status: this.status,
       current: this.session.current, sessions: this.sessions, persistent: this.session.persistent,
       contextUsage: this.session.contextUsage, modelChoices: this.session.modelChoices, permissionMode, automations: this.automationTasks,
       automationNotice: this.automationNotice, runningSessionId: this.runningSessionId, projects: this.projects,
@@ -413,6 +419,7 @@ export class WebUiController {
     this.active?.abort.abort();
     this.workspaceSelection?.abort();
     this.approvals.deny();
+    this.questions.skip();
     if (this.active) this.status = "Stopping";
     this.revision++;
   }
@@ -429,10 +436,20 @@ export class WebUiController {
     this.approvals.approve(id, allowed);
   }
 
+  readonly askUser: AskUser = (request, signal) => {
+    if (this.closed || !this.active) throw new HarnessError("QUESTION_UNAVAILABLE", "No active Web UI turn.");
+    if (this.approvals.snapshot()) throw new HarnessError("QUESTION_BUSY", "An approval is pending.");
+    const waiting = signal ? AbortSignal.any([signal, this.active.abort.signal]) : this.active.abort.signal;
+    return this.questions.request(request, waiting);
+  };
+
+  answerQuestion(id: string, answer: string | null): void { this.questions.answer(id, answer); }
+
   requestApproval(kind: "write", request: WriteApprovalRequest, signal?: AbortSignal): Promise<boolean>;
   requestApproval(kind: "shell", request: ShellRequest, signal?: AbortSignal): Promise<boolean>;
   requestApproval(kind: "browser", request: BrowserRequest, signal?: AbortSignal): Promise<boolean>;
   requestApproval(kind: "write" | "shell" | "browser", request: WriteApprovalRequest | ShellRequest | BrowserRequest, signal?: AbortSignal): Promise<boolean> {
+    if (this.questions.snapshot()) throw new HarnessError("QUESTION_BUSY", "A clarification is pending.");
     if (this.closed || !this.active || signal?.aborted || this.active.abort.signal.aborted) return Promise.resolve(false);
     const waitingSignal = signal ? AbortSignal.any([signal, this.active.abort.signal]) : this.active.abort.signal;
     if (kind === "browser") return this.approvals.request(kind, request as BrowserRequest, waitingSignal);

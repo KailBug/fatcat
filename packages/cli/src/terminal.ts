@@ -3,6 +3,8 @@ import type { Readable, Writable } from "node:stream";
 import { HarnessError, checkCancellation } from "@fatcat/runtime/errors";
 import { ApprovalCoordinator } from "@fatcat/runtime/permissions/approval";
 import { createTerminalApprovals } from "./permissions/terminal.js";
+import { QuestionCoordinator } from "@fatcat/runtime/tools/ask-user";
+import type { AskUser } from "@fatcat/runtime/tools/ask-user";
 
 /** One input owner routes approval answers separately from queued chat tasks. */
 export function createTerminalInput(
@@ -24,6 +26,9 @@ export function createTerminalInput(
   const approvals = new ApprovalCoordinator<{ confirmation: { action: string; details: string } }>(() => {
     if (!approvals.snapshot()) approvalAnswer = undefined;
   });
+  const questions = new QuestionCoordinator(() => {
+    if (!questions.snapshot()) approvalAnswer = undefined;
+  });
   const cancel = () => controller.abort();
   const close = () => lines.close();
   lines.on("SIGINT", cancel);
@@ -39,6 +44,7 @@ export function createTerminalInput(
   lines.once("close", () => {
     closed = true;
     approvals.deny();
+    questions.skip();
     nextTask?.(undefined);
     nextTask = undefined;
     signal.removeEventListener("abort", close);
@@ -65,7 +71,7 @@ export function createTerminalInput(
       throw new HarnessError("PERMISSION_DENIED", `${action} approval requires an interactive terminal. No operation was approved.`
         + (unattended ? ` For unattended use, explicitly select ${unattended}.` : " Run interactively to review this command."));
     }
-    if (approvals.snapshot()) throw new HarnessError("PERMISSION_DENIED", "Another approval is already pending.");
+    if (approvals.snapshot() || questions.snapshot()) throw new HarnessError("PERMISSION_DENIED", "Another interaction is already pending.");
     const pending = approvals.request("confirmation", { action, details }, waitingSignal);
     const id = approvals.snapshot()!.id;
     approvalAnswer = (line) => {
@@ -87,7 +93,26 @@ export function createTerminalInput(
 
   const { approveWrite, approveShell, approveBrowser } = createTerminalApprovals(confirm);
 
-  return { readTask, prompt, approveWrite, approveShell, approveBrowser, close, signal };
+  const askUser: AskUser = async (request, toolSignal) => {
+    const waiting = toolSignal ? AbortSignal.any([signal, toolSignal]) : signal;
+    checkCancellation(waiting);
+    if (!interactive || closed) throw new HarnessError("QUESTION_UNAVAILABLE", "Clarification requires an interactive terminal; no input was consumed.");
+    if (approvals.snapshot() || questions.snapshot()) throw new HarnessError("QUESTION_BUSY", "Another interaction is already pending.");
+    const pending = questions.request(request, waiting);
+    const id = questions.snapshot()!.id;
+    const safe = (text: string) => JSON.stringify(text).replace(/[\u007f-\u009f]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+    error.write(`\nQuestion: ${safe(request.question)}\n`);
+    request.options?.forEach((choice, index) => error.write(`${index + 1}. ${safe(choice)}\n`));
+    approvalAnswer = (line) => {
+      const selected = line && /^[1-6]$/.test(line.trim()) ? request.options?.[Number(line.trim()) - 1] : undefined;
+      try { questions.answer(id, line === undefined || line.trim() === "/skip" ? null : selected ?? line); }
+      catch { error.write("Enter a nonblank answer up to 4000 characters, a choice number, or /skip.\n"); lines.prompt(); }
+    };
+    lines.setPrompt("Answer (or /skip)> "); lines.prompt();
+    return pending;
+  };
+
+  return { readTask, prompt, approveWrite, approveShell, approveBrowser, askUser, close, signal };
 }
 
 export type TerminalInput = ReturnType<typeof createTerminalInput>;

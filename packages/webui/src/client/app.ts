@@ -48,6 +48,7 @@ let etag = "";
 let connected = false;
 let sending = false;
 let approvalId: string | undefined;
+let questionId: string | undefined;
 let detailsSessionId: string | undefined;
 const sessionSearch = element<HTMLInputElement>("session-search");
 const clearSessionSearch = element<HTMLButtonElement>("clear-session-search");
@@ -236,6 +237,39 @@ function renderApproval(approval: Approval | null): void {
   panel.append(actions);
 }
 
+function renderQuestion(question: NonNullable<WebUiState["question"]>): void {
+  if (question.id === questionId) return;
+  questionId = question.id; approvalId = undefined;
+  const panel = element("approval");
+  panel.hidden = false;
+  const input = node("textarea"); input.maxLength = 4000; input.rows = 3;
+  input.id = "question-answer"; input.setAttribute("aria-label", "Your answer");
+  input.style.width = "100%"; input.style.boxSizing = "border-box";
+  const options = node("div", undefined, "approval-actions question-options");
+  for (const text of question.request.options ?? []) {
+    const choice = node("button", text);
+    choice.addEventListener("click", () => { input.value = text; input.focus(); });
+    options.append(choice);
+  }
+  const actions = node("div", undefined, "approval-actions");
+  let pending = false;
+  for (const label of ["Skip", "Send answer"]) {
+    const button = node("button", label);
+    button.addEventListener("click", async () => {
+      if (pending) return;
+      const answer = label === "Skip" ? null : input.value.trim();
+      if (answer === "") { input.focus(); return; }
+      pending = true;
+      panel.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+      try { await api("question", { id: question.id, answer }); }
+      finally { pending = false; panel.querySelectorAll("button").forEach((item) => { item.disabled = false; }); }
+    });
+    actions.append(button);
+  }
+  panel.replaceChildren(node("h2", "A question for you"), node("p", question.request.question, "question-text"), options, input, actions);
+  input.focus({ preventScroll: true });
+}
+
 function updateScrollNavigation(): void {
   const hidden = !state?.turns.length || scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140;
   if (hidden && document.activeElement === scrollBottom) (prompt.disabled ? scroll : prompt).focus({ preventScroll: true });
@@ -265,7 +299,12 @@ function render(next: WebUiState): void {
   warning.textContent = next.current.projectError ?? "A turn in this session was interrupted. Model history contains only successful turns. Check current files and commands before retrying; completed operations were not undone.";
   element("run-status").textContent = next.runningSessionId !== null ? next.status : next.automationNotice;
   transcript.update(next.turns, next.current.id, next.info.workspace);
-  renderApproval(next.approval);
+  if (next.question) renderQuestion(next.question);
+  else {
+    const returnFocus = questionId && element("approval").contains(document.activeElement);
+    questionId = undefined; renderApproval(next.approval);
+    if (returnFocus && !next.approval) prompt.focus({ preventScroll: true });
+  }
   renderDetails(next);
   requestAnimationFrame(() => {
     if (follow) scroll.scrollTop = scroll.scrollHeight;

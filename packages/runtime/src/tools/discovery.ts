@@ -10,7 +10,7 @@ export const discoveryLimits = { entries: 10000, files: 2048, depth: 32 };
 
 export function validateGlob(value: unknown): string {
 	if (typeof value !== "string" || !value.trim() || value.length > 512 || /[\\\x00-\x1f]/.test(value)
-		|| value.startsWith("/") || value.split("/").includes("..") || /^[A-Za-z]:/.test(value)) {
+		|| Buffer.from(value).toString() !== value || value.startsWith("/") || value.split("/").includes("..") || /^[A-Za-z]:/.test(value)) {
 		throw new HarnessError("INVALID_ARGUMENTS", "Glob patterns must be relative, use '/' separators, and contain 1 to 512 characters without '..'.");
 	}
 	return value;

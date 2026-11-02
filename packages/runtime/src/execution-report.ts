@@ -1,5 +1,5 @@
 import type { TokenUsage } from "./model-usage.js";
-import type { LoopEvent } from "./loop.js";
+import type { LoopEvent, ToolExecution } from "./loop.js";
 import type { CommandEventRecord } from "./tools/shell.js";
 import type { WriteRecord } from "./tools/write.js";
 import type { BrowserRecord } from "./browser/protocol.js";
@@ -31,6 +31,7 @@ export type ExecutionReport = {
   contextReduction: { parent: ReductionSummary; children: ReductionSummary };
   tokenUsage: { parent: UsageSummary; children: UsageSummary };
   toolResults: { ok: number; errors: number };
+  toolExecutions?: (ToolExecution & { parentCallId: string | null })[];
   writes: WriteRecord[];
   browserChecks?: (BrowserRecord & { laterWriteAttempt: boolean })[];
   commands: (CommandEventRecord & { succeeded: boolean; laterWriteAttempt: boolean })[];
@@ -50,14 +51,18 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
     parent: { reportedRequests: 0, totals: null }, children: { reportedRequests: 0, totals: null },
   };
   const toolResults = { ok: 0, errors: 0 };
+  const toolExecutions = new Map<string, ToolExecution & { parentCallId: string | null }>();
   const writes = new Map<string, WriteRecord>();
   const browserChecks = new Map<string, BrowserRecord & { laterWriteAttempt: boolean }>();
   const commands = new Map<string, ExecutionReport["commands"][number]>();
   let finished = false;
 
-  function observe(event: LoopEvent, child = false): void {
+  function observe(event: LoopEvent, child = false, parentCallId: string | null = null): void {
     if (event.type === "subagent_event") {
-      observe(event.event, true);
+      observe(event.event, true, event.callId);
+    } else if (event.type === "tool_execution") {
+      const { type: _type, ...execution } = event;
+      toolExecutions.set(JSON.stringify([parentCallId, event.callId]), { ...execution, parentCallId });
     } else if (event.type === "model_request") {
       modelRequests[child ? "children" : "parent"]++;
     } else if (event.type === "model_input") {
@@ -103,6 +108,7 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
         taskVerification: "not_assessed",
         modelRequests, requestBytes, contextReduction, tokenUsage, toolResults, writes: [...writes.values()], commands: [...commands.values()],
         ...(browserChecks.size ? { browserChecks: [...browserChecks.values()] } : {}),
+        ...(toolExecutions.size ? { toolExecutions: [...toolExecutions.values()] } : {}),
       }) });
     }
   };

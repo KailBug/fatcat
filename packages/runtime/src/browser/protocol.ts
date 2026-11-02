@@ -21,8 +21,8 @@ function integer(value: unknown, min: number, max: number): value is number {
 export function parseBrowserRequest(value: unknown): BrowserRequest {
   if (!record(value) || Object.keys(value).some((key) => !["path", "steps", "selectors", "viewport", "screenshot"].includes(key))
     || !string(value.path, 1024) || !/\.(html?|svg)$/i.test(value.path)) invalid();
-  const steps = value.steps ?? [];
-  const selectors = value.selectors ?? [];
+  const steps = "steps" in value ? value.steps : [];
+  const selectors = "selectors" in value ? value.selectors : [];
   if (!Array.isArray(steps) || steps.length > 12 || !Array.isArray(selectors) || selectors.length > 12
     || selectors.some((selector) => !string(selector, 256))) invalid();
   let wait = 0;
@@ -39,7 +39,7 @@ export function parseBrowserRequest(value: unknown): BrowserRequest {
     }
   }
   if (wait > 5000) invalid();
-  const viewport = value.viewport ?? { width: 1000, height: 700 };
+  const viewport = "viewport" in value ? value.viewport : { width: 1000, height: 700 };
   if (!record(viewport) || Object.keys(viewport).some((key) => !["width", "height"].includes(key))
     || !integer(viewport.width, 320, 1600) || !integer(viewport.height, 240, 1200)
     || (value.screenshot !== undefined && typeof value.screenshot !== "boolean")) invalid();

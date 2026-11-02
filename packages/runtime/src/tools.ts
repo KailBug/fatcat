@@ -48,7 +48,7 @@ function collectTools(tools: Tool[]) {
     async function execute(name: string, argumentsJson: string, signal?: AbortSignal): Promise<ToolResult> {
         checkCancellation(signal);
         const tool = byName.get(name);
-        if (!tool) return failure("UNKNOWN_TOOL", "The requested tool is not available in this run.");
+        if (!tool) return failure("UNKNOWN_TOOL", "The requested tool is not available in this run. Choose a tool from the current definitions; do not reuse a historical tool name.");
         let args: unknown;
         try {
             args = JSON.parse(argumentsJson);
@@ -66,8 +66,8 @@ function collectTools(tools: Tool[]) {
                 return failure(error.code, error.message);
             }
             const code = (error as NodeJS.ErrnoException | null)?.code;
-            if (code === "ENOENT" || code === "ENOTDIR") return failure("NOT_FOUND", "The requested path does not exist.");
-            return failure("TOOL_IO", "The workspace operation could not be completed.");
+            if (code === "ENOENT" || code === "ENOTDIR") return failure("NOT_FOUND", "The requested path does not exist. Use glob or read an existing parent directory to locate the current path.");
+            return failure("TOOL_IO", "The workspace operation could not be completed. Inspect current files and execution records before retrying; completed effects are not rolled back.");
         }
     }
 

@@ -10,6 +10,23 @@
 
 `packages/eval` 是独立开发包，管理实验定义、注入模型的 Session 执行、结果记录和统计。它通过现有包导出调用 runtime 的 Session、Loop、Context、工具及存储，所有权仍在 runtime。产品包不依赖它；它与 verification 互不依赖。注入无界面入口和范围有限的 DeepSeek／Harbor 真实路径已可用于固定的 Linux 任务环境；自动数据集下载管理、整轮预算调度和通用实验 CLI 尚未实现。真实路径保留，但按下述策略暂停运行。
 
+<a id="injected-tool-baseline"></a>
+
+## 注入工具基线
+
+src/tool-suite.ts 与 scripts/tools.ts 通过真实 createAgent、SessionManager 和工具提供 P2 契约诊断基线，只使用 runtime 公开导出。每次尝试创建独立临时工作区、注入确定性回复脚本、执行 30 秒截止时间，判分后只清理自己的目录。不读取 .env、不请求供应商、不使用真实凭据。父任务预算为 16 次请求，子任务保留 runtime 的 32 次上限。这是本地诊断格式，与后文正式 Experiment/EvalResult 协议和公开 benchmark 判分分开。
+
+| 分组 | 场景与验收 |
+| --- | --- |
+| development | repair：精确最终文件、已提交编辑和编辑后成功命令；output：超过 1 MiB 的捕获及可读取末尾标记；memory：最终修订内容与过期引用拒绝；clarification：自定义回答/跳过，不新增用户回合或文件写入 |
+| holdout | repair-unicode：保留中文与 CRLF；output-stderr：大 stderr 完整捕获与末尾读取；image：解码身份、历史不保存内联图像且视觉请求计入预算；delegation：真实子任务读取并返回内容 |
+
+开发集进入离线测试；保留集通过独立命令显式运行。验收要求所选场景全部通过（每组 4/4），所有失败保留在分母中。场景验证契约，不验证模型推理。固定注入调用序列驱动夹具，判分检查可观察状态/结果，不要求精确工具调用序列；图像场景同时断言请求计数。文件判分负例确保仅有完成声明或历史成功执行，无法掩盖最终文件错误。
+
+构建后运行 pnpm --filter @fatcat/eval run tools development，可替换为 holdout/all。根命令 pnpm run eval:tools development 会先构建。可选第二个绝对路径参数独占写入完整 JSON，已有文件会失败而不覆盖；相对路径基于 eval 包目录。产物保留样本 ID、全部所选结果、注入参数/返回、历史、最终状态、执行报告、环境、HEAD、dirty 标记和编译后套件哈希。它含夹具/任务数据，不是普通元数据遥测。Dirty HEAD 与套件哈希不足以完整标识可复现的 runtime 快照；正式对照仍须遵守后文溯源规则。
+
+指标包括尝试总耗时（含准备/清理）、执行调用数、状态、相同调用重复次数、已知输入输出字节小计及输出覆盖情况。重复只是审查线索，不代表确定冗余，重读可能必要。缺失输出字节保留未知；没有供应商用量时 token 为 null，不从字节推算。8/8 注入通过证明这些接入契约，不证明真实模型成功率、token 节省、延迟改善或保留集泛化。基线/候选的模型质量对照继续等待单独明确授权。
+
 <a id="current-evaluation-strategy"></a>
 
 ## 当前评估策略

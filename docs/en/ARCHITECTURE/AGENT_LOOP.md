@@ -54,6 +54,8 @@ systemPrompt asks the model to inspect relevant code, complete authorized work, 
 
 Model observations include request size, usage, older-read omission and auxiliary request type. Loop adds turn/iteration and parent/child identity; tools supply operation facts. See [Execution reports](EXECUTION_REPORT.md) for aggregation. Ordinary events do not expose keys or raw provider errors; tool bodies may still enter plaintext history.
 
+Loop also emits payload-free tool_execution observations when an entered tool settles, independently of the existing tool_result checkpoint event. Duration, UTF-8 byte counts, failure semantics and parent/child aggregation are defined in [Tool execution observations](EXECUTION_REPORT.md#tool-execution-observations). This adds evidence without changing tool ordering, authorization, cancellation or history.
+
 ## Verification and unimplemented scope
 
 Key checks cover multi-tool association, duplicate IDs, invalid arguments, empty responses, final text requests, deadlines, cancellation, budget rejection, retained effects after failure and commit/event ordering. Automated checks use injected models/transports. Historical fixed DeepSeek scenarios covered direct answers, tool cycles and coding tasks, not open-ended task success rates.

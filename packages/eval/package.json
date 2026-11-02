@@ -10,6 +10,7 @@
   },
   "exports": {},
   "scripts": {
+    "tools": "node dist/scripts/tools.js",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "node dist/scripts/test.js"

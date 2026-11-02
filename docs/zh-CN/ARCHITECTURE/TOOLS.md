@@ -10,6 +10,35 @@
 
 Tools 提供模型可见定义、参数校验和异步执行。工具不自行读取终端输入；授权和共享执行防护归 [Permissions](PERMISSIONS.md)，各入口只提供审批回调。
 
+<a id="tool-contract-audit"></a>
+
+## 工具契约审查
+
+P2 审查保留宿主能力齐备时的 16 个工具定义。实际可见性仍取决于装配、会话和权限上下文，不保证每次请求都暴露全部工具；本轮没有新增工具或权限。
+
+| 工具 | 职责与审查契约 |
+| --- | --- |
+| read | 已知文件/目录分页；offset/limit 与完整行限制；虚拟资源包装保留各自协议 |
+| glob | 不读取正文的路径发现；pattern/exclude、分页和遍历上限 |
+| grep | 字面量/正则内容搜索；glob 筛路径，query 搜文本；明确报告跳过文件 |
+| write | 新建文本文件；已有目标失败；审批和发布日志 |
+| edit | 一次校验唯一且不重叠的替换；匹配冲突不返回部分成功 |
+| shell | 前台进程、独立权限、超时和清理；命令成功与捕获完整性分开 |
+| output_read | 按 outputId 读取/搜索捕获流；不重跑命令；分页截断与捕获截断分开 |
+| web | search/fetch 参数互斥；网络授权与有界输出 |
+| browser | 有界本地浏览器检查；steps/selectors/viewport 类型与执行证据 |
+| image_read | 本地图像身份、解码和可选视觉请求预算；历史不保存内联图像 |
+| memory_search | 列表/搜索当前有权访问的记忆；有界结果元数据 |
+| memory_read | 读取精确记忆引用/版本；过期引用明确失败 |
+| memory_write | 仅父任务修改；用户证据、范围与版本校验 |
+| ask_user | 父任务通过宿主澄清；区分 answered/skipped；后台拒绝提问 |
+| delegate_task | 有界子任务与父任务取消；独立子历史，每个子任务最多 32 次模型请求 |
+| automation | 通过已有授权和预算创建会话绑定计划；不隐式增加 heartbeat |
+
+针对性修复使 schema 与执行校验一致：output_read 拒绝显式 null limit，以及 search 中任何 tail 字段；schema 区分 read/search 和 tail/offset。web 声明各动作互斥参数并执行 2048 字符 URL 上限。Browser 只对省略字段应用默认值，拒绝 null 集合/viewport。路径发现拒绝非法 Unicode 模式。路径不存在和工具 I/O 错误提示先发现路径或检查已发生效果再重试，不暗示回滚。
+
+成功的空搜索表示声明范围内无匹配。skippedFiles/complete=false、nextOffset、分页截断和命令捕获不完整保持不同含义。参数非法、权限拒绝和产物不可用仍是错误。领域测试与 verification/tests/tools/p2-contracts.test.ts 验证这些边界；[注入工具基线](EVAL.md#injected-tool-baseline) 验证任务结果。参数校验不会交给模型或供应商承担。
+
 工具定义使用 Fatcat 自有 `ToolDefinition`，直接持有 name、description、parameters 和可选 strict；工具装配及包装器不构造 OpenAI 的 function 外层。模型 API 编码器负责加上协议字段，现有定义内容与执行契约保持不变。工具调用的原始 arguments JSON 仍在 Tools.execute 中解析，校验失败按原调用 ID 返回，见 [模型边界](PROVIDERS.md#internal-messages-and-api-boundaries)。
 
 <a id="assembly-and-specialized-responsibilities"></a>

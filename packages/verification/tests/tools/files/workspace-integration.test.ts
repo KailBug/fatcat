@@ -21,7 +21,7 @@ test("SDK and Session return correlated workspace errors, recover, and retain fi
     requests++;
     if (requests === 2) {
       assert.deepEqual(body.messages.at(-1), { role: "tool", tool_call_id: "read-1", content: JSON.stringify({
-        ok: false, error: { code: "NOT_FOUND", message: "The requested path does not exist." },
+        ok: false, error: { code: "NOT_FOUND", message: "The requested path does not exist. Use glob or read an existing parent directory to locate the current path." },
       }) });
     }
     if (requests <= 2) {

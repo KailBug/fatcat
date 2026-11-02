@@ -10,6 +10,16 @@
 
 `packages/runtime/src/execution-report.ts` 的 createTurnReporter 只消费事件并汇总，不访问文件、调用工具或请求模型。报告是观察结果，不是任务验收证书；taskVerification 当前固定为 not_assessed。
 
+<a id="tool-execution-observations"></a>
+
+## 工具执行观测
+
+每次进入 Tools.execute 并结束后，Loop 发出 tool_execution，包括失败。字段为 iteration、callId、tool、status（ok/error/cancelled/threw）、errorCode、durationMs、inputBytes 和可空 outputBytes。输入字节统计 UTF-8 参数串，输出字节统计序列化结果信封，不是完整文件/日志大小，也不是 token。抛错时 outputBytes 未知，不填零。返回错误记为 error，取消和异常保持原有终止语义；工具 ok 不证明命令或任务成功。
+
+报告的可选 toolExecutions 列表添加 parentCallId（根调用为 null），按父调用/调用身份去重，不重复增加 toolResults。没有观测时省略该字段。最终请求预算、重复 ID 等执行前拒绝不算执行工具。观测发生在检查点持久化前，因此结果保存失败时仍可保留执行事实。事件和报告不添加工具正文、参数串或异常消息。
+
+耗时包含校验、授权/用户等待、执行和结果序列化。delegate_task 耗时包含子任务活动，父子耗时求和不是墙钟时间。Token/请求统计仍来自已有模型观测。verification/tests/agent/tool-observation.test.ts 验证状态、字节数、隐私与父子去重；事件归属见 [Agent Loop](AGENT_LOOP.md#guidance-and-events)。
+
 <a id="event-boundaries"></a>
 
 ## 事件边界

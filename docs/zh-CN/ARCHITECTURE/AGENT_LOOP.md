@@ -68,6 +68,8 @@ systemPrompt 要求先检查相关代码、完成已授权任务、报告实际�
 
 模型观察包含请求大小、用量、旧读省略和辅助请求类型。Loop 补充回合/迭代及父子关系，工具提供操作事实；汇总口径见 [Execution reports](EXECUTION_REPORT.md)。普通事件不输出密钥或原始服务错误，工具正文仍可能进入明文历史。
 
+Loop 还在每次已进入的工具调用结束时发出不含正文的 tool_execution 观测，与已有 tool_result 检查点事件分开。耗时、UTF-8 字节数、失败语义和父子汇总见[工具执行观测](EXECUTION_REPORT.md#tool-execution-observations)。新增证据不改变工具顺序、授权、取消或历史。
+
 <a id="verification-and-unimplemented-scope"></a>
 
 ## 验证与未实现范围

@@ -32,6 +32,16 @@ Command succeeded requires completed, exitCode=0 and cleanup other than unconfir
 
 New or changed write_record marks earlier commands/browser checks as laterWriteAttempt, including failed or uncertain writes. Repeated identical records do not trigger it. This cannot detect changes by shell, editors or external processes; false does not prove unchanged files.
 
+<a id="tool-execution-observations"></a>
+
+## Tool execution observations
+
+Loop emits tool_execution after each entered Tools.execute settles, including failures. Its fields are iteration, callId, tool, status (ok/error/cancelled/threw), errorCode, durationMs, inputBytes and nullable outputBytes. Input bytes measure the UTF-8 arguments string; output bytes measure the serialized result envelope, not full files/logs or tokens. A thrown operation has unknown outputBytes, not zero. Returned errors use error; cancellation and thrown errors retain their terminal behavior. Tool ok does not certify command or task success.
+
+The optional report toolExecutions list adds parentCallId (null for root), deduplicates by parent/call identity and does not increment toolResults again. It is absent when no observation occurred. Calls rejected before execution, such as final-request budget or duplicate IDs, are not executed tools. The observation precedes checkpoint persistence, so it can remain when a result cannot be saved. Tool bodies, argument strings and exception messages are not added to this event or report.
+
+Duration includes validation, authorization/user wait, execution and result serialization. A delegate_task duration encloses its child activity; summing parent and child durations is not wall-clock time. Existing model usage/request observations remain the source of token/request accounting. `verification/tests/agent/tool-observation.test.ts` verifies outcomes, byte counts, privacy and parent/child deduplication. See [Agent Loop](AGENT_LOOP.md#guidance-and-events) for event ownership.
+
 ## Usage and privacy
 
 Only nonnegative safe-integer token counters passing consistency checks are aggregated. Partial reports mean known subtotals; overflow remains unknown. Usage observed before errors/cancellation remains, without estimating provider charges.

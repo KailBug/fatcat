@@ -261,6 +261,12 @@ pnpm exec node --test "packages/verification/dist/tests/tools/**/*.test.js"
 
 Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/tests，合成 builder 在 tests/fixtures。根构建后用 pnpm --filter @fatcat/eval test 定向离线，不运行 benchmark/验证模型质量。根 pnpm test 包含两套；已有 live/browser/native 保持范围和供应商 guard。
 
+<a id="offline-tool-baseline"></a>
+
+## 离线工具基线
+
+依次运行 pnpm run eval:tools development 和 pnpm run eval:tools holdout，执行[注入工具基线](ARCHITECTURE/EVAL.md#injected-tool-baseline)。两条命令先构建，须顺序运行。已有成功构建时，pnpm --filter @fatcat/eval run tools all 可不重建直接执行两组。可选绝对路径输出文件保留完整 JSON，不覆盖已有文件。它通过注入回复调用真实本地文件、shell、记忆、图像和委派路径，不调用真实模型。完整产物含合成任务轨迹，应保留本地。产品离线回归仍用 pnpm test；此诊断不替代领域测试或原生 UI 检查。
+
 <a id="windows-terminal-checks"></a>
 
 ## Windows 终端检查

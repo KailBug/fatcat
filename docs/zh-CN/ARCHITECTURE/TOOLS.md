@@ -25,11 +25,13 @@ Tools 提供模型可见定义、参数校验和异步执行。工具不自行�
 | `packages/runtime/src/tools/shell.ts` | 命令协议、授权、cwd 复查与命令 journal |
 | `packages/runtime/src/tools/shell/powershell.ts` | Windows PowerShell 环境、进程执行与清理 |
 | `packages/runtime/src/tools/shell/bash.ts` | Linux Bash 环境、进程组执行与清理 |
-| `packages/runtime/src/tools/shell/types.ts` | 共享 ProcessResult 协议与合并输出上限 |
-| `packages/runtime/src/tools/shell-output.ts` | 有界不可变命令日志、预览及 output_read |
+| `packages/runtime/src/tools/shell/types.ts` | 共享进程结果与流式输出回调契约 |
+| `packages/runtime/src/tools/shell-output.ts` | 工作区输出 ID、捕获元数据及 output_read |
+| `packages/runtime/src/tools/shell/capture.ts`、`output-files.ts`、`output-pages.ts` | 有界预览、临时日志落盘及分页搜索 |
+| `packages/runtime/src/tools/ask-user.ts`、`image-read.ts` | 父任务澄清及受预算约束的本地图像读取 |
 | `packages/runtime/src/tools/web.ts`、`browser.ts` | [HTTP 研究](WEB.md)与[本地浏览器](BROWSER.md)入口 |
 
-程序化 createTools 省略目录时没有本地工具；传入目录增加 read/glob/grep/write/edit/shell/output_read，默认文件只读、shell deny。sum 已移除；集合为空时模型请求不发送 tools 外层。日常入口显式选择目录与权限，并装配 web/browser。Skills、附件、Memory 在通用 read/write 外包装，协议归各自专题，不在此复制。
+程序化 createTools 省略目录时没有本地工具；传入目录增加 read/glob/grep/write/edit/shell/output_read，默认文件只读、shell deny。sum 已移除；集合为空时模型请求不发送 tools 外层。日常入口显式选择目录与权限，并装配 web/browser。Skills、附件包装 read；Memory 使用 memory_search、memory_read 和仅父任务可用的 memory_write。Agent 装配增加 image_read；主机提供回调时增加仅父任务可用的 ask_user，契约见下文。
 
 结果使用 `{ok:true,result}` 或 `{ok:false,error:{code,message}}`。可恢复工具错误交给模型，取消抛 CANCELLED 停止回合；失败回合的消息由 Session 另存 attempt。文件/命令副作用不会因后续请求超限而回滚。
 
@@ -39,7 +41,7 @@ Tools 提供模型可见定义、参数校验和异步执行。工具不自行�
 
 ## read、glob 与 grep
 
-read 对已知工作区路径接受 path、offset、limit，工作区 query 改由 grep 处理。附件、Memory 和 Skill 虚拟资源包装器仍保留各自文档中的 read query 协议。offset 从零开始，默认 limit=100、上限 200；展示行号从 1 开始。文件返回有界完整行，目录返回过滤排序后的条目；nextOffset 表示继续位置。分页重新读当前内容，没有工作区快照或版本令牌。
+read 对已知工作区路径接受 path、offset、limit，工作区 query 改由 grep 处理。附件和 Skill 虚拟资源包装器仍保留各自文档中的 read query 协议。offset 从零开始，默认 limit=100、上限 200；展示行号从 1 开始。文件返回有界完整行，目录返回过滤排序后的条目；nextOffset 表示继续位置。分页重新读当前内容，没有工作区快照或版本令牌。
 
 glob 接受 pattern 及可选目录 path，不打开文件内容，返回排序后的路径。grep 接受 query 及可选文件/目录 path，默认区分大小写的字面匹配。regex=true 在独立 worker 中启用 JavaScript Unicode 正则，每文件限时三秒；可选 ignoreCase 和前后 0–5 行 context，取消会终止 worker。结果按路径 UTF-16 码元再按行号排序，一行匹配多次只返回一次。offset 在 glob 中计路径，在 grep 中计匹配行；默认返回 100 项，最多 200 项。
 
@@ -79,7 +81,7 @@ glob 接受 pattern 及可选目录 path，不打开文件内容，返回排序�
 
 ## shell 的执行边界
 
-`tools/shell.ts` 协调权限快照、审批、cwd 校验、命令记录及清理失败后的禁用。`tools/shell/` 中的平台执行器只接收命令、cwd、超时与取消信号，负责进程生命周期并返回 `ProcessResult`，不读取权限策略或请求审批。策略、审批协调与命令风险分类仍归 `permissions/`。
+`tools/shell.ts` 协调权限快照、审批、cwd 校验、命令记录及清理失败后的禁用。`tools/shell/` 中的平台执行器只接收命令、cwd、超时、取消信号及可选输出回调，负责进程生命周期并返回 `ProcessResult`，不读取权限策略或请求审批。策略、审批协调与命令风险分类仍归 `permissions/`。
 
 输入为 command、可选 cwd 与 timeoutMs。命令最多 4000 UTF-16 码元；默认 30 秒，允许 100–120000 毫秒。审批显示完整命令、规范目录和期限，批准后复核 cwd。文件写入授权不等于命令授权。
 
@@ -87,7 +89,7 @@ glob 接受 pattern 及可选目录 path，不打开文件内容，返回排序�
 
 新增 Linux 评估路径使用 `/bin/bash --noprofile --norc -c` 和独立进程组，无 stdin，不保存跨调用 shell 状态。`tools/shell/bash.ts` 保持相同 ProcessResult 协议及明确的 Linux 环境变量白名单，不继承 BASH_ENV、ENV、SHELLOPTS、加载器 hooks 或供应商凭据。工具描述与系统指导根据实际平台选择；shell 仍不支持其他平台。Linux 不使用 PowerShell 风险分类器：Free to go 下每条 Bash 命令都需审批；无界面任务必须明确选择 workspace-write/shell-allow 策略或禁止 shell。
 
-stdout/stderr 捕获合计最多 1 MiB 原始字节，与模型预览上限独立；超限、超时和取消触发有界进程树清理。父进程退出后不再对旧 PID 执行清理；脱离后代未必结束。清理未确认时记录 unconfirmed，并阻止同一 Tools 再启动命令。没有 Job Object 级保证、后台服务或交互命令支持。
+stdout/stderr 通过背压流式写入临时文件，每个流仅保留 16 KiB 原始预览。日志配额为单命令 64 MiB、进程合计 256 MiB。配额耗尽或存储失败只停止后续捕获，命令继续执行；captureStatus 分别标记 command_quota、process_quota 或 storage_error。超时和取消仍触发有界进程树清理。父进程退出后不再针对旧 PID 清理；脱离后代未必结束。清理未确认时阻止同一 Tools 再启动命令。没有 Job Object 级保证、后台服务或交互命令支持。
 
 Linux 参考已检查的 pi 执行器，立即向所拥有的进程组发送 SIGKILL，最多等待五秒让流与进程收尾。这明确替代原计划的 TERM/宽限期升级：组长退出后的延迟信号可能命中复用标识，或遗漏忽略 TERM 的子进程。已终止的僵尸进程仍可能等待 init 回收；脱离进程组的后代需要容器销毁处理，`tree-killed` 确认组终止与收尾，不代表隔离。两个原生执行器都会在启动前拒绝已取消的调用。
 
@@ -97,11 +99,21 @@ PowerShell 错误与外部程序退出码反映到结果；串联多个 native �
 
 ## output_read 与捕获输出
 
-每次 shell 返回 outputId（命令记录 ID）、预览 stdout/stderr、outputTruncated 及原始 status/exitCode/cleanup/truncated。每个流的预览最多 8000 个 JSON 转义后内容字节。outputTruncated 只代表预览缩短；truncated 表示捕获超限。success 要求 completed、退出码零、捕获未截断且清理已确认。
+每次 shell 返回 outputId（命令记录 ID）、预览 stdout/stderr、outputTruncated 及原始 status/exitCode/cleanup/truncated。每个流的预览最多 8000 个 JSON 转义后内容字节。outputTruncated 只代表预览缩短；truncated 表示捕获不完整。success 要求 completed、退出码零且清理已确认，与日志完整性独立。storedBytes/receivedBytes 和 captureStatus 区分命令执行与日志状态；命令成功但日志缺失并不证明验证完整。
 
 output_read 只接受 outputId，不接受文件路径。action=read（默认）按 Unicode 码点 offset 分页读取 stdout（默认）或 stderr，limit 默认 4000、最大 12000；tail=true 读取尾部且不能指定 offset。action=search 使用最多 512 UTF-16 码元的区分大小写字面 query，offset 计匹配行，limit 默认 100、最大 200。读取内容及搜索匹配 JSON 分别有 12000 字节页上限。长匹配行返回预览、textTruncated 及用于展开的 characterOffset。按相同选项使用 nextOffset 继续；captureTruncated 描述原捕获，与页 truncated 分开。
 
-日志是工作区 Tools 实例拥有的不可变内存捕获，最多 20 条命令，每条最多捕获 1 MiB 原始字节。父子共享，包括失败命令输出；权限降级后拒绝读取 unrestricted 启动产生的日志。无关新 Tools 实例及重启进程无法解析旧 ID。会话历史仅持久保存实际返回的预览/页面，不保存整个捕获。没有新增持久日志目录或清理任务。
+日志是由工作区 Tools 实例索引的私有临时文件，仍受 20 条命令日志限制。父子共享，包括失败命令；权限降级后拒绝读取 unrestricted 捕获。读取检查文件身份与修改情况，按有界块扫描，不整份加载。无关新 Tools 及进程重启无法解析旧 ID；历史仅保存返回的预览/页。正常退出删除当前进程拥有的日志目录。首次捕获时尽力清理超过 24 小时、有归属标记且所属进程已死亡的目录，跳过无关目录与存活/未知归属。日志没有重启恢复、加密或安全擦除保证；进程总配额在退出前不释放。
+
+<a id="clarification-and-image-tools"></a>
+
+## 澄清、图像与记忆工具
+
+ask_user 接受一个问题（2000 UTF-16 码元），可附 2–6 个不同选项（各 200 码元），返回 answered 与最多 4000 码元的自由文本，或 skipped。每回合最多四次。Runtime 校验参数并协调一个全新、仅可回答一次的待处理 ID；CLI/TUI/Web UI 负责展示和收集新输入。回答不授予操作权限。取消清除问题；TUI 恢复原草稿。子任务不暴露 ask_user；自动化 Session 回合即使具有主机回调也会拒绝它。保存历史不会恢复待答状态或授权。非交互 CLI 返回 QUESTION_UNAVAILABLE，不消费 stdin。
+
+image_read({path,question}) 按当前工作区读取权限检查一张本地 PNG/JPEG，也可读取浏览器截图。复用附件导入边界（16 MiB）、有界解码 worker 及 2048px/4M 像素渲染限制；解码后重读，发送前再次校验权限与 SHA-256。使用当前所选模型的视觉能力，消耗执行中父/子任务的一次辅助请求，并保留最终回答额度。返回可能出错的模型描述、来源摘要及渲染尺寸，图像内联字节不进入历史。不创建不可变附件引用、不读取 URL、不保证精确 OCR；最终重查后文件仍可能变化。解码及视觉限制见 [Documents](DOCUMENTS.md)。
+
+memory_search({query?,offset?,limit?}) 列出当前可见引用；memory_read({path}) 读取精确修订；memory_write({path,content,memoryEvidence}) 执行仅父任务可用的修改。文件 read/write/edit 不再分发记忆地址。范围校验、证据、修订、每回合八次修改尝试和持久格式仍归 [Memory](MEMORY.md)。
 
 <a id="journals-and-verification"></a>
 

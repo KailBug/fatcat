@@ -7,6 +7,7 @@ import type { SessionSummary } from "@fatcat/runtime/session/record";
 import type { AttachmentEvidence } from "./attachment-evidence.js";
 import type { ContextUsageSnapshot } from "@fatcat/runtime/context/usage";
 import type { ModelChoice } from "@fatcat/runtime/model-connections";
+import type { PendingQuestion } from "@fatcat/runtime/tools/ask-user";
 
 export interface WebUiInfo {
 	provider: string;
@@ -41,6 +42,7 @@ export interface WebUiState {
 	turns: WebTurn[];
 	busy: boolean;
 	approval: PendingApproval | null;
+	question: PendingQuestion | null;
 	status: string;
 	current: SessionSummary;
 	sessions: SessionSummary[];

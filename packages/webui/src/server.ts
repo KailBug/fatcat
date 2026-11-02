@@ -93,7 +93,7 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
     void route(request, response).catch((error: unknown) => {
       if (response.destroyed) return;
       const status = error instanceof HttpError ? error.status
-        : error instanceof HarnessError ? (["SESSION_BUSY", "SESSION_CONFLICT", "PROJECT_BUSY", "PROJECT_CONFLICT", "ATTACHMENT_BUSY", "ATTACHMENT_CONFLICT", "STALE_APPROVAL", "CLOSED"].includes(error.code) ? 409
+        : error instanceof HarnessError ? (["SESSION_BUSY", "SESSION_CONFLICT", "PROJECT_BUSY", "PROJECT_CONFLICT", "ATTACHMENT_BUSY", "ATTACHMENT_CONFLICT", "STALE_APPROVAL", "STALE_QUESTION", "QUESTION_BUSY", "CLOSED"].includes(error.code) ? 409
           : error.code === "ATTACHMENT_LIMIT" ? 413 : 400) : 500;
       json(response, status, { error: error instanceof HttpError || error instanceof HarnessError ? error.message : "The local server could not complete the request." });
     });
@@ -273,6 +273,11 @@ export async function startWebUiServer(controller: WebUiController, port = 3210,
     } else if (path === "/api/permission-mode") {
       if (!isPermissionMode(body.mode) || Object.keys(body).length !== 1) throw new HttpError(400, "Expected permission mode default, acceptEdits, plan, or freeToGo.");
       controller.selectPermissionMode(body.mode);
+    } else if (path === "/api/question") {
+      if (typeof body.id !== "string" || (body.answer !== null && typeof body.answer !== "string") || Object.keys(body).length !== 2) {
+        throw new HttpError(400, "Expected a question ID and text answer, or null to skip.");
+      }
+      controller.answerQuestion(body.id, body.answer as string | null);
     } else if (path === "/api/approval") {
       if (typeof body.id !== "string" || typeof body.allowed !== "boolean" || Object.keys(body).length !== 2) throw new HttpError(400, "Expected an approval ID and boolean decision.");
       controller.approve(body.id, body.allowed);

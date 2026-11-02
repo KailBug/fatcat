@@ -18,7 +18,7 @@ Defaults allow two children per parent turn, each with at most 32 model requests
 
 The actual Session/Project/ownership generation captured by the parent turn binds children; identity is not inferred from UI selection. Workspace caches carry no material authorization. Attachment and Memory reads validate through execution-bound accessors.
 
-Parents and children share provider configuration and full request-byte rules, but child allowances are independent. Child vision/transcription requests consume their own allowance while reserving final text delivery. Children cannot write Memory or manage parent automation. Fresh child history has no older completed turns to omit; it cannot evade overflow by discarding current results.
+Parents and children share provider configuration and full request-byte rules, but child allowances are independent. Child vision/transcription requests consume their own allowance while reserving final text delivery. Children cannot use memory_write, ask_user or manage parent automation; image_read uses the child auxiliary allowance. Fresh child history has no older completed turns to omit; it cannot evade overflow by discarding current results.
 
 Parent requests see remaining delegation allowance and selection guidance. Only parent tools expose delegation. Skill content cannot add tools or budget. Unconditionally decomposing tasks consumes extra calls and is not a performance promise.
 

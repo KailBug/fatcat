@@ -6,6 +6,9 @@ English | [简体中文](../../zh-CN/ARCHITECTURE/DOCUMENTS.md)
 
 Documents derives locatable content from authorized attachments without another Agent Loop or format-specific model tools. [Attachments](ATTACHMENTS.md) owns originals and authorization.
 
+Local workspace images use [image_read](TOOLS.md#clarification-and-image-tools), reusing this decoder and current-model vision adapter with executing-turn request accounting. Attachment read/citations retain their existing protocol.
+
+
 ## Modules and data flow
 
 | Source | Responsibility |

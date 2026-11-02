@@ -134,7 +134,7 @@ test("output logs retain capture failures, Unicode, tail bounds and launch scope
 	let launches = 0;
 	const shell = createShellTool(scope, { permission: "allow" }, async () => {
 		launches++;
-		return { status: "output_limit", exitCode: null, stdout: "😀\n".repeat(5000) + "END", stderr: "",
+		return { status: "completed", exitCode: 0, stdout: "😀\n".repeat(5000) + "END", stderr: "",
 			truncated: true, durationMs: 1, cleanup: "tree-killed" };
 	}, policy);
 	const run = await shell.tool.execute({ command: "pwd" });

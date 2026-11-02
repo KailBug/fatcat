@@ -1,5 +1,8 @@
 
 
+本地工作区图像使用 [image_read](TOOLS.md#clarification-and-image-tools)，复用本文的解码与当前模型视觉适配器，计入执行回合的请求预算。附件 read 与引用协议保持不变。
+
+
 <a id="documents-parsing-vision-and-stable-provenance"></a>
 
 # Documents：解析、视觉与稳定来源

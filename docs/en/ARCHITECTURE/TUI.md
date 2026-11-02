@@ -71,3 +71,9 @@ Offline checks cover dimensions, missing/conflicting metrics, parent/child dedup
 Future interaction work keeps ownership and adds offline/native Windows acceptance for input, approval, cancellation and feedback, retaining ordinary CLI. No new layout/schedule is frozen.
 
 No streaming answers, thinking-history display, provider hot switching, cost estimation or acceptance engine was added to TUI. Resume does not reconstruct process telemetry; rendering tests cannot replace real-terminal usability.
+
+<a id="interactive-questions"></a>
+
+## Interactive questions
+
+App uses the runtime QuestionCoordinator separately from approvals. It saves the current editor draft, presents a fresh answer/choice editor, restores the draft after answer/skip/cancellation, and retains the active turn cancellation lifecycle. Answers are tool results, not new user turns or approval grants. See [tool contracts](TOOLS.md#clarification-and-image-tools). Native injected-model checks are described in [Development](../DEVELOPMENT.md#question-interaction-checks); they do not establish real-model clarification quality.

@@ -21,10 +21,43 @@ import { WebUiController } from "@fatcat/webui/internal/controller";
 import type { WebUiInfo, WebUiState } from "@fatcat/webui/internal/types";
 import { startWebUiServer } from "@fatcat/webui/internal/server";
 import { temporaryWorkspace } from "../support/workspace.js";
+import { withAskUser } from "@fatcat/runtime/tools/ask-user";
 
 const info: WebUiInfo = { provider: "deepseek", model: "offline", workspace: "fixture", permission: "ask",
   shellPermission: "ask", webPermission: "deny", maxIterations: 4, maxRequestBytes: 262144, skills: 0, warnings: [] };
 const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content } });
+
+test("Web UI question replies authenticate, reject stale answers and clear on cancellation", async (t) => {
+  const { base, workspace } = await temporaryWorkspace(t);
+  let controller: WebUiController;
+  const tools = withAskUser(await createTools(workspace), (request, signal) => controller.askUser(request, signal));
+  const manager = await SessionManager.open({ tools, maxIterations: 2, model: async (messages) =>
+    messages.at(-1)?.role === "user" ? tool("ask_user", { question: "Choose format", options: ["Text", "JSON"] })
+      : answer(String(messages.at(-1)?.content)) }, { workspace, store: new SessionStore({ root: join(base, "sessions") }) });
+  controller = await WebUiController.create({ ...info, workspace }, manager);
+  const server = await startWebUiServer(controller, 0);
+  t.after(async () => { await controller.close(); await server.close(); });
+  const url = new URL(server.url);
+  const token = new URLSearchParams(url.hash.slice(1)).get("token")!;
+  const post = (route: string, body: unknown, authenticated = true) => fetch(new URL(`/api/${route}`, url), {
+    method: "POST", headers: { "content-type": "application/json", ...(authenticated ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body),
+  });
+  assert.equal((await post("message", { prompt: "Ask me" })).status, 202);
+  await until(() => controller.snapshot().question !== null);
+  const id = controller.snapshot().question!.id;
+  assert.equal(controller.snapshot().approval, null);
+  assert.equal((await post("question", { id, answer: "Text" }, false)).status, 401);
+  assert.equal((await post("question", { id, answer: "" })).status, 400);
+  assert.equal((await post("question", { id, answer: "Custom answer" })).status, 202);
+  await until(() => !controller.snapshot().busy);
+  assert.match(controller.snapshot().turns.at(-1)!.answer!, /Custom answer/);
+  assert.equal((await post("question", { id, answer: "replay" })).status, 409);
+  assert.equal((await post("message", { prompt: "Ask again" })).status, 202);
+  await until(() => controller.snapshot().question !== null);
+  await post("stop", {});
+  await until(() => !controller.snapshot().busy);
+  assert.equal(controller.snapshot().question, null);
+});
 function tool(name: string, args: unknown): ModelTurn {
   const toolCalls = [{ id: "call-fixture", name, arguments: JSON.stringify(args) }];
   return { message: { role: "assistant", content: null, toolCalls } };

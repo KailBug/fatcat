@@ -38,7 +38,7 @@ test("generic memory write routes local, explicit global, correction, and deleti
 		return request.action === "delete" ? { ...current, revision: 2, status: "deleted", content: "" } : current;
 	});
 	const evidence = "  Remember that the dog likes CSGO.\n";
-	const write = (path: string, content: string) => tools.execute("write", JSON.stringify({ path, content, memoryEvidence: evidence }), controller.signal, "memory-call");
+	const write = (path: string, content: string) => tools.execute("memory_write", JSON.stringify({ path, content, memoryEvidence: evidence }), controller.signal, "memory-call");
 	const saved = resultObject(await write("memory:new", current.content));
 	assert.deepEqual(requests[0], { action: "add", content: current.content, evidence });
 	assert.equal(saved.kind, "memory");
@@ -74,8 +74,8 @@ test("memory writer preserves ordinary tool and file arguments without bypassing
 		assert.deepEqual(received.at(-1), [name, args, controller.signal, "file-call"]);
 	}
 	const priorCalls = received.length;
-	hasCode(await tools.execute("write", '{"path":"notes.txt","content":"Text","memoryEvidence":"User evidence"}'), "INVALID_ARGUMENTS");
-	hasCode(await tools.execute("write", '{"content":"Text","memoryEvidence":"User evidence"}'), "INVALID_ARGUMENTS");
+	hasCode(await tools.execute("memory_write", '{"path":"notes.txt","content":"Text","memoryEvidence":"User evidence"}'), "INVALID_ARGUMENTS");
+	hasCode(await tools.execute("memory_write", '{"content":"Text","memoryEvidence":"User evidence"}'), "INVALID_ARGUMENTS");
 	assert.equal(received.length, priorCalls);
 	assert.equal(memories, 0);
 });
@@ -96,30 +96,30 @@ test("memory writer validates strict references, argument shapes, Unicode, and U
 		{ ...valid, path: `memory:${current.id}@0` }, { ...valid, path: `memory:${current.id}@01` },
 		{ ...valid, path: `memory:${current.id}@9007199254740992` }, { ...valid, path: "memory:" + "x".repeat(1024) },
 		{ ...valid, content: null },
-	]) hasCode(await tools.execute("write", JSON.stringify(args)), "INVALID_ARGUMENTS");
-	hasCode(await tools.execute("write", "{"), "INVALID_ARGUMENTS");
+	]) hasCode(await tools.execute("memory_write", JSON.stringify(args)), "INVALID_ARGUMENTS");
+	hasCode(await tools.execute("memory_write", "{"), "INVALID_ARGUMENTS");
 	assert.equal(calls, 0);
 	for (const args of [
 		{ ...valid, content: "x".repeat(maxMemoryContentBytes + 1) },
 		{ ...valid, content: "字".repeat(Math.ceil(maxMemoryContentBytes / 3)) },
 		{ ...valid, memoryEvidence: "x".repeat(maxMemoryRequestBytes + 1) },
 		{ ...valid, memoryEvidence: "字".repeat(Math.ceil(maxMemoryRequestBytes / 3)) },
-	]) hasCode(await tools.execute("write", JSON.stringify(args)), "MEMORY_LIMIT");
+	]) hasCode(await tools.execute("memory_write", JSON.stringify(args)), "MEMORY_LIMIT");
 	assert.equal(calls, 0);
-	assert.equal((await tools.execute("write", JSON.stringify({ ...valid,
+	assert.equal((await tools.execute("memory_write", JSON.stringify({ ...valid,
 		content: "x".repeat(maxMemoryContentBytes), memoryEvidence: "x".repeat(maxMemoryRequestBytes) }))).ok, true);
 	assert.equal(calls, 1);
 });
 
 test("memory writer reports unavailable bindings, stale revisions, and safe save failures", async () => {
 	const args = JSON.stringify({ path: "memory:new", content: "Preference", memoryEvidence: "Remember my preference" });
-	hasCode(await withMemoryWriter().execute("write", args), "MEMORY_UNAVAILABLE");
-	hasCode(await withMemoryWriter().execute("write", JSON.stringify({ path: "memory:new", content: "Preference" })), "INVALID_ARGUMENTS");
+	hasCode(await withMemoryWriter().execute("memory_write", args), "MEMORY_UNAVAILABLE");
+	hasCode(await withMemoryWriter().execute("memory_write", JSON.stringify({ path: "memory:new", content: "Preference" })), "INVALID_ARGUMENTS");
 	const stale = withMemoryWriter(defaultTools, async () => { throw new HarnessError("MEMORY_CONFLICT", "The memory changed. Read its latest revision."); });
-	hasCode(await stale.execute("write", args), "MEMORY_CONFLICT");
+	hasCode(await stale.execute("memory_write", args), "MEMORY_CONFLICT");
 	const denied = withMemoryWriter(defaultTools, async () => { throw new HarnessError("MEMORY_EVIDENCE", "The user did not state that fact."); });
-	hasCode(await denied.execute("write", args), "MEMORY_EVIDENCE");
-	const failed = await withMemoryWriter(defaultTools, async () => { throw new Error("D:\\private\\credentials.json"); }).execute("write", args);
+	hasCode(await denied.execute("memory_write", args), "MEMORY_EVIDENCE");
+	const failed = await withMemoryWriter(defaultTools, async () => { throw new Error("D:\\private\\credentials.json"); }).execute("memory_write", args);
 	hasCode(failed, "MEMORY_IO");
 	assert.equal(JSON.stringify(failed).includes("credentials"), false);
 	assert.equal(JSON.stringify(failed).includes("private"), false);
@@ -129,15 +129,15 @@ test("memory writer observes cancellation before mutation and preserves a commit
 	const args = JSON.stringify({ path: "memory:new", content: "Preference", memoryEvidence: "Remember my preference" });
 	let calls = 0;
 	const tools = withMemoryWriter(defaultTools, async () => { calls++; return record(); });
-	await assert.rejects(tools.execute("write", args, AbortSignal.abort()), { code: "CANCELLED" });
+	await assert.rejects(tools.execute("memory_write", args, AbortSignal.abort()), { code: "CANCELLED" });
 	assert.equal(calls, 0);
 	const controller = new AbortController();
 	const cancelled = withMemoryWriter(defaultTools, async () => { controller.abort(); throw new HarnessError("CANCELLED", "Cancelled before commit."); });
-	await assert.rejects(cancelled.execute("write", args, controller.signal), { code: "CANCELLED" });
+	await assert.rejects(cancelled.execute("memory_write", args, controller.signal), { code: "CANCELLED" });
 	const committed = new AbortController();
 	const complete = record();
 	const afterPublication = withMemoryWriter(defaultTools, async () => { committed.abort(); return complete; });
-	assert.equal(resultObject(await afterPublication.execute("write", args, committed.signal)).id, complete.id);
+	assert.equal(resultObject(await afterPublication.execute("memory_write", args, committed.signal)).id, complete.id);
 });
 
 test("memory writer preserves workspace metadata, permission functions, journals, and turn context", async () => {
@@ -161,37 +161,22 @@ test("memory writer preserves workspace metadata, permission functions, journals
 	const turnTools = tools.forTurn!(undefined, context);
 	assert.equal(turns, 1);
 	assert.equal(receivedContext, context);
-	assert.equal((await turnTools.execute("write", JSON.stringify({ path: "memory:new", content: "Preference", memoryEvidence: "Remember preference" }))).ok, true);
+	assert.equal((await turnTools.execute("memory_write", JSON.stringify({ path: "memory:new", content: "Preference", memoryEvidence: "Remember preference" }))).ok, true);
 	assert.equal(writes, 1);
 	assert.deepEqual(getWrites(), []);
 });
 
-test("memory writer extends existing write definitions and preserves original create/edit schema alternatives", async () => {
-	const create = { required: ["path", "content"] };
-	const edit = { required: ["path", "oldText", "newText"] };
-	const properties = { path: { type: "string" }, content: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } };
-	const definition = { name: "write", description: "Existing file semantics.", parameters: { type: "object", properties, required: ["path"], additionalProperties: false, oneOf: [create, edit] } };
+test("memory writer leaves file schemas intact and adds a dedicated schema", () => {
+	const definition = { name: "write", description: "Existing file semantics.", parameters: {
+		type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"], additionalProperties: false } };
 	const original = structuredClone(definition);
 	const tools = withMemoryWriter({ ...defaultTools, definitions: [definition] }, async () => record());
-	assert.equal(tools.definitions.length, 1);
-	const extended = tools.definitions[0]!;
-	assert.match(extended.description!, /Existing file semantics/);
-	assert.match(extended.description!, /do not require a \/memory command/);
-	assert.equal(extended.name, "write");
-	const parameters = extended.parameters!;
-	assert.deepEqual(parameters.required, ["path"]);
-	assert.equal(parameters.additionalProperties, false);
-	const extendedProperties = parameters.properties as Record<string, unknown>;
-	assert.deepEqual(extendedProperties.oldText, properties.oldText);
-	assert.ok(extendedProperties.memoryEvidence);
-	const alternatives = parameters.oneOf as { allOf?: unknown[]; required?: string[] }[];
-	assert.equal(alternatives.length, 3);
-	assert.deepEqual(alternatives[0]!.allOf, [create, { not: { required: ["memoryEvidence"] } }]);
-	assert.deepEqual(alternatives[1]!.allOf, [edit, { not: { required: ["memoryEvidence"] } }]);
-	assert.deepEqual(alternatives[2]!.required, ["path", "content", "memoryEvidence"]);
-	assert.deepEqual(definition, original);
-	assert.deepEqual(withMemoryWriter().definitions.map((item) => item.name), ["write"]);
-	assert.doesNotMatch(withMemoryWriter().definitions.at(-1)!.description!, /persistence is unavailable/);
+	assert.deepEqual(tools.definitions.map((item) => item.name), ["write", "memory_write"]);
+	assert.deepEqual(tools.definitions[0], original);
+	const memory = tools.definitions[1]!;
+	assert.deepEqual(memory.parameters!.required, ["path", "content", "memoryEvidence"]);
+	assert.equal(memory.parameters!.additionalProperties, false);
+	assert.deepEqual(withMemoryWriter().definitions.map((item) => item.name), ["memory_write"]);
 	assert.match(memoryWriteGuidance, /exact excerpt/);
 	assert.match(memoryWriteGuidance, /Never persist inferred facts/);
 });

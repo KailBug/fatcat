@@ -1,3 +1,4 @@
+import type { AskUser } from "./tools/ask-user.js";
 import type {LoopEvent} from "./loop.js";
 import type {ModelObservation} from "./model-types.js";
 import {HarnessError, checkCancellation} from "./errors.js";
@@ -28,6 +29,7 @@ export interface ToolTurnContext {
 }
 
 export type Tools = {
+    askUser?: AskUser;
     definitions: Tool["definition"][];
     readonly workspaceRoot?: string;
     getPermissionState?: () => PermissionState;
@@ -79,7 +81,7 @@ export const defaultTools: Tools = collectTools([]);
 
 /** Filesystem access is enabled only by an explicit workspace selection. */
 export async function createTools(workspace?: string, permission: WorkspacePermission = "read-only", approveWrite?: ApproveWrite,
-                                  shell: ShellOptions = {}, web?: WebOptions, policy?: PermissionPolicy, browser?: BrowserOptions): Promise<Tools> {
+                                  shell: ShellOptions = {}, web?: WebOptions, policy?: PermissionPolicy, browser?: BrowserOptions, askUser?: AskUser): Promise<Tools> {
     if (permission !== "ask" && permission !== "read-only" && permission !== "workspace-write") {
         throw new HarnessError("CONFIG", "Workspace permission must be ask, read-only, or workspace-write.");
     }
@@ -103,7 +105,8 @@ export async function createTools(workspace?: string, permission: WorkspacePermi
             commands.tool, commands.outputTool, ...webTools, ...(browserTools ? [browserTools.tool] : [])]),
         ...(browserTools ? {getBrowserChecks: browserTools.getBrowserChecks} : {}),
         readImportFile: (path, signal) => readAttachmentSource(scope, path, signal),
-        workspaceRoot: scope.root, getWrites: writer.getWrites, getCommands: commands.getCommands,
+        ...(askUser ? { askUser } : {}),
+    workspaceRoot: scope.root, getWrites: writer.getWrites, getCommands: commands.getCommands,
         getPermissionState: () => sharedPolicy.snapshot()
     };
 }

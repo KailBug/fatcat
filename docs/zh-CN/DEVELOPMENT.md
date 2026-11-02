@@ -369,3 +369,11 @@ Eval 是集中布局例外：协议、结果、汇总和接入在 packages/eval/
 早期使用 0.x.y：修复升 patch，能力/兼容改变升 minor；升级前记录兼容变化，1.0.0 留给稳定兼容契约。应用、Session、Automation schema 版本独立。
 
 README 版本/CI 徽章引用 main，不是本地分支/工作区。要求变化时更新根 README 的静态 Node.js/pnpm 徽章及双语文档中的版本要求。Stars 和徽章不构成验证证据。
+
+<a id="question-interaction-checks"></a>
+
+## 提问交互检查
+
+`pnpm run verify:questions:browser` 使用本机 Edge 和注入模型回复，检查桌面/窄屏问题焦点、选项加自由文本、轮询保留草稿、跳过、取消、单次回复及独立授权状态。`pnpm run verify:memory` 在既有会话/项目流程中检查独立 memory_write 接口。
+
+在支持 VT 的原生 Windows 终端运行 `pnpm run verify:questions:terminal`。CLI 依次输入 2、/skip。TUI 提交 ask 后立即输入 draft，不按 Enter；问题出现后回答 2，再提交恢复的草稿。提交 cancel，等问题出现后按 Esc；提交 continue，然后 Ctrl+D。脚本断言精确提示历史、原始输入模式/监听器恢复及 passed:true。仅使用注入回复，不加载 .env、不调用模型 API。普通 pnpm test 覆盖离线提问、后台拒绝、记忆 schema/范围、本地图像解码/预算和大命令日志；Linux 执行器仍需对应平台验证。

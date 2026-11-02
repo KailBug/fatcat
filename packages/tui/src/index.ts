@@ -18,7 +18,7 @@ export async function runTui(config: Config, workspace: string | undefined,
   const agentForWorkspace = workspaceAgentFactory(config, (root) => createTools(root, permission, (request, signal) => app.approveWrite(request, signal), {
     permission: workspace === undefined ? "deny" : shellPermission,
     approve: (request, signal) => app.approveShell(request, signal),
-  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => app.approveBrowser(request, signal) }), undefined, new ModelConnections(config, process.env));
+  }, { permission: webPermission }, permissionPolicy, { approve: (request, signal) => app.approveBrowser(request, signal) }, (request, signal) => app.askUser(request, signal)), undefined, new ModelConnections(config, process.env));
   const agent = await agentForWorkspace(workspace ?? process.cwd());
   const root = agent.tools.workspaceRoot;
   const skills = agent.skills;

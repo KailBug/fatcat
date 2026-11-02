@@ -11,7 +11,7 @@ import { temporaryWorkspace } from "../support/workspace.js";
 const answer: ModelTurn = { message: { role: "assistant", content: "Done" } };
 
 function writes(items: { content: string; evidence: string }[]): ModelTurn {
-	const toolCalls = items.map((item, index) => ({ id: `memory-${index}`, name: "write", arguments: JSON.stringify({ path: "memory:new", content: item.content, memoryEvidence: item.evidence }) }));
+	const toolCalls = items.map((item, index) => ({ id: `memory-${index}`, name: "memory_write", arguments: JSON.stringify({ path: "memory:new", content: item.content, memoryEvidence: item.evidence }) }));
 	return { message: { role: "assistant", content: null, toolCalls } };
 }
 

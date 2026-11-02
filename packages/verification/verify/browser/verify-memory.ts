@@ -35,7 +35,7 @@ const model: Model = async (messages) => {
 	const prompt = String(messages.findLast((message) => message.role === "user")?.content);
 	const last = messages.at(-1)!;
 	if (last.role === "user" && [remember, correction, deletion].includes(prompt)) {
-		const toolCalls = [{ id: "remember-user-preference", name: "write", arguments: JSON.stringify({ path: prompt === remember ? "memory:new" : `memory:${memoryId}@${prompt === correction ? 1 : 2}`,
+		const toolCalls = [{ id: "remember-user-preference", name: "memory_write", arguments: JSON.stringify({ path: prompt === remember ? "memory:new" : `memory:${memoryId}@${prompt === correction ? 1 : 2}`,
 				content: prompt === remember ? "Dog likes CSGO best" : prompt === correction ? "Dog prefers chess" : "",
 				memoryEvidence: prompt }) }];
 		return { message: { role: "assistant", content: null, toolCalls } };
@@ -127,6 +127,10 @@ try {
 	const preview = page.locator("#project-dialog");
 	for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
 		await page.setViewportSize(viewport);
+		if (!await page.getByRole("button", { name: "Settings", exact: true }).isVisible()) {
+			await page.getByRole("button", { name: "Toggle sidebar", exact: true }).click();
+		}
+		await page.getByRole("button", { name: "Settings", exact: true }).click();
 		await page.getByRole("button", { name: "Move current chat to project", exact: true }).click();
 		await page.getByRole("button", { name: "Review move", exact: true }).click();
 		await page.getByRole("button", { name: "Confirm move", exact: true }).waitFor();
@@ -170,7 +174,7 @@ try {
 	assert.equal((await manager.listMemories()).find((record) => record.id === memoryId)!.status, "deleted");
 	await verifyLayout(page);
 	assert.deepEqual(errors, []);
-	console.log("Verified real Edge: natural-language preference capture, correction and deletion through generic write, optional host controls without model calls, source retention, desktop/mobile sharing preview, private-to-project migration, cross-chat current revisions, bounded mobile layout, and no page errors. Nine model responses were injected; no live API requests.");
+	console.log("Verified real Edge: natural-language preference capture, correction and deletion through memory_write, optional host controls without model calls, source retention, desktop/mobile sharing preview, private-to-project migration, cross-chat current revisions, bounded mobile layout, and no page errors. Nine model responses were injected; no live API requests.");
 } finally {
 	await browser?.close();
 	if (server) await server.close();

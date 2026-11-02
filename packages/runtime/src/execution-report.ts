@@ -85,7 +85,7 @@ export function createTurnReporter(emit: (event: ReportEvent) => void): (event: 
     } else if (event.type === "shell_record" && !commands.has(event.record.id)) {
       commands.set(event.record.id, { ...event.record,
         succeeded: event.record.status === "completed" && event.record.exitCode === 0
-          && !event.record.truncated && event.record.cleanup !== "unconfirmed",
+          && event.record.cleanup !== "unconfirmed",
         laterWriteAttempt: false,
       });
     }

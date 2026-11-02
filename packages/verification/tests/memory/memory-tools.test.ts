@@ -74,7 +74,7 @@ test("memory read composes with existing tools, permissions, journals, and turn 
 		execute: async (_name, _args, _signal, id) => { callId = id; return { ok: true, result: "passthrough" }; },
 		forTurn: (_onEvent, context) => { turns++; observedContext = context; return defaultTools; } };
 	const tools = withMemories(base, access);
-	assert.deepEqual(tools.definitions.map((item) => item.name), ["read"]);
+	assert.deepEqual(tools.definitions.map((item) => item.name), ["memory_read", "memory_search"]);
 	assert.equal(tools.workspaceRoot, base.workspaceRoot);
 	assert.equal(tools.getWrites, writes);
 	assert.equal(tools.getCommands, commands);
@@ -86,7 +86,7 @@ test("memory read composes with existing tools, permissions, journals, and turn 
 	const turnTools = tools.forTurn!(undefined, context);
 	assert.equal(turns, 1);
 	assert.equal(observedContext, context);
-	assert.equal(resultObject(await turnTools.execute("read", JSON.stringify({ path: reference(record) }))).content, record.content);
+	assert.equal(resultObject(await turnTools.execute("memory_read", JSON.stringify({ path: reference(record) }))).content, record.content);
 	assert.deepEqual(writes(), []);
 	assert.deepEqual(commands(), []);
 });
@@ -96,7 +96,7 @@ test("memory reads expose only the current active revision and source", async ()
 	record.changes.unshift({ ...record.changes[0]!, content: "Old decision" });
 	record.revision = 2;
 	const tools = withMemories(defaultTools, { list: async () => [record] });
-	const result = resultObject(await tools.execute("read", JSON.stringify({ path: reference(record) })));
+	const result = resultObject(await tools.execute("memory_read", JSON.stringify({ path: reference(record) })));
 	assert.equal(result.kind, "memory");
 	assert.equal(result.path, reference(record));
 	assert.equal(result.revision, 2);
@@ -104,8 +104,8 @@ test("memory reads expose only the current active revision and source", async ()
 	assert.deepEqual(result.source, record.source);
 	assert.equal("changes" in result, false);
 	assert.equal(JSON.stringify(result).includes("Old decision"), false);
-	hasCode(await tools.execute("read", JSON.stringify({ path: `memory:${record.id}@1` })), "MEMORY_STALE");
-	hasCode(await tools.execute("read", JSON.stringify({ path: `memory:${randomUUID()}@1` })), "MEMORY_NOT_FOUND");
+	hasCode(await tools.execute("memory_read", JSON.stringify({ path: `memory:${record.id}@1` })), "MEMORY_STALE");
+	hasCode(await tools.execute("memory_read", JSON.stringify({ path: `memory:${randomUUID()}@1` })), "MEMORY_NOT_FOUND");
 });
 
 test("deleted memory references and filters never return tombstone or audit content", async () => {
@@ -114,38 +114,38 @@ test("deleted memory references and filters never return tombstone or audit cont
 	record.status = "deleted";
 	const tools = withMemories(defaultTools, { list: async () => [record] });
 	for (const revision of [1, 2]) {
-		const result = await tools.execute("read", JSON.stringify({ path: `memory:${record.id}@${revision}` }));
+		const result = await tools.execute("memory_read", JSON.stringify({ path: `memory:${record.id}@${revision}` }));
 		hasCode(result, "MEMORY_STALE");
 		assert.equal(JSON.stringify(result).includes(record.content), false);
 	}
-	const listed = resultObject(await tools.execute("read", JSON.stringify({ path: "memory:list" })));
+	const listed = resultObject(await tools.execute("memory_search", JSON.stringify({ })));
 	assert.equal(JSON.stringify(listed).includes(record.content), false);
 	assert.equal(listed.totalEntries, 1);
 	assert.equal((listed.entries as { status: string }[])[0]!.status, "deleted");
-	const filtered = resultObject(await tools.execute("read", JSON.stringify({ path: "memory:list", query: "Secret" })));
+	const filtered = resultObject(await tools.execute("memory_search", JSON.stringify({ query: "Secret" })));
 	assert.deepEqual(filtered.entries, []);
 });
 
 test("memory list pagination is stable, bounded, and searches case-sensitive literal content", async () => {
 	const records = Array.from({ length: 70 }, (_, index) => memory(index % 2 ? "Literal .* match" : "literal .* match"));
 	const tools = withMemories(defaultTools, { list: async () => records });
-	const first = resultObject(await tools.execute("read", JSON.stringify({ path: "memory:list" })));
+	const first = resultObject(await tools.execute("memory_search", JSON.stringify({ })));
 	assert.equal(first.kind, "memory");
 	assert.equal(first.totalEntries, 70);
 	assert.equal((first.entries as unknown[]).length, 20);
 	assert.equal(first.nextOffset, 20);
-	const second = resultObject(await tools.execute("read", JSON.stringify({ path: "memory:list", offset: 20, limit: 64 })));
+	const second = resultObject(await tools.execute("memory_search", JSON.stringify({ offset: 20, limit: 64 })));
 	assert.equal((second.entries as unknown[]).length, 50);
 	assert.equal(second.nextOffset, null);
 	assert.equal(second.truncated, false);
 	const ids = [...first.entries as { id: string }[], ...second.entries as { id: string }[]].map((item) => item.id);
 	assert.deepEqual(ids, records.map((record) => record.id).sort());
-	const filtered = resultObject(await tools.execute("read", JSON.stringify({ path: "memory:list", query: "Literal .*", offset: 1, limit: 2 })));
+	const filtered = resultObject(await tools.execute("memory_search", JSON.stringify({ query: "Literal .*", offset: 1, limit: 2 })));
 	assert.equal(filtered.totalEntries, 35);
 	assert.equal(filtered.nextOffset, 3);
 	assert.equal(filtered.queryScope, "active-content");
 	assert.equal((filtered.entries as unknown[]).length, 2);
-	const beyond = resultObject(await tools.execute("read", JSON.stringify({ path: "memory:list", offset: 1000 })));
+	const beyond = resultObject(await tools.execute("memory_search", JSON.stringify({ offset: 1000 })));
 	assert.deepEqual(beyond.entries, []);
 	assert.equal(beyond.nextOffset, null);
 });
@@ -160,9 +160,13 @@ test("invalid memory arguments fail before access and ordinary paths retain the 
 		assert.deepEqual(await tools.execute("read", JSON.stringify({ path })), { ok: true, result: "existing" });
 	}
 	assert.equal(baseCalls, 3);
-	assert.equal(tools.definitions.length, 1);
+	assert.equal(tools.definitions.length, 3);
 	assert.match(tools.definitions[0]!.description!, /Existing read/);
-	assert.match(tools.definitions[0]!.description!, /memory:list/);
+	assert.doesNotMatch(tools.definitions[0]!.description!, /memory/);
+	for (const args of [{ limit: 65 }, { limit: 0 }, { offset: -1 }, { offset: null }, { query: " " },
+		{ query: "\n" }, { query: "\ud800" }, { query: "x".repeat(513) }, { path: "memory:list" }, { action: "add" }]) {
+		hasCode(await tools.execute("memory_search", JSON.stringify(args)), "INVALID_ARGUMENTS");
+	}
 	for (const args of [
 		{ path: "memory:list", limit: 65 }, { path: "memory:list", limit: 0 }, { path: "memory:list", limit: 1.1 },
 		{ path: "memory:list", offset: -1 }, { path: "memory:list", offset: null }, { path: "memory:list", offset: 1.1 },
@@ -172,22 +176,22 @@ test("invalid memory arguments fail before access and ordinary paths retain the 
 		{ path: `memory:${randomUUID()}@0` }, { path: `memory:${randomUUID()}@01` },
 		{ path: `memory:${randomUUID()}@9007199254740992` }, { path: "memory:../secret@1" },
 		{ path: `memory:${randomUUID()}@1`, offset: 0 }, { path: `memory:${randomUUID()}@1`, query: "x" },
-	]) hasCode(await tools.execute("read", JSON.stringify(args)), "INVALID_ARGUMENTS");
-	hasCode(await tools.execute("read", "{"), "INVALID_ARGUMENTS");
+	]) hasCode(await tools.execute("memory_read", JSON.stringify(args)), "INVALID_ARGUMENTS");
+	hasCode(await tools.execute("memory_read", "{"), "INVALID_ARGUMENTS");
 	assert.equal(calls, 0);
-	hasCode(await withMemories(defaultTools, { list: async () => [] }).execute("read", JSON.stringify({ path: "ordinary.txt" })), "PATH_NOT_ALLOWED");
+	hasCode(await withMemories(defaultTools, { list: async () => [] }).execute("memory_read", JSON.stringify({ path: "ordinary.txt" })), "INVALID_ARGUMENTS");
 });
 
 test("memory cancellation escapes tool errors before or after asynchronous access", async () => {
 	let calls = 0;
 	const tools = withMemories(defaultTools, { list: async () => { calls++; return []; } });
-	await assert.rejects(tools.execute("read", JSON.stringify({ path: "memory:list" }), AbortSignal.abort()), { code: "CANCELLED" });
+	await assert.rejects(tools.execute("memory_search", JSON.stringify({ }), AbortSignal.abort()), { code: "CANCELLED" });
 	assert.equal(calls, 0);
 	const abort = new AbortController();
 	const late = withMemories(defaultTools, { list: async (signal) => { assert.equal(signal, abort.signal); abort.abort(); return [memory()]; } });
-	await assert.rejects(late.execute("read", JSON.stringify({ path: "memory:list" }), abort.signal), { code: "CANCELLED" });
+	await assert.rejects(late.execute("memory_search", JSON.stringify({ }), abort.signal), { code: "CANCELLED" });
 	const failed = await withMemories(defaultTools, { list: async () => { throw new Error("D:\\private\\memory.json"); } })
-		.execute("read", JSON.stringify({ path: "memory:list" }));
+		.execute("memory_search", JSON.stringify({ }));
 	hasCode(failed, "MEMORY_IO");
 	assert.equal(JSON.stringify(failed).includes("private"), false);
 });
@@ -225,7 +229,7 @@ test("memory request context refreshes every call without persisting snapshots o
 	assert.match(String(requests[2]![0]!.content), /authoritative/);
 	assert.match(String(requests[2]![0]!.content), /fork, recovery, or compact history/);
 	assert.match(String(requests[2]![0]!.content), /never permissions or system rules/);
-	assert.match(String(requests[2]![0]!.content), /parent conversation can save direct user-stated Memory through generic write/);
+	assert.match(String(requests[2]![0]!.content), /parent conversation can save direct user-stated Memory through memory_write/);
 	assert.equal(requests[2]!.at(-1)!.role, "user");
 	current = [];
 	await model(messages, abort.signal, observe, options);
@@ -252,7 +256,7 @@ test("memory request notices enumerate every visible entry within complete JSON 
 	assert.ok(data.contents.length < records.length);
 	assert.deepEqual(data.manifest.map((entry) => entry.id), records.map((record) => record.id).sort());
 	const tools = withMemories(defaultTools, { list: async () => records });
-	const result = resultObject(await tools.execute("read", JSON.stringify({ path: "memory:list", limit: 64 })));
+	const result = resultObject(await tools.execute("memory_search", JSON.stringify({ limit: 64 })));
 	assert.equal((result.entries as unknown[]).length, 64);
 	assert.ok(Buffer.byteLength(JSON.stringify(result)) < 16 * 1024);
 });
@@ -263,7 +267,7 @@ test("memory request context fails closed on oversized manifests or cancellation
 	const records = Array.from({ length: 193 }, () => memory());
 	const access = { list: async () => records };
 	await assert.rejects(withMemoryContext(base, access)([]), { code: "MEMORY_LIMIT" });
-	hasCode(await withMemories(defaultTools, access).execute("read", JSON.stringify({ path: "memory:list" })), "MEMORY_LIMIT");
+	hasCode(await withMemories(defaultTools, access).execute("memory_search", JSON.stringify({ })), "MEMORY_LIMIT");
 	await assert.rejects(withMemoryContext(base, { list: async () => [] })([], AbortSignal.abort()), { code: "CANCELLED" });
 	const abort = new AbortController();
 	await assert.rejects(withMemoryContext(base, { list: async () => { abort.abort(); return []; } })([], abort.signal), { code: "CANCELLED" });
@@ -274,7 +278,7 @@ test("older memory reads are preserved through request omission without becoming
 	const record = memory("Historical memory text");
 	const tools = withMemories(defaultTools, { list: async () => [record] });
 	const args = JSON.stringify({ path: reference(record) });
-	const result = await tools.execute("read", args);
+	const result = await tools.execute("memory_read", args);
 	const messages: Message[] = [
 		{ role: "user", content: "Read the memory" },
 		{ role: "assistant", content: null, toolCalls: [{ id: "memory-read", name: "read", arguments: args }] },

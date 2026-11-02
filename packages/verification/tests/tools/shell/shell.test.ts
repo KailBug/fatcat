@@ -10,7 +10,6 @@ import { createTools } from "@fatcat/runtime/tools";
 import { createShellTool } from "@fatcat/runtime/tools/shell";
 import { createWorkspace } from "@fatcat/runtime/permissions/workspace";
 import { commandEnvironment, runPowerShell } from "@fatcat/runtime/internal/tools/shell/powershell";
-import { outputLimit } from "@fatcat/runtime/internal/tools/shell/types";
 import { createTerminalInput } from "@fatcat/cli/internal/terminal";
 import { temporaryWorkspace } from "../../support/workspace.js";
 
@@ -115,13 +114,13 @@ test("child environment excludes model credentials, hooks and arbitrary inherite
   assert.match(result.stdout, /environment-ok/);
 });
 
-test("output limits bound both streams and stop a noisy command", windows, async (t) => {
+test("preview limits bound memory without stopping a noisy command", windows, async (t) => {
   const { workspace } = await temporaryWorkspace(t);
-  const result = await runPowerShell("[Console]::Out.Write(('x' * 2000000)); Start-Sleep -Seconds 30", workspace, 10000);
-  assert.equal(result.status, "output_limit", JSON.stringify(result));
+  const result = await runPowerShell("[Console]::Out.Write(('x' * 2000000)); [Console]::Error.WriteLine('END')", workspace, 10000);
+  assert.equal(result.status, "completed", JSON.stringify(result));
   assert.equal(result.truncated, true);
-  assert.equal(result.cleanup, "tree-killed");
-  assert.ok(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) <= outputLimit);
+  assert.equal(result.cleanup, "foreground-exited");
+  assert.ok(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) <= 32768);
 });
 
 test("timeout and cancellation terminate a foreground process tree and retain outcomes", windows, async (t) => {

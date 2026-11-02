@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { outputLimit, type ProcessResult } from "./types.js";
+import type { ProcessResult, OutputSink } from "./types.js";
+import { createProcessCapture } from "./capture.js";
 
 /** Limit command inheritance to runtime/OS settings, excluding provider credentials. */
 export function commandEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -26,7 +27,7 @@ async function terminateTree(pid: number): Promise<boolean> {
 }
 
 /** No profile, no stdin, and no persistent shell state between tool calls. */
-export async function runPowerShell(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<ProcessResult> {
+export async function runPowerShell(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal, sink?: OutputSink): Promise<ProcessResult> {
   const started = Date.now();
   if (signal?.aborted) return { status: "cancelled", cleanup: "not-started", exitCode: null,
     stdout: "", stderr: "", truncated: false, durationMs: 0 };
@@ -50,10 +51,7 @@ export async function runPowerShell(command: string, cwd: string, timeoutMs: num
     const child = spawn(windowsExecutable("WindowsPowerShell/v1.0/powershell.exe"),
       ["-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")],
       { cwd, env: commandEnvironment(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let size = 0;
-    let truncated = false;
+    const capture = createProcessCapture(sink);
     let settled = false;
     let exited = false;
     let exitCode: number | null = null;
@@ -63,7 +61,7 @@ export async function runPowerShell(command: string, cwd: string, timeoutMs: num
     const deadline = setTimeout(() => stop("timed_out"), timeoutMs);
     const abort = () => stop("cancelled");
 
-    function finish(status: ProcessResult["status"], cleanup: ProcessResult["cleanup"]): void {
+    async function finish(status: ProcessResult["status"], cleanup: ProcessResult["cleanup"]): Promise<void> {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
@@ -72,10 +70,7 @@ export async function runPowerShell(command: string, cwd: string, timeoutMs: num
       child.stdout.destroy();
       child.stderr.destroy();
       child.unref();
-      // Streaming decode omits an incomplete UTF-8 suffix after the byte limit.
-      const decode = (parts: Buffer[]) => new TextDecoder().decode(Buffer.concat(parts), { stream: truncated });
-      resolve({ status, cleanup, exitCode, stdout: decode(stdout), stderr: decode(stderr),
-        truncated, durationMs: Date.now() - started });
+      resolve({ status, cleanup, exitCode, ...await capture.finish(), durationMs: Date.now() - started });
     }
     function stop(status: ProcessResult["status"]): void {
       if (settled || reason) return;
@@ -86,15 +81,8 @@ export async function runPowerShell(command: string, cwd: string, timeoutMs: num
       termination = terminateTree(child.pid);
       fallback = setTimeout(() => finish("termination_failed", "unconfirmed"), 5000);
     }
-    function collect(parts: Buffer[], chunk: Buffer): void {
-      if (settled) return;
-      const remaining = outputLimit - size;
-      const kept = chunk.subarray(0, remaining);
-      if (kept.length) { parts.push(kept); size += kept.length; }
-      if (chunk.length > remaining) { truncated = true; stop("output_limit"); }
-    }
-    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
+    child.stdout.on("data", (chunk: Buffer) => capture.collect("stdout", child.stdout, chunk));
+    child.stderr.on("data", (chunk: Buffer) => capture.collect("stderr", child.stderr, chunk));
     child.once("error", () => { reason = "spawn_failed"; });
     child.once("exit", (code) => { exited = true; exitCode = code; });
     child.once("close", async (code) => {

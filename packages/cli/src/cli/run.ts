@@ -116,7 +116,7 @@ export async function runCli(args: string[]): Promise<number> {
     const agentForWorkspace = workspaceAgentFactory(config, (root) => createTools(root, permission, terminal?.approveWrite, {
       permission: shellPermission,
       ...(terminal ? { approve: terminal.approveShell } : {}),
-    }, { permission: webPermission }, permissionPolicy, terminal ? { approve: terminal.approveBrowser } : {}), undefined, new ModelConnections(config, process.env));
+    }, { permission: webPermission }, permissionPolicy, terminal ? { approve: terminal.approveBrowser } : {}, automation ? undefined : terminal?.askUser), undefined, new ModelConnections(config, process.env));
     const agent = await agentForWorkspace(workspace);
     const skills = agent.skills;
     reportSkillWarnings(skills);

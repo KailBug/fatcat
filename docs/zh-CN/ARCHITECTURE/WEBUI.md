@@ -165,3 +165,9 @@ ModelControls 只保存 DOM、显示签名与打开时的临时表单，app.ts �
 `verify:documents` 通过受控延迟覆盖回答可见但最终上下文刷新尚未结束的阶段：来源仍可查看，宿主忙碌和发送门禁仍有效。连续提交等待发送按钮真正可用，不把答案节点出现当成回合已收尾；请求次数、实测输入及视觉/转录来源断言保持严格。
 
 后续 UI 调整按实际任务确定方案，继续保留共享核心所有权，验证目标操作、键盘、窄屏、错误和取消。账户、多用户、远程发布、语言切换、流式输出、会话正文全文搜索、数学/图表 Markdown 扩展、Office 高保真查看器、文件恢复和操作重放尚未实现。
+
+<a id="interactive-questions"></a>
+
+## 交互式问题
+
+Controller 使用 runtime 的 QuestionCoordinator，与授权状态独立；快照包含待答问题，经认证的 POST /api/question 接受 id 与 answer（文本或 null 跳过）。ID 仅可回答一次，过期回复返回 409；停止/关闭清除待答状态。浏览器在轮询期间保留回答草稿，支持选择后自由编辑、跳过和取消，结束后恢复焦点。契约见 [Tools](TOOLS.md#clarification-and-image-tools)。原生注入模型检查见 [Development](../DEVELOPMENT.md#question-interaction-checks)，不证明真实模型的澄清质量。

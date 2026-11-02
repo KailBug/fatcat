@@ -1,3 +1,4 @@
+import type { Tools } from "../tools.js";
 import { randomUUID } from "node:crypto";
 import { HarnessError, checkCancellation } from "../errors.js";
 import type { LoopEvent, LoopOptions } from "../loop.js";
@@ -455,9 +456,18 @@ export class AgentSession {
 		});
 		this.session = new Session({
 			...this.agent,
-			tools: withMemoryWriter(withAutomationTool(this.agent.tools, (args, signal) => this.applyAutomation(args, signal)),
+			tools: withMemoryWriter(withAutomationTool(this.bindInteractiveTools(this.agent.tools ?? defaultTools), (args, signal) => this.applyAutomation(args, signal)),
 				this.options.changeMemory ? (change, signal, callId) => this.applyMemory(change, signal, callId) : undefined),
 			model: this.requestModel,
 		}, this.record.history, this.record.compaction);
+	}
+	private bindInteractiveTools(base: Tools): Tools {
+		return { ...base,
+			forTurn: (onEvent, context) => this.bindInteractiveTools(base.forTurn?.(onEvent, context) ?? base),
+			execute: (name, args, signal, callId) => {
+				if (name === "ask_user" && this.automationTurn) return Promise.resolve({ ok: false as const,
+					error: { code: "QUESTION_UNAVAILABLE", message: "Background tasks cannot ask interactive questions." } });
+				return base.execute(name, args, signal, callId);
+			} };
 	}
 }

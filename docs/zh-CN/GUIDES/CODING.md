@@ -47,7 +47,7 @@ pnpm start --chat --workspace "D:\work\my-app" --permission-mode acceptEdits
 
 要求执行定向测试或构建命令。Shell 使用全新的前台 Windows PowerShell 进程，不加载 profile，也不提供交互式 stdin。审批展示命令、工作目录和超时。批准文件写入不等于授权命令。
 
-默认命令超时为 30 秒，上限 120 秒。模型先收到简短输出预览及 outputId，可用 output_read 分页、读尾部或搜索捕获的 stdout/stderr，无需重跑命令。预览截断不停止执行；合并原始捕获上限为 1 MiB，超过该上限才因输出过量终止命令。日志仅在进程内保存，重启后不可用。工具调用成功本身不代表检查通过，应检查退出码、超时、取消和截断。包含多个原生程序的命令必须保留失败状态。
+默认命令超时为 30 秒，上限 120 秒。模型先收到简短输出预览及 outputId，可用 output_read 分页、读尾部或搜索捕获的 stdout/stderr，无需重跑命令。预览截断不停止执行。输出流式写入临时文件，单命令日志配额 64 MiB、进程合计 256 MiB；配额耗尽或磁盘失败只停止后续捕获，命令继续执行，应检查 captureStatus 与 captureTruncated。正常退出清理日志，重启后不可用。工具调用成功本身不代表检查通过，应检查退出码、超时、取消和截断。包含多个原生程序的命令必须保留失败状态。
 
 命令以 Windows 用户权限运行，不在 OS 沙箱内。进程清理只能尽力完成，脱离的进程可能存活。未确认停止会阻止该 Tools 实例继续启动 Shell；查看进程不会自动解除阻止。每个 Tools 实例保留有界命令/写入 journal，由父任务和委派任务共享。普通界面按工作区缓存实例，因此同一工作区新建聊天不会重置它。计数和生命周期见 [Tools](../ARCHITECTURE/TOOLS.md#journals-and-verification)。
 

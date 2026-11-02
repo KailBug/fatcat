@@ -15,6 +15,7 @@ import { SessionManager } from "@fatcat/runtime/session/manager";
 import { SessionStore } from "@fatcat/runtime/session/store";
 import { createTools } from "@fatcat/runtime/tools";
 import { temporaryWorkspace } from "../support/workspace.js";
+import { withAskUser } from "@fatcat/runtime/tools/ask-user";
 
 const answer = (content = "Ready"): ModelTurn => ({ message: { role: "assistant", content } });
 function tool(args: unknown): ModelTurn {
@@ -22,6 +23,23 @@ function tool(args: unknown): ModelTurn {
   return { message: { role: "assistant", content: null, toolCalls } };
 }
 const task = { prompt: "Review changes", trigger: { type: "interval", seconds: 60 }, maxRuns: 3 };
+
+test("background turns refuse ask_user before reaching the interactive host", async (t) => {
+  const { base, workspace } = await temporaryWorkspace(t);
+  let questions = 0;
+  const tools = withAskUser(await createTools(workspace), async () => { questions++; return "answer"; });
+  const session = await SessionManager.open({ tools, maxIterations: 2, model: async (messages) => {
+    if (messages.at(-1)?.role === "user") return { message: { role: "assistant", content: null,
+      toolCalls: [{ id: "clarify", name: "ask_user", arguments: '{"question":"Which?"}' }] } };
+    return answer(String(messages.at(-1)?.content));
+  } }, { workspace, store: new SessionStore({ root: join(base, "sessions") }) });
+  await session.manageAutomation({ action: "create", ...task });
+  const bound = (await session.listAutomations())[0]!;
+  assert.match(await session.runAutomation(bound.sessionId, bound.id, Date.now(), []), /QUESTION_UNAVAILABLE/);
+  assert.equal(questions, 0);
+  assert.match(await session.run("Interactive clarification"), /answered/);
+  assert.equal(questions, 1);
+});
 
 test("SDK scheduling tool binds to current saved session and recurring turns retain that history", async (t) => {
   const { base, workspace } = await temporaryWorkspace(t);

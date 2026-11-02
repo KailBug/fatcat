@@ -192,6 +192,10 @@
     "./model-types": {
       "types": "./dist/model-types.d.ts",
       "import": "./dist/model-types.js"
+    },
+    "./tools/ask-user": {
+      "types": "./dist/tools/ask-user.d.ts",
+      "import": "./dist/tools/ask-user.js"
     }
   },
   "files": [

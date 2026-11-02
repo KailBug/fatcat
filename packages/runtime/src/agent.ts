@@ -1,3 +1,5 @@
+import { withImageRead } from "./tools/image-read.js";
+import { withAskUser } from "./tools/ask-user.js";
 import {
     delegationPolicy,
     automationGuidance,
@@ -35,14 +37,16 @@ import {mapModelMessages} from "./model-preparation.js";
 export function createAgent(config: Config, baseTools: Tools = defaultTools, transport?: typeof fetch,
                             skills?: SkillCatalog, identity?: SessionExecutionIdentity, attachments?: AttachmentAccess, memory?: MemoryAccess,
                             connections = new ModelConnections(config)) {
-    const attachmentTools = attachments ? withAttachments(baseTools, attachments, createDocumentVision(config, transport)) : baseTools;
+    const vision = createDocumentVision(config, transport);
+    const imageTools = withImageRead(baseTools, vision);
+    const attachmentTools = attachments ? withAttachments(imageTools, attachments, vision) : imageTools;
     const fileTools = memory ? withMemories(attachmentTools, memory) : attachmentTools;
     const sharedTools = skills ? withSkills(fileTools, skills) : fileTools;
     const skillGuidance = skills ? skillCatalogPrompt(skills) : "";
     const sharedGuidance = () => sharedAgentGuidance(sharedTools, skillGuidance, attachments);
     const bind = (model: Model) => bindSessionModel(model, identity, memory);
     const childModel = bind(withGuidance(createModel(config, transport, sharedTools), sharedGuidance));
-    const parentTools = withAutomationTool(createSubagentTools(sharedTools, childModel));
+    const parentTools = withAskUser(withAutomationTool(createSubagentTools(sharedTools, childModel)), baseTools.askUser);
     const tools = memory ? withMemoryWriter(parentTools) : parentTools;
     const model = bind(withGuidance(createModel(config, transport, tools),
         () => [delegationPolicy, sharedGuidance(), `Current local time: ${new Date().toString()}. ${automationGuidance}`].filter(Boolean).join("\n\n")));

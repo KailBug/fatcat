@@ -104,7 +104,7 @@ test("command outcome is independent of tool ok, with explicit stale-write and t
   const result = capture();
   const variants: Partial<CommandEventRecord>[] = [
     {}, { exitCode: 1 }, { status: "timed_out", exitCode: null, cleanup: "tree-killed" },
-    { status: "output_limit", truncated: true, cleanup: "tree-killed" },
+    { status: "completed", truncated: true, cleanup: "foreground-exited" },
     { status: "cancelled", exitCode: null, cleanup: "tree-killed" },
     { status: "spawn_failed", exitCode: null, cleanup: "not-started" },
     { status: "termination_failed", exitCode: null, cleanup: "unconfirmed" },
@@ -119,7 +119,7 @@ test("command outcome is independent of tool ok, with explicit stale-write and t
   result.onEvent({ type: "completed", iterations: 2 });
   const report = result.report();
   assert.equal(report.toolResults.ok, variants.length);
-  assert.deepEqual(report.commands.map((record) => record.succeeded), [true, false, false, false, false, false, false, false, false, true, true]);
+  assert.deepEqual(report.commands.map((record) => record.succeeded), [true, false, false, true, false, false, false, true, false, true, true]);
   assert.ok(report.commands.slice(0, -1).every((record) => record.laterWriteAttempt));
   assert.equal(report.commands.at(-1)!.laterWriteAttempt, false);
   assert.equal(report.writes[0]!.status, "uncertain");

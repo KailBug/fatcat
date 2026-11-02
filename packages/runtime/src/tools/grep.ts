@@ -13,7 +13,7 @@ export function createGrepTool(workspace: Workspace): Tool {
 				path: { type: "string", minLength: 1, maxLength: 1024, description: "File or directory; defaults to '.'." },
 				query: { type: "string", minLength: 1, maxLength: 512 },
 				regex: { type: "boolean" }, ignoreCase: { type: "boolean" },
-				glob: { type: "string", minLength: 1, maxLength: 512 },
+				glob: { type: "string", minLength: 1, maxLength: 512, description: "Path filter, for example src/**/*.ts. Use query for content; regex applies to query, not this pattern." },
 				exclude: { type: "array", maxItems: 32, items: { type: "string", minLength: 1, maxLength: 512 } },
 				context: { type: "integer", minimum: 0, maximum: 5 },
 				offset: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },

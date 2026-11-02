@@ -9,7 +9,19 @@ import type { BrowserRecord } from "./browser/protocol.js";
 import { prepareTurnMessages } from "./context/turn-request.js";
 import type { CompactionState } from "./context/manager.js";
 
+export interface ToolExecution {
+  iteration: number;
+  callId: string;
+  tool: string;
+  status: "ok" | "error" | "cancelled" | "threw";
+  errorCode: string | null;
+  durationMs: number;
+  inputBytes: number;
+  outputBytes: number | null;
+}
+
 export type LoopEvent =
+  | ({ type: "tool_execution" } & ToolExecution)
   | (ModelObservation & { iteration: number })
   | { type: "shell_record"; record: CommandEventRecord }
   | { type: "write_record"; record: WriteRecord }
@@ -146,10 +158,25 @@ export async function runAgentTurn(
       }
       for (const call of toolCalls) {
         checkCancellation(signal);
-        const result = await turnTools.execute(call.name, call.arguments, signal, call.id);
+        const started = performance.now();
+        let result;
+        let content: string;
+        try {
+          result = await turnTools.execute(call.name, call.arguments, signal, call.id);
+          content = JSON.stringify(result);
+        } catch (error) {
+          onEvent?.({ type: "tool_execution", iteration, callId: call.id, tool: call.name,
+            status: signal?.aborted || error instanceof HarnessError && error.code === "CANCELLED" ? "cancelled" : "threw",
+            errorCode: signal?.aborted ? "CANCELLED" : error instanceof HarnessError ? error.code : "INTERNAL",
+            durationMs: performance.now() - started, inputBytes: Buffer.byteLength(call.arguments), outputBytes: null });
+          throw error;
+        }
+        onEvent?.({ type: "tool_execution", iteration, callId: call.id, tool: call.name,
+          status: result.ok ? "ok" : "error", errorCode: result.ok ? null : result.error.code,
+          durationMs: performance.now() - started, inputBytes: Buffer.byteLength(call.arguments), outputBytes: Buffer.byteLength(content) });
         reportExecutionRecords();
         checkCancellation(signal);
-        messages.push({ role: "tool", callId: call.id, content: JSON.stringify(result) });
+        messages.push({ role: "tool", callId: call.id, content });
         if (options.onCheckpoint) await options.onCheckpoint(structuredClone(messages));
         onEvent?.({ type: "tool_result", iteration, callId: call.id, tool: call.name, ok: result.ok });
       }

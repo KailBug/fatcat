@@ -79,10 +79,14 @@ export async function runAgentTurn(
             return (event) => onEvent?.({...event, iteration});
         },
     }) ?? tools;
+    // Snapshot existing writes to detect new records and later changes.
     const loggedWrites = new Map((turnTools.getWrites?.() ?? []).map((record) => [record.id, JSON.stringify(record)]));
+    // Seed command IDs so earlier executions are not reported again.
     const loggedCommands = new Set((turnTools.getCommands?.() ?? []).map((record) => record.id));
+    // Seed browser record IDs so earlier checks are not reported again.
     const loggedBrowsers = new Set((turnTools.getBrowserChecks?.() ?? []).map((record) => record.id));
 
+    /** Emit new operation records and changed writes, updating the deduplication baseline. */
     function reportExecutionRecords(): void {
         for (const record of turnTools.getBrowserChecks?.() ?? []) {
             if (!loggedBrowsers.has(record.id)) {
@@ -105,7 +109,7 @@ export async function runAgentTurn(
             }
         }
     }
-
+    /**Loop Entry**/
     try {
         if (!prompt.trim()) throw new HarnessError("INPUT", "The prompt must not be empty.");
         if (!Number.isSafeInteger(maxIterations) || maxIterations < 1) {

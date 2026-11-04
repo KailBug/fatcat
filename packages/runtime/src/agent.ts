@@ -28,15 +28,30 @@ import {withMemories, withMemoryContext} from "./memory/tools.js";
 import type {MemoryAccess} from "./memory/tools.js";
 import {withMemoryWriter} from "./memory/write.js";
 import {ModelConnections} from "./model-connections.js";
+import type { ModelChoice } from "./model-connections.js";
 import {defaultModelSelection} from "./model-catalog.js";
 import type {ModelSelection} from "./model-catalog.js";
 import {HarnessError} from "./errors.js";
 import {mapModelMessages} from "./model-preparation.js";
 
+/** Assembled runtime components; sessions also accept partial capability configuration. */
+export interface Agent {
+	tools: Tools;
+	model: Model;
+	maxIterations: number;
+	modelSelection: ModelSelection;
+	modelChoices: () => ModelChoice[];
+	forModel: (selection: ModelSelection, current: SessionAgentOptions) => SessionAgentOptions;
+	forSession: (identity: SessionExecutionIdentity, current: SessionAgentOptions, attachments?: AttachmentAccess, memory?: MemoryAccess) => SessionAgentOptions;
+	autoCompaction: boolean;
+	compactionModel: Model;
+	maxRequestBytes: number;
+}
+
 /** Assemble shared tools, a bounded child, and parent-only capabilities for every host. */
 export function createAgent(config: Config, baseTools: Tools = defaultTools, transport?: typeof fetch,
                             skills?: SkillCatalog, identity?: SessionExecutionIdentity, attachments?: AttachmentAccess, memory?: MemoryAccess,
-                            connections = new ModelConnections(config)) {
+                            connections = new ModelConnections(config)): Agent {
     const vision = createDocumentVision(config, transport);
     const imageTools = withImageRead(baseTools, vision);
     const attachmentTools = attachments ? withAttachments(imageTools, attachments, vision) : imageTools;

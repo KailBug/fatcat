@@ -17,7 +17,7 @@ Loop 执行一个用户回合，保持模型消息与工具结果的关联，落
 | 源码 | 职责 |
 | --- | --- |
 | `packages/runtime/src/agent.ts` | workspaceAgentFactory 准备工作目录资源；createAgent 装配父子 Model、Tools、Skills、动态指导及实际 Session 身份 |
-| `packages/runtime/src/loop.ts` | runAgentTurn 在历史副本上请求模型、顺序执行工具并生成事件；runAgent 提供单次调用 |
+| `packages/runtime/src/loop.ts` | runAgentTurn 在历史副本上请求模型、顺序执行工具并生成事件；独立任务传入空历史，返回结果包含回答和消息列表 |
 | `packages/runtime/src/system-prompt.ts` | 共用 systemPrompt、委派/自动任务/资料指导文本，以及目录和权限说明的纯格式化函数 |
 | `packages/runtime/src/model-types.ts`、`model.ts`、`model-adapters/chat-completions.ts`、`model-usage.ts` | 内部消息契约、SDK 边界、响应校验、安全错误及用量观察，见 [Providers](PROVIDERS.md) |
 | `packages/runtime/src/errors.ts` | 稳定 HarnessError 错误码与取消检查 |
@@ -30,6 +30,8 @@ Session 的提交与恢复归 [Session](SESSION.md)；请求省略和压缩归 [
 ## Agent 装配边界
 
 Agent 装配统一维护在 `packages/runtime/src/agent.ts`，CLI、TUI、Web UI 通过 `@fatcat/runtime/agent` 准备工作目录资源。`createAgent` 和 `workspaceAgentFactory` 保持原有参数及返回契约；旧 workspace-agent 模块与根 src 下的运行核心路径均不提供兼容转发。
+
+`createAgent` 显式返回导出的 `Agent` 接口，将装配保证提供的全部组件和回调声明为必需成员。`SessionAgentOptions` 继续作为会话的宽松输入接口，工具、模型选择与绑定回调、压缩配置保持可选，方便调用者只注入所需能力。
 
 - **工作目录资源。** workspaceAgentFactory 的每个实例按规范目录缓存基础 Tools，Windows 键忽略大小写，保留其权限回调和执行 journals。只有工具构造成功后才缓存；每次选择都重新发现 Skills 并装配 Agent。缓存不保存绑定会话后的工具、模型、附件或 Memory 访问器，也不持有当前选中 Session。
 - **父子装配。** createAgent 依次在基础工具上包装附件、Memory 读取及 Skills，形成父子共享能力；子 Model 使用这个集合，父集合再增加有界委派、automation 和可用的 Memory 写入包装。装配本身不发送模型请求。摘要模型仍单独创建，不继承父工具或动态指导。

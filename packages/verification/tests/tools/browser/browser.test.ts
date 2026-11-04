@@ -12,7 +12,7 @@ import type { BrowserRun } from "@fatcat/runtime/internal/browser/runtime";
 import { readBrowserEvidence, saveBrowserEvidence } from "@fatcat/runtime/browser/evidence";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport } from "@fatcat/runtime/execution-report";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { temporaryWorkspace } from "../../support/workspace.js";
@@ -158,7 +158,7 @@ test("browser records survive failed model turns and child journal duplicates ar
     throw new Error("Injected model failure");
   };
   const delegated = createSubagentTools(tools, model, 3);
-  await assert.rejects(runAgent("Check the page", { model, tools: delegated, maxIterations: 3,
+  await assert.rejects(runAgentTurn("Check the page", [], { model, tools: delegated, maxIterations: 3,
     onEvent: createTurnReporter((event) => { if (event.type === "execution_report") report = event.report; }) }));
   assert.equal(report?.browserChecks?.length, 1);
   assert.equal(report?.browserChecks?.[0]?.status, "completed");

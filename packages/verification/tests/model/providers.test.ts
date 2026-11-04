@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfig } from "@fatcat/runtime/config";
 import { HarnessError } from "@fatcat/runtime/errors";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { createDeepSeekModel, createModel } from "@fatcat/runtime/model";
 import type { Message, ModelObservation } from "@fatcat/runtime/model-types";
 
@@ -78,9 +78,9 @@ for (const item of cases) {
       assert.deepEqual(body.messages.at(-2), { role: "assistant", content: null, tool_calls: [toolCall] });
       return Response.json(response());
     }, fixtureTools);
-    assert.equal(await runAgent("Add 17 and 25", { tools: fixtureTools, model, onEvent: (event) => {
+    assert.equal((await runAgentTurn("Add 17 and 25", [], { tools: fixtureTools, model, onEvent: (event) => {
       if (event.type === "model_usage") observations.push(event);
-    }, maxIterations: 2 }), "42");
+    }, maxIterations: 2 })).answer, "42");
     assert.equal(calls, 2);
     assert.deepEqual(observations.filter((event) => event.type === "model_usage").map(({ type, usage }) => ({ type, usage })), [
       { type: "model_usage", usage: { promptTokens: 30, completionTokens: 12, totalTokens: 42 } },

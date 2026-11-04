@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createTools } from "@fatcat/runtime/tools";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport } from "@fatcat/runtime/execution-report";
@@ -55,7 +55,7 @@ try {
     return { message: { role: "assistant", content: "The injected repair scenario passed its DOM and runtime assertions. Screenshots are saved for user review." } };
   };
   let report: ExecutionReport | undefined;
-  await runAgent("Verify and repair the fixture", { model, tools, maxIterations: 6,
+  await runAgentTurn("Verify and repair the fixture", [], { model, tools, maxIterations: 6,
     onEvent: createTurnReporter((event) => { if (event.type === "execution_report") report = event.report; }) });
   assert.equal(report?.browserChecks?.length, 2);
   assert.equal(report?.browserChecks?.[0]?.laterWriteAttempt, true);

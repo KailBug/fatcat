@@ -11,7 +11,7 @@ Loop executes one user turn, preserves associations between model messages and t
 | Source | Responsibility |
 | --- | --- |
 | `packages/runtime/src/agent.ts` | workspaceAgentFactory prepares workspace resources; createAgent assembles parent/child Models, Tools, Skills, dynamic guidance and actual Session identity |
-| `packages/runtime/src/loop.ts` | runAgentTurn requests models on a history copy, executes tools sequentially and emits events; runAgent supplies single-call execution |
+| `packages/runtime/src/loop.ts` | runAgentTurn requests models on a history copy, executes tools sequentially and emits events; pass an empty history for an independent task and read the returned answer and messages |
 | `packages/runtime/src/system-prompt.ts` | Shared systemPrompt, delegation/automation/material guidance and pure workspace/permission formatting |
 | `packages/runtime/src/model-types.ts`, `model.ts`, `model-adapters/chat-completions.ts`, `model-usage.ts` | Internal message contracts, SDK boundary, response validation, safe errors and usage observations; see [Providers](PROVIDERS.md) |
 | `packages/runtime/src/errors.ts` | Stable HarnessError codes and cancellation checks |
@@ -22,6 +22,8 @@ Loop executes one user turn, preserves associations between model messages and t
 ## Agent assembly boundaries
 
 `packages/runtime/src/agent.ts` owns assembly. CLI, TUI and Web UI prepare workspace resources through `@fatcat/runtime/agent`. `createAgent` and `workspaceAgentFactory` retain their argument/return contracts. Neither the old workspace-agent module nor former root src runtime paths provide compatibility forwarding.
+
+`createAgent` explicitly returns the exported `Agent` interface, which declares all components and callbacks supplied by assembly as required members. `SessionAgentOptions` remains the broader session input interface, with optional tools, model-selection/binding callbacks and compaction settings so callers can inject only the capabilities they need.
 
 - **Workspace resources.** Each workspaceAgentFactory caches base Tools by canonical directory, with case-insensitive Windows keys, preserving permission callbacks and journals. It caches only after successful construction. Every selection rediscovers Skills and assembles an Agent. The cache holds no session-bound tools, models, attachment/Memory accessors or active Session.
 - **Parent/child assembly.** createAgent wraps base tools with attachment access, Memory reads and Skills to form shared capabilities. The child Model uses this set; the parent set additionally gets bounded delegation, automation and available Memory writes. Assembly sends no model request. Summary models are created separately without parent tools or dynamic guidance.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfig } from "@fatcat/runtime/config";
 import { HarnessError } from "@fatcat/runtime/errors";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { createDeepSeekModel } from "@fatcat/runtime/model";
 
 const config = loadConfig({ DEEPSEEK_API_KEY: "test-key-not-real" });
@@ -53,7 +53,7 @@ test("SDK, loop, tool execution, and history form a complete offline round trip"
     assert.deepEqual(body.messages.at(-1), { role: "tool", tool_call_id: "call_1", content: '{"ok":true,"result":42}' });
     return Response.json(completion("The result is 42."));
   }, fixtureTools);
-  assert.equal(await runAgent("Add 17 and 25", { tools: fixtureTools, model, maxIterations: 2 }), "The result is 42.");
+  assert.equal((await runAgentTurn("Add 17 and 25", [], { tools: fixtureTools, model, maxIterations: 2 })).answer, "The result is 42.");
   assert.equal(requests, 2);
 });
 

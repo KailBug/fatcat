@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
-import { runAgent, runAgentTurn } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { createTools } from "@fatcat/runtime/tools";
 import { discoverSkills } from "@fatcat/runtime/skills";
 import type { Message } from "@fatcat/runtime/model-types";
@@ -37,7 +37,7 @@ test("parent and child guidance forwards their independent final-answer options"
     if (parent && iteration === 1) return calls({ name: "delegate_task", args: { task: "Compute the fixture sum" }, id: "delegate-budget" });
     return calls({ name: "fixture_add", args: { numbers: [1, 2] }, id: `${parent ? "parent" : "child"}-${iteration}` });
   });
-  assert.equal(await runAgent("Review the calculation", agent), "Parent summary");
+  assert.equal((await runAgentTurn("Review the calculation", [], agent)).answer, "Parent summary");
   assert.equal(parents, 3);
   assert.equal(children, 32);
 });
@@ -52,7 +52,7 @@ test("default agent construction is idle and direct tasks make no child requests
     return answer("Direct answer");
   });
   assert.equal(requests, 0);
-  assert.equal(await runAgent("A simple question", agent), "Direct answer");
+  assert.equal((await runAgentTurn("A simple question", [], agent)).answer, "Direct answer");
   assert.equal(requests, 1);
 });
 
@@ -80,7 +80,7 @@ test("assembled SDK parent and child use distinct definitions and isolated histo
     assert.equal(body.messages.at(-1)?.content, '{"ok":true,"result":42}');
     return answer("Child result: 42");
   });
-  assert.equal(await runAgent("Parent-only details", agent), "Reviewed child result");
+  assert.equal((await runAgentTurn("Parent-only details", [], agent)).answer, "Reviewed child result");
   assert.equal(parents, 2);
   assert.equal(children, 2);
 });
@@ -104,7 +104,7 @@ test("default delegation cannot turn a read-only workspace into write or shell a
     assert.ok(results.every((message) => String(message.content).includes("PERMISSION_DENIED")));
     return answer("Denied");
   });
-  assert.equal(await runAgent("Try operations through a child", agent), "Both operations denied");
+  assert.equal((await runAgentTurn("Try operations through a child", [], agent)).answer, "Both operations denied");
   assert.deepEqual(await readdir(workspace), []);
   assert.deepEqual(base.getWrites!(), []);
   assert.deepEqual(base.getCommands!(), []);
@@ -213,7 +213,7 @@ test("canonical workspace context reaches parent and child without entering save
   for (const history of [first.messages, second.messages]) {
     assert.ok(!JSON.stringify(history).includes("Workspace root (JSON string):"));
   }
-  await runAgent("Identify after a fresh history", agent);
+  await runAgentTurn("Identify after a fresh history", [], agent);
   assert.equal(parents, 6);
   assert.equal(children, 3);
   assert.deepEqual(base.getWrites!(), []);

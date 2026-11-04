@@ -7,7 +7,7 @@ import { createTools } from "@fatcat/runtime/tools";
 import type { Tools, ToolResult } from "@fatcat/runtime/tools";
 import { loadLiveConfig } from "../support/live-config.js";
 import { HarnessError } from "@fatcat/runtime/errors";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { createDeepSeekModel } from "@fatcat/runtime/model";
 import { Session } from "@fatcat/runtime/session/session";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
@@ -18,11 +18,11 @@ async function verifyWorkspaceWrite(config: ReturnType<typeof loadLiveConfig>): 
   try {
     const tools = await createTools(workspace, "workspace-write");
     const events: LoopEvent[] = [];
-    const answer = await runAgent(
-      'Use write to create calculation.ts containing exactly "export const total = 1;" followed by a newline. Read it with read. Then use edit with edits [{oldText: "total = 1", newText: "total = 2"}]. Read it again to verify the change. Reply with WRITE_READY only after verification.', {
+    const answer = (await runAgentTurn(
+      'Use write to create calculation.ts containing exactly "export const total = 1;" followed by a newline. Read it with read. Then use edit with edits [{oldText: "total = 1", newText: "total = 2"}]. Read it again to verify the change. Reply with WRITE_READY only after verification.', [], {
         model: createDeepSeekModel(config, undefined, tools), tools, maxIterations: Math.min(config.maxIterations, 6),
         onEvent: (event) => { events.push(event); console.error(JSON.stringify({ scenario: "workspace_write", ...event })); },
-      });
+      })).answer;
     assert.equal(await readFile(join(workspace, "calculation.ts"), "utf8"), "export const total = 2;\n");
     assert.deepEqual(tools.getWrites!().map((record) => [record.operation, record.status]), [["create", "committed"], ["edit", "committed"]]);
     assert.ok(events.filter((event) => event.type === "tool_result" && event.tool === "read" && event.ok).length >= 2);
@@ -51,7 +51,7 @@ try {
     const events: LoopEvent[] = [];
     const onEvent = (event: LoopEvent) => { events.push(event); console.error(JSON.stringify({ scenario: scenario.name, ...event })); };
     const answer = scenario.name === "direct_answer"
-      ? await runAgent(scenario.prompt, { model, tools: initialTools, maxIterations, onEvent })
+      ? (await runAgentTurn(scenario.prompt, [], { model, tools: initialTools, maxIterations, onEvent })).answer
       : await session.run(scenario.prompt, { onEvent });
     const toolUsed = events.some((event) => event.type === "tool_result" && event.tool === "read" && event.ok);
     assert.equal(toolUsed, scenario.tool, "Unexpected tool usage.");
@@ -66,10 +66,10 @@ try {
     return result;
   } };
   const events: LoopEvent[] = [];
-  const answer = await runAgent("Use read to inspect the workspace root. Then read project-notes.txt with limit 1, starting at offset 0, and follow each nextOffset with limit 1 until it is null. Report the verification phrase from that file exactly.", {
+  const answer = (await runAgentTurn("Use read to inspect the workspace root. Then read project-notes.txt with limit 1, starting at offset 0, and follow each nextOffset with limit 1 until it is null. Report the verification phrase from that file exactly.", [], {
     model: createDeepSeekModel(config, undefined, tools), tools, maxIterations: Math.min(config.maxIterations, 5),
     onEvent: (event) => { events.push(event); console.error(JSON.stringify({ scenario: "workspace_read", ...event })); },
-  });
+  })).answer;
   assert.ok(events.some((event) => event.type === "tool_result" && event.tool === "read" && event.ok));
   const pages = readResults.filter((result) => result.ok).map((result) => result.result) as {
     kind: string; offset: number; startLine?: number; endLine?: number; nextOffset: number | null;
@@ -83,10 +83,10 @@ try {
   console.log(JSON.stringify({ scenario: "workspace_read", passed: true, answer }));
   const delegatedTools = createSubagentTools(tools, createDeepSeekModel(config, undefined, tools), Math.min(3, config.maxIterations));
   const delegatedEvents: LoopEvent[] = [];
-  const delegatedAnswer = await runAgent("Use delegate_task to ask a child assistant to read project-notes.txt with read and return its verification phrase. Then report the child's phrase only.", {
+  const delegatedAnswer = (await runAgentTurn("Use delegate_task to ask a child assistant to read project-notes.txt with read and return its verification phrase. Then report the child's phrase only.", [], {
     model: createDeepSeekModel(config, undefined, delegatedTools), tools: delegatedTools, maxIterations,
     onEvent: (event) => { delegatedEvents.push(event); console.error(JSON.stringify({ scenario: "subagent_read", ...event })); },
-  });
+  })).answer;
   assert.ok(delegatedEvents.some((event) => event.type === "tool_result" && event.tool === "delegate_task" && event.ok));
   assert.ok(delegatedEvents.some((event) => event.type === "subagent_event"
     && event.event.type === "tool_result" && event.event.tool === "read" && event.event.ok));

@@ -31,6 +31,8 @@ Session 的提交与恢复归 [Session](SESSION.md)；请求省略和压缩归 [
 
 Agent 装配统一维护在 `packages/runtime/src/agent.ts`，CLI、TUI、Web UI 通过 `@fatcat/runtime/agent` 准备工作目录资源。`createAgent` 和 `workspaceAgentFactory` 保持原有参数及返回契约；旧 workspace-agent 模块与根 src 下的运行核心路径均不提供兼容转发。
 
+`createAgent` 显式返回导出的 `Agent` 接口，将装配保证提供的全部组件和回调声明为必需成员。`SessionAgentOptions` 继续作为会话的宽松输入接口，工具、模型选择与绑定回调、压缩配置保持可选，方便调用者只注入所需能力。
+
 - **工作目录资源。** workspaceAgentFactory 的每个实例按规范目录缓存基础 Tools，Windows 键忽略大小写，保留其权限回调和执行 journals。只有工具构造成功后才缓存；每次选择都重新发现 Skills 并装配 Agent。缓存不保存绑定会话后的工具、模型、附件或 Memory 访问器，也不持有当前选中 Session。
 - **父子装配。** createAgent 依次在基础工具上包装附件、Memory 读取及 Skills，形成父子共享能力；子 Model 使用这个集合，父集合再增加有界委派、automation 和可用的 Memory 写入包装。装配本身不发送模型请求。摘要模型仍单独创建，不继承父工具或动态指导。
 - **会话绑定。** forSession 从基础资源重新生成绑定实际身份和资料访问的组件，只替换仍是原装配结果的 tools/model；调用者覆盖的工具、模型和其他 Session 选项保留。自定义模型仍接收执行身份及可用的 Memory 请求上下文。Session 记录、切换与持久化继续由会话层拥有。

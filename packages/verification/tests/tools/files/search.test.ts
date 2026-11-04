@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { createTools } from "@fatcat/runtime/tools";
 import type { Tools, ToolResult } from "@fatcat/runtime/tools";
 import { createGrepTool } from "@fatcat/runtime/internal/tools/grep";
@@ -218,6 +218,6 @@ test("the SDK child sees the same query schema and returns search results to its
     assert.match(last.content!, /src\/code.ts/);
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Found src/code.ts:1" } }] });
   });
-  assert.equal(await runAgent("Investigate", agent), "Found src/code.ts:1");
+  assert.equal((await runAgentTurn("Investigate", [], agent)).answer, "Found src/code.ts:1");
   assert.equal(searches, 1);
 });

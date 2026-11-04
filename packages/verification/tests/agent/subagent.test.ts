@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import type { LoopEvent } from "@fatcat/runtime/loop";
 import type { Message, Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
@@ -31,7 +31,7 @@ test("delegation isolates child history, correlates events, and returns only the
     assert.ok(!JSON.stringify(messages).includes("child-sum"));
     return answer("42");
   };
-  assert.equal(await runAgent("Parent-only context", { model: parent, tools, maxIterations: 2, onEvent: (event) => events.push(event) }), "42");
+  assert.equal((await runAgentTurn("Parent-only context", [], { model: parent, tools, maxIterations: 2, onEvent: (event) => events.push(event) })).answer, "42");
   assert.equal(childRequests[0]?.length, 2);
   assert.equal(childRequests[0]?.[1]?.content, "Add 17 and 25");
   assert.ok(!JSON.stringify(childRequests).includes("Parent-only context"));
@@ -84,7 +84,7 @@ test("failed children consume allowance, return safe errors, and let the parent 
     assert.ok(!JSON.stringify(results).includes("provider-private-data"));
     return answer("The child failed; I can explain the limitation.");
   };
-  assert.match(await runAgent("Work", { model, tools, maxIterations: 2 }), /limitation/);
+  assert.match((await runAgentTurn("Work", [], { model, tools, maxIterations: 2 })).answer, /limitation/);
   assert.equal(attempts, 2);
 });
 
@@ -117,7 +117,7 @@ test("parent cancellation reaches an active child and prevents parent continuati
     });
   }, 8);
   const events: LoopEvent[] = [];
-  const pending = runAgent("Work", { tools, maxIterations: 2, signal: controller.signal,
+  const pending = runAgentTurn("Work", [], { tools, maxIterations: 2, signal: controller.signal,
     model: async () => { parentRequests++; return calls("delegate_task", '{"task":"Wait"}', "pending"); },
     onEvent: (event) => events.push(event),
   });

@@ -4,7 +4,7 @@ import test from "node:test";
 import { loadConfig } from "@fatcat/runtime/config";
 import { createModel } from "@fatcat/runtime/model";
 import type { Message } from "@fatcat/runtime/model-types";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 
 
 const config = { ...loadConfig({ DEEPSEEK_API_KEY: "offline-message-contract" }), thinking: "off" as const };
@@ -58,7 +58,7 @@ test("canonical tool arguments preserve malformed JSON as a recoverable tool res
 			content: '{"ok":false,"error":{"code":"INVALID_ARGUMENTS","message":"Tool arguments must be valid JSON."}}' });
 		return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Recovered" } }] });
 	}, fixtureTools);
-	assert.equal(await runAgent("Add", { tools: fixtureTools, model, maxIterations: 2 }), "Recovered");
+	assert.equal((await runAgentTurn("Add", [], { tools: fixtureTools, model, maxIterations: 2 })).answer, "Recovered");
 	assert.equal(requests, 2);
 });
 

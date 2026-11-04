@@ -11,7 +11,7 @@ Loop executes one user turn, preserves associations between model messages and t
 | Source | Responsibility |
 | --- | --- |
 | `packages/runtime/src/agent.ts` | workspaceAgentFactory prepares workspace resources; createAgent assembles parent/child Models, Tools, Skills, dynamic guidance and actual Session identity |
-| `packages/runtime/src/loop.ts` | runAgentTurn requests models on a history copy, executes tools sequentially and emits events; runAgent supplies single-call execution |
+| `packages/runtime/src/loop.ts` | runAgentTurn requests models on a history copy, executes tools sequentially and emits events; pass an empty history for an independent task and read the returned answer and messages |
 | `packages/runtime/src/system-prompt.ts` | Shared systemPrompt, delegation/automation/material guidance and pure workspace/permission formatting |
 | `packages/runtime/src/model-types.ts`, `model.ts`, `model-adapters/chat-completions.ts`, `model-usage.ts` | Internal message contracts, SDK boundary, response validation, safe errors and usage observations; see [Providers](PROVIDERS.md) |
 | `packages/runtime/src/errors.ts` | Stable HarnessError codes and cancellation checks |

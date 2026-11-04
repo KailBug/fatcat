@@ -5,7 +5,7 @@ import test from "node:test";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport, ReportEvent } from "@fatcat/runtime/execution-report";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import type { Model, ModelTurn } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
 import { createSubagentTools } from "@fatcat/runtime/internal/subagent";
@@ -35,8 +35,8 @@ const write: WriteRecord = { id: "write-1", path: "file.txt", operation: "create
 
 test("a model claiming tests passed cannot manufacture execution evidence", async () => {
   const result = capture();
-  assert.equal(await runAgent("Review", { model: async () => answer("All tests passed."), maxIterations: 1,
-    onEvent: result.onEvent }), "All tests passed.");
+  assert.equal((await runAgentTurn("Review", [], { model: async () => answer("All tests passed."), maxIterations: 1,
+    onEvent: result.onEvent })).answer, "All tests passed.");
   assert.deepEqual(result.report(), { outcome: "answered", stopCode: null, taskVerification: "not_assessed",
     modelRequests: { parent: 1, children: 0 },
     requestBytes: { parent: { checked: 0, rejected: 0, maxBytes: null }, children: { checked: 0, rejected: 0, maxBytes: null } },
@@ -48,7 +48,7 @@ test("rejected tools are errors, not executed commands or writes", async (t) => 
   const { workspace } = await temporaryWorkspace(t);
   const result = capture();
   let requests = 0;
-  await runAgent("Try command", { maxIterations: 2, tools: await createTools(workspace), onEvent: result.onEvent,
+  await runAgentTurn("Try command", [], { maxIterations: 2, tools: await createTools(workspace), onEvent: result.onEvent,
     model: async () => ++requests === 1 ? call("denied", "shell", { command: "exit 0" }) : answer("Done") });
   assert.deepEqual(result.report().toolResults, { ok: 0, errors: 1 });
   assert.deepEqual(result.report().commands, []);
@@ -68,7 +68,7 @@ test("committed writes remain in failed, cancelled, and exhausted turn reports",
       if (code !== "MAX_ITERATIONS") throw new HarnessError(code, "Expected stop.");
       return call("not-executed", "write", { path: "unused.txt", content: "unused" });
     };
-    await assert.rejects(runAgent("Write", { model, tools, maxIterations: 2, signal: controller.signal,
+    await assert.rejects(runAgentTurn("Write", [], { model, tools, maxIterations: 2, signal: controller.signal,
       onEvent: result.onEvent }), (error: unknown) => error instanceof HarnessError && error.code === code);
     const report = result.report();
     assert.equal(report.outcome, "stopped");
@@ -92,7 +92,7 @@ test("child records are counted once even when its model fails after a write", a
   const result = capture();
   const model: Model = async (messages) => messages.at(-1)?.role === "user"
     ? call("delegate", "delegate_task", { task: "Write" }) : answer("Child stopped");
-  await runAgent("Delegate", { tools, model, maxIterations: 2, onEvent: result.onEvent });
+  await runAgentTurn("Delegate", [], { tools, model, maxIterations: 2, onEvent: result.onEvent });
   assert.equal(result.report().outcome, "answered");
   assert.equal(result.report().writes.length, 1);
   assert.deepEqual(result.report().modelRequests, { parent: 2, children: 2 });
@@ -172,7 +172,7 @@ test("native command followed by a write and another command preserves actual or
     call("edit", "write", { path: "new.txt", content: "not-in-logs" }),
     call("after", "shell", { command: "'private-output'; exit 0" }), answer("Done")];
   const result = capture();
-  await runAgent("Edit and check", { tools, maxIterations: 4, model: async () => steps.shift()!, onEvent: result.onEvent });
+  await runAgentTurn("Edit and check", [], { tools, maxIterations: 4, model: async () => steps.shift()!, onEvent: result.onEvent });
   const report = result.report();
   assert.deepEqual(report.commands.map(({ succeeded, laterWriteAttempt }) => ({ succeeded, laterWriteAttempt })),
     [{ succeeded: false, laterWriteAttempt: true }, { succeeded: true, laterWriteAttempt: false }]);

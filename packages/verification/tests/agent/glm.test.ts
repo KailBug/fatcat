@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { defaultModelSelection } from "@fatcat/runtime/model-catalog";
 import { ModelConnections } from "@fatcat/runtime/model-connections";
 import { defaultTools } from "@fatcat/runtime/tools";
@@ -62,7 +62,7 @@ describe("GLM agent assembly and execution boundaries", () => {
 			}, undefined, undefined, undefined, undefined, connections);
 			const bound = base.forModel(selection, base);
 			assert.deepEqual(bound.modelSelection, selection);
-			assert.equal(await runAgent("Parent-only detail", bound), "Reviewed result");
+			assert.equal((await runAgentTurn("Parent-only detail", [], bound)).answer, "Reviewed result");
 			assert.equal(requests, 3);
 			const summary = await bound.compactionModel!([{ role: "user", content: "Summarize the fixture" }],
 				undefined, undefined, { purpose: "compaction", toolChoice: "none" });
@@ -86,7 +86,7 @@ describe("GLM agent assembly and execution boundaries", () => {
 				return call("fixture_add", { numbers: [1, 2] });
 			}, undefined, undefined, undefined, undefined, connections);
 			const bound = base.forModel(defaultModelSelection("glm", "cn", model), base);
-			await assert.rejects(runAgent("Compute a sum", bound), { code: "MAX_ITERATIONS" });
+			await assert.rejects(runAgentTurn("Compute a sum", [], bound), { code: "MAX_ITERATIONS" });
 			assert.equal(requests, 1);
 			assert.equal(executions, 0);
 		});

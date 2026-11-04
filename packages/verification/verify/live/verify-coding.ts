@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { loadLiveConfig } from "../support/live-config.js";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { createAgent } from "@fatcat/runtime/agent";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport } from "@fatcat/runtime/execution-report";
@@ -57,13 +57,13 @@ try {
   } };
   let report: ExecutionReport | undefined;
   const agent = createAgent({ ...config, maxIterations: Math.min(config.maxIterations, 8) }, tools);
-  const answer = await runAgent(`The total function returns an incorrect sum. Use grep with a literal query in src to locate the add implementation and its caller, then inspect the relevant files and check.test.mjs. Fix only the add implementation using edit with edits[]. Do not change its caller. Run shell with command exactly "${command}" and cwd ".". Do not change the test. Report CODING_VERIFIED only if the command succeeds; otherwise explain the failure.`, {
+  const answer = (await runAgentTurn(`The total function returns an incorrect sum. Use grep with a literal query in src to locate the add implementation and its caller, then inspect the relevant files and check.test.mjs. Fix only the add implementation using edit with edits[]. Do not change its caller. Run shell with command exactly "${command}" and cwd ".". Do not change the test. Report CODING_VERIFIED only if the command succeeds; otherwise explain the failure.`, [], {
     ...agent,
     onEvent: createTurnReporter((event) => {
       if (event.type === "execution_report") report = event.report;
       console.error(JSON.stringify({ scenario: "coding", ...event }));
     }),
-  });
+  })).answer;
   assert.equal(await readFile(join(workspace, "check.test.mjs"), "utf8"), checks);
   assert.equal(await readFile(join(workspace, "src", "total.mjs"), "utf8"), consumer);
   assert.notEqual(await readFile(join(workspace, sourcePath), "utf8"), source);

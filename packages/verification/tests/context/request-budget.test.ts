@@ -8,7 +8,7 @@ import { createAgent } from "@fatcat/runtime/agent";
 import { loadConfig } from "@fatcat/runtime/config";
 import { createTurnReporter } from "@fatcat/runtime/execution-report";
 import type { ExecutionReport, ReportEvent } from "@fatcat/runtime/execution-report";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { createDeepSeekModel } from "@fatcat/runtime/model";
 import type { Message, ModelObservation } from "@fatcat/runtime/model-types";
 import { Session } from "@fatcat/runtime/session/session";
@@ -89,14 +89,14 @@ test("received usage survives invalid and truncated responses and cancellation a
     const data = response();
     data.choices[0]!.finish_reason = reason;
     const capture = recorder();
-    await assert.rejects(runAgent("Task", { tools: fixtureTools, model: createDeepSeekModel(config, async () => Response.json(data), fixtureTools),
+    await assert.rejects(runAgentTurn("Task", [], { tools: fixtureTools, model: createDeepSeekModel(config, async () => Response.json(data), fixtureTools),
       maxIterations: 1, onEvent: capture.onEvent }), { code: reason === "length" ? "MODEL_TRUNCATED" : "MODEL_RESPONSE" });
     assert.deepEqual(capture.report().tokenUsage.parent, { reportedRequests: 1,
       totals: { promptTokens: 120, completionTokens: 30, totalTokens: 150 } });
   }
   const controller = new AbortController();
   const capture = recorder();
-  await assert.rejects(runAgent("Task", { tools: fixtureTools, model: createDeepSeekModel(config, async () => Response.json(response()), fixtureTools),
+  await assert.rejects(runAgentTurn("Task", [], { tools: fixtureTools, model: createDeepSeekModel(config, async () => Response.json(response()), fixtureTools),
     maxIterations: 1, signal: controller.signal, onEvent(event) {
       capture.onEvent(event);
       if (event.type === "model_usage") controller.abort();
@@ -112,7 +112,7 @@ test("parent and child usage stays separate and guidance plus delegate schema en
     return Response.json(response("Ready", parent ? usage : { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }));
   });
   const capture = recorder();
-  await runAgent("Investigate", { ...agent, onEvent: capture.onEvent });
+  await runAgentTurn("Investigate", [], { ...agent, onEvent: capture.onEvent });
   const report = capture.report();
   assert.deepEqual(report.modelRequests, { parent: 2, children: 1 });
   assert.deepEqual(report.tokenUsage, {
@@ -131,7 +131,7 @@ test("partial provider usage is never presented as complete and earlier totals s
     return Response.json({ error: { message: "private-provider-error" } }, { status: 500 });
   }, fixtureTools);
   const capture = recorder();
-  await assert.rejects(runAgent("Sum", { tools: fixtureTools, model, maxIterations: 2, onEvent: capture.onEvent }), { code: "MODEL_HTTP" });
+  await assert.rejects(runAgentTurn("Sum", [], { tools: fixtureTools, model, maxIterations: 2, onEvent: capture.onEvent }), { code: "MODEL_HTTP" });
   assert.equal(capture.report().modelRequests.parent, 2);
   assert.equal(capture.report().tokenUsage.parent.reportedRequests, 1);
   assert.equal(capture.report().tokenUsage.parent.totals!.totalTokens, 150);
@@ -219,7 +219,7 @@ test("child request overflow becomes a bounded tool failure and cannot send the 
     return Response.json(response("The child reached its request limit."));
   });
   const capture = recorder();
-  await runAgent("Task", { ...agent, onEvent: capture.onEvent });
+  await runAgentTurn("Task", [], { ...agent, onEvent: capture.onEvent });
   assert.equal(sent, 3);
   assert.deepEqual(capture.report().modelRequests, { parent: 2, children: 2 });
   assert.equal(capture.report().requestBytes.children.rejected, 1);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import { HarnessError } from "@fatcat/runtime/errors";
 import { createTurnReporter, type ReportEvent } from "@fatcat/runtime/execution-report";
 import type { Tools } from "@fatcat/runtime/tools";
@@ -13,12 +13,12 @@ for (const outcome of ["ok", "error", "cancelled", "threw"] as const) {
 			if (outcome === "threw") throw new Error("private stack");
 			return outcome === "ok" ? { ok: true, result: "private result" } : { ok: false, error: { code: "CONFLICT", message: "private reason" } };
 		} };
-		const pending = runAgent("Fixture", { tools, maxIterations: 2, onEvent: createTurnReporter((event) => events.push(event)),
+		const pending = runAgentTurn("Fixture", [], { tools, maxIterations: 2, onEvent: createTurnReporter((event) => events.push(event)),
 			model: async (messages) => messages.at(-1)?.role === "user"
 				? { message: { role: "assistant", content: null, toolCalls: [{ id: "one", name: "fixture", arguments: '{"text":"private input 😀"}' }] } }
 				: { message: { role: "assistant", content: "Done" } } });
 		if (outcome === "cancelled" || outcome === "threw") await assert.rejects(pending);
-		else assert.equal(await pending, "Done");
+		else assert.equal((await pending).answer, "Done");
 		const report = events.find((event) => event.type === "execution_report");
 		assert.ok(report?.type === "execution_report");
 		const execution = report.report.toolExecutions![0]!;

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createAgent } from "@fatcat/runtime/agent";
 import { loadLiveConfig } from "../support/live-config.js";
-import { runAgent } from "@fatcat/runtime/loop";
+import { runAgentTurn } from "@fatcat/runtime/loop";
 import type { LoopEvent } from "@fatcat/runtime/loop";
 import { createTools } from "@fatcat/runtime/tools";
 
@@ -27,17 +27,17 @@ try {
   const config = loadLiveConfig();
   const agent = createAgent({ ...config, maxIterations: Math.min(config.maxIterations, 4) }, await createTools(workspace));
   const directEvents: LoopEvent[] = [];
-  const direct = await runAgent("What is 17 plus 25? Answer with the number only.", { ...agent,
+  const direct = (await runAgentTurn("What is 17 plus 25? Answer with the number only.", [], { ...agent,
     onEvent: (event) => { directEvents.push(event); console.error(JSON.stringify({ scenario: "direct", ...event })); },
-  });
+  })).answer;
   assert.match(direct, /\b42\b/);
   assert.ok(!directEvents.some((event) => event.type === "subagent_event" || (event.type === "tool_result" && event.tool === "delegate_task")));
   console.log(JSON.stringify({ scenario: "direct", passed: true, answer: direct }));
 
   const events: LoopEvent[] = [];
-  const answer = await runAgent("Obtain two independent second-opinion reviews, one for paginate.ts and one for clamp.ts. Each reviewer must receive only its own file contract and example, without seeing the other review or your analysis. Combine their findings afterwards. Identify one correctness bug per file with expected versus actual output for paginate([10,20,30,40],1,2) and clamp(5,0,10). Do not modify files or execute commands. Return a concise combined review with both filenames.", {
+  const answer = (await runAgentTurn("Obtain two independent second-opinion reviews, one for paginate.ts and one for clamp.ts. Each reviewer must receive only its own file contract and example, without seeing the other review or your analysis. Combine their findings afterwards. Identify one correctness bug per file with expected versus actual output for paginate([10,20,30,40],1,2) and clamp(5,0,10). Do not modify files or execute commands. Return a concise combined review with both filenames.", [], {
     ...agent, onEvent: (event) => { events.push(event); console.error(JSON.stringify({ scenario: "independent_review", ...event })); },
-  });
+  })).answer;
   const delegations = events.filter((event) => event.type === "tool_result" && event.tool === "delegate_task" && event.ok).length;
   assert.ok(delegations >= 1 && delegations <= 2, "Expected bounded task-driven delegation for independent reviews.");
   assert.ok(events.some((event) => event.type === "subagent_event" && event.event.type === "tool_result" && event.event.tool === "read" && event.event.ok));
